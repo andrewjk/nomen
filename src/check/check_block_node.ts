@@ -80,7 +80,21 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	status.scope_depth++;
 	status.stack.push(node);
 	for (let child of node.statements) {
+		// Hoisted ELEMENT-BORROW receiver temps registered by this statement
+		// revert on any mutation inside it (a ref-self call rooted at the
+		// temp or at its container — see revert_hoisted_element_borrows).
+		// The window is the statement: once the child completes, its temps
+		// are dead and their registry entries are dropped here (access nodes
+		// never push onto status.stack, so a nested access's
+		// promote_allocations fires mid-statement and must NOT be the
+		// cleanup point).
+		const borrows_before = status.hoisted_element_borrows?.size ?? 0;
 		check_node(child, status);
+		const hoisted = status.hoisted_element_borrows;
+		if (hoisted && hoisted.size > borrows_before) {
+			const keys = [...hoisted.keys()];
+			for (const key of keys.slice(borrows_before)) hoisted.delete(key);
+		}
 		check_checked_enum_discard(child, status);
 	}
 	status.stack.pop();

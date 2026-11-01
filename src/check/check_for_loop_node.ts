@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -10,6 +11,7 @@ import RangeNode from "../nodes/RangeNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
+import { element_slot_load } from "./check_declaration_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { persist_invalidated } from "./utils/borrow.ts";
@@ -17,6 +19,7 @@ import clone_status from "./utils/clone_status.ts";
 import { evaluate_numeric_or_bool } from "./utils/evaluate_const_condition.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import value_from_value_node from "./utils/value_from_value_node.ts";
 
 function has_trait(type_name: string, trait_name: string, status: CheckStatus): boolean {
 	const struct = status.structs.find((s) => s.name === type_name);
@@ -98,7 +101,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			has_at &&
 			(list_type.storage_kind === "heap_array" || !!list_type.length)
 		) {
-			desugar_array_for_loop(for_loop, list_type);
+			desugar_array_for_loop(for_loop, list_type, undefined, status);
 			for_loop.item_is_ref = false;
 			check_for_loop_node(for_loop, status);
 			return;
@@ -121,7 +124,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				);
 				return;
 			}
-			desugar_array_for_loop(for_loop, list_type, list_elem);
+			desugar_array_for_loop(for_loop, list_type, list_elem, status);
 			check_for_loop_node(for_loop, status);
 			return;
 		}
@@ -157,7 +160,7 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				);
 				return;
 			}
-			desugar_array_for_loop(for_loop, list_type, chained_list_elem);
+			desugar_array_for_loop(for_loop, list_type, chained_list_elem, for_status);
 			check_for_loop_node(for_loop, for_status);
 			return;
 		}
@@ -282,12 +285,89 @@ function chain_is_call_free(node: import("../nodes/BaseNode.ts").default): boole
 	return true;
 }
 
-function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type, elem_type?: Type) {
+/**
+ * Whether any statement in the loop body references `name` (the iterated
+ * container's root variable) or declares a nested function. The element-borrow
+ * loop binding requires a clean body: a reference to the container could
+ * mutate (or alias) it while the slot alias is live, and a nested function
+ * could capture the alias past its iteration — either shape keeps the
+ * owning per-iteration copy.
+ */
+function body_references_or_nests_funcs(statements: BaseNode[], name: string): boolean {
+	const visit = (node: BaseNode | undefined | null): boolean => {
+		if (!node || typeof node !== "object") return false;
+		if (node.node_type === "value" && (node as ValueNode).value === name) return true;
+		if (node.node_type === "func") return true;
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const val = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(val)) {
+				for (const item of val) if (visit(item as BaseNode)) return true;
+			} else if (val && typeof val === "object" && "node_type" in val) {
+				if (visit(val as BaseNode)) return true;
+			}
+		}
+		return false;
+	};
+	for (const stmt of statements) {
+		if (visit(stmt)) return true;
+	}
+	return false;
+}
+
+/**
+ * Whether an element type can take the element-borrow loop binding: a plain
+ * (non-nullable, non-array, non-view) value struct with a concrete
+ * (non-generic, non-class) layout — the shapes whose per-read copy is the
+ * owning load the borrow elides. Strings have no safe store convention,
+ * scalars have no copy to elide, and unresolved generics defer.
+ */
+function element_type_is_borrowable(t: Type, status: CheckStatus): boolean {
+	if (!t.name || t.name === "string") return false;
+	if (t.is_array || t.is_view || t.is_nullable) return false;
+	const elem = status.structs.find((s) => s.name === t.name || s.name === mono_type_name(t));
+	return !!elem && !elem.is_class && !elem.is_simple_type && !elem.is_generic;
+}
+
+function desugar_array_for_loop(
+	for_loop: ForLoopNode,
+	array_type: Type,
+	elem_type?: Type,
+	status?: CheckStatus,
+) {
 	const list = for_loop.list;
 	const start = list.start;
 	const original_item = for_loop.item;
 	const idx_name = `__for_idx_${original_item.value}`;
 	const is_ref = !!for_loop.item_is_ref;
+
+	// The ELEMENT BORROW (PERF_PLAN item 4, the for-of half): when the
+	// container is a slot-borrowable List/StableList and the element is a
+	// plain mv struct, bind the loop variable as a SLOT ALIAS
+	// (`is_ref_binding` → the checker's element-borrow rewrite → `slot_ptr`)
+	// instead of deep-copying the element out every iteration. Gated to
+	// shapes where the alias is indistinguishable from the copy:
+	//   - the body never references the container (no mutation or aliasing
+	//     interplay to police — a mutating body keeps the copy), and
+	//   - the body declares no nested function (a lambda could capture the
+	//     alias past its iteration's lifetime).
+	// Reads see the same values, writes through the binding are rejected in
+	// both worlds (deep-const), and `mv x` outcomes are identical, so the
+	// elision never changes behavior.
+	let loop_borrow = false;
+	if (elem_type && status) {
+		const container_name = value_from_value_node(list);
+		if (
+			container_name !== "?" &&
+			!body_references_or_nests_funcs(for_loop.statements, container_name) &&
+			element_type_is_borrowable(elem_type, status)
+		) {
+			const probe = new AccessFunctionCallNode(start, "at", new Type(""), [
+				new ValueNode(start, idx_name),
+			]);
+			loop_borrow = !!element_slot_load(new AccessNode(start, clone_node(list), probe), status);
+		}
+	}
 
 	// The loop variable becomes the hidden index.
 	for_loop.item = new ValueNode(original_item.start, idx_name);
@@ -321,6 +401,7 @@ function desugar_array_for_loop(for_loop: ForLoopNode, array_type: Type, elem_ty
 		at_access,
 	);
 	decl.is_loop_iterator = true;
+	if (loop_borrow) decl.is_ref_binding = true;
 	for_loop.statements.unshift(decl);
 
 	// For ref iteration, append the write-back: arr.set(__idx, x), and insert a

@@ -939,6 +939,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			class_alias_of: class_alias_src,
 			is_ref_binding: is_ref_keyword || undefined,
 			ref_source: is_ref_keyword ? ref_src : undefined,
+			read_only_borrow: (is_ref_keyword && decl.is_loop_iterator) || undefined,
 			is_global: !in_function(status),
 			// Devirtualization (PERF_PLAN item 11): a trait-typed local built
 			// from one known conformer — provable only while the whole-function
@@ -1270,9 +1271,11 @@ function ref_alias_source_name(
  *     semantics-preserving; plain `get` does NOT rewrite, because its
  *     zero-value-on-miss would become a wild pointer read)
  * Returns the inner AccessFunctionCallNode to rewrite, or undefined when
- * the initializer isn't an element load.
+ * the initializer isn't an element load. Shared with the element-borrow
+ * hoists (the for-of desugar in check_for_loop_node and the receiver temp
+ * in check_access_node), which gate the same shape before stamping it.
  */
-function element_slot_load(
+export function element_slot_load(
 	value: import("../nodes/BaseNode.ts").default | undefined,
 	status: CheckStatus,
 ): AccessFunctionCallNode | undefined {

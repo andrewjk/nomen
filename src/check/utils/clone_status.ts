@@ -79,6 +79,10 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// inside a branch (which may fall through) stays visible afterwards —
 		// a conservative union, mirroring mutated_local_names.
 		invalidated_view_structs: status.invalidated_view_structs,
+		// Hoisted element-borrow receiver temps: shared by reference so a
+		// mutation inside a branch or nested lambda body reverts the alias
+		// the enclosing statement hoisted (see CheckStatus).
+		hoisted_element_borrows: status.hoisted_element_borrows,
 		// May-be-null paths: deep-copy so a branch's `== null` narrowing (or a
 		// null assignment) doesn't leak into the parent (or a sibling branch).
 		// check_if_else_node reconciles the survivors explicitly.

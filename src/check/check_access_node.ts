@@ -11,6 +11,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { element_slot_load } from "./check_declaration_node.ts";
 import check_function_call from "./check_function_call.ts";
 import check_function_call_node, {
 	instantiate_generic_type,
@@ -18,7 +19,11 @@ import check_function_call_node, {
 } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { invalidate_borrows_of, receiver_owner_of } from "./utils/borrow.ts";
+import {
+	invalidate_borrows_of,
+	receiver_owner_of,
+	revert_hoisted_element_borrows,
+} from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import { case_mono_for_construction } from "./utils/case_enum.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
@@ -128,6 +133,37 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			target_type,
 			node.target,
 		);
+		// The ELEMENT BORROW (PERF_PLAN item 4, the expression-temp half):
+		// when the hoisted call is a container element read whose container
+		// exposes the matching slot-borrow primitive (`List.at` → `slot_ptr`,
+		// `Map.get_or_panic` → `get_ptr`), hoist the temp as a SLOT ALIAS
+		// instead of an owning copy — the field reads below dereference the
+		// slot and the per-read deep copy (a fresh container init + slab
+		// memcpy per container field) disappears. `is_ref_binding` routes the
+		// build through the ref-local lowering (the call RETURNS the slot
+		// pointer; no scope-exit destroy). The alias is policed: every
+		// mutation it could observe — a `ref self` call rooted at the temp
+		// itself or at its container — reverts the decl to the owning temp
+		// (revert_hoisted_element_borrows), restoring the copy semantics an
+		// owning read had, so the elision is invisible or absent, never
+		// behavior-changing. Untracked owners (shouldn't happen for an
+		// instance receiver) keep the copy.
+		const slot_call = element_slot_load(node.target, status);
+		const borrow_owner = slot_call
+			? receiver_owner_of((node.target as AccessNode).target, status)
+			: undefined;
+		if (borrow_owner && slot_call) {
+			decl.is_ref_binding = true;
+			// The rewrite check_declaration_node's ref branch would perform
+			// (hoisted temps are never checked): the read becomes the slot
+			// primitive. The call was checked as the read spelling, whose
+			// bounds contract is identical, so the rewrite is
+			// verification-neutral. revert_element_borrow_decl reverses it.
+			slot_call.name = slot_call.name === "get_or_panic" ? "get_ptr" : "slot_ptr";
+			slot_call.is_element_slot_load = true;
+			if (!status.hoisted_element_borrows) status.hoisted_element_borrows = new Map();
+			status.hoisted_element_borrows.set(decl.name, { decl, owner: borrow_owner });
+		}
 		status.allocations.push(decl);
 		node.target = new ValueNode(node.target.start, decl.name, target_type);
 	}
@@ -985,6 +1021,21 @@ export function check_access_function_node(
 		// the ultimate owner so field-path receivers (e.g. z.animals.push) and
 		// borrows-of-borrows are invalidated transitively.
 		const owner = receiver_owner_of(target, status);
+		// Hoisted ELEMENT-BORROW receiver temps revert on any mutation they
+		// could observe (the copy-semantics guard for the slot-alias hoist):
+		// a `ref self` call rooted at the TEMP itself is a chained mutation
+		// through the alias (`xs.at(0).tags.push(..)` — its receiver's base
+		// name is the temp, which has no StackValue, so `owner` misses it);
+		// a call rooted at the container (`xs.pop()`) is a later mutation in
+		// the same statement the alias lives in. Both restore the owning
+		// temp, so the mutation writes a copy exactly as it did before the
+		// hoist aliased the slot.
+		const temp_base = value_from_value_node(target);
+		if (status.hoisted_element_borrows?.has(temp_base)) {
+			revert_hoisted_element_borrows(status, "", temp_base);
+		} else if (owner) {
+			revert_hoisted_element_borrows(status, owner);
+		}
 		if (target.node_type === "value") {
 			const target_name = (target as ValueNode).value;
 			// Skip 'self' — ref self methods can be called on self within other ref self methods

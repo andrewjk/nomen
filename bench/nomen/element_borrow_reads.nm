@@ -1,0 +1,65 @@
+import System
+
+// element_borrow_reads — the PERF_PLAN item-4 remainder's shape bench: the
+// two READ positions the element borrow now covers beyond the explicit
+// `ref` binding. Both elide the owning load's deep copy (a fresh container
+// init + slab malloc + memcpy per container field, plus its teardown) per
+// read:
+//
+//   Shape A — `for o of outers` where Outer owns a List (the for-of
+//   desugar binds the loop variable as a slot alias instead of copying the
+//   element out every iteration).
+//
+//   Shape B — `m.get_or_panic(k).field` (the hoisted receiver temp takes
+//   the slot alias — the get_ptr rewrite — instead of a deep-copied temp).
+//
+// Payloads are computed so neither backend can fold the loops. n from
+// argv; prints one checksum per shape.
+
+mv struct Outer {
+	var tags = List<string>()
+	var int n = 0
+}
+
+pub func main = (Init init) {
+	var n = 2000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+
+	// Build: n Outers, each owning a two-element tags list — heap work per
+	// element, so the per-read copy the borrow elides is real.
+	var List<Outer> outers = List<Outer>()
+	var Map<int, Outer> by_key = Map<int, Outer>()
+	var i = 0
+	while i < n; i += 1 {
+		var Outer o = Outer()
+		o.n = i % 64
+		o.tags.push("t\{i % 8}")
+		o.tags.push("u\{i % 5}")
+		outers.push(mv o)
+		var Outer c = Outer()
+		c.n = i % 64
+		c.tags.push("t\{i % 8}")
+		c.tags.push("u\{i % 5}")
+		by_key.set(i, mv c)
+	}
+
+	// Shape A: for-of element reads over a container-bearing struct.
+	var total = 0
+	for o of outers {
+		total = total + o.n + o.tags.length
+	}
+
+	// Shape B: Map value reads through the trap-on-absent accessor.
+	var i2 = 0
+	var total2 = 0
+	while i2 < n; i2 += 1 {
+		total2 = total2 + by_key.get_or_panic(i2).n
+	}
+
+	Console.write(total.to_string())
+	Console.write(" ")
+	Console.write(total2.to_string())
+	Console.write("\n")
+}

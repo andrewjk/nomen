@@ -224,6 +224,22 @@ export default interface CheckStatus {
 	invalidated_view_structs?: Set<string>;
 
 	/**
+	 * Live hoisted ELEMENT-BORROW receiver temps (`_recv_N` hoisted as a slot
+	 * alias instead of an owning copy — the expression-temp half of the
+	 * PERF_PLAN item-4 element borrow), keyed by temp name. `owner` is the
+	 * container the alias is rooted in. Consulted at mutation sites: a
+	 * `ref self` call rooted at the alias or at its container reverts the
+	 * alias to the owning temp, so a mutation through (or after) the temp
+	 * keeps the copy semantics an owning read had. Shared by reference
+	 * through clones so a mutation inside a branch or a lambda body (whose
+	 * status derives from clone_status) reaches it.
+	 */
+	hoisted_element_borrows?: Map<
+		string,
+		{ decl: import("../nodes/DeclarationNode.ts").default; owner: string }
+	>;
+
+	/**
 	 * Every function EMISSION name seen so far (top-level source names,
 	 * monomorphized specialized names, and assigned nested-function labels).
 	 * Shared by reference through clones and sub-statuses so nested-label

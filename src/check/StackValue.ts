@@ -97,6 +97,15 @@ export default interface StackValue {
 	 */
 	ref_source?: string;
 	/**
+	 * True for the for-of ELEMENT-BORROW loop binding (the desugar's
+	 * `is_ref_binding` slot alias over `container.slot_ptr(i)`). It is a
+	 * READ alias: the loop variable stays const-deep like the owning copy
+	 * it replaces, so field/compound writes through it keep the
+	 * "Assignment to const" rejection (carved out of the A3 mutation rule,
+	 * which sanctions writes only through user-written `ref` aliases).
+	 */
+	read_only_borrow?: boolean;
+	/**
 	 * Block scope depth at which this variable was declared (status.scope_depth
 	 * when pushed). Used by borrow-lifetime checking.
 	 */

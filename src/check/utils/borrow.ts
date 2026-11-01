@@ -256,6 +256,49 @@ export function invalidate_borrows_of(status: CheckStatus, owner: string) {
 }
 
 /**
+ * Revert every live hoisted ELEMENT-BORROW receiver temp rooted at `owner`
+ * (or the alias `name` itself) back to the owning temp the `_recv_N` hoist
+ * would have made. The element borrow is a perf elision: the alias reads the
+ * container's slot directly, which stays invisible to the program only while
+ * nothing mutates through (or around) it. A mutation reverts the hoist — the
+ * decl goes back to the owning copy (`is_ref_binding` cleared, the call back
+ * to `at`/`get_or_panic`), so the build emits the deep copy an owning read
+ * made and the mutation writes the temp, exactly the pre-change semantics.
+ * Reads already checked against the alias stay valid: both forms share the
+ * temp's name and type, so no re-check is needed.
+ *
+ * The hoisted temps never enter `status.values` (they resolve through their
+ * stamped ValueNode type), so there is no StackValue to unmark here.
+ */
+export function revert_hoisted_element_borrows(status: CheckStatus, owner: string, name?: string) {
+	const hoisted = status.hoisted_element_borrows;
+	if (!hoisted?.size) return;
+	for (const [temp_name, entry] of hoisted) {
+		if (name !== undefined && temp_name !== name) continue;
+		if (name === undefined && entry.owner !== owner) continue;
+		revert_element_borrow_decl(entry.decl);
+		hoisted.delete(temp_name);
+	}
+}
+
+/** Restore a hoisted borrow decl to the owning-temp form (idempotent). */
+export function revert_element_borrow_decl(decl: import("../../nodes/DeclarationNode.ts").default) {
+	if (!decl.is_ref_binding) return;
+	decl.is_ref_binding = false;
+	const value = decl.value;
+	if (value?.node_type === "access") {
+		const call = (value as import("../../nodes/AccessNode.ts").default)
+			.access as import("../../nodes/AccessFunctionCallNode.ts").default;
+		if (call.node_type === "access_func") {
+			// Reverse of the slot-load rewrite: the primitive name back to the
+			// read spelling the call was checked as.
+			call.name = call.name === "get_ptr" ? "get_or_panic" : "at";
+			call.is_element_slot_load = false;
+		}
+	}
+}
+
+/**
  * Carry borrow invalidations performed inside a cloned branch status back into
  * the enclosing status. A borrow invalidated in any branch that can fall
  * through (or any loop-body iteration) is considered invalidated afterwards —

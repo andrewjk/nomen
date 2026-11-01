@@ -12,7 +12,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | 1   | Faster allocator (slab/bump class allocation)                                                                                                                                                                                                                                                                                             | both           | M      | PERF.md "Large"; ASM_TODO "largest unclaimed"    |
 | 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape; field-path receivers −24% / −30% sample.json, −25% / −32% string-heavy doc; tranche completed (local roots, Box/generic hops, donor) −51% / −52% on the field-path shape bench**                                                                          | both           | S      | shape micro-bench, interleaved medians (below)   |
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                                                                                            | both           | S–M    | shape micro-bench, interleaved medians (below)   |
-| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **PARTIALLY LANDED Oct 2026: Map slot borrow, −79% / −98% on the borrow shape, −48% probe fusion**                                                                                                                                                                                  | both           | M      | shape micro-benches, interleaved medians (below) |
+| 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **LANDED Oct–Nov 2026: Map slot borrow −79% / −98% on the borrow shape, −48% probe fusion; for-of + expression-temp element borrows −32% / −30% on the read-sweep shape (Nov); the struct-`view` half is the follow-on item**                                                       | both           | M      | shape micro-benches, interleaved medians (below) |
 | 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                                                                                                 | both           | S      | measured 0.7.0 regression +61% / +103%           |
 | 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                                                                                                                              | both           | M      | shape micro-benches, interleaved medians (below) |
 | 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                                                                                                                    | both           | S–M    | shape micro-benches, interleaved medians (below) |
@@ -400,7 +400,7 @@ changes no emission the suite reaches) and flat at the measurement size
 by design (the mv convention deep-copies those at the boundary, so a
 rewrite would be sound but not an elision).
 
-## 4. Borrow-returning reads — PARTIALLY LANDED (Oct 2026)
+## 4. Borrow-returning reads — LANDED (Oct–Nov 2026; the struct-`view` half is its own design item)
 
 **What landed.** The Map value slot borrow. `Map.get_ptr(key) -> ptr TV`
 (`core/System/Map.nm`) is `Buffer.slot_ptr` for Map values: one probe
@@ -498,20 +498,107 @@ work.
   and the probe-fusion shape above receipts what that is worth when hits
   dominate.
 
-**Remainder.** The `at_view`/`get_view` half of this item is NOT landed. A
-`view`-returning accessor that kills the per-read copy for
-container-bearing struct ELEMENTS (`for node of outer_list` where `Outer`
-has a `List<string>` field) needs struct views: a `view Outer` value with
-field access through it (the (ptr, len) view representation covers flat
-data — strings and scalar arrays — but not struct fields, and the borrow
-rules for nested container-field reads through a view are undesigned).
-The `ref` element borrow covers the explicit-binding shape today; the
-remaining victims are the expression-temp and `for of` positions (the
-desugar lowers to `.at`, an owning read). Also recorded in FOLLOWUP.md:
-scalar element borrows via `List.at` are blocked by contract verification
-(the Map reads verify clean because `get_or_panic` carries no parameter
-contract), so scalar borrows are Map-only until the verifier understands
-the rewrite's length facts.
+**The read-position tranche (landed Nov 2026).** The element borrow
+extended from the explicit `ref` binding to the two remaining victim
+positions, with a discipline that keeps the elision invisible or absent,
+never behavior-changing:
+
+- **The `for of` position.** `for x of list`'s desugared binding
+  (`const x = list.at(__idx)` — an owning read per iteration) is stamped
+  `is_ref_binding` when the shape admits it, so the checker's element
+  borrow rewrite lowers it as `List_T_slot_ptr` and the loop variable
+  aliases the slot: a container-bearing struct element stops paying the
+  per-iteration deep copy (fresh container init + slab malloc + memcpy
+  per container field, plus its teardown). Gates, all decided at desugar
+  time against today's semantics: the container exposes `slot_ptr`
+  (List/StableList monos — the same probe the ref binding uses), the
+  element is a concrete non-class/non-simple/non-generic value struct
+  (strings keep the owning load — no safe store convention; scalars have
+  no copy to elide; generics defer), and the body never references the
+  iterated container and declares no nested function (a mutating or
+  capturing body keeps the copy). Reads see the same values, writes
+  through the binding stay rejected (the binding is a READ alias —
+  `read_only_borrow` carves it out of the A3 mutation rule so
+  "Assignment to const" fires exactly as before), and `mv x` outcomes are
+  identical (the push copy reads the slot vs the iteration copy).
+- **The expression-temp position.** The `_recv_N` receiver hoist
+  (`check_access_node`) — which already materialized
+  `build_norm(units).length` as an owning const temp — now hoists a slot
+  ALIAS when the hoisted call is a slot-borrowable element read
+  (`xs.at(i).field`, `m.get_or_panic(k).field`): the call is rewritten to
+  the slot primitive at hoist time (the checked contract is identical, so
+  the rewrite is verification-neutral), the temp becomes a ref local, and
+  the field reads dereference it. The alias is policed by a per-statement
+  registry (`hoisted_element_borrows`, shared through clone_status so a
+  branch or lambda body reaches it): any `ref self` call rooted at the
+  temp itself (a chained mutation, `xs.at(0).tags.push(..)`) or at its
+  container later in the same statement (`f(xs.at(0).id, xs.pop())`)
+  REVERTS the decl to the owning temp — restoring the copy semantics an
+  owning read had, so the mutation writes a copy exactly as it did before.
+  Reverting is safe post-check: both forms share the temp's name and type,
+  so reads already checked stay valid, and the build picks the form up
+  from `is_ref_binding`.
+- **A pre-existing C-backend bug fell out and is fixed**: a slot-load
+  alias whose call carried a hoisted computed key
+  (`m.get_or_panic(k % n).field`) emitted the key temp mid-expression
+  (`T *x = long t = ...;` — invalid C, the program did not compile) —
+  main@0bdc2c38 reproduces it. The ref-local arm now surfaces the
+  initializer's hoisted temps before the declaration line
+  (`src/build_c/build_declaration_node.ts`).
+- Still excluded by design: scalar and string elements (nothing to elide /
+  no safe store convention), `at_or` spellings (not slot-borrowable),
+  call-containing iteration chains (the existing desugar guard), and
+  arrays (their iteration has its own ref machinery). The pre-existing
+  invalidation gaps for element borrows — a `ref`-argument call and a
+  container reassignment between alias creation and read — are recorded in
+  FOLLOWUP.md; the new positions inherit the explicit-binding exposure,
+  they do not widen it.
+
+Fourteen tests in `test/element_borrow_reads.test.ts` (both backends, audit
+on) pin the runtime shapes (for-of reads over List/StableList/param
+containers, the mutating-body reference gate, temp reads, the chained-
+mutation revert, the Map value temp, the unchanged const-write rejection)
+and the emitted code (the loop-bound `slot_ptr` with no `List_T_at` in the
+loop, the string/mutating-body copy forms, the alias deref, both revert
+forms); the full suite (542 files, both backends) passes — the
+zero-semantic-change claim across the corpus.
+
+**Measured.** Shape micro-bench — `bench/nomen/element_borrow_reads.nm`:
+n Outer elements built (each owning a two-element `List<string>`), then
+Shape A = `for o of outers` field/container reads and Shape B =
+`by_key.get_or_panic(i).n` (a bare-local key — a computed key hits the
+pre-existing C bug above), n from argv, Apple Silicon, 7 interleaved
+rounds, medians, audit off, release builds, identical outputs before/after;
+"before" binaries built from a HEAD worktree. Per read the elided work is
+exactly the tranche's promise: the owning load (a fresh `List` init + slab
+malloc + memcpy, two strdups, the struct copy, and the temp teardown ≈ 3
+mallocs + 3 frees) becomes the probe plus a dereference.
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| C       |           1.22s |          0.83s | **−32%** |
+| aarch64 |           1.53s |          1.07s | **−30%** |
+
+The emitted diff receipts it: the for-of binding is
+`struct Outer *o = List_Outer_slot_ptr(&outers, __for_idx_o);` (no
+`_mv_owns_o`, no per-iteration `List_string_destroy`), the Map temp is
+`struct Outer *_recv_9 = Map_int_Outer_get_ptr(&by_key, i2);` +
+`_recv_9->n` (before: the `Map_int_Outer_get_or_panic` value temp with its
+teardown), and the aarch64 text holds no `bl List_Outer_at` at all.
+
+- _The standard suite_ — flat on both backends (medians, interleaved,
+  outputs identical): json-serde `bench/sample.json 50000` 0.24 → 0.25s C /
+  0.47 → 0.47s aarch64, binarytrees 18 1.40 → 1.41s C / 1.81 → 1.80s
+  aarch64, lru `1000 20000000` 0.87 → 0.88s aarch64, nsieve 12 0.12 →
+  0.12s aarch64. No bench hot loop iterates a container-bearing struct or
+  reads an expression temp through these shapes yet.
+
+**Remainder.** The struct-`view` half of the original item: a
+`view Outer` value with field access through it (the (ptr, len) view
+representation covers flat data — strings and scalar arrays — but not
+struct fields, and the borrow rules for nested container-field reads
+through a view are undesigned). That is a language-design item of its own;
+everything the slot-borrow family can reach is landed.
 
 ## 5. Json ownership copies — LANDED (Oct 2026)
 

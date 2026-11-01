@@ -242,7 +242,10 @@ export default function check_assignment_node(
 		// `var` — a mutable borrow needs a mutable value. Runs BEFORE the
 		// const branch because a ref binding is normalized to `const`.
 		assign.left_value!.node_type === "access" &&
-		left_value.is_ref_binding
+		left_value.is_ref_binding &&
+		// The for-of element borrow is a READ alias — the loop variable is
+		// const-deep exactly like the owning copy it replaces.
+		!left_value.read_only_borrow
 	) {
 		if (left_value.ref_source) {
 			// R3: mutating through an alias whose SOURCE is frozen (borrowed

@@ -66,6 +66,7 @@ import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scop
 import c_type from "./utils/c_type.ts";
 import { ensure_closure_runtime, materialize_func_value } from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
+import emit_allocations from "./utils/emit_allocations.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_materialize_view_string, is_view_value } from "./utils/view_value.ts";
 
@@ -664,6 +665,15 @@ export default function build_declaration_node(
 						!s.is_generic,
 				));
 		if ((node.type.is_ref || value_struct_ref_alias) && !node.type.is_array) {
+			// A slot-load initializer's call may carry hoisted argument temps
+			// (a computed key: `m.get_or_panic(k % n).field` — the checker
+			// parks them on the initializer access). They must surface as
+			// statements BEFORE the declaration line — building them through
+			// the initializer would land them mid-expression (invalid C:
+			// `T *x = long t = ...;`).
+			if (init_is_slot_load && node.value) {
+				emit_allocations(node.value, status);
+			}
 			if (mono_struct) {
 				status.code += `struct ${mono_name} *${safe_name}`;
 			} else {
