@@ -13,7 +13,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | 2   | ~~In-place push for constructors~~ **LANDED Oct 2026: −55% / −58% on the shape; field-path receivers −24% / −30% sample.json, −25% / −32% string-heavy doc; tranche completed (local roots, Box/generic hops, donor) −51% / −52% on the field-path shape bench**                                                                          | both           | S      | shape micro-bench, interleaved medians (below)   |
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                                                                                            | both           | S–M    | shape micro-bench, interleaved medians (below)   |
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **LANDED Oct–Nov 2026: Map slot borrow −79% / −98% on the borrow shape, −48% probe fusion; for-of + expression-temp element borrows −32% / −30% on the read-sweep shape (Nov); the struct-`view` half is the follow-on item**                                                       | both           | M      | shape micro-benches, interleaved medians (below) |
-| 5   | ~~Json ownership copies~~ **LANDED Oct 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde**                                                                                                                                                                                                                                 | both           | S      | measured 0.7.0 regression +61% / +103%           |
+| 5   | ~~Json ownership copies~~ **LANDED Oct–Nov 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde; the null-seed tranche (Nov) −38% / −15% sample.json, −19% / −9% string-heavy**                                                                                                                                               | both           | S      | measured 0.7.0 regression +61% / +103%           |
 | 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                                                                                                                              | both           | M      | shape micro-benches, interleaved medians (below) |
 | 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                                                                                                                    | both           | S–M    | shape micro-benches, interleaved medians (below) |
 | 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                                                                                                                                                    | both           | S      | shape micro-benches, interleaved medians (below) |
@@ -663,14 +663,53 @@ pair store + displaced free (no `_strdup`) on aarch64, and
 `nomen_str_dup`) in C; `JsonTree_get_text_view` returns the `nomen_view`
 pair both backends memcpy from directly.
 
-**Remainder.** Per node there is still the `JsonNode()` seed strdup inside
-`alloc_node`'s push — the store itself (item 2's field-path receiver has
-since landed: the temp home, the push-callee copy, and the temp teardown it
-also paid are gone) — and `json_parse_string`'s per-byte append loop (item
-17's scan-to-next-escape). A general `mv string` param that actually
-transfers (eliding `set_text`'s copy for owned strings everywhere) is a
-convention change across every mv-string function and needs its own
-measured item.
+**The null-seed tranche (landed Nov 2026).** The item's last per-node
+allocation — the `JsonNode()` ctor's seed strdup inside `alloc_node`'s
+in-place push — is gone: `JsonNode.text` is now `string?` seeded `null`.
+The auto-`#init` stores the in-band zero pair (aarch64 `stp` of zeros, C
+`(nomen_string){0, 0}` — no `bl _strdup`, no malloc), so a fresh node
+allocates nothing, and `take_text`'s store displaces a null
+(free(NULL) — a no-op under the audit wrapper and libc alike) instead of
+the heap seed it had to free first. A node whose kind never carries text
+(null/true/false/array/object — most nodes in a typical document) also
+stops paying the seed's free at destroy. Reads keep their contracts:
+`get_text` returns `n.text ?? ""` (the coalesce dups both branches, so the
+owned-copy return contract is unchanged), and `get_text_view` guards
+`== null` (the checker's dotted-path narrowing discharges the post-guard
+slice) and answers an empty view for a never-texted node. Nullable
+`string?` fields in mv structs inside containers were already
+ownership-complete (the `Rule`-shaped tests: null seed, store, deep copy,
+exactly-once teardown — audit on, both backends), and `JsonNode`'s size
+and packed layout are unchanged (in-band null is still the 16-byte pair —
+no flag word), so no container mono or prebuilt system.o layout moves.
+
+One test in `test/json.test.ts` pins the never-texted node (`get_text`
+and `get_text_view` answer ""/length 0 through the null seed, audit on);
+the full suite (543 files, both backends) passes.
+
+**Measured.** `bench/nomen/json-serde.nm`, n from argv, Apple Silicon, 7
+interleaved rounds, medians, audit off, release builds, identical outputs
+before/after; "before" binaries built from a HEAD worktree. Per parsed
+node the elided work is exactly the seed strdup and its free — 1 malloc +
+1 free (for text-bearing nodes the free was `take_text`'s displaced
+reclaim; for the others the destroy's) — on top of the elisions the
+tranches above already collected.
+
+| Document                       | Backend | before (median) | after (median) |        Δ |
+| ------------------------------ | ------- | --------------: | -------------: | -------: |
+| `bench/sample.json`, n = 50000 | C       |          0.274s |         0.170s | **−38%** |
+| `bench/sample.json`, n = 50000 | aarch64 |          0.497s |         0.424s | **−15%** |
+| 2000×200-char doc, n = 3000    | C       |          2.326s |         1.881s | **−19%** |
+| 2000×200-char doc, n = 3000    | aarch64 |          3.441s |         3.130s |  **−9%** |
+
+The standard suite is flat on aarch64 (binarytrees 18: 1.834 → 1.830s,
+lru `1000 20000000`: 1.711 → 1.710s, nsieve 12: 0.157 → 0.156s; outputs
+identical): none of its hot loops allocates a JsonNode.
+
+**Remainder.** Only the general `mv string` param that actually transfers
+(eliding `set_text`'s copy for owned strings everywhere) — a convention
+change across every mv-string function that needs its own measured item.
+(`json_parse_string`'s per-byte append loop landed as item 17d.)
 
 ## 6. In-place store: the `set`/`insert`/`add`/`alloc` siblings — LANDED (Oct 2026)
 

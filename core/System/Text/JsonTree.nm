@@ -2,10 +2,10 @@
 // Each node is a value struct appended to the list; node indices are list
 // indices, and list slots never move. The caller creates a JsonTree once and
 // calls reset() per document. The pool owns its node texts end to end —
-// set_text's interior field write frees the displaced text and the list's own
-// destroy reclaims every node — so there is no manual text lifecycle. (The
-// pre-StableList version kept a raw Buffer slab with a hand-encoded element
-// layout and a strdup/free dance; see the stable grow-only
+// set_text/take_text's interior field write frees the displaced text and the
+// list's own destroy reclaims every node — so there is no manual text
+// lifecycle. (The pre-StableList version kept a raw Buffer slab with a
+// hand-encoded element layout and a strdup/free dance; see the stable grow-only
 // arrays".)
 //
 // Accessors read and write through the slot alias (`ref JsonNode n =
@@ -15,9 +15,16 @@
 // A node in a parsed JSON tree, stored by value in the pool.
 //   kind: 0=null, 1=true, 2=number, 3=string, 4=array, 5=object, 6=false
 //   child/next/val are node indices, -1 = none.
+//
+// `text` is nullable and seeds as `null` (the in-band zero pair): the auto
+// constructor stores no pointer for it, so a fresh node costs NO allocation
+// — every parsed node used to pay a strdup-of-"" seed plus the free when
+// take_text displaced it (or at destroy for kinds that never carry text).
+// set_text/take_text install the owned value; until then the field holds
+// null and every read (get_text/get_text_view) answers the empty string.
 mv struct JsonNode {
 	var kind = 0
-	var text = ""
+	var string? text = null
 	var int child = -1
 	var int next = -1
 	var int val = -1
@@ -58,11 +65,12 @@ pub mv struct JsonTree {
 	// Install node `idx`'s text by TAKING the builder's buffer — the parse
 	// path's zero-copy store. `to_string` is a take (the builder hands its
 	// heap buffer over and resets), and a fresh-call RHS stores into the
-	// field directly, so per parsed string/key the only allocation left is
-	// the builder's own buffer — no copy malloc, no temp free. (A `mv
-	// string` parameter cannot do this: the string-arg ownership
-	// convention makes mv string arguments caller-owned borrows, forcing
-	// the callee-side copy this method exists to skip.)
+	// field directly, so per parsed string/key the only allocation in the
+	// whole node lifecycle is the builder's own buffer — the node's null
+	// seed costs nothing and there is no copy malloc, no seed free, no
+	// temp free. (A `mv string` parameter cannot do this: the string-arg
+	// ownership convention makes mv string arguments caller-owned
+	// borrows, forcing the callee-side copy this method exists to skip.)
 	func take_text = (ref self, int idx, ref StringBuilder sb) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -116,7 +124,10 @@ pub mv struct JsonTree {
 			panic("index out of range")
 		}
 		ref JsonNode n = self.nodes.at(idx)
-		return n.text.copy()
+		// `??` yields an independently owned copy on both branches (a null
+		// text answers the empty string), so the return contract — the caller
+		// owns the result — is unchanged from the `.copy()` spelling.
+		return n.text ?? ""
 	}
 
 	// A non-mv (ptr, len) view over node `idx`'s text — the zero-copy read.
@@ -124,12 +135,16 @@ pub mv struct JsonTree {
 	// (the `slice` convention), so it is invalidated by `reset()`/re-parse
 	// like any pool borrow. Callers that immediately append, hash, or
 	// inspect the text take this instead of paying `get_text`'s per-read
-	// copy allocation.
+	// copy allocation. A node that never had text installed views the
+	// empty string (a rodata-rooted empty borrow).
 	func get_text_view = (self, int idx, out view string) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
 		ref JsonNode n = self.nodes.at(idx)
+		if n.text == null {
+			return "".slice(0, 0)
+		}
 		return n.text.slice(0, n.text.length)
 	}
 

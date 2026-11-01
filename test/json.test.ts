@@ -185,4 +185,30 @@ Console.write(tree.get_text(n))
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_get_text_view", result, "payload|7|payload", opts);
 	});
+
+	test("a node without installed text reads as the empty string (the null seed)", async () => {
+		// JsonNode.text seeds null (the in-band zero pair — the auto ctor
+		// allocates nothing), so a node whose kind never carries text (or
+		// whose text was never installed) reads as "" through both accessors
+		// instead of paying a strdup-of-"" seed at construction and its
+		// displaced/destroy free. Audit on: the null seed's teardown frees
+		// nothing and the pool stays exactly-once balanced.
+		const input = `
+var JsonTree tree = JsonTree()
+var int n = tree.alloc_node()
+tree.set_kind(n, 2)
+Console.write("["+tree.get_text(n)+"]")
+var view v = tree.get_text_view(n)
+Console.write("[")
+Console.write(v.length.to_string())
+Console.write("]")
+var int s = Json.parse("[7]", ref tree)
+tree.set_kind(s, 3)
+Console.write("["+tree.get_text(s)+"]")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "aarch64" });
+		await check_output("json_null_text_seed", result, "[][0][]", opts);
+	});
 });
