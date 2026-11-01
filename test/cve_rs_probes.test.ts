@@ -258,14 +258,39 @@ describe("use-after-free: borrows cannot outlive their owner", () => {
 		expect(errs.join(" ").toLowerCase()).toContain("cannot copy");
 	});
 
-	test("container element borrow cannot escape the container's scope", () => {
-		rejected(`
+	test("container element value read into an outer binding is a safe copy", () => {
+		// The cve-rs analogue would be a stale handle into a dead container.
+		// `cur = list.at(0)` is NOT that: `at` returns an owning value copy
+		// (the element's bytes — deep-copied for owning fields by the
+		// mv-field copy rule), so `cur` outliving `list` is sound. The
+		// contract (`0 < list.length`) verifies via the exact-length facts
+		// (push/pop effect tracking) — this shape used to be rejected only
+		// because the contract was unverifiable.
+		accepted(`
 			mv struct Animal { var char letter }
 			var Animal cur
 			if true {
 				var List<Animal> list = List<Animal>()
 				list.push(mv Animal('Z'))
 				cur = list.at(0)
+			}
+			Console.write("\\{cur.letter}")
+		`);
+	});
+
+	test("aliasing an element out of the container is rejected", () => {
+		// The genuine escape: binding a REFERENCE to the element and moving
+		// it into an outer owner — rejected by the mv-field copy rule (a
+		// ref binding aliases the container's slot; it cannot become an
+		// owned outer value).
+		rejected(`
+			mv struct Animal { var char letter }
+			var Animal cur
+			if true {
+				var List<Animal> list = List<Animal>()
+				list.push(mv Animal('Z'))
+				ref Animal r = list.at(0)
+				cur = r
 			}
 			Console.write("\\{cur.letter}")
 		`);

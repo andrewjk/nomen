@@ -26,6 +26,7 @@ import {
 	call_return_bounds,
 	invalidate_token_facts,
 	expr_to_string,
+	record_fresh_list_length,
 } from "./utils/flow_bounds.ts";
 import {
 	borrowed_param_transfer_error,
@@ -392,6 +393,9 @@ export default function check_assignment_node(
 		left_value.class_alias_of = undefined;
 		// Clear compile-time string/array length: reassignment may change it.
 		left_value.type.length = undefined;
+		// Clear exact List length: the new value may be any list (re-seeded
+		// to 0 below when the RHS is a fresh no-argument constructor).
+		left_value.known_length = undefined;
 		// Reassigning a bare variable reclaims its old value. For a `view`
 		// borrow rooted here (a string/array slice into the old buffer), that
 		// backing storage is freed at the reassignment, so the view dangles —
@@ -431,6 +435,9 @@ export default function check_assignment_node(
 			// the nested-call form.
 			if (!is_compound) {
 				apply_return_bounds_to_var(left_value.name, call_return_bounds(assign.right_value), status);
+				// A fresh no-argument List constructor re-seeds the exact
+				// length at 0 (mirroring the declaration path).
+				record_fresh_list_length(left_value.name, assign.right_value, status);
 			}
 		}
 		// If the RHS is a string literal, record its length on the type so

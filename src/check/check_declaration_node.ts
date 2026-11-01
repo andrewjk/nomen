@@ -28,6 +28,7 @@ import {
 	call_return_bounds,
 	track_assignment_bounds,
 	invalidate_token_facts,
+	record_fresh_list_length,
 } from "./utils/flow_bounds.ts";
 import in_function from "./utils/in_function.ts";
 import materialize_type from "./utils/materialize_type.ts";
@@ -334,6 +335,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			// on — sweep them.
 			invalidate_token_facts(decl.name, status);
 			track_assignment_bounds(decl.name, decl.value, status);
+			// A fresh no-argument List constructor starts at length 0 — the
+			// seed fact the push/pop effect model maintains exactly.
+			record_fresh_list_length(decl.name, decl.value, status);
 		}
 	} else {
 		if (decl.type.name) {
@@ -944,6 +948,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (decl.value) {
 			invalidate_token_facts(decl.name, status);
 			track_assignment_bounds(decl.name, decl.value, status);
+			record_fresh_list_length(decl.name, decl.value, status);
 		}
 		// Apply any return-contract bounds stashed while checking the initializer
 		// (the variable wasn't in scope during its own initializer check).

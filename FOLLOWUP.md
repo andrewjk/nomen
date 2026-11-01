@@ -4,28 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## `List<mv-enum>.at(i)` fails contract verification even with a literal index
-
-Recorded 2026-10-30 while landing PERF_PLAN item 13 (variable-mode enums,
-`bench/nomen/enum_variable_mode.nm`). The section's other half — `match
-l.pop()` on a multi-case data enum SIGBUSing on aarch64 — is FIXED
-(2026-11: the call site's sret temp was sized with `get_struct_size`,
-which answers the 8-byte default for an enum name, so `List<Item>.pop`'s
-inline move memcpy'd 32 bytes over its saved registers; see
-test/aarch64_regressions.test.ts "enum-with-data method return sret temp
-holds the blob").
-
-What remains, reproduced unchanged:
-
-- **`List<mv-enum>.at(i)` fails contract verification even with a literal
-  index** ("Parameter constraint cannot be verified: i >= 0 && i <
-  self.length") — `at_or_panic` verifies fine and is the workaround the
-  tests use. NOT mv-enum-specific: `List<int>.at(0)` with no guard fails
-  identically (verified 2026-11-01), so this is the general unguarded-`at`
-  case — the verifier has no length fact to discharge `i < self.length`
-  against (see also the guarded-index discharge gap further below). A
-  plain `var it = l.pop()` plus `match it` works for the same shapes.
-
 ## Value-struct copy-assignment corners (pre-existing, surfaced by the struct last-use tests)
 
 Recorded 2026-10-29 while landing PERF_PLAN item 3 (move-on-last-use for
@@ -600,20 +578,54 @@ return is a bare word in x0 on both backends). The window binding list
 low-level ring primitive). Full design, checker rules, staging, and the
 alternatives rejected: [`docs/HANDLERS.md`](./docs/HANDLERS.md).
 
-## Guarded non-zero index access can't discharge (`xs.at(1)` under `xs.length > 1`)
+## Guard/index contract discharge: modeled, and what still needs a guard
 
-Recorded 2026-10-27, while auditing the (since-fixed) core-trust naming
-bypass. Memory-SAFE — the unprovable call is a compile error, so this is a
-usability gap, not a soundness one.
+Recorded 2026-10-27 while auditing the (since-fixed) core-trust naming
+bypass; extended and largely FIXED 2026-11-01. Memory-SAFE throughout — an
+unprovable call is a compile error, so everything below is a usability
+question, not a soundness one.
 
-`xs.at(0)` under `if xs.length > 0` verifies, but `xs.at(1)` under
-`if xs.length > 1` (or `>= 2`) does not — the flow-bounds machinery only
-discharges index 0 against a strict lower-bound guard. The sanctioned
-workarounds: `.pop()`, `.at_or_panic`, a loop, or indexing 0. Fixing the
-discharge (literal index `k` proven by a strict `length > k` guard, or
-inclusive `length >= k + 1`) would close it; the constraint evaluation
-lives in `evaluate_const_condition`
-(src/check/utils/evaluate_const_condition.ts).
+`List.at`'s parameter contract (`i >= 0 && i < self.length`) is verified at
+every call site. What discharges it now:
+
+- **Exact List lengths** (`known_length`, locals only): `var List<int> x =
+List<int>()` seeds 0; `push` +1; `pop` / `remove_at_or_panic` −1 (floor
+  0); `set` / `set_or_panic` / `reserve` neutral; any other `ref self`
+  mutator or an opaque callee holding the list (argument pass, field
+  escape) kills the fact. Unguarded `x.push(2); x.at(0)` and the
+  push-push-pop sequence verify. Pop/remove_at also NARROW derived facts
+  (literal lower bounds decrement, symbolic ones drop) — the old behavior
+  let `if x.length > 1 { x.pop(); x.at(1) }` verify against a stale fact
+  and read OOB at runtime (a real soundness hole, now closed).
+- Strict guard + literal index (`if xs.length > k { xs.at(k) }` — worked
+  for k = 0/1 before; the general-literal form now too).
+- INCLUSIVE lower bound one step up (`if xs.length >= 2 { xs.at(1) }` —
+  new).
+- Singleton-range variables count as constants (`var int idx = 1` — new).
+- Negated guards (`if !(x.length <= 0)` — new).
+- Length-snapshot aliases (`var n = x.length; if n > 0 { xs.at(0) }` —
+  new; the alias's guard consults for the path).
+
+Still needs a guard (the residual, deliberately conservative):
+
+- **Unknown provenance**: a list from a function return or a parameter has
+  no length facts — guard, `at_or_panic`, or `pop`.
+- **Globals**: exact tracking is locals-only — a global's length can
+  change behind the caller's back through any opaque callee, so its facts
+  stay guard-derived (the same staleness the OLD guard-fact behavior had
+  for every shape — see next bullet).
+- **Pre-existing staleness on guard facts**: guard-derived bounds on a
+  receiver still survive UNMODELED mutators (only the exact fact dies),
+  and for non-List containers there is no effect model at all. Closing
+  that fully means a mutation-precision pass (refine-vs-invalidate per
+  callee effect) — worth doing only with concrete blocked shapes.
+- **Field-path receivers** (`h.items.at(0)`): guards only, no exact
+  tracking on field paths.
+
+The constraint evaluation lives in `evaluate_const_condition`
+(src/check/utils/evaluate_const_condition.ts); the effect model in
+`apply_list_length_effect` / `record_fresh_list_length`
+(src/check/utils/flow_bounds.ts); tests in `test/length_facts.test.ts`.
 
 ## System.o prebuild races parallel workers after a core edit
 
@@ -649,17 +661,30 @@ functional payoff beyond tidiness, so it was recorded rather than done —
 worth folding into the next tokenizer-touching change. Nothing else in the
 repo uses `???` as a placeholder.
 
-## Scalar element borrows via `List.at` are blocked by contract verification (pre-existing, surfaced by the Map element borrow)
+## Scalar element borrows via `List.at` (fixed for bare local receivers; provenance rules remain)
 
 Recorded 2026-10-29 while landing PERF_PLAN item 4 (borrow-returning reads,
 `test/map_get_ptr.test.ts`). The element-borrow rewrite `ref T x =
-container.<read>(i)` is element-type-agnostic in the checker, but the scalar
-shape only works for containers whose read has NO parameter contract:
-`ref int v = list.at(0)` fails with "Parameter constraint cannot be
-verified: i >= 0 && i < self.length" (the verifier cannot prove `at`'s
-bounds contract at the rewrite site, even right after a `push`), while
-`ref int v = map.get_or_panic(k)` checks clean — `get_or_panic` has no
-parameter contract (it traps internally). Consequence: scalar element
-borrows are Map-only today. Fix shape: teach the bounds verifier to use the
-rewrite's own length facts (`push` → `length`), or give `at` a
-contract-free `at_ptr`-style primitive to rewrite to.
+container.<read>(i)` verifies `at`'s bounds contract at the rewrite site
+like any call, and it used to fail everywhere ("Parameter constraint cannot
+be verified: i >= 0 && i < self.length") while `ref int v =
+map.get_or_panic(k)` checked clean (no parameter contract).
+
+FIXED 2026-11-01 for bare local receivers, two independent ways: the
+List length-effect model (`known_length` — see the guarded-index section
+below) discharges the unguarded `ref int v = list.at(0)` right after a
+`push`, and a plain guard (`if list.length > 0`) verifies the rewrite as
+any call (that half worked before). `test/length_facts.test.ts` pins both
+plus the runtime read.
+
+What remains:
+
+- **Unknown-provenance lists still need a guard at the rewrite** (a list
+  from a function return or a parameter has no length facts). The
+  sanctioned spellings stay: a guard, or Map's contract-free
+  `get_or_panic`.
+- **Field-path receivers** (`ref int v = h.items.at(0)`) rely on guards —
+  no exact-length tracking on field paths (same scope as the guarded-index
+  section).
+- **Containers other than List/Map** (`LinkedList`, `Tree`) have no
+  contract-free read and no effect model — guards only.

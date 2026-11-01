@@ -1,6 +1,8 @@
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
@@ -401,6 +403,37 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 		if (op.op === "&&") {
 			apply_bounds(op.left_value, status, is_loop);
 			apply_bounds(op.right_value, status, is_loop);
+			return;
+		}
+		// Negated comparison guard (`if !(x.length <= 0)`): the body holds
+		// when the inner relation is TRUE, so record the negated operator
+		// (< ↔ >=, <= ↔ >). A double negation recurses into its operand.
+		// `!(a && b)` records nothing (either negated side alone suffices —
+		// sound to skip).
+		if (op.op === "!") {
+			const inner = op.right_value;
+			if (inner.node_type === "op") {
+				const iop = inner as OperationNode;
+				if (iop.op === "!") {
+					apply_bounds(iop.right_value, status, is_loop);
+					return;
+				}
+				const NEGATED: Partial<Record<string, ">" | ">=" | "<" | "<=">> = {
+					"<": ">=",
+					"<=": ">",
+					">": "<=",
+					">=": "<",
+				};
+				const nop = NEGATED[iop.op];
+				if (nop) {
+					apply_bounds(
+						new OperationNode(condition.start, nop, iop.left_value, iop.right_value, iop.type),
+						status,
+						is_loop,
+					);
+					return;
+				}
+			}
 			return;
 		}
 	}
@@ -1430,12 +1463,144 @@ export function record_buffer_cap(path: string, min_cap: number, status: CheckSt
  */
 export function lookup_buffer_cap(path: string, status: CheckStatus): number | undefined {
 	return status.buffer_caps?.get(path);
-}
-
-/**
+} /**
  * Clear buffer cap tracking for `path` (call when the buffer variable is
  * reassigned, since the new buffer may have a different cap).
  */
 export function clear_buffer_cap(path: string, status: CheckStatus) {
 	status.buffer_caps?.delete(path);
+}
+
+/**
+ * List<T> value (generic spelling or monomorphized clone name)?
+ */
+export function is_list_type_name(name: string | undefined): boolean {
+	return !!name && (name === "List" || name.startsWith("List_"));
+}
+
+/**
+ * Record an EXACT length of 0 for a List declared from its no-argument
+ * constructor (`var List<int> x = List<int>()` — a fresh list is empty).
+ * The fact is then maintained exactly by the modeled mutators
+ * (apply_list_length_effect) and cleared by anything else that can touch
+ * the receiver. No-op for every other initializer.
+ */
+export function record_fresh_list_length(
+	name: string,
+	value: BaseNode | undefined,
+	status: CheckStatus,
+) {
+	if (!value || value.node_type !== "func_call") return;
+	const call = value as FunctionCallNode;
+	if ((call.params?.length ?? 0) !== 0) return;
+	const decl = status.values.findLast((v) => v.name === name);
+	if (!decl || !is_list_type_name(decl.type?.name)) return;
+	// Locals only: a GLOBAL's exact length is not maintained across opaque
+	// callee boundaries (any function may pop it without the caller's flow
+	// knowing) — globals keep today's guard-derived facts.
+	if (decl.is_global) return;
+	// The constructor call may already carry its monomorphized name
+	// (`List_int`) while the declared type keeps the generic spelling
+	// (`List` with type_args) — either identity matches.
+	if (call.name !== decl.type.name && call.name !== mono_type_name(decl.type)) return;
+	decl.known_length = 0;
+}
+
+/**
+ * Model the checked List method's effect on the receiver's exact length
+ * (`known_length`) and, for the shrinking mutators, on every length fact
+ * derived from the pre-call state.
+ *
+ * Modeled exactly: push appends one element; pop / remove_at_or_panic
+ * remove one (pop on an empty list leaves the length at 0 — the floor).
+ * set / set_or_panic / reserve never change the length. Any other
+ * `ref self` method is an UNMODELED mutator: the exact-length fact dies
+ * (it stays sound), though guard-derived lower bounds keep today's
+ * behavior (they already survived calls — see the FOLLOWUP note).
+ *
+ * Bare-variable receivers only: a field-path receiver (`h.items`) keeps
+ * today's behavior — its facts live in path_bounds keyed by owner, and
+ * exact tracking would need per-path lengths.
+ */
+export function apply_list_length_effect(
+	self_path: string | undefined,
+	target_type_name: string | undefined,
+	func: { name: string; params: { is_self_param?: boolean; type: { is_ref?: boolean } }[] },
+	status: CheckStatus,
+) {
+	if (!self_path || self_path === "?" || self_path.includes(".")) return;
+	if (!is_list_type_name(target_type_name)) return;
+	const self_param = func.params[0];
+	if (!self_param?.is_self_param) return;
+	const decl = status.values.findLast((v) => v.name === self_path);
+	if (!decl) return;
+	// Exact tracking is LOCALS-only (see record_fresh_list_length): a
+	// global's length can change behind the caller's back through any
+	// opaque callee, so its facts stay guard-derived.
+	if (decl.is_global) return;
+
+	if (func.name === "push") {
+		if (decl.known_length !== undefined) decl.known_length += 1;
+		return;
+	}
+
+	if (func.name === "pop" || func.name === "remove_at_or_panic") {
+		if (decl.known_length !== undefined) {
+			decl.known_length = Math.max(0, decl.known_length - 1);
+		}
+		// A shrinking call invalidates every lower bound proven before it:
+		// decrement literal bounds by one (dropping the trivial < 1 floor),
+		// drop symbolic ones, and sweep facts referencing the path on other
+		// values (e.g. a `var n = x.length` alias). Without this, a
+		// `if x.length > 1 { x.pop(); x.at(1) }` shape verifies against a
+		// stale fact and reads out of bounds at runtime.
+		const narrow = (arr?: string[]): string[] | undefined => {
+			if (!arr) return arr;
+			const out: string[] = [];
+			for (const e of arr) {
+				if (/^-?\d+$/.test(e)) {
+					const v = parseInt(e, 10) - 1;
+					if (v >= 0) out.push(String(v));
+				}
+				// non-literal: cannot shift symbolically — dropped
+			}
+			return out.length > 0 ? out : undefined;
+		};
+		decl.lower_bound_exprs = narrow(decl.lower_bound_exprs);
+		decl.lower_bound_inclusive_exprs = narrow(decl.lower_bound_inclusive_exprs);
+		decl.lower_bound_expr = undefined;
+		if (decl.range_lower !== undefined) {
+			decl.range_lower = decl.range_lower > 1 ? decl.range_lower - 1 : undefined;
+		}
+		const len_path = `${self_path}.length`;
+		const pb = decl.path_bounds?.get(len_path);
+		if (pb) {
+			pb.lower = narrow(pb.lower);
+			pb.lower_inclusive = narrow(pb.lower_inclusive);
+			if (pb.range_lower !== undefined) {
+				pb.range_lower = pb.range_lower > 1 ? pb.range_lower - 1 : undefined;
+			}
+		}
+		invalidate_token_facts(len_path, status);
+		for (const v of status.values) {
+			if (v.alias_of && v.alias_of.startsWith(`${self_path}.`)) {
+				v.lower_bound_exprs = narrow(v.lower_bound_exprs);
+				v.lower_bound_inclusive_exprs = narrow(v.lower_bound_inclusive_exprs);
+				v.lower_bound_expr = undefined;
+				if (v.range_lower !== undefined) {
+					v.range_lower = v.range_lower > 1 ? v.range_lower - 1 : undefined;
+				}
+			}
+		}
+		return;
+	}
+
+	if (func.name === "set" || func.name === "set_or_panic" || func.name === "reserve") {
+		return; // length unchanged
+	}
+
+	// Any other `ref self` method is an unmodeled mutator.
+	if (self_param.type?.is_ref) {
+		decl.known_length = undefined;
+	}
 }

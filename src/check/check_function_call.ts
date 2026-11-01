@@ -50,6 +50,8 @@ import {
 	lookup_buffer_cap,
 	substitute_constraint,
 	invalidate_token_facts,
+	apply_list_length_effect,
+	is_list_type_name,
 } from "./utils/flow_bounds.ts";
 import is_visible from "./utils/is_visible.ts";
 import {
@@ -2158,6 +2160,22 @@ export default function check_function_call(
 	}
 
 	status.stack.pop();
+
+	// List exact-length tracking: model the receiver method's length effect
+	// (push +1; pop / remove_at_or_panic −1 and stale-fact sweep; unmodeled
+	// `ref self` mutators clear the exact fact). A FREE function receiving a
+	// List argument can mutate it freely — the exact fact dies for that
+	// receiver too (guard-derived bounds keep today's behavior).
+	apply_list_length_effect(self_path, target_type?.name, func, status);
+	if (!func.params.some((p) => p.is_self_param)) {
+		for (const p of node.params) {
+			if (p.node_type !== "value") continue;
+			const arg_type = type_from_value_node(p, status);
+			if (!is_list_type_name(arg_type?.name)) continue;
+			const arg_decl = status.values.findLast((v) => v.name === (p as ValueNode).value);
+			if (arg_decl) arg_decl.known_length = undefined;
+		}
+	}
 
 	// A `string` argument to a `mv T` parameter must NOT transfer ownership
 	// of the caller's original: a `Buffer<string>` (or other mv container)

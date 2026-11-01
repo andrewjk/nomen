@@ -49,6 +49,23 @@ function lower_implies(bound_expr: string, target: string): boolean {
 }
 
 /**
+ * Does an INCLUSIVE lower bound `x >= bound_expr` imply a STRICT lower
+ * relation `x > target`? For integers: `>= E` implies `> T` iff
+ * `E >= T + 1` — literal pairs compare numerically (`>= 2` ⟹ `> 1`),
+ * symbolic pairs require the same base with bound offset >= target
+ * offset + 1 (`>= n + 2` ⟹ `> n + 1`... ⟹ `> n`).
+ */
+function inclusive_lower_implies_strict(bound_expr: string, target: string): boolean {
+	const both_int = /^-?\d+$/.test(bound_expr) && /^-?\d+$/.test(target);
+	if (both_int) return parseInt(bound_expr, 10) >= parseInt(target, 10) + 1;
+	const b = parse_offset_expr(bound_expr);
+	const t = parse_offset_expr(target);
+	if (!b || !t) return false;
+	if (b.base !== t.base) return false;
+	return b.offset >= t.offset + 1;
+}
+
+/**
  * Try to evaluate a condition at compile time.
  * Returns `true` if always true, `false` if always false, `undefined` if unknown.
  */
@@ -101,256 +118,339 @@ function evaluate_operation(
 		// strict upper bound that allows the index to equal the length is
 		// "unsafe" (off-by-one OOB).
 		const num = evaluate_numeric_comparison(op, status);
-		if (num !== undefined) return num;
-		// Container lengths/capacities (.length/.cap/.count/.size) are always
-		// non-negative, so `0 <= x.length` and `x.length >= 0` always hold —
-		// even when the concrete length is unknown at compile time. This lets a
-		// literal 0 index verify a `start >= 0 && start <= self.length` style
-		// constraint without forcing a runtime guard.
-		if (
-			(op.op === "<=" &&
-				is_zero(op.left_value, status) &&
-				is_nonnegative_access(op.right_value, status)) ||
-			(op.op === ">=" &&
-				is_zero(op.right_value, status) &&
-				is_nonnegative_access(op.left_value, status))
-		) {
-			return true;
-		}
-		let left_var: string | undefined;
-		let left_offset = 0;
-		if (op.left_value.node_type === "value") {
-			left_var = (op.left_value as ValueNode).value;
-		} else if (op.left_value.node_type === "access") {
-			left_var = expr_to_string(op.left_value, status);
-		} else if (op.left_value.node_type === "op") {
-			const lop = op.left_value as OperationNode;
-			if (lop.op === "+" || lop.op === "-") {
-				if (
-					lop.left_value.node_type === "value" &&
-					/^[+-]?\d+$/.test((lop.left_value as ValueNode).value)
-				) {
-					left_offset = parseInt((lop.left_value as ValueNode).value, 10);
-					if (lop.op === "-") left_offset = -left_offset;
-					if (lop.right_value.node_type === "value")
-						left_var = (lop.right_value as ValueNode).value;
-				} else if (
-					lop.right_value.node_type === "value" &&
-					/^[+-]?\d+$/.test((lop.right_value as ValueNode).value)
-				) {
-					left_offset = parseInt((lop.right_value as ValueNode).value, 10);
-					if (lop.op === "-") left_offset = -left_offset;
-					if (lop.left_value.node_type === "value") left_var = (lop.left_value as ValueNode).value;
-				}
+		if (num === true) return true;
+		if (num === "unsafe") return num;
+		// String/flow-bounds evaluation (guards, aliases, exact-length
+		// mirrors, the non-negative shortcut). A flow fact proving the
+		// comparison TRUE beats a numeric false: the numeric side can answer
+		// false from an exact-length fact while a TRANSIENT guard proves the
+		// comparison holds on the evaluated path — the negated left operand
+		// of `||` (`i >= xs.length || xs.at(i) == 7` records `i <
+		// xs.length` for the right operand under short-circuit semantics).
+		// When no flow fact answers, a numeric false is definitive
+		// (provably-out-of-bounds accesses report "not satisfied").
+		const flow_result = ((): boolean | undefined | "unsafe" => {
+			// Container lengths/capacities (.length/.cap/.count/.size) are always
+			// non-negative, so `0 <= x.length` and `x.length >= 0` always hold —
+			// even when the concrete length is unknown at compile time. This lets a
+			// literal 0 index verify a `start >= 0 && start <= self.length` style
+			// constraint without forcing a runtime guard.
+			if (
+				(op.op === "<=" &&
+					is_zero(op.left_value, status) &&
+					is_nonnegative_access(op.right_value, status)) ||
+				(op.op === ">=" &&
+					is_zero(op.right_value, status) &&
+					is_nonnegative_access(op.left_value, status))
+			) {
+				return true;
 			}
-		}
-
-		let left_decl: ReturnType<typeof status.values.findLast> | undefined;
-		if (left_var) {
-			left_decl = status.values.findLast((v) => v.name === left_var);
-			// For dotted names like "self.length", bounds are stored on the base
-			// variable "self" with key "self.length" in upper_bound_exprs.
-			if (!left_decl && left_var.includes(".")) {
-				const base = left_var.split(".")[0];
-				left_decl = status.values.findLast((v) => v.name === base);
-			}
-			const right_str = expr_to_string(op.right_value, status);
-			// When the left operand carries a constant offset (e.g. `at(i + 1)`
-			// checks `i + 1 < len`), shift the target by the same offset so we
-			// compare against the stored bound on the bare variable `i`.
-			let target_str = right_str;
-			if (target_str && left_offset !== 0) {
-				target_str = `${target_str} ${left_offset >= 0 ? "-" : "+"} ${Math.abs(left_offset)}`;
-			}
-
-			// Algebraic same-base identities: `X + c OP X` is decidable from
-			// the offset alone (integers): `X + c < X` iff c < 0, `X + c <= X`
-			// iff c <= 0, and mirrored for `>`/`>=`. This proves the common
-			// last-element shape `list.at(list.length - 1)`, whose index is
-			// the constraint's own bound base shifted by a constant — no
-			// stored flow fact can express `X - c < X`.
-			if (left_var && right_str && !right_str.includes(" ")) {
-				const right_base = parse_offset_expr(right_str);
-				const left_base = parse_offset_expr(left_var);
-				if (
-					right_base &&
-					left_base &&
-					right_base.base === left_base.base &&
-					right_base.offset === left_base.offset
-				) {
-					if (op.op === "<" && left_offset < 0) return true;
-					if (op.op === "<=" && left_offset <= 0) return true;
-					if (op.op === ">" && left_offset > 0) return true;
-					if (op.op === ">=" && left_offset >= 0) return true;
-				}
-			}
-
-			if (op.op === "<" || op.op === "<=") {
-				if (left_decl?.upper_bound_exprs?.length && target_str) {
-					if (left_decl.upper_bound_exprs.includes(target_str)) return true;
-					// Symbolic: a tighter stored bound (e.g. `len - 5`) implies a
-					// looser target (e.g. `len - 1`).
-					if (left_decl.upper_bound_exprs.some((u) => upper_implies(u, target_str!))) return true;
-					// Transitive: a bound `x < V` plus `V < target` (where V is a
-					// variable with its own upper bound) implies `x < target`.
-					// E.g. `for i of 0 .. n` (i < n) inside `if n < arr.length`
-					// (n < arr.length) ⇒ i < arr.length.
-					for (const u of left_decl.upper_bound_exprs) {
-						const v = parse_offset_expr(u);
-						// offset < 0 (a TIGHTER intermediate, `i < base - c`)
-						// proves everything the bare base proves: relax to
-						// `i < base` and continue the chain from it. This is
-						// what lets `while i < a.cap - 1` chain through a
-						// mirrored `b.cap >= a.cap` guard to `i < b.cap`.
-						if (v && v.offset <= 0 && u !== target_str) {
-							const vdecl = status.values.findLast((vv) => vv.name === v.base);
-							// A dotted intermediate (`i < a.cap`) consults the base
-							// variable's PATH entry: the mirrored guard recording
-							// (`b.cap >= a.cap`) put `b.cap` on a.cap's inclusive
-							// upper, so the chain i < a.cap <= b.cap closes here.
-							const vpath = v.base.includes(".")
-								? status.values
-										.findLast((vv) => vv.name === v.base.split(".")[0])
-										?.path_bounds?.get(v.base)
-								: undefined;
-							if (vpath) {
-								if (vpath.upper?.includes(target_str!)) return true;
-								if (vpath.upper_inclusive?.includes(target_str!)) return true;
-							}
-							if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
-							if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!) && op.op === "<=") {
-								return true;
-							}
-							// Transitive through inclusive: `i < n` (strict) and
-							// `n <= target` together imply `i < target` (since
-							// i < n <= target ⇒ i < target). This lets a hoisted
-							// `if n <= buf.cap { while i < n { buf.load(i) } }`
-							// verify without per-iteration guards.
-							if (op.op === "<" && vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) {
-								return true;
-							}
-						}
-					}
-				}
-				// An inclusive upper bound (`x <= E`) only satisfies an
-				// inclusive constraint (`x <= E`), NOT a strict one
-				// (`x < E`) — otherwise `x <= len` would wrongly
-				// satisfy `x < len` and miss an off-by-one OOB.
-				// Like the strict path above, an inclusive bound chains:
-				// `x <= V` plus `V </<= target` implies `x <= target`
-				// (both `x <= V <= T` and `x <= V < T` give `x <= T`).
-				if (op.op === "<=" && left_decl?.upper_bound_inclusive_exprs?.length && target_str) {
-					if (left_decl.upper_bound_inclusive_exprs.includes(target_str)) return true;
-					if (left_decl.upper_bound_inclusive_exprs.some((u) => upper_implies(u, target_str!))) {
-						return true;
-					}
-					for (const u of left_decl.upper_bound_inclusive_exprs) {
-						const v = parse_offset_expr(u);
-						// Same relaxation: `i <= base - c` (c >= 1) implies
-						// `i < base`, which implies any inclusive upper on base.
-						if (v && v.offset <= 0 && u !== target_str) {
-							const vdecl = status.values.findLast((vv) => vv.name === v.base);
-							const vpath = v.base.includes(".")
-								? status.values
-										.findLast((vv) => vv.name === v.base.split(".")[0])
-										?.path_bounds?.get(v.base)
-								: undefined;
-							if (vpath) {
-								if (vpath.upper?.includes(target_str!)) return true;
-								if (vpath.upper_inclusive?.includes(target_str!)) return true;
-							}
-							if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
-							if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) return true;
-						}
-					}
-				}
-				// Off-by-one: a STRICT constraint `x < E` is guarded
-				// only by an INCLUSIVE bound `x <= E` on the SAME E. That
-				// bound allows `x == E`, which violates `x < E`, so the
-				// access can read/write one element past the end. Flag it as
-				// provably unsafe (the call site rejects it for every type).
-				if (
-					op.op === "<" &&
-					left_decl?.upper_bound_inclusive_exprs?.length &&
-					target_str &&
-					left_decl.upper_bound_inclusive_exprs.includes(target_str)
-				) {
-					return "unsafe";
-				}
-				if (left_decl?.upper_bound_expr && target_str) {
-					// Only a STRICT upper bound (`x < E`) may satisfy a strict
-					// constraint; an inclusive bound (`x <= E`, stored only in
-					// upper_bound_inclusive_exprs and mirrored in upper_bound_expr
-					// for back-compat) must NOT satisfy `x < E` (off-by-one OOB).
+			let left_var: string | undefined;
+			let left_offset = 0;
+			if (op.left_value.node_type === "value") {
+				left_var = (op.left_value as ValueNode).value;
+			} else if (op.left_value.node_type === "access") {
+				left_var = expr_to_string(op.left_value, status);
+			} else if (op.left_value.node_type === "op") {
+				const lop = op.left_value as OperationNode;
+				if (lop.op === "+" || lop.op === "-") {
 					if (
-						target_str === left_decl.upper_bound_expr &&
-						left_decl.upper_bound_exprs?.includes(target_str)
+						lop.left_value.node_type === "value" &&
+						/^[+-]?\d+$/.test((lop.left_value as ValueNode).value)
+					) {
+						left_offset = parseInt((lop.left_value as ValueNode).value, 10);
+						if (lop.op === "-") left_offset = -left_offset;
+						if (lop.right_value.node_type === "value")
+							left_var = (lop.right_value as ValueNode).value;
+					} else if (
+						lop.right_value.node_type === "value" &&
+						/^[+-]?\d+$/.test((lop.right_value as ValueNode).value)
+					) {
+						left_offset = parseInt((lop.right_value as ValueNode).value, 10);
+						if (lop.op === "-") left_offset = -left_offset;
+						if (lop.left_value.node_type === "value")
+							left_var = (lop.left_value as ValueNode).value;
+					}
+				}
+			}
+
+			let left_decl: ReturnType<typeof status.values.findLast> | undefined;
+			if (left_var) {
+				left_decl = status.values.findLast((v) => v.name === left_var);
+				// For dotted names like "self.length", bounds are stored on the base
+				// variable "self" with key "self.length" in upper_bound_exprs.
+				if (!left_decl && left_var.includes(".")) {
+					const base = left_var.split(".")[0];
+					left_decl = status.values.findLast((v) => v.name === base);
+				}
+				const right_str = expr_to_string(op.right_value, status);
+				// When the left operand carries a constant offset (e.g. `at(i + 1)`
+				// checks `i + 1 < len`), shift the target by the same offset so we
+				// compare against the stored bound on the bare variable `i`.
+				let target_str = right_str;
+				if (target_str && left_offset !== 0) {
+					target_str = `${target_str} ${left_offset >= 0 ? "-" : "+"} ${Math.abs(left_offset)}`;
+				}
+
+				// Algebraic same-base identities: `X + c OP X` is decidable from
+				// the offset alone (integers): `X + c < X` iff c < 0, `X + c <= X`
+				// iff c <= 0, and mirrored for `>`/`>=`. This proves the common
+				// last-element shape `list.at(list.length - 1)`, whose index is
+				// the constraint's own bound base shifted by a constant — no
+				// stored flow fact can express `X - c < X`.
+				if (left_var && right_str && !right_str.includes(" ")) {
+					const right_base = parse_offset_expr(right_str);
+					const left_base = parse_offset_expr(left_var);
+					if (
+						right_base &&
+						left_base &&
+						right_base.base === left_base.base &&
+						right_base.offset === left_base.offset
+					) {
+						if (op.op === "<" && left_offset < 0) return true;
+						if (op.op === "<=" && left_offset <= 0) return true;
+						if (op.op === ">" && left_offset > 0) return true;
+						if (op.op === ">=" && left_offset >= 0) return true;
+					}
+				}
+
+				if (op.op === "<" || op.op === "<=") {
+					if (left_decl?.upper_bound_exprs?.length && target_str) {
+						if (left_decl.upper_bound_exprs.includes(target_str)) return true;
+						// Symbolic: a tighter stored bound (e.g. `len - 5`) implies a
+						// looser target (e.g. `len - 1`).
+						if (left_decl.upper_bound_exprs.some((u) => upper_implies(u, target_str!))) return true;
+						// Transitive: a bound `x < V` plus `V < target` (where V is a
+						// variable with its own upper bound) implies `x < target`.
+						// E.g. `for i of 0 .. n` (i < n) inside `if n < arr.length`
+						// (n < arr.length) ⇒ i < arr.length.
+						for (const u of left_decl.upper_bound_exprs) {
+							const v = parse_offset_expr(u);
+							// offset < 0 (a TIGHTER intermediate, `i < base - c`)
+							// proves everything the bare base proves: relax to
+							// `i < base` and continue the chain from it. This is
+							// what lets `while i < a.cap - 1` chain through a
+							// mirrored `b.cap >= a.cap` guard to `i < b.cap`.
+							if (v && v.offset <= 0 && u !== target_str) {
+								const vdecl = status.values.findLast((vv) => vv.name === v.base);
+								// A dotted intermediate (`i < a.cap`) consults the base
+								// variable's PATH entry: the mirrored guard recording
+								// (`b.cap >= a.cap`) put `b.cap` on a.cap's inclusive
+								// upper, so the chain i < a.cap <= b.cap closes here.
+								const vpath = v.base.includes(".")
+									? status.values
+											.findLast((vv) => vv.name === v.base.split(".")[0])
+											?.path_bounds?.get(v.base)
+									: undefined;
+								if (vpath) {
+									if (vpath.upper?.includes(target_str!)) return true;
+									if (vpath.upper_inclusive?.includes(target_str!)) return true;
+								}
+								if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
+								if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!) && op.op === "<=") {
+									return true;
+								}
+								// Transitive through inclusive: `i < n` (strict) and
+								// `n <= target` together imply `i < target` (since
+								// i < n <= target ⇒ i < target). This lets a hoisted
+								// `if n <= buf.cap { while i < n { buf.load(i) } }`
+								// verify without per-iteration guards.
+								if (op.op === "<" && vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) {
+									return true;
+								}
+							}
+						}
+					}
+					// An inclusive upper bound (`x <= E`) only satisfies an
+					// inclusive constraint (`x <= E`), NOT a strict one
+					// (`x < E`) — otherwise `x <= len` would wrongly
+					// satisfy `x < len` and miss an off-by-one OOB.
+					// Like the strict path above, an inclusive bound chains:
+					// `x <= V` plus `V </<= target` implies `x <= target`
+					// (both `x <= V <= T` and `x <= V < T` give `x <= T`).
+					if (op.op === "<=" && left_decl?.upper_bound_inclusive_exprs?.length && target_str) {
+						if (left_decl.upper_bound_inclusive_exprs.includes(target_str)) return true;
+						if (left_decl.upper_bound_inclusive_exprs.some((u) => upper_implies(u, target_str!))) {
+							return true;
+						}
+						for (const u of left_decl.upper_bound_inclusive_exprs) {
+							const v = parse_offset_expr(u);
+							// Same relaxation: `i <= base - c` (c >= 1) implies
+							// `i < base`, which implies any inclusive upper on base.
+							if (v && v.offset <= 0 && u !== target_str) {
+								const vdecl = status.values.findLast((vv) => vv.name === v.base);
+								const vpath = v.base.includes(".")
+									? status.values
+											.findLast((vv) => vv.name === v.base.split(".")[0])
+											?.path_bounds?.get(v.base)
+									: undefined;
+								if (vpath) {
+									if (vpath.upper?.includes(target_str!)) return true;
+									if (vpath.upper_inclusive?.includes(target_str!)) return true;
+								}
+								if (vdecl?.upper_bound_exprs?.includes(target_str!)) return true;
+								if (vdecl?.upper_bound_inclusive_exprs?.includes(target_str!)) return true;
+							}
+						}
+					}
+					// Off-by-one: a STRICT constraint `x < E` is guarded
+					// only by an INCLUSIVE bound `x <= E` on the SAME E. That
+					// bound allows `x == E`, which violates `x < E`, so the
+					// access can read/write one element past the end. Flag it as
+					// provably unsafe (the call site rejects it for every type).
+					if (
+						op.op === "<" &&
+						left_decl?.upper_bound_inclusive_exprs?.length &&
+						target_str &&
+						left_decl.upper_bound_inclusive_exprs.includes(target_str)
+					) {
+						return "unsafe";
+					}
+					if (left_decl?.upper_bound_expr && target_str) {
+						// Only a STRICT upper bound (`x < E`) may satisfy a strict
+						// constraint; an inclusive bound (`x <= E`, stored only in
+						// upper_bound_inclusive_exprs and mirrored in upper_bound_expr
+						// for back-compat) must NOT satisfy `x < E` (off-by-one OOB).
+						if (
+							target_str === left_decl.upper_bound_expr &&
+							left_decl.upper_bound_exprs?.includes(target_str)
+						) {
+							return true;
+						}
+						if (
+							left_decl.upper_bound_exprs?.includes(target_str) ||
+							left_decl.upper_bound_exprs?.some((u) => upper_implies(u, target_str))
+						) {
+							return true;
+						}
+					}
+				}
+				if (op.op === ">" || op.op === ">=") {
+					if (left_decl?.lower_bound_exprs?.length && target_str) {
+						if (left_decl.lower_bound_exprs.includes(target_str)) return true;
+						if (left_decl.lower_bound_exprs.some((l) => lower_implies(l, target_str!))) return true;
+					}
+					// An INCLUSIVE lower bound `x >= E` proves a strict `x > T`
+					// one step up: `>= E` implies `> T` iff `E >= T + 1`
+					// (integers). This lets `if xs.length >= 2 { xs.at(1) }`
+					// discharge `i < self.length` — the guard's fact sits in the
+					// inclusive list (`1 < xs.length` ⟺ `xs.length > 1`).
+					if (
+						op.op === ">" &&
+						left_decl?.lower_bound_inclusive_exprs?.length &&
+						target_str &&
+						left_decl.lower_bound_inclusive_exprs.some((l) =>
+							inclusive_lower_implies_strict(l, target_str!),
+						)
 					) {
 						return true;
 					}
-					if (
-						left_decl.upper_bound_exprs?.includes(target_str) ||
-						left_decl.upper_bound_exprs?.some((u) => upper_implies(u, target_str))
-					) {
-						return true;
+					if (op.op === ">=" && left_decl?.lower_bound_inclusive_exprs?.length && target_str) {
+						if (left_decl.lower_bound_inclusive_exprs.includes(target_str)) return true;
+					}
+					if (left_decl?.lower_bound_expr && right_str) {
+						if (right_str === left_decl.lower_bound_expr) return true;
 					}
 				}
 			}
-			if (op.op === ">" || op.op === ">=") {
-				if (left_decl?.lower_bound_exprs?.length && target_str) {
-					if (left_decl.lower_bound_exprs.includes(target_str)) return true;
-					if (left_decl.lower_bound_exprs.some((l) => lower_implies(l, target_str!))) return true;
-				}
-				if (op.op === ">=" && left_decl?.lower_bound_inclusive_exprs?.length && target_str) {
-					if (left_decl.lower_bound_inclusive_exprs.includes(target_str)) return true;
-				}
-				if (left_decl?.lower_bound_expr && right_str) {
-					if (right_str === left_decl.lower_bound_expr) return true;
-				}
-			}
-		}
 
-		// Symmetric case: literal OP variable/access (e.g. `0 < list.count`, or
-		// `idx < list.count` where idx is a compile-time constant). The left
-		// side is effectively a literal, so flip the operator and check the
-		// right side's flow bound: `0 < list.count` ⟺ `list.count > 0`,
-		// satisfied when `list.count` has a known lower bound of 0.
-		const left_const =
-			left_decl && typeof left_decl.const_value === "number"
-				? String(left_decl.const_value)
-				: !left_decl
-					? expr_to_string(op.left_value, status)
-					: undefined;
-		if (left_const !== undefined) {
-			let right_var: string | undefined;
-			if (op.right_value.node_type === "value") {
-				right_var = (op.right_value as ValueNode).value;
-			} else if (op.right_value.node_type === "access") {
-				right_var = expr_to_string(op.right_value, status);
-			}
-			if (right_var) {
-				let rdecl = status.values.findLast((v) => v.name === right_var);
-				if (!rdecl && right_var.includes(".")) {
-					rdecl = status.values.findLast((v) => v.name === right_var.split(".")[0]);
+			// Symmetric case: literal OP variable/access (e.g. `0 < list.count`, or
+			// `idx < list.count` where idx is a compile-time constant). The left
+			// side is effectively a literal, so flip the operator and check the
+			// right side's flow bound: `0 < list.count` ⟺ `list.count > 0`,
+			// satisfied when `list.count` has a known lower bound of 0.
+			const left_const =
+				left_decl && typeof left_decl.const_value === "number"
+					? String(left_decl.const_value)
+					: left_decl &&
+						  left_decl.range_lower !== undefined &&
+						  left_decl.range_upper === left_decl.range_lower + 1
+						? // A singleton range (`var int idx = 1` → [1, 2)) pins the
+							// variable to one value — as good as a literal.
+							String(left_decl.range_lower)
+						: !left_decl
+							? expr_to_string(op.left_value, status)
+							: undefined;
+			if (left_const !== undefined) {
+				let right_var: string | undefined;
+				if (op.right_value.node_type === "value") {
+					right_var = (op.right_value as ValueNode).value;
+				} else if (op.right_value.node_type === "access") {
+					right_var = expr_to_string(op.right_value, status);
 				}
-				if (rdecl) {
-					const flipped = op.op === "<" ? ">" : op.op === "<=" ? ">=" : op.op === ">" ? "<" : "<=";
-					if (flipped === "<" || flipped === "<=") {
-						if (rdecl.upper_bound_exprs?.includes(left_const)) return true;
-						if (flipped === "<=" && rdecl.upper_bound_inclusive_exprs?.includes(left_const)) {
-							return true;
+				if (right_var) {
+					let rdecl = status.values.findLast((v) => v.name === right_var);
+					if (!rdecl && right_var.includes(".")) {
+						rdecl = status.values.findLast((v) => v.name === right_var.split(".")[0]);
+					}
+					if (rdecl) {
+						const flipped =
+							op.op === "<" ? ">" : op.op === "<=" ? ">=" : op.op === ">" ? "<" : "<=";
+						// Exact-length fact (`x.push(2)` tracking): the container's
+						// length is known precisely, so the comparison is numeric.
+						const left_num = Number(left_const);
+						if (
+							rdecl.known_length !== undefined &&
+							Number.isInteger(left_num) &&
+							(right_var.endsWith(".length") || right_var === "self.length")
+						) {
+							if (flipped === ">") return left_num < rdecl.known_length;
+							if (flipped === ">=") return left_num <= rdecl.known_length;
 						}
-						if (rdecl.upper_bound_expr === left_const) return true;
-					} else {
-						if (rdecl.lower_bound_exprs?.includes(left_const)) return true;
-						if (flipped === ">=" && rdecl.lower_bound_inclusive_exprs?.includes(left_const)) {
-							return true;
+						// Reverse-alias: a guard on a length SNAPSHOT (`var n =
+						// x.length; if n > 0`) records the fact on `n`, which
+						// aliases the access path — consult the alias's bounds for
+						// the path too.
+						let alias_lower: string[] | undefined;
+						let alias_lower_inclusive: string[] | undefined;
+						if (right_var.includes(".")) {
+							for (const v of status.values) {
+								if (v.alias_of !== right_var) continue;
+								if (v.lower_bound_exprs?.length)
+									alias_lower = alias_lower
+										? [...alias_lower, ...v.lower_bound_exprs]
+										: v.lower_bound_exprs;
+								if (v.lower_bound_inclusive_exprs?.length)
+									alias_lower_inclusive = alias_lower_inclusive
+										? [...alias_lower_inclusive, ...v.lower_bound_inclusive_exprs]
+										: v.lower_bound_inclusive_exprs;
+							}
 						}
-						if (rdecl.lower_bound_expr === left_const) return true;
+						if (flipped === "<" || flipped === "<=") {
+							if (rdecl.upper_bound_exprs?.includes(left_const)) return true;
+							if (flipped === "<=" && rdecl.upper_bound_inclusive_exprs?.includes(left_const)) {
+								return true;
+							}
+							if (rdecl.upper_bound_expr === left_const) return true;
+						} else {
+							if (rdecl.lower_bound_exprs?.includes(left_const)) return true;
+							if (rdecl.lower_bound_exprs && alias_lower?.includes(left_const)) return true;
+							if (flipped === ">=") {
+								if (rdecl.lower_bound_inclusive_exprs?.includes(left_const)) return true;
+								if (alias_lower_inclusive?.includes(left_const)) return true;
+							} else {
+								// strict `>`: an inclusive `>= E` with `E >= T + 1`
+								// implies it; the alias's inclusive bounds likewise.
+								if (
+									rdecl.lower_bound_inclusive_exprs?.some((e) =>
+										inclusive_lower_implies_strict(e, left_const),
+									)
+								)
+									return true;
+								if (
+									alias_lower_inclusive?.some((e) => inclusive_lower_implies_strict(e, left_const))
+								)
+									return true;
+								if (alias_lower?.includes(left_const)) return true;
+							}
+							if (rdecl.lower_bound_expr === left_const) return true;
+						}
 					}
 				}
 			}
-		}
+			return undefined;
+		})();
+		if (flow_result !== undefined) return flow_result;
 
 		// Literal < field access: `0 < self.values.cap` — resolve the field
 		// access via buffer_caps and evaluate numerically.
@@ -368,6 +468,7 @@ function evaluate_operation(
 					return left_num >= right_num;
 			}
 		}
+		if (num === false) return false;
 	}
 
 	// Equality against a pinned value: `x == target` is provably satisfied
