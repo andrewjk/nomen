@@ -35,23 +35,23 @@ the receipts each item's row names; statuses cross-checked against git
 history. Items 2–7 are "this week" material; items 1, 9, and 10 are the
 only entries expected to move a headline bench number.
 
-| #   | Remainder                                                                                                                                                                                                                                                                            | Effort | Expected win                      | Note                                                                                                                                                                                     |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Item 1 — faster allocator (slab/bump)                                                                                                                                                                                                                                                | M      | Large                             | "Largest unclaimed lever"; binarytrees/merkletrees are allocation-dominated and regressed with the class→Box idiom. Not a remainder — the only unlanded item — but it tops this ranking. |
-| 2   | ~~Item 15 — 64-bit arithmetic folds (constant materialization, field-value forwarding, immediate shifts)~~ **LANDED Nov 2026: `Random.next` body 39 → 25 instructions, splitmix shape −10.5%; suite −4.3% nsieve / −1.9% binarytrees / −1.6% lru / flat json-serde (item 15 below)** | S–M    | ~~Medium, aarch64-only~~ **done** | `Random.next` ~40 → ~14 instructions; generalizes to all pure-Nomen 64-bit math. Invisible on C.                                                                                         |
-| 3   | ~~Items 10/8 — writer-form interpolation lowering (append arguments straight into the helper's buffer)~~ **LANDED Nov 2026: int shape −62% / −58% (aarch64 / C), mixed shape −35% / −36%; standard suite flat ±1.1% (item 10 below)**                                                                                                        | S–M    | ~~Medium on string-heavy code~~ **done** | Drops one malloc per numeric interpolation argument; the landed interp tranche proved these paths hot (−80%). Hand-rolled `%f` excluded — one snprintf is fine.                          |
-| 4   | Item 17r — Map/Set.remove bulk `move_range`                                                                                                                                                                                                                                          | S      | Small–medium                      | 17a's List receipt (−91%) proves the shape; Map/Set's probe loop makes it less blocky, so less of the win.                                                                               |
-| 5   | Item 13(2,3) — case types over generic enums + base↔case conversions                                                                                                                                                                                                                 | S–M    | Feature-completion                | More completion than perf; unblocks `Option<int>.some`.                                                                                                                                  |
-| 6   | Item 9r — hash tag packed into the `used` word                                                                                                                                                                                                                                       | S      | Small                             | One load less per probe; only pays if int-keyed hit paths matter (they currently PAY +2–10%).                                                                                            |
-| 7   | Items 14r/17br — StableList 24/32-byte pair stores + bulk `copy`                                                                                                                                                                                                                     | S      | Small, aarch64-only               | Waiting on a hot chunked-storage shape; the ≤16 work showed C is already flat.                                                                                                           |
-| 8   | Item 2r — index/call-segment push receivers (`rows.at(0).items.push(Ctor(...))`)                                                                                                                                                                                                     | S–M    | Small in practice                 | −50%-class per site but no booked workload; scope to slot-borrow segments only, policing the alias with item 4's borrow registry.                                                        |
-| 9   | Item 4r — struct-`view` (field access through a view value)                                                                                                                                                                                                                          | L      | Potentially large                 | Borrow reads measured −30%; but a language-design item (view over struct fields, nested borrow rules undesigned). Highest ceiling, highest cost.                                         |
-| 10  | Item 13(1,4) — true variable-stride arrays + whole-enum runtime-variable mode                                                                                                                                                                                                        | L      | Large where applicable            | Case monos already took −49% RSS; variable-stride needs a packed container family.                                                                                                       |
-| 11  | Item 16 — async paths audit                                                                                                                                                                                                                                                          | ?      | Unknown                           | Only if GUI/async is a real target.                                                                                                                                                      |
-| 12  | Item 12r — trait-field packing gap + `_has` flag grouping                                                                                                                                                                                                                            | S–M    | Tiny                              | No System struct affected today.                                                                                                                                                         |
-| 13  | Item 7r — method-call enum payload arguments (`Res.ok(seed.copy())`)                                                                                                                                                                                                                 | S–M    | Small                             | Needs the C per-argument heapness classifier (the take label is per-call).                                                                                                               |
-| 14  | Item 11r — trait devirt extensions                                                                                                                                                                                                                                                   | —      | —                                 | Blocked (trait fields, STRUCT_PLAN_3 B5) or a different analysis (container elements). Parked.                                                                                           |
-| 15  | Items 3r/8r — enum-with-data donors; `String.replace_first`                                                                                                                                                                                                                          | —      | ~zero                             | By-design non-elisions — nothing to win. Don't.                                                                                                                                          |
+| #   | Remainder                                                                                                                                                                                                                                                                            | Effort | Expected win                             | Note                                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Item 1 — faster allocator (slab/bump)                                                                                                                                                                                                                                                | M      | Large                                    | "Largest unclaimed lever"; binarytrees/merkletrees are allocation-dominated and regressed with the class→Box idiom. Not a remainder — the only unlanded item — but it tops this ranking. |
+| 2   | ~~Item 15 — 64-bit arithmetic folds (constant materialization, field-value forwarding, immediate shifts)~~ **LANDED Nov 2026: `Random.next` body 39 → 25 instructions, splitmix shape −10.5%; suite −4.3% nsieve / −1.9% binarytrees / −1.6% lru / flat json-serde (item 15 below)** | S–M    | ~~Medium, aarch64-only~~ **done**        | `Random.next` ~40 → ~14 instructions; generalizes to all pure-Nomen 64-bit math. Invisible on C.                                                                                         |
+| 3   | ~~Items 10/8 — writer-form interpolation lowering (append arguments straight into the helper's buffer)~~ **LANDED Nov 2026: int shape −62% / −58% (aarch64 / C), mixed shape −35% / −36%; standard suite flat ±1.1% (item 10 below)**                                                | S–M    | ~~Medium on string-heavy code~~ **done** | Drops one malloc per numeric interpolation argument; the landed interp tranche proved these paths hot (−80%). Hand-rolled `%f` excluded — one snprintf is fine.                          |
+| 4   | ~~Item 17r — Map/Set.remove bulk `move_range`~~ **REJECTED Nov 2026: the shape lands −52% / −11% but lru pays +4–6% / +2–4% — the count-before-shift probe tax on its short random chains; no variant avoided it (17r below)**                                                       | S      | ~~Small–medium~~ **net negative**        | 17a's List receipt (−91%) proves the shape; Map/Set's probe loop makes it less blocky, so less of the win.                                                                               |
+| 5   | Item 13(2,3) — case types over generic enums + base↔case conversions                                                                                                                                                                                                                 | S–M    | Feature-completion                       | More completion than perf; unblocks `Option<int>.some`.                                                                                                                                  |
+| 6   | Item 9r — hash tag packed into the `used` word                                                                                                                                                                                                                                       | S      | Small                                    | One load less per probe; only pays if int-keyed hit paths matter (they currently PAY +2–10%).                                                                                            |
+| 7   | Items 14r/17br — StableList 24/32-byte pair stores + bulk `copy`                                                                                                                                                                                                                     | S      | Small, aarch64-only                      | Waiting on a hot chunked-storage shape; the ≤16 work showed C is already flat.                                                                                                           |
+| 8   | Item 2r — index/call-segment push receivers (`rows.at(0).items.push(Ctor(...))`)                                                                                                                                                                                                     | S–M    | Small in practice                        | −50%-class per site but no booked workload; scope to slot-borrow segments only, policing the alias with item 4's borrow registry.                                                        |
+| 9   | Item 4r — struct-`view` (field access through a view value)                                                                                                                                                                                                                          | L      | Potentially large                        | Borrow reads measured −30%; but a language-design item (view over struct fields, nested borrow rules undesigned). Highest ceiling, highest cost.                                         |
+| 10  | Item 13(1,4) — true variable-stride arrays + whole-enum runtime-variable mode                                                                                                                                                                                                        | L      | Large where applicable                   | Case monos already took −49% RSS; variable-stride needs a packed container family.                                                                                                       |
+| 11  | Item 16 — async paths audit                                                                                                                                                                                                                                                          | ?      | Unknown                                  | Only if GUI/async is a real target.                                                                                                                                                      |
+| 12  | Item 12r — trait-field packing gap + `_has` flag grouping                                                                                                                                                                                                                            | S–M    | Tiny                                     | No System struct affected today.                                                                                                                                                         |
+| 13  | Item 7r — method-call enum payload arguments (`Res.ok(seed.copy())`)                                                                                                                                                                                                                 | S–M    | Small                                    | Needs the C per-argument heapness classifier (the take label is per-call).                                                                                                               |
+| 14  | Item 11r — trait devirt extensions                                                                                                                                                                                                                                                   | —      | —                                        | Blocked (trait fields, STRUCT_PLAN_3 B5) or a different analysis (container elements). Parked.                                                                                           |
+| 15  | Items 3r/8r — enum-with-data donors; `String.replace_first`                                                                                                                                                                                                                          | —      | ~zero                                    | By-design non-elisions — nothing to win. Don't.                                                                                                                                          |
 
 ## 1. Faster allocator — slab/bump the class-allocation path
 
@@ -1433,7 +1433,7 @@ allocation disappears.
   shapes hide the load from the liveness model, which then deletes it.
 - **C**: the mixed helper is `static` (a library mix and a user mix can't
   collide at link time), takes typed parameters (`long long` / `unsigned
-  long long` / `double`), and the call site casts each numeric argument.
+long long` / `double`), and the call site casts each numeric argument.
   The aarch64 call site needs no cast (the ABI's register convention is
   already width-independent).
 
@@ -1454,23 +1454,24 @@ both — it just lowers through `to_string` on the old one):
 - _The int shape_ — `bench/nomen/string_build.nm`'s `interp` mode
   (1M × `"k=\{i} v=\{i*2}"`, length accumulated — the item-10 bench):
 
-| Backend | before | after |        Δ |
-| ------- | -----: | ----: | -------: |
+| Backend | before |  after |        Δ |
+| ------- | -----: | -----: | -------: |
 | C       | 0.075s | 0.030s | **−58%** |
 | aarch64 | 0.080s | 0.030s | **−62%** |
 
 Per iteration the elided work is exactly the item's promise: the two numeric
 `to_string` calls' mallocs (and their digit loops) disappear — the digits are
 rendered inside the helper — so 3 mallocs per iteration (two argument strings
-+ the result) become 1 (the result).
 
-- _The mixed shape_ — `bench/nomen/interp_writer_form.nm`: two shapes back to
+- the result) become 1 (the result).
+
+* _The mixed shape_ — `bench/nomen/interp_writer_form.nm`: two shapes back to
   back, 2M steps each — the int shape above, then
   `"s=\{name} i=\{i} f=\{f} n=\{neg}"` (string + int + float + negative int;
   the float keeps its one `%f` snprintf, now straight from the helper):
 
-| Backend | before | after |        Δ |
-| ------- | -----: | ----: | -------: |
+| Backend | before |  after |        Δ |
+| ------- | -----: | -----: | -------: |
 | C       | 0.560s | 0.360s | **−36%** |
 | aarch64 | 0.600s | 0.390s | **−35%** |
 
@@ -2128,7 +2129,70 @@ elision.
 **Remainder.** Map/Set.remove's backward shift keeps per-element `shift`
 (their dst slots are also dead-after-move, so the same `move_range` applies —
 but their probe loop interleaves key compares, so the shape is less purely
-block-shaped; left unmeasured).
+block-shaped). Since measured: attempted and rejected — 17r below; the
+tombstone alternative too — 18 below.
+
+### 17r. Map/Set.remove bulk `move_range` — REJECTED (Nov 2026)
+
+**What was tried.** The 17a contract applied to Map/Set.remove's backward
+shift. The observation is sound: entries that move do so in contiguous
+chains — after a move gap becomes k, so the next moveable entry at k + 1
+shifts into k, each entry landing exactly one slot below where it was — so a
+chain can flush as ONE `Buffer.move_range`/`ClassBuffer.move_range` block,
+with the hash words relocated in their own u32 loop (move_range's T_SIZE
+stride does not fit the `alloc_u32` slabs) and the `used` words needing no
+per-move updates at all (every slot in the scan stays used=1; the final
+store opens the end hole). Four shapes of the idea were built and measured:
+a `flush_run` helper method on the struct; the flush inlined at the
+chain-break sites; an up-front `move(idx)` of the removed entry vs a lazy
+one at the first overwrite; and shift-first-then-batch — the original
+per-entry shift runs unconditionally and the chain's remainder block-moves
+after it, which satisfies move_range's dead-dst contract through the shift
+itself (the shift zeroes the slot it just vacated) and needs no move-out
+anywhere. All of them kept a ≥ 4-entry run threshold below which the
+per-element shifts stay, and all of them passed the full test suite with a
+new runtime + emission test file.
+
+**Why it failed.** The shape win is real. Draining a long displaced chain
+head-first — `bench/nomen/map_remove.nm`: all n keys collide on one home
+slot, Map<int, Rec> with 48-byte mv-struct values (two owning strings),
+n = 12000 × 3 rounds, n/rounds from argv, Apple Silicon, 7 randomized
+interleaved rounds, medians, release builds, audit off, checksums identical;
+"before" binaries from a HEAD worktree:
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| aarch64 |          0.133s |         0.064s | **−52%** |
+| C       |          0.054s |         0.047s | **−11%** |
+
+But lru — the one standard-suite bench that lives inside Map.remove, its
+evict path calling `keys.remove` ~10M times per run — pays for the
+count-before-shift on exactly the opposite shape: random keys at 49% load
+make chains short (1–3 entries) and successors are often at their homes, so
+the batch rarely fires while every remove carries the probe tax (the
+contiguity check, the count loop probing the slot the outer loop re-probes
+anyway, and the extra data-dependent branch mispredicts).
+**lru +4–6% aarch64 / +2–4% C** on every variant (randomized-order A/B,
+25 rounds; medians and mins agree). Three checks pin the cause: an lru build
+with the `keys.remove` call deleted is byte-flat before/after, so the whole
+regression lives in remove; the at-home scan shape (a 10k-entry cluster of
+at-home keys — scan-heavy, shift-free) is flat; and binarytrees, which uses
+no Map, generates byte-identical code and swings only ±1% (the noise floor).
+Five designs, same tax: counting before shifting costs probes, and a probe
+costs as much as the shift it might replace — the caller cannot know the
+chain is long without counting it. Every landed item held the standard
+suite flat; this one cannot, so it is rejected instead of shipped with a
+regression.
+
+**What stays true.** The ownership analysis from the attempt, for whoever
+revisits deletion with tombstones or a different scheme: move_range's
+dead-dst contract is satisfiable inside remove with no up-front move-out
+(shift reclaims its own dst, so a batch whose first destination slot was
+just shifted is sound), the hash words are the only side data that needs
+relocating, and the no-shift removal leaves the removed entry owned by its
+slot for the container's destroy (the pre-existing behavior). And the
+profiling by-product: the SCAN (find the cluster end) is ~60% of lru — a
+bigger target than the shifts ever were (FOLLOWUP.md).
 
 ### 17b. StableList tail push: direct chunk store — LANDED (Oct 2026)
 
@@ -2325,6 +2389,63 @@ there.
 `json_parse_literal` parses at most 4 bytes (no run to bulk up).
 `String.replace_first` keeps its per-byte appends by design (item 8's
 remainder).
+
+## 18. Tombstone deletion for Map/Set — REJECTED (Nov 2026)
+
+The other deletion scheme for open addressing: `remove` frees the entry and
+marks the slot dead (O(1), no backward-shift scan) — lookups skip dead
+slots, inserts reuse the first dead slot their probe passes, and the insert-
+time load factor counts dead slots so a dirty table rebuilds itself. The
+mainstream choice: CPython's dict (dummies), Go's runtime map (`emptyOne`/
+`emptyRest` tophash), Rust's hashbrown and absl's Swiss tables (`DELETED`
+control bytes), Zig's HashMap, Lua (dead keys). Built completely — a third
+`used` state (the existing u32 word, zero extra memory), a `tombstones`
+counter on both structs, reuse-on-insert probes (`insert_slot` beside
+`find_slot`), tombstone-aware `rehash`/`copy`, live-count-driven growth
+plus dead-count-driven same-capacity compaction (Go/CPython's policy split —
+an earlier single-trigger policy ratcheted the capacity of churn tables
+upward, and a stale-`cap` ordering bug between the two triggers oscillated
+tables full; both found by the tests and fixed) — full suite green with a
+new runtime + emission test file.
+
+**Measured.** The chain-drain shape (17r's `bench/nomen/map_remove.nm`,
+Map<int, Rec>, 48-byte mv-struct values, n = 12000 × 3, randomized
+interleaved A/B, medians, release, checksums identical):
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| aarch64 |          0.136s |         0.063s | **−54%** |
+| C       |          0.056s |         0.050s |  **−9%** |
+
+And the workload every Map deletion change must answer to — lru (`1000
+20000000`; ~10M `keys.remove` evictions + ~10M inserts + 40M `get_or`
+lookups per run):
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| aarch64 |          1.683s |         2.305s | **+37%** |
+| C       |          0.884s |         1.220s | **+38%** |
+
+**Why it loses.** Under churn, tombstones accumulate until the EFFECTIVE
+occupancy — (live + dead)/cap — equilibrates far above the nominal 3/4 load
+factor (reuse-on-insert consumes dead slots only when an insert's probe
+happens to pass one, so the compaction trigger rarely fires), and every one
+of lru's 40M lookups then probes through near-full tables of dead 16–48-
+byte owning slots. The mainstream implementations absorb dead-slot density
+with structure Nomen's flat scalar probing lacks: CPython's dummies live in
+a separate compact index array (probe steps are 1-byte index loads), Go
+terminates dead runs early (`emptyRest`) and groups 8 slots per bucket,
+and hashbrown/absl scan 16 control bytes per step with SIMD — a tombstone
+is one more lane in a vectorized compare. Nomen's probe touches a full
+owning slot per step, so density multiplies directly into cache misses.
+(The C backend regressed equally, so this is not an aarch64 codegen
+artifact.) The original design comment — "No tombstones … the cost is the
+local cluster length" — is exactly right for scalar probing at these load
+factors: backward-shift keeps the table maximally clean and lru's clusters
+short (its removal cost is the SCAN, 17r's finding), while tombstoning
+trades that scan for permanently dirtier tables. Rejected; 17r's shape win
+stays on the table only for a scheme that also fixes the scan (a different
+data layout, not a different deletion policy).
 
 ## Already rejected — don't re-suggest
 

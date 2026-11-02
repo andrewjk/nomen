@@ -566,6 +566,20 @@ the failures are a rebuild/worker race, not codegen. Mitigation for a
 touched-core session: run the suite once to rebuild, then judge on the
 second run — or make the prebuild a hard barrier for worker startup.
 
+**Stale-object hazard after REVERTING core (recorded 2026-11-03):** the
+prebuild validity check compares the current core sources against the
+`.hash` files in `test/out/system_lib/`. When a session edits `core/**`,
+runs tests (building tombstone-era objects), then REVERTS `core/**` and
+also restores `test/out/system_lib/**` from git (the natural
+`git checkout core ... test/out` cleanup), the restored `.hash` files match
+the reverted sources — so the prebuild happily REUSES the object files that
+were compiled from the NEWER (reverted-away) library. A user TU built
+against HEAD sources then links a system.o with a different struct layout
+(e.g. a `Map` with an extra field) and SEGFAULTS at runtime. Symptom:
+`Command failed: .../main.out` with exit 139 on tests that are green on
+HEAD. Fix that session: `rm -rf test/out/system_lib` before judging
+anything. (Found while reverting PERF_PLAN item 18.)
+
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files
@@ -594,3 +608,53 @@ map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
   guarded-index section).
 - **Containers other than List/Map** (`LinkedList`, `Tree`) have no
   contract-free read and no effect model — guards only.
+
+## Map/Set.remove is scan-bound (~60% of lru), not shift-bound
+
+Recorded 2026-11-02 while attempting PERF_PLAN item 17r (bulk `move_range`
+for the backward shift — rejected, measurements there). An lru build with
+the `keys.remove(old_key)` call deleted runs the remaining work
+byte-identically flat before/after ANY remove-body change, and cuts lru
+`1000 20000000` from 1.68s to 0.65s — the evict-path remove is ~60% of the
+bench, and its cost is the PROBE SCAN (walk `used`/`hashes` to the cluster
+end computing `home`/`dgap`/`dk` per entry), not the entry moves: at 49%
+load with random keys, successors are usually at their homes (`dk = 0`,
+nothing moveable), so a removal walks the cluster and shifts nothing.
+Batching the shifts therefore cannot pay here (17r's receipt), but the scan
+itself is the bigger fish: tombstone-free linear probing must find the
+cluster end to keep `find_slot` correct, so the levers are algorithmic —
+tombstones (trades the scan for a bump, costs `set`/rehash complexity and
+memory), backward-shift start-position memoization, or a smaller probe
+record. Any of these re-opens 17r's shape win on top.
+
+**Tombstone addendum (2026-11-03): tried and rejected** — the full
+implementation (3-state `used` words, reuse-on-insert, live-driven growth +
+dead-driven same-capacity compaction) measured lru **+37% aarch64 / +38% C**
+(despite the chain-drain shape winning −54% / −9%): under churn, tombstones
+accumulate until the EFFECTIVE occupancy — (live + dead)/cap — equilibrates
+far above the nominal load factor, and all ~40M lru lookups probe through
+near-full tables of dead owning slots. CPython/Go/hashbrown absorb that
+density with structure Nomen's flat scalar probing lacks (compact index
+arrays, `emptyRest` early exit, 16-wide SIMD group scans). Full story and
+numbers: PERF_PLAN item 18. The scan-bound finding above stands; the
+remaining levers are the data layout itself.
+
+## Map/Set.remove no-shift case can strand owning entries behind `store`
+
+Also recorded 2026-11-02, surfaced by the same 17r ownership analysis
+(pre-existing on main; the attempt's up-front move-out fixed it, the
+revert restored the original behavior). When a `remove` scans NO shifts
+(empty next slot — the most common case in sparse tables), the removed
+entry's key/value stay owned by their slots while `used[idx]` drops to 0.
+Container `#destroy` still frees them (the per-slot destroy walks every
+slot), so a remove-then-destroy is leak-clean — but a LATER `set()` that
+lands in that hole overwrites the slots through `store`/`store_take`,
+which assume a FRESH slot: owning elements (strings, mv structs with
+owning fields) leak the stranded entry. Repro shape: `m.remove(k)` where
+k's cluster successor is empty, then `m.set` of a colliding key whose
+probe lands on that hole. Fix shape: move-out the removed entry
+unconditionally up front (`Buffer.move(idx)` to a local — zeroes the slot,
+frees at scope end), or have remove destroy-and-zero via `destroy_at` +
+`zero` when no batch will overwrite the slot. Costs ~4 instructions per
+remove on int/int tables — which is exactly what tipped 17r from
+net-positive to net-negative, so it wants its own measurement.

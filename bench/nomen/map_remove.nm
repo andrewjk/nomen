@@ -1,0 +1,55 @@
+import System
+
+// Map.remove worst-case chain shape (PERF_PLAN item 17r — REJECTED, the
+// receipt for the bulk `move_range` attempt): all n keys collide on one home
+// slot (step 1024 is a multiple of every capacity the table grows through),
+// so the table is ONE cluster and removing its head relocates every
+// remaining entry — n^2 / 2 entry moves per drain round, the shape where a
+// bulk move would pay most. The batched form measured −52% aarch64 / −11% C
+// here but +4–6% on lru (17r in PERF_PLAN); this shape stays as the
+// re-measurement harness for any future deletion-scheme work (tombstones
+// etc.). n and rounds from argv, checksum printed so binaries are
+// comparable.
+
+mv struct Rec {
+	var string a
+	var string b
+	var int x
+	var int y
+}
+
+pub func main = (Init init) {
+	var n = 12000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var rounds = 3
+	if init.argc > 2 {
+		rounds = parse_int(init.args.at(2))
+	}
+
+	var m = Map<int, Rec>()
+	var checksum = 0
+	var r = 0
+	while r < rounds; r += 1 {
+		// Drain head-first: the head key's removal opens the cluster start,
+		// so every removal shifts the entire remaining chain (worst case).
+		var k = 1
+		while m.length > 0 {
+			var Rec v = m.get_or_panic(k)
+			checksum += v.x + v.y + v.a.length
+			m.remove(k)
+			k += 1024
+		}
+		// Refill from empty: fresh seeded strings, so every slot owns its
+		// bytes again and the next round moves real owning entries.
+		var i = 0
+		while i < n; i += 1 {
+			m.set(i * 1024 + 1, Rec("a\{i}", "b\{i}", i, i * 2))
+			checksum += 2
+		}
+	}
+
+	Console.write(checksum.to_string())
+	Console.write("\n")
+}
