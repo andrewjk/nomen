@@ -1,0 +1,39 @@
+import System
+
+// 64-bit arithmetic folds shape (PERF_PLAN item 15) — splitmix64 (the
+// Random.next body, copied so the method lives in this TU) stepped n times
+// from a fixed seed, accumulator printed so before/after binaries are
+// comparable. n from argv. The body is the item's reference receipt: three
+// 64-bit literals, three register-shift counts, and a field store/reload per
+// step — the pure-Nomen 64-bit arithmetic the folds target.
+
+mv struct R {
+	var uint64 state = 0
+
+	func #init = (self, uint64 seed) {
+		self.state = seed
+	}
+
+	func next = (ref self, out uint64) {
+		self.state = self.state + 0x9E3779B97F4A7C15
+		var uint64 z = self.state
+		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
+		z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+		return z ^ (z >> 31)
+	}
+}
+
+pub func main = (Init init) {
+	var n = 20000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var R r = R(12345)
+	var uint64 acc = 0
+	var int i = 0
+	while i < n; i += 1 {
+		acc = acc + r.next()
+		i += 1
+	}
+	Console.write("\{acc}\n")
+}

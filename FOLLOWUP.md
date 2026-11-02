@@ -309,24 +309,27 @@ build_function_node): deletes the branches in debug builds too, makes
 `--release` a true no-op on aarch64, and lets the branch-to-next pass
 converge instantly.
 
-### Pure-Nomen 64-bit arithmetic emits looser code than a raw `#arch` body
+### Pure-Nomen 64-bit arithmetic emits looser code than a raw `#arch` body — LANDED (2026-11-02)
 
 `Random.next` (splitmix64) is pure Nomen — verified bit-identical on both
-backends — but the aarch64 output is ~40 instructions where the
-hand-written body was ~14. The gaps, if this ever becomes hot:
+backends — but the aarch64 output was ~40 instructions where the
+hand-written body was ~14. All three gaps are closed now (PERF_PLAN item 15;
+`src/build_aarch64/asm_fold64.ts` + measurements there):
 
-1. **Constant materialization.** Each 64-bit literal becomes `movz` +
-   three `movk` (4 instructions); the raw body used one `ldr xN, =CONST`
-   from the literal pool (`asm_remat`/`asm_coalesce` do not fold `const
-uint64` locals here).
-2. **Field-value forwarding.** `self.state = …; var z = self.state` stores
-   and then reloads the field instead of keeping the value in a register.
-3. **Immediate shift counts.** `z >> 30` does `mov x0, #30; lsr x0, x12,
-x0` rather than an immediate `lsr x2, x0, #30`.
+1. **Constant materialization.** Full-width `movz`/`movn` + three-`movk`
+   chains (4 instructions per 64-bit literal) pool into ONE pc-relative
+   `ldr xN, .LC64_N` whose `.quad` entry sits right after the function's
+   final `ret` (adjacent, so the ±1 MB literal reach can never overflow).
+2. **Field-value forwarding.** `self.state = …; var z = self.state` no
+   longer stores and then reloads the field — the reload forwards the
+   stored register.
+3. **Immediate shift counts.** `z >> 30` no longer pays `mov x0, #30; lsr
+   x0, x12, x0` — the immediate `lsr x0, x12, #30` form.
 
-Two ways to close: restore the raw `#arch` bodies (git history has them),
-or teach the aarch64 ASM optimizer the three folds (benefiting all
-pure-Nomen 64-bit arithmetic).
+Emitted body: 39 → 25 instructions; splitmix shape −10.5% wall; suite
+−4.3% nsieve / −1.9% binarytrees / −1.6% lru / flat json-serde. The raw
+`#arch` bodies stay retired — the pure-Nomen spelling now lands within the
+call protocol's own overhead of the raw form.
 
 ### Post-processing passes dominate large builds
 
@@ -562,6 +565,28 @@ changes. Three consecutive post-rebuild runs settled to stable green, so
 the failures are a rebuild/worker race, not codegen. Mitigation for a
 touched-core session: run the suite once to rebuild, then judge on the
 second run — or make the prebuild a hard barrier for worker startup.
+
+## Stack-balance validator false positive on a duplicated entry label
+
+Recorded 2026-11-02 while landing PERF_PLAN item 15 (the folds are not
+involved — the error reproduces with the pass disabled, on main@4319c4cc
+byte-identical emission). Reproduce: a test program that declares its own
+`func main` inside the `parse_with_imports` wrapper (two mains in one TU —
+the wrapper's no-arg main plus the user's), built for aarch64 with audit on.
+The build fails its own stack-balance check:
+`asm: unbalanced stack: sp offset -16 at ret — ret`.
+
+The shape: the emitted text carries TWO `_main:` labels (the wrapper stub
+`stp x29, x30, [sp, #-16]! / mov x29, sp` with no frame, then the real
+`_main:` with the frame). `check_function_balance` seeds ONLY
+`in_delta[0] = 0`; the second `_main:` label is just another BLOCK in the
+same lifted function body, so it inherits block 0's delta through the
+fall-through edge (`stp …, [sp, #-16]!` = −16) instead of starting at 0 —
+every downstream delta is off by −16 and the real entry's `ret` reports
+`sp offset -16`. Real programs never emit two entry labels for main, so the
+suite stays green; the sanitizer would be to treat a repeated entry label
+(or any label preceded by `.globl`/`.p2align`) as a fresh delta-0 root, the
+same way a new function is.
 
 ## Orphaned `???`/`!!!` tokenizer symbols
 

@@ -2,6 +2,7 @@ import { coalesce_copies } from "./build_aarch64/asm_coalesce.ts";
 import { eliminate_dead_cycle_moves } from "./build_aarch64/asm_cycle_dead_moves.ts";
 import { expand_far_adr_addresses } from "./build_aarch64/asm_expand_adr.ts";
 import { expand_large_mov_immediates } from "./build_aarch64/asm_expand_mov.ts";
+import { fold_64bit_arithmetic } from "./build_aarch64/asm_fold64.ts";
 import { convert_loop_invariant_branches } from "./build_aarch64/asm_if_convert.ts";
 import { rewrite_large_frame_offsets } from "./build_aarch64/asm_large_frame.ts";
 import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
@@ -474,6 +475,18 @@ export default function build(
 		// non-local targets to the `adrp`/`add` page pair. Runs last so the
 		// optimizer passes still see the canonical `adr` form.
 		status.code = expand_far_adr_addresses(status.code);
+		// 64-bit arithmetic folds (PERF_PLAN item 15) — the FOLLOWUP.md trio
+		// for pure-Nomen 64-bit math (the Random.next receipt: ~40 emitted
+		// instructions vs ~14 raw): immediate shift counts (`mov xR, #N` +
+		// `lsr xD, xS, xR` → `lsr xD, xS, #N`), field-value forwarding (a
+		// store to [xS, #K] followed by the same slot's reload forwards the
+		// stored register), and constant materialization (full-width
+		// movz/movk chains → one pc-relative `ldr xN, .LC64_N` whose .quad
+		// pool sits right after the function's final ret — adjacent, so the
+		// ±1 MB literal reach can never overflow). Runs after
+		// expand_large_mov_immediates (the chunk chains exist only after it)
+		// and before the validators (which accept the literal ldr form).
+		status.code = fold_64bit_arithmetic(status.code);
 		if (options.audit) {
 			// The main-function audit_check + pool shutdown hook is emitted
 			// directly by build_function_node (it knows main's return label).

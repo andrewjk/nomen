@@ -41,10 +41,9 @@ pub mv struct Random {
 
 	// The next 64-bit value (splitmix64: golden-ratio step, then two
 	// multiply-xor rounds). Pure Nomen — the 64-bit arithmetic, bitwise
-	// operators, and hex literals all lower directly. The aarch64 codegen is
-	// a little looser than a hand-written `#arch` body would be (constant
-	// materialization, field reloads, non-immediate shift counts); see
-	// FOLLOWUP.md if this ever needs to be hot.
+	// operators, and hex literals all lower directly; the aarch64 64-bit
+	// arithmetic folds (PERF_PLAN item 15) keep the emission within a few
+	// instructions of a hand-written `#arch` body.
 	pub func next = (ref self, out uint64) {
 		self.state = self.state + 0x9E3779B97F4A7C15
 		var uint64 z = self.state

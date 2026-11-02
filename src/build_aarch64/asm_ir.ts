@@ -317,6 +317,9 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 			["r", "m"],
 			["f", "m"],
 			["r", "i"], // `ldr x0, =imm64` load-literal pseudo-form
+			["r", "l"], // `ldr x0, .LC64_N` pc-relative literal-pool load (the
+			// fold64 constant-materialization form; the pool entry is the
+			// `.quad` emitted after the function's final ret)
 		],
 	},
 	str: {
