@@ -77,7 +77,14 @@ pub mv struct Arena<T> {
 			self.generations.store_int(index, 0)
 		}
 		self.values.grow(index + 1)
-		self.values.store(index, value)
+		// The value arrives owned (`mv T value`): move a value-struct element
+		// into the fresh slot (the caller's storage zeroes, no deep copy);
+		// strings keep the deep-copying store (their pair arrives by value).
+		if T_IS_VALUE_STRUCT {
+			self.values.store_take(index, value)
+		} else {
+			self.values.store(index, value)
+		}
 		var handle = ArenaRef<T>()
 		handle.index = index
 		handle.generation = self.generations.load_int(index)

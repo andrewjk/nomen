@@ -591,3 +591,34 @@ map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
   guarded-index section).
 - **Containers other than List/Map** (`LinkedList`, `Tree`) have no
   contract-free read and no effect model — guards only.
+
+## String field read off a call-result struct (pre-existing, surfaced by the add/alloc tranche)
+
+Recorded 2026-11-02 while landing PERF_PLAN item 6's add/alloc remainder
+(`test/in_place_add.test.ts`). Both reproduce on HEAD (ee88333b) unchanged —
+the new tests deliberately read an INT field, so they pin the take-store
+shapes, not these bugs:
+
+- **`container.at_or(i, fallback).name` (a string field read off a
+  call-result struct) is a double free.** The receiver hoist binds the struct
+  to a local (`struct Rec got = ...`), then the field read's string temp is
+  recorded as heap and frees `got.name.ptr` at scope exit while `got`'s own
+  owning-local destroy frees it again — audit: `AUDIT-STALE-FREE`. The same
+  shape appears for `map.get_or(k, fallback).name`.
+- **`map.get_or(k, make(0)).n` does not compile on C** — the hoisted
+  argument's `_param_N` declaration lands inside the receiver initializer
+  (`struct Rec _recv_1 = unsigned char _mv_owns__param_0 = 0; ...`), the same
+  allocation-attribution corner the element-borrow tranche fixed for ref
+  locals, here for a plain `var` receiver.
+
+Both are the "field of a call result" family (the borrow-carrier/receiver
+hoist), separate from the container-store lowering.
+
+## Arena<T> value-struct payloads (known skipped residual)
+
+`test/arena.test.ts`'s "value-struct payloads (alloc / get / set)" stays
+`test.skip`: the Arena mono's inlined Buffer primitives + the mv-struct
+load/binding interplay still stale-free and leak under audit on aarch64 (the
+"mv elements through inlined raw container bodies" tranche). The add/alloc
+tranche's `Arena.alloc` store_take arm is already in place, so the copy
+elision lands when that residual does.

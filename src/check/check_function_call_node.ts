@@ -2691,6 +2691,18 @@ function substitute_raw_in_node(
 				vn.type = new Type("bool", true);
 				return;
 			}
+			// T_IS_VALUE_STRUCT: true when the instantiated element is a
+			// concrete non-class value struct. The container bodies branch on
+			// it to pick the ownership-taking store (`store_take` — sound and
+			// worthwhile only for the by-reference value-struct parameter
+			// convention) versus the deep-copying `store` (strings arrive as
+			// by-value pairs, classes as shared pointers).
+			if (vn.value === `${param}_IS_VALUE_STRUCT`) {
+				const st = structs.find((s) => s.name === type);
+				vn.value = st && !st.is_class && !st.is_simple_type && !st.is_generic ? "true" : "false";
+				vn.type = new Type("bool", true);
+				return;
+			}
 		}
 	}
 	if (node.node_type === "index") {
@@ -2774,6 +2786,14 @@ function substitute_raw_in_node(
 			// blocks via a `mov xN, #T_FAT / cmp / b.cond` dispatch that
 			// fold_asm_constants folds to a constant branch after substitution.
 			value = value.replace(new RegExp(`\\b${param}_FAT\\b`, "g"), type === "string" ? "1" : "0");
+			// T_IS_VALUE_STRUCT: 1 for a concrete non-class value struct (the
+			// by-reference parameter convention store_take's body relies on),
+			// 0 otherwise. Raw C bodies guard on it via `#if` so the emitted
+			// instance compiles for every element kind.
+			value = value.replace(
+				new RegExp(`\\b${param}_IS_VALUE_STRUCT\\b`, "g"),
+				struct_node && !struct_node.is_class ? "1" : "0",
+			);
 		}
 		// Dereference struct params: the C backend passes them as pointers,
 		// but raw blocks were written assuming pass-by-value. Replace bare

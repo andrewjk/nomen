@@ -14,7 +14,7 @@ them; the rest carry expected wins and the receipts they rest on).
 | 3   | ~~Move-on-last-use for structs~~ **LANDED Oct 2026: −20% / −29% on the shape**                                                                                                                                                                                                                                                            | both           | S–M    | shape micro-bench, interleaved medians (below)   |
 | 4   | ~~Borrow-returning reads (Map `get_ptr`, `at_view`)~~ **LANDED Oct–Nov 2026: Map slot borrow −79% / −98% on the borrow shape, −48% probe fusion; for-of + expression-temp element borrows −32% / −30% on the read-sweep shape (Nov); the struct-`view` half is the follow-on item**                                                       | both           | M      | shape micro-benches, interleaved medians (below) |
 | 5   | ~~Json ownership copies~~ **LANDED Oct–Nov 2026: −26% / −13% on the ownership shape, −22% / −12% json-serde; the null-seed tranche (Nov) −38% / −15% sample.json, −19% / −9% string-heavy; the mv-string tranche (Nov) −45% / −24% on the store shape — item complete**                                                                   | both           | S      | measured 0.7.0 regression +61% / +103%           |
-| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct 2026: −50% / −56% on the pure store shape, −64% Map replace**                                                                                                                                                                                                              | both           | M      | shape micro-benches, interleaved medians (below) |
+| 6   | ~~In-place store (`set`/`insert`/`add`/`alloc`)~~ **LANDED Oct–Nov 2026: −50% / −56% on the pure store shape, −64% Map replace; the add/alloc siblings (Nov) −18% / −10% via the transfer store — item complete**                                                                                                                         | both           | M      | shape micro-benches, interleaved medians (below) |
 | 7   | ~~Enum payload in-place construction~~ **LANDED Oct 2026: −45% / −8% on the payload shapes (aarch64; C take-variant)**                                                                                                                                                                                                                    | both           | S–M    | shape micro-benches, interleaved medians (below) |
 | 8   | ~~Regex/String O(n²) accumulators~~ **LANDED Oct 2026: −92% / −91% match accumulator, −65% / −58% replace_all skip loop, −33% / −40% String.replace_all, −28% / −14% array to_string**                                                                                                                                                    | both           | S      | shape micro-benches, interleaved medians (below) |
 | 9   | ~~Map/Set stored hash (Swiss-table tricks)~~ **LANDED Oct 2026: −35% / −52% probe shape, −21% / −49% string build+remove, −19% / −33% Set build, −22% aarch64 int rehash; int-keyed hit paths +2–10% (below)**                                                                                                                            | both           | M      | shape micro-benches, interleaved medians (below) |
@@ -882,6 +882,72 @@ type is unreachable in-source today (declaring `Map<K, SomeStruct>` poisons
 every later `SomeStruct(...)` ctor call — pre-existing, FOLLOWUP.md), so
 the Map receipt is taken on string values; struct-valued Maps will pick
 the win up when the poisoning is fixed.
+
+**The add/alloc siblings (landed Nov 2026).** The `insert`/`add`/`alloc`
+family takes an owned `mv T value` and stores it into a FRESHLY grown slot —
+a shape whose destination is either value-dependent (Set's probe compares
+the value itself) or carries op-specific post-steps (Arena's handle,
+LinkedList's links), so the `set` tranche's construct-into-the-slot splice
+does not generalize. The elision that does is the transfer store: the callee
+already OWNS the argument (the `mv T value` parameter), so the slot can TAKE
+its bytes instead of deep-copying them. `Buffer<T>.store_take` (the new
+INTERNAL primitive, `core/System/Buffer.nm`) byte-moves the value into the
+slot and ZEROES the caller's storage — the buffer becomes the sole owner and
+the caller's own teardown frees nothing. On both backends a value-struct
+parameter arrives as a POINTER to the caller's storage, so the zeroing lands
+on the producer's temp (or the donor's local). The generic bodies pick the
+arm through a new per-instantiation constant, `T_IS_VALUE_STRUCT`
+(`src/check/check_function_call_node.ts` — substituted and dead-arm-folded
+exactly like `T_NEEDS_STRDUP`/`T_FAT`):
+
+- **`T_IS_VALUE_STRUCT` true** — `Set.add`, `LinkedList.add`, `Arena.alloc`,
+  `Map.set`'s insert path (key and value), `List.push`, and
+  `Buffer.store_in_slab` (StableList's chunk tail) move the value in.
+- **false** — strings keep the deep-copying `store` (their fat pair arrives
+  by VALUE, so a take would zero only the callee's copy and leave the
+  caller's buffer shared), classes/traits keep the pointer store, scalars
+  keep the plain store, and enums/`#init` are unchanged.
+
+The `mv p` donor spelling's callee path picks the same take up (the producer
+form is stamped in place, as before).
+
+Runtime+audit tests in `test/in_place_add.test.ts` (both backends) pin the
+LinkedList/Map insert shapes, the string/scalar arms, and the emitted bodies
+(`Buffer_Rec_store_take` in the add/push/store_in_slab monos, the
+deep-copying `Buffer_string_store` in the string mono); the full suite (544
+files, both backends) passes. Two pre-existing "field of a call-result
+struct" bugs surfaced while shaping the tests (a double free on
+`container.at_or(i, fallback).name`, and a C compile failure on
+`map.get_or(k, make(0)).n`) — recorded in FOLLOWUP.md, untouched here; the
+Arena value-struct residual that keeps `test/arena.test.ts`'s counterpart
+skipped is noted there too (the take arm is already in place for when it
+lands).
+
+**Measured.** `bench/nomen/in_place_add.nm` — n iterations of
+`l.add(make(i))` into a `LinkedList<Rec>` plus `m.set(i, make(i))` into a
+`Map<int, Rec>` (`Rec`: string + int; the producer interpolates
+`"v\{i}"`, two mallocs both lowerings pay), n from argv, Apple Silicon, 7
+interleaved rounds, medians, audit off, release builds, identical outputs
+before/after; "before" binaries built from a HEAD worktree. Per add/insert
+the elided work is exactly the item's promise: the callee store's strdup
+and the caller's temp free (2 mallocs + 2 frees per iteration become 1 + 1).
+
+| Backend | before (median) | after (median) |        Δ |
+| ------- | --------------: | -------------: | -------: |
+| aarch64 |          0.349s |         0.313s | **−10%** |
+| C       |          0.222s |         0.181s | **−18%** |
+
+The emitted diff receipts it: `Buffer_Rec_store(&self->values, idx, value)`
+becomes `Buffer_Rec_store_take(&self->values, idx, value)` (a byte move +
+source zero), and the caller's temp-field free disappears.
+
+**Remainder.** None for this item: `set`/`insert`/`add`/`alloc` all lower
+without the callee-side copy (item 17c landed `Array<T>.set`), and the
+`mv p` donor spelling for `set` stays out of scope by design. The
+struct-valued Map receipt is now reachable (the ctor poisoning was fixed) and
+the take lands on its insert path; a full Map<struct> measurement is left
+for a workload that shows up (the LinkedList receipt above covers the same
+per-add work).
 
 ## 7. Enum payload in-place construction — LANDED (Oct 2026)
 

@@ -311,7 +311,12 @@ function is_unchecked_constant_condition(cond: BaseNode | undefined, status: Che
 	if (!cond || cond.node_type !== "value") return false;
 	const value = (cond as ValueNode).value;
 	for (const tp of status.type_params) {
-		if (value === `${tp}_NEEDS_STRDUP` || value === `${tp}_FAT`) return true;
+		if (
+			value === `${tp}_NEEDS_STRDUP` ||
+			value === `${tp}_FAT` ||
+			value === `${tp}_IS_VALUE_STRUCT`
+		)
+			return true;
 	}
 	return false;
 }

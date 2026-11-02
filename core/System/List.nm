@@ -7,12 +7,24 @@ pub mv struct List<T>: Viewable {
 
 	pub func push = (ref self, mv T value) {
 		if self.length < self.items.cap {
-			self.items.store(self.length, value)
+			// The value arrives owned (`mv T value`): a value-struct element
+			// moves into the fresh slot (store_take — the caller's storage
+			// zeroes, no deep copy); strings and scalars keep the
+			// deep-copying store.
+			if T_IS_VALUE_STRUCT {
+				self.items.store_take(self.length, value)
+			} else {
+				self.items.store(self.length, value)
+			}
 			self.length += 1
 			return
 		}
 		self.reserve(1)
-		self.items.store(self.length, value)
+		if T_IS_VALUE_STRUCT {
+			self.items.store_take(self.length, value)
+		} else {
+			self.items.store(self.length, value)
+		}
 		self.length += 1
 	}
 

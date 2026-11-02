@@ -35,7 +35,16 @@ pub mv struct Set<T: Hashable + Equatable> {
 		var int idx = self.find_slot(value, h, cap)
 		if self.used.load_u32(idx) == 0 {
 			self.used.store_u32(idx, 1)
-			self.slots.store(idx, value)
+			// The value arrives owned (`mv T value`): a value-struct element
+			// moves into the fresh slot (store_take — the caller's storage is
+			// zeroed, no deep copy); a string's by-value pair keeps the
+			// deep-copying store (the caller still owns its buffer), and a
+			// class/trait handle is a pointer store either way.
+			if T_IS_VALUE_STRUCT {
+				self.slots.store_take(idx, value)
+			} else {
+				self.slots.store(idx, value)
+			}
 			self.hashes.store_u32(idx, h)
 			self.length += 1
 		}

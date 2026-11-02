@@ -1,0 +1,39 @@
+import System
+
+// add/alloc sibling store shape bench — PERF_PLAN item 6's remainder. The
+// `add`/`alloc` family takes an owned `mv T value`; before the store_take
+// primitive the container body deep-copied it into the fresh slot (a second
+// strdup per string field) and the caller freed the producer's temp. With
+// store_take the value-struct element moves into the slot (the caller's
+// storage zeroes), so per add the producer's allocation IS the store.
+// One source builds on both the pre- and post-change compiler. n from argv.
+
+mv struct Rec {
+	var name = ""
+	var int n = 0
+}
+
+func make = (int i, out Rec) {
+	var r = Rec()
+	r.name = "v" + i.to_string()
+	r.n = i
+	return r
+}
+
+pub func main = (Init init) {
+	var n = 1000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var l = LinkedList<Rec>()
+	var m = Map<int, Rec>()
+	var int i = 0
+	while i < n; i += 1 {
+		l.add(make(i))
+		m.set(i, make(i))
+	}
+	Console.write(l.count.to_string())
+	Console.write(" ")
+	Console.write(m.length.to_string())
+	Console.write("\n")
+}

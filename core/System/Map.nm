@@ -58,8 +58,20 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		var int idx = self.find_slot(key, h, cap)
 		if self.used.load_u32(idx) == 0 {
 			self.used.store_u32(idx, 1)
-			self.keys.store(idx, key)
-			self.values.store(idx, value)
+			// Both arrive owned (`mv TK key, mv TV value`): a value-struct
+			// key/value moves into its fresh slot (the caller's storage
+			// zeroes, no deep copy); strings keep the deep-copying store
+			// (their pair arrives by value).
+			if TK_IS_VALUE_STRUCT {
+				self.keys.store_take(idx, key)
+			} else {
+				self.keys.store(idx, key)
+			}
+			if TV_IS_VALUE_STRUCT {
+				self.values.store_take(idx, value)
+			} else {
+				self.values.store(idx, value)
+			}
 			self.hashes.store_u32(idx, h)
 			self.length += 1
 		} else {
