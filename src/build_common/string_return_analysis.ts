@@ -84,7 +84,12 @@ export function is_library_container_get(node: unknown): boolean {
 		recv.name === "Buffer" ||
 		recv.name === "StableList" ||
 		recv.name === "ClassBuffer" ||
-		/^(Map|List|Buffer|StableList|ClassBuffer)_/.test(recv.name)
+		// Arena<T>: `get` is `self.values.load(handle.index)` — the same slot
+		// byte-load (the mv value-struct `load` keeps its string fields
+		// borrowed from the slot), admitted by receiver type for the same
+		// reason as the containers above.
+		recv.name === "Arena" ||
+		/^(Map|List|Buffer|StableList|ClassBuffer|Arena)_/.test(recv.name)
 	);
 }
 

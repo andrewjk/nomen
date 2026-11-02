@@ -47,12 +47,11 @@ pub func main = (Init init) {
 		);
 	});
 
-	// SKIP (B1 backend-cutover residual): the Arena mono's inlined Buffer
-	// primitives + the mv-struct load/binding interplay still stale-free
-	// and leak under audit on aarch64 — the "mv elements through inlined
-	// raw container bodies" tranche (see FOLLOWUP.md). The Buffer-based
-	// containers (List) are covered by the specialization barrier.
-	test.skip("value-struct payloads (alloc / get / set)", async () => {
+	// Value-struct payloads exercise the mv-struct load/binding interplay:
+	// `get` is a slot borrow (the loaded copy's mv string fields alias the
+	// slot — admitted by is_library_container_get), so expression temps
+	// reclaim nothing and the slot keeps sole ownership through the `set`.
+	test("value-struct payloads (alloc / get / set)", async () => {
 		const input = `import System
 
 pub mv struct Node {

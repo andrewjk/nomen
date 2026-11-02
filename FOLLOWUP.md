@@ -591,12 +591,3 @@ map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
   guarded-index section).
 - **Containers other than List/Map** (`LinkedList`, `Tree`) have no
   contract-free read and no effect model — guards only.
-
-## Arena<T> value-struct payloads (known skipped residual)
-
-`test/arena.test.ts`'s "value-struct payloads (alloc / get / set)" stays
-`test.skip`: the Arena mono's inlined Buffer primitives + the mv-struct
-load/binding interplay still stale-free and leak under audit on aarch64 (the
-"mv elements through inlined raw container bodies" tranche). The add/alloc
-tranche's `Arena.alloc` store_take arm is already in place, so the copy
-elision lands when that residual does.
