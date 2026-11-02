@@ -566,27 +566,6 @@ the failures are a rebuild/worker race, not codegen. Mitigation for a
 touched-core session: run the suite once to rebuild, then judge on the
 second run — or make the prebuild a hard barrier for worker startup.
 
-## Negative int64 literals beyond 2^53 lose precision in constant folding
-
-Recorded 2026-11-02 while landing PERF_PLAN items 10/8 (writer-form
-interpolation — unrelated; the folds are identical on main@caf50305 with the
-item's src changes stashed). Reproduce:
-
-    var int64 m = -9223372036854775807 - 1
-    Console.write("\{m}\n")
-
-prints `9223372036854775616` (0x7FFFFFFFFFFFFF40) instead of
-`-9223372036854775808`. The POSITIVE literal path is exact
-(`9223372036854775807` prints correctly), so the loss is in the unary-minus /
-binary-fold path, which evidently round-trips the magnitude through a JS
-`number` (doubles hold 53 bits; `-9223372036854775807` rounds to
-`-9223372036854775808`, and the subsequent `- 1` fold leaves the wrapped
-pattern shown above). The same mis-fold appears for `m = 0 - <big>` runtime
-shapes because the constant operand is folded first. Relevant machinery:
-`parse_int_literal_bigint` already exists (the tokenizer/emitter use it —
-`emit_immediate`'s BigInt path) — the declaration/constant folding should use
-the same BigInt route instead of `parseInt`/`Number`.
-
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files

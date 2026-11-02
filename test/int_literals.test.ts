@@ -75,6 +75,66 @@ Console.write("\\{n}")
 		await build_and_check_output(input, "int_lit_decimal_underscores", "1000000");
 	});
 
+	// Int64 constant folding beyond 2^53 (FOLLOWUP.md): the aarch64 backend's
+	// literal-op fold computed in JS doubles — which round beyond 2^53 AND
+	// whose String() prints ~17 significant digits — so
+	// `-9223372036854775807 - 1` folded to the out-of-range literal
+	// `-9223372036854776000` and ran as 9223372036854775616. The fold now
+	// runs on BigInt (the int_literal.ts route) and wraps like the machine.
+	describe("int64 constant folding precision", () => {
+		test("INT64_MIN spelled -max - 1 folds exactly", async () => {
+			const input = `
+var int64 m = -9223372036854775807 - 1
+Console.write("\\{m}")
+`;
+			await build_and_check_output(input, "int64_fold_int64_min", "-9223372036854775808");
+		});
+
+		test("0 - big folds exactly (the constant operand used to fold first)", async () => {
+			const input = `
+var int64 m = 0 - 9223372036854775807
+Console.write("\\{m}")
+`;
+			await build_and_check_output(input, "int64_fold_zero_minus_big", "-9223372036854775807");
+		});
+
+		test("the positive max folds exactly", async () => {
+			const input = `
+var int64 m = 9223372036854775806 + 1
+Console.write("\\{m}")
+`;
+			await build_and_check_output(input, "int64_fold_int64_max", "9223372036854775807");
+		});
+
+		test("an overflowing product wraps like the machine's mul", async () => {
+			// 3037000500^2 = 9223372037000250000 > 2^63 — the 64-bit register
+			// wraps it to -9223372036709301616, and so must the fold.
+			const input = `
+var int64 m = 3037000500 * 3037000500
+Console.write("\\{m}")
+`;
+			await build_and_check_output(input, "int64_fold_mul_wrap", "-9223372036709301616");
+		});
+
+		test("a shift beyond int32 width folds at 64-bit like lsl", async () => {
+			// The old fold shifted in JS int32 (`1 << 62` → 1 << 30); the
+			// machine's `lsl` is 64-bit.
+			const input = `
+var int64 s = 1 << 62
+Console.write("\\{s}")
+`;
+			await build_and_check_output(input, "int64_fold_shift64", "4611686018427387904");
+		});
+
+		test("signed division truncates toward zero", async () => {
+			const input = `
+var int64 q = -7 / 2
+Console.write("\\{q}")
+`;
+			await build_and_check_output(input, "int64_fold_div_trunc", "-3");
+		});
+	});
+
 	test("type inference without annotation", async () => {
 		const input = `
 const x = 0xFF
