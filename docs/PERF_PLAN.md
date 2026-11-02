@@ -916,12 +916,14 @@ LinkedList/Map insert shapes, the string/scalar arms, and the emitted bodies
 (`Buffer_Rec_store_take` in the add/push/store_in_slab monos, the
 deep-copying `Buffer_string_store` in the string mono); the full suite (544
 files, both backends) passes. Two pre-existing "field of a call-result
-struct" bugs surfaced while shaping the tests (a double free on
-`container.at_or(i, fallback).name`, and a C compile failure on
-`map.get_or(k, make(0)).n`) — recorded in FOLLOWUP.md, untouched here; the
-Arena value-struct residual that keeps `test/arena.test.ts`'s counterpart
-skipped is noted there too (the take arm is already in place for when it
-lands).
+struct" bugs surfaced while shaping the tests — a double free on
+`container.at_or(i, fallback).name` (`at_or` was missing from the
+borrow-accessor family) and a C compile failure on
+`map.get_or(k, make(0)).n` (a hoisted argument emitted inside its receiver
+temp's initializer) — and have since been fixed (`test/call_result_field_read.test.ts`);
+the Arena value-struct residual that keeps `test/arena.test.ts`'s
+counterpart skipped is noted in FOLLOWUP.md (the take arm is already in
+place for when it lands).
 
 **Measured.** `bench/nomen/in_place_add.nm` — n iterations of
 `l.add(make(i))` into a `LinkedList<Rec>` plus `m.set(i, make(i))` into a

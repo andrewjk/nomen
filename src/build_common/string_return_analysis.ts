@@ -25,10 +25,11 @@ const EMPTY_SET: Set<string> = new Set();
 /**
  * The container/buffer BORROW accessor family — method calls that return a
  * view into the receiver's existing storage rather than a fresh value:
- * `.at(i)`, `.at_or_panic(i)` (the trapping `at` — it returns `self.at(i)`),
- * `.first()`, `.slice(...)`, `.get_or(...)` / `.get_or_panic(...)` (they
- * return `self.values.load(idx)` — or the caller's own fallback temp), and
- * the backing Buffer slot-load primitive `load_T`. A `mv out T` accessor
+ * `.at(i)`, `.at_or(i, fallback)` (it returns `self.at(i)` — or the caller's
+ * OWN fallback temp), `.at_or_panic(i)` (the trapping `at`), `.first()`,
+ * `.slice(...)`, `.get_or(...)` / `.get_or_panic(...)` (they return
+ * `self.values.load(idx)` — or the caller's own fallback temp), and the
+ * backing Buffer slot-load primitive `load_T`. A `mv out T` accessor
  * (`owned_return`, e.g. `pop` / `move_T`) relinquishes the slot and is NOT
  * in this family — and neither is plain `.get(...)`: user code defines
  * owning `get` methods, so the declaration-side gates admit the library
@@ -37,6 +38,7 @@ const EMPTY_SET: Set<string> = new Set();
 export function is_container_borrow_accessor_name(name: string): boolean {
 	return (
 		name === "at" ||
+		name === "at_or" ||
 		name === "at_or_panic" ||
 		name === "first" ||
 		name === "slice" ||

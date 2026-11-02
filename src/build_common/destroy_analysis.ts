@@ -328,10 +328,10 @@ export function element_load_aliases_destroy_state(
 
 /**
  * Whether a DECLARATION is the `List<Own>.at()` pure borrow: bound (non-`mv`,
- * non-`ref`) to a container borrow accessor call (`at`/`at_or_panic`/`first`/
- * `slice`/`get_or`/`get_or_panic`/`load`, without `owned_return`) whose
- * value-struct element aliases destroy-worthy state. Both backends gate the
- * binding's scope-exit destroy and the string strdup repair on this — see
+ * non-`ref`) to a container borrow accessor call (`at`/`at_or`/`at_or_panic`/
+ * `first`/`slice`/`get_or`/`get_or_panic`/`load`, without `owned_return`)
+ * whose value-struct element aliases destroy-worthy state. Both backends gate
+ * the binding's scope-exit destroy and the string strdup repair on this — see
  * element_load_aliases_destroy_state.
  */
 export function is_pure_borrow_element_load(
@@ -347,6 +347,7 @@ export function is_pure_borrow_element_load(
 	const name = func.name ?? "";
 	const is_borrow_accessor =
 		name === "at" ||
+		name === "at_or" ||
 		name === "at_or_panic" ||
 		name === "first" ||
 		name === "slice" ||
