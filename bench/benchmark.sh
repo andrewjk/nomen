@@ -15,7 +15,9 @@ GO_BUILD="$BENCH_DIR/go/build"
 RUST_DIR="$BENCH_DIR/rust"
 CARGO="cargo"
 TMPDIR="${TMPDIR:-/tmp}/nomen_bench_$$"
+GO_CACHE="$TMPDIR/go-build"
 mkdir -p "$TMPDIR" "$GO_BUILD"
+export GOCACHE="$GO_CACHE"
 
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -26,30 +28,40 @@ to_ms() {
 	echo "$min * 60000 + $sec * 1000" | bc | cut -d. -f1
 }
 
-# "Nomen compare" column: Nomen's time as a ratio of the slowest and fastest of
-# the OTHER languages, formatted "<nomen/slowest>-<nomen/fastest>". A value >1.0
-# means Nomen is slower than that end of the field, <1.0 means Nomen is faster.
-# "-" when there are no competitor times or it would divide by zero.
+# "Nomen compare" column: Nomen's time as a ratio of each competitor's time,
+# competitors sorted slowest-first, space-separated: "vs-slowest vs-middle
+# vs-fastest". A value >1.0 means Nomen is slower than that competitor, <1.0
+# means faster. "-" when there are no competitor times or it would divide by
+# zero.
 nomen_compare() {
 	local nomen_num="$1"; shift
-	local fastest="" slowest="" v
-	for v in "$@"; do
-		if [ -z "$fastest" ]; then fastest=$v; slowest=$v; fi
-		[ "$v" -lt "$fastest" ] && fastest=$v
-		[ "$v" -gt "$slowest" ] && slowest=$v
-	done
-	if [ -z "$nomen_num" ] || [ -z "$fastest" ] || [ "$fastest" -le 0 ]; then
+	local times=("$@")
+	if [ -z "$nomen_num" ] || [ "${#times[@]}" -eq 0 ]; then
 		echo "-"
 		return 0
 	fi
-	awk -v e="$nomen_num" -v lo="$slowest" -v hi="$fastest" \
-		'BEGIN { printf "%.1f-%.1fx", e/lo, e/hi }'
+	local sorted
+	sorted=($(printf '%s\n' "${times[@]}" | sort -rn))
+	local out="" sep="" v
+	for v in "${sorted[@]}"; do
+		[ "$v" -le 0 ] && continue
+		out="$out$sep$(awk -v e="$nomen_num" -v t="$v" 'BEGIN { printf "%.1f", e/t }')"
+		sep=" "
+	done
+	if [ -z "$out" ]; then echo "-"; else echo "$out"; fi
 }
 
 # ── Benchmark definitions ────────────────────────────────────────────────────
 # Format: name|small_args|large_args|zig_src|rust_src
 # `$BENCH_DIR` in args expands now (at array-definition time).
 # NOTE: knucleotide/regex-redux only have one input file each, so small==large.
+#
+# Sizing rule: every tier's WORKLOAD should dominate process startup (~2ms for
+# every language here) and land Nomen/aarch64 inside ~20ms-5s. Tiers sized
+# below that mostly measure startup and per-op noise, not the data structure
+# or algorithm under test (lru's old 200k tier was 4-14ms of compute over a
+# 2ms startup — useless for comparing maps). Fixed-input benches
+# (knucleotide/regex-redux) are exempt — their inputs can't scale.
 
 BENCHES=(
 	"pidigits|1000|4000|pidigits1.zig|pidigits1.rs"
@@ -58,14 +70,14 @@ BENCHES=(
 	"binarytrees|15|18|binarytrees1.zig|binarytrees5.rs"
 	"merkletrees|15|17|merkletrees1.zig|merkletrees1.rs"
 	"nsieve|10|12|nsieve1.zig|nsieve1.rs"
-	"lru|100 50000|100 200000|lru1.zig|lru1.rs"
+	"lru|100 1000000|1000 20000000|lru1.zig|lru1.rs"
 	"knucleotide|$BENCH_DIR/knucleotide_input.txt|$BENCH_DIR/knucleotide_input.txt|knucleotide1.zig|knucleotide8.rs"
-	"json-serde|$BENCH_DIR/sample.json 1000|$BENCH_DIR/sample.json 5000|json-serde1.zig|json-serde1.rs"
+	"json-serde|$BENCH_DIR/sample.json 1000|$BENCH_DIR/sample.json 25000|json-serde1.zig|json-serde1.rs"
 	"regex-redux|$BENCH_DIR/25000_in|$BENCH_DIR/25000_in|regex-redux1.zig|regex-redux6.rs"
 	"nbody|500000|5000000|nbody1.zig|nbody1.rs"
 	"spectral-norm|500|1500|spectral-norm1.zig|spectral-norm1.rs"
 	"mandelbrot|1000|2000|mandelbrot1.zig|mandelbrot8.rs"
-	"edigits|2000|5000|edigits1.zig|edigits1.rs"
+	"edigits|20000|50000|edigits1.zig|edigits1.rs"
 )
 
 # Split benchmarks by whether the small and large args differ. Benches with
@@ -88,6 +100,18 @@ unset _entry _b _small _large _z _r
 # Warm up the Rust dependency tree (untimed) so per-benchmark Rust compile
 # times reflect compiling each benchmark's own code, not its dependencies.
 ( cd "$RUST_DIR" && $CARGO build --release --quiet 2>/dev/null ) || true
+
+# Warm up Go's build cache (untimed) so per-benchmark Go compile times reflect
+# compiling each benchmark's own code, not the standard library — mirroring the
+# Rust warm-up above. Uses the per-run GOCACHE exported above, so results don't
+# depend on whatever happens to be in the user's persistent cache.
+for _entry in "${BENCHES[@]}"; do
+	IFS='|' read -r _bench _small _large _z _r <<< "$_entry"
+	if [ -f "$BENCH_DIR/go/$_bench.go" ]; then
+		go build -o /dev/null "$BENCH_DIR/go/$_bench.go" 2>/dev/null || true
+	fi
+done
+unset _entry _bench _small _large _z _r
 
 echo "### Compile times"
 echo ""
@@ -124,8 +148,16 @@ for entry in "${BENCHES[@]}"; do
 	fi
 
 	# Go compile
+	# GOCACHE was warmed untimed above. Appending a unique comment to a copy
+	# of the source forces the benchmark's own package to recompile (Go's
+	# cache is content-addressed, so the mtime-based `touch` used for Rust
+	# won't invalidate it). The measured time is thus the benchmark's own
+	# code compiled against cached std-lib dependencies, matching the Rust
+	# treatment.
 	if [ -f "$BENCH_DIR/go/$bench.go" ]; then
-		if raw=$( { time go build -o "$GO_BUILD/$bench" "$BENCH_DIR/go/$bench.go" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
+		cp "$BENCH_DIR/go/$bench.go" "$TMPDIR/go_src_$bench.go"
+		echo "// bench-build $TMPDIR" >> "$TMPDIR/go_src_$bench.go"
+		if raw=$( { time go build -o "$GO_BUILD/$bench" "$TMPDIR/go_src_$bench.go" 2>/dev/null; } 2>&1 | grep real | sed 's/real[[:space:]]*//' | sed 's/[[:space:]]*$//'); then
 			go_num=$(to_ms "$raw"); go_ms="${go_num}ms"
 		else
 			go_ms="FAIL"
