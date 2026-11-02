@@ -27,6 +27,32 @@ them; the rest carry expected wins and the receipts they rest on).
 | 16  | Async paths audit                                                                                                                                                                                                                                                                                                                         | both           | ?      | unexplored, unmeasured                           |
 | 17  | ~~Minor batch~~ **LANDED Oct 2026: `List.remove_at_or_panic` bulk tail move −91% / −61% (17a); StableList tail push direct view store −14% aarch64 / flat C (17b); `Array.set` in-place producer store −51% / −48% (17c); `json_parse_string`/`number` scan + bulk append −44% / −33% on string-heavy docs, json-serde −12% / −9% (17d)** | both           | S      | assorted                                         |
 
+## Remaining remainders, ranked (Nov 2026)
+
+The open remainders across the items above, ordered by expected
+improvement per unit of effort. "Expected" for unmeasured entries rests on
+the receipts each item's row names; statuses cross-checked against git
+history. Items 2–7 are "this week" material; items 1, 9, and 10 are the
+only entries expected to move a headline bench number.
+
+| #   | Remainder                                                                                          | Effort | Expected win                | Note                                                                                                                             |
+| --- | -------------------------------------------------------------------------------------------------- | ------ | --------------------------- | ---------------------------------------------------------------- |
+| 1   | Item 1 — faster allocator (slab/bump)                                                              | M      | Large                       | "Largest unclaimed lever"; binarytrees/merkletrees are allocation-dominated and regressed with the class→Box idiom. Not a remainder — the only unlanded item — but it tops this ranking. |
+| 2   | Item 15 — 64-bit arithmetic folds (constant materialization, field-value forwarding, immediate shifts) | S–M    | Medium, aarch64-only        | `Random.next` ~40 → ~14 instructions; generalizes to all pure-Nomen 64-bit math. Invisible on C.                                  |
+| 3   | Items 10/8 — writer-form interpolation lowering (append arguments straight into the helper's buffer) | S–M    | Medium on string-heavy code | Drops one malloc per numeric interpolation argument; the landed interp tranche proved these paths hot (−80%). Hand-rolled `%f` excluded — one snprintf is fine. |
+| 4   | Item 17r — Map/Set.remove bulk `move_range`                                                        | S      | Small–medium                | 17a's List receipt (−91%) proves the shape; Map/Set's probe loop makes it less blocky, so less of the win.                        |
+| 5   | Item 13(2,3) — case types over generic enums + base↔case conversions                               | S–M    | Feature-completion          | More completion than perf; unblocks `Option<int>.some`.                                                                           |
+| 6   | Item 9r — hash tag packed into the `used` word                                                     | S      | Small                       | One load less per probe; only pays if int-keyed hit paths matter (they currently PAY +2–10%).                                      |
+| 7   | Items 14r/17br — StableList 24/32-byte pair stores + bulk `copy`                                   | S      | Small, aarch64-only         | Waiting on a hot chunked-storage shape; the ≤16 work showed C is already flat.                                                     |
+| 8   | Item 2r — index/call-segment push receivers (`rows.at(0).items.push(Ctor(...))`)                   | S–M    | Small in practice           | −50%-class per site but no booked workload; scope to slot-borrow segments only, policing the alias with item 4's borrow registry.  |
+| 9   | Item 4r — struct-`view` (field access through a view value)                                        | L      | Potentially large           | Borrow reads measured −30%; but a language-design item (view over struct fields, nested borrow rules undesigned). Highest ceiling, highest cost. |
+| 10  | Item 13(1,4) — true variable-stride arrays + whole-enum runtime-variable mode                      | L      | Large where applicable      | Case monos already took −49% RSS; variable-stride needs a packed container family.                                                 |
+| 11  | Item 16 — async paths audit                                                                        | ?      | Unknown                     | Only if GUI/async is a real target.                                                                                                |
+| 12  | Item 12r — trait-field packing gap + `_has` flag grouping                                          | S–M    | Tiny                        | No System struct affected today.                                                                                                   |
+| 13  | Item 7r — method-call enum payload arguments (`Res.ok(seed.copy())`)                               | S–M    | Small                       | Needs the C per-argument heapness classifier (the take label is per-call).                                                          |
+| 14  | Item 11r — trait devirt extensions                                                                 | —      | —                           | Blocked (trait fields, STRUCT_PLAN_3 B5) or a different analysis (container elements). Parked.                                      |
+| 15  | Items 3r/8r — enum-with-data donors; `String.replace_first`                                        | —      | ~zero                       | By-design non-elisions — nothing to win. Don't.                                                                                     |
+
 ## 1. Faster allocator — slab/bump the class-allocation path
 
 PERF.md's only "Large" row; ASM_TODO calls it "the largest unclaimed perf
@@ -774,10 +800,6 @@ bare `s`, the caller's `free(_param_N.ptr)` becomes `_mv_owns__param_N = 1`
 (the flag-guarded free skips), and the field's owner frees the transferred
 pair at its scope exit.
 
-**Remainder.** None — every remainder the item listed is landed: the seed
-strdup (the null-seed tranche above), `json_parse_string`'s per-byte append
-loop (item 17d), and the general `mv string` param (this tranche).
-
 ## 6. In-place store: the `set`/`insert`/`add`/`alloc` siblings — LANDED (Oct 2026)
 
 **What landed.** The in-place construction guarantee extended from push to
@@ -942,14 +964,6 @@ and the caller's temp free (2 mallocs + 2 frees per iteration become 1 + 1).
 The emitted diff receipts it: `Buffer_Rec_store(&self->values, idx, value)`
 becomes `Buffer_Rec_store_take(&self->values, idx, value)` (a byte move +
 source zero), and the caller's temp-field free disappears.
-
-**Remainder.** None for this item: `set`/`insert`/`add`/`alloc` all lower
-without the callee-side copy (item 17c landed `Array<T>.set`), and the
-`mv p` donor spelling for `set` stays out of scope by design. The
-struct-valued Map receipt is now reachable (the ctor poisoning was fixed) and
-the take lands on its insert path; a full Map<struct> measurement is left
-for a workload that shows up (the LinkedList receipt above covers the same
-per-add work).
 
 ## 7. Enum payload in-place construction — LANDED (Oct 2026)
 
@@ -2069,13 +2083,20 @@ optimizer).
   (the array-`set`-heavy bench, int elements — never stamped) 0.10 → 0.10s,
   json-serde flat, binarytrees 1.40 → 1.39s, lru flat, nsieve 0.12 → 0.12s.
 
-**Remainder.** `Array<string>` built from a LITERAL (`var arr = ["a", "b"]`)
-stores rodata pointers in its slots, so any `set` (in-place or not) frees
-static memory — a pre-existing bug, now recorded in FOLLOWUP.md (the
-`Array.with` shape has owned slots and is the supported one). Inline (stack)
-storage arrays take the splice's non-heap address branch, but a string stack
-array without initialisation has uninitialized slots (the reclaim would free
-garbage) — no such shape is constructible through the checked language today.
+**Remainder.** The item's original remainder was a pre-existing bug, since
+fixed: an `Array<string>` built from a LITERAL (`var arr = ["a", "b"]`)
+stored rodata pointers in its slots, so any `set` (in-place or not) freed
+static memory (`Array.with` — which strdups its seed per slot — was the
+supported constructor). Fixed 2026-10-31 (d01b412f "Array<string> literal
+rows own heap copies"): the literal build strdups each string row, so every
+slot owns its heap bytes like `Array.with`'s, the displaced free is valid,
+and `set` spells a dedicated owned-slot store (a fresh-heap producer
+transfers as-is, anything else strdups) — pinned by `test/arrays.test.ts`
+on both backends. The `for ref x of strings` item-reassignment leak that
+fix surfaced landed separately (acc85356). Inline (stack) storage arrays
+take the splice's non-heap address branch, but a string stack array without
+initialisation has uninitialized slots (the reclaim would free garbage) —
+no such shape is constructible through the checked language today.
 
 ### 17d. `json_parse_string`/`json_parse_number` scan + bulk append — LANDED (Oct 2026)
 
