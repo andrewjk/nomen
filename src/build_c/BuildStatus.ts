@@ -213,6 +213,15 @@ export default interface BuildStatus {
 		is_nullable: boolean;
 	}[];
 	interpolate_string_counts: Set<number>;
+	/**
+	 * Writer-form interpolation (PERF_PLAN items 10/8 remainder): the FULL
+	 * names of the kind-suffixed interpolation helpers this TU calls
+	 * (`_string_interpolate_2_ds` — per-argument kinds after the arity).
+	 * Each mix is emitted as a C-static helper in the TU that uses it (the
+	 * system TU cannot enumerate mixes, so — unlike the unsuffixed arities
+	 * 1..7 — no cross-TU resolution exists).
+	 */
+	interpolate_mixed: Set<string>;
 	return_assign?: string;
 	/**
 	 * The byte size of the return_assign join slot (16 for a fat string, 8

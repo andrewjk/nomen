@@ -59,6 +59,12 @@ import {
 	apply_list_length_effect,
 	is_list_type_name,
 } from "./utils/flow_bounds.ts";
+import {
+	build_interp_name,
+	interp_arg_rewrite,
+	is_interp_name,
+	parse_interp_name,
+} from "./utils/interp_arg_kinds.ts";
 import is_visible from "./utils/is_visible.ts";
 import {
 	borrowed_param_transfer_error,
@@ -517,6 +523,12 @@ export default function check_function_call(
 		alias_of?: string;
 	}[] = [];
 
+	// Writer-form interpolation kinds (see interp_arg_kinds.ts): collected
+	// per argument as the loop unwraps numeric `.to_string()` wraps; the
+	// node's name gains the suffix after the loop when any numeric kind
+	// was recorded.
+	const interp_kinds: string[] = [];
+
 	for (let [i, param] of node.params.entries()) {
 		const func_param = func.params[i + self_offset];
 
@@ -613,6 +625,28 @@ export default function check_function_call(
 		}
 		status.expected_type = old_expected_type;
 		status.allow_null_value = old_allow_null;
+
+		// Writer-form interpolation (PERF_PLAN items 10/8 remainder): an
+		// interpolation argument the parse layer wrapped in `.to_string()`
+		// whose expression is a NUMERIC scalar drops the wrap — the argument
+		// passes raw (the mixed helper renders it into its own buffer), so
+		// the per-argument `to_string` malloc disappears. The wrap was
+		// already checked (its target chain ran above, types stamped), so
+		// unwrapping to the target is check-neutral; the node's name gains
+		// the kinds suffix after the loop below. All-string arguments (and
+		// already-`.to_string()`-spelled sources over strings) keep the
+		// unsuffixed lowering untouched. Index 0 is the pattern literal —
+		// never rewritten.
+		if (i > 0 && is_interp_name(node.name) && parse_interp_name(node.name).kinds === null) {
+			const rewrite = interp_arg_rewrite(param, status);
+			if (rewrite.kind && rewrite.target) {
+				node.params[i] = rewrite.target;
+				param = rewrite.target;
+				interp_kinds.push(rewrite.kind);
+			} else {
+				interp_kinds.push("s");
+			}
+		}
 
 		// A capturing closure is a heap env + descriptor. A func-typed FIELD
 		// of a VALUE struct cannot own it: value structs are copyable, so the
@@ -2273,6 +2307,21 @@ export default function check_function_call(
 	// backends — the name is still given up, exactly as the spelling
 	// promises. (For class/trait args, mv transfers the pointer — that path
 	// is unchanged.)
+
+	// Writer-form interpolation: when the argument loop unwrapped at least
+	// one numeric `.to_string()` wrap, the helper's name gains the kinds
+	// suffix — the mixed helper both backends emit for exactly this mix.
+	// An all-argument string interpolation keeps the unsuffixed name (the
+	// system TU's pre-emitted arities 1..7 keep resolving). The kinds cover
+	// the ARGUMENTS (param 0 is the pattern literal).
+	if (interp_kinds.length === node.params.length - 1 && interp_kinds.some((k) => k !== "s")) {
+		node.name = build_interp_name(node.params.length - 1, interp_kinds);
+		// The builds emit through the resolved FunctionNode's label
+		// (`emission_label(node.resolved_function)`), and the synthesized
+		// helper node was stamped before this rename — retitle it so the
+		// call targets the mixed helper.
+		func.name = node.name;
+	}
 	return true;
 }
 

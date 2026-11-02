@@ -324,7 +324,7 @@ hand-written body was ~14. All three gaps are closed now (PERF_PLAN item 15;
    longer stores and then reloads the field — the reload forwards the
    stored register.
 3. **Immediate shift counts.** `z >> 30` no longer pays `mov x0, #30; lsr
-   x0, x12, x0` — the immediate `lsr x0, x12, #30` form.
+x0, x12, x0` — the immediate `lsr x0, x12, #30` form.
 
 Emitted body: 39 → 25 instructions; splitmix shape −10.5% wall; suite
 −4.3% nsieve / −1.9% binarytrees / −1.6% lru / flat json-serde. The raw
@@ -587,6 +587,27 @@ every downstream delta is off by −16 and the real entry's `ret` reports
 suite stays green; the sanitizer would be to treat a repeated entry label
 (or any label preceded by `.globl`/`.p2align`) as a fresh delta-0 root, the
 same way a new function is.
+
+## Negative int64 literals beyond 2^53 lose precision in constant folding
+
+Recorded 2026-11-02 while landing PERF_PLAN items 10/8 (writer-form
+interpolation — unrelated; the folds are identical on main@caf50305 with the
+item's src changes stashed). Reproduce:
+
+    var int64 m = -9223372036854775807 - 1
+    Console.write("\{m}\n")
+
+prints `9223372036854775616` (0x7FFFFFFFFFFFFF40) instead of
+`-9223372036854775808`. The POSITIVE literal path is exact
+(`9223372036854775807` prints correctly), so the loss is in the unary-minus /
+binary-fold path, which evidently round-trips the magnitude through a JS
+`number` (doubles hold 53 bits; `-9223372036854775807` rounds to
+`-9223372036854775808`, and the subsequent `- 1` fold leaves the wrapped
+pattern shown above). The same mis-fold appears for `m = 0 - <big>` runtime
+shapes because the constant operand is folded first. Relevant machinery:
+`parse_int_literal_bigint` already exists (the tokenizer/emitter use it —
+`emit_immediate`'s BigInt path) — the declaration/constant folding should use
+the same BigInt route instead of `parseInt`/`Number`.
 
 ## Orphaned `???`/`!!!` tokenizer symbols
 

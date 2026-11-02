@@ -10,6 +10,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_box_type } from "../check/utils/box.ts";
+import { parse_interp_name } from "../check/utils/interp_arg_kinds.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -291,6 +292,25 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 	for (let i = 0; i < node.params.length; i++) {
 		if (i > 0) {
 			status.code += ", ";
+		}
+
+		// Writer-form interpolation (PERF_PLAN items 10/8 remainder): a
+		// kind-suffixed helper call's numeric arguments pass RAW — the
+		// checker already stripped their `.to_string()` wraps, and the mixed
+		// helper's parameter type (long long / unsigned long long / double)
+		// does the promotion the wrap's cast used to do. The name suffix is
+		// the kind source (the helper's synthesized params carry no types).
+		if (i > 0 && node.name.startsWith("_string_interpolate_")) {
+			const kinds = parse_interp_name(node.name).kinds;
+			const kind = kinds?.[i - 1];
+			if (kind && kind !== "s") {
+				const cast =
+					kind === "i" ? "(long long)(" : kind === "u" ? "(unsigned long long)(" : "(double)(";
+				status.code += `${cast}`;
+				build_node(node.params[i], status);
+				status.code += `)`;
+				continue;
+			}
 		}
 
 		if (i === variadic_idx && node.params[i].node_type === "array") {
@@ -781,6 +801,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	if (node.name.startsWith("_string_interpolate_")) {
 		status.interpolate_string_counts.add(node.params.length - 1);
+		// A kind-suffixed name (writer-form numeric arguments) collects its
+		// FULL name — the mix helper is emitted per-TU (see
+		// build_root_node's runtime section).
+		if (parse_interp_name(node.name).kinds) status.interpolate_mixed.add(node.name);
 	}
 
 	if (node.swap_params?.size) {

@@ -1,3 +1,4 @@
+import { parse_interp_name } from "../check/utils/interp_arg_kinds.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { child_nodes } from "../nodes/child_nodes.ts";
 import RootNode from "../nodes/RootNode.ts";
@@ -212,5 +213,92 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 }
 `;
 		}
+	}
+
+	// Writer-form interpolation helpers (PERF_PLAN items 10/8 remainder):
+	// one per kind-mix the TU calls (`_string_interpolate_<arity>_<kinds>`).
+	// A numeric argument (`i` signed int / `u` unsigned / `f` float — every
+	// float family is a 64-bit double) renders into a per-argument stack
+	// scratch — the append_int digit loop (magnitude via the two's-
+	// complement negate, so INT64_MIN is exact); ONE `%f` snprintf per
+	// float (the item's hand-rolled-`%f` exclusion) — and every argument
+	// then walks as a (ptr, len) pair: the unsuffixed helper's copy walk,
+	// unchanged. Each mixed helper is C-STATIC and emitted in EVERY mode:
+	// the system TU cannot enumerate mixes, so no cross-TU resolution
+	// exists (the static also keeps a library mix and a user mix from
+	// colliding at link time).
+	for (const mixed_name of [...status.interpolate_mixed].sort()) {
+		const { arity, kinds } = parse_interp_name(mixed_name);
+		if (!kinds || kinds.length !== arity) continue;
+		const params = kinds.map((k, n) =>
+			k === "s"
+				? `nomen_string arg${n + 1}`
+				: k === "i"
+					? `long long arg${n + 1}`
+					: k === "u"
+						? `unsigned long long arg${n + 1}`
+						: `double arg${n + 1}`,
+		);
+		const declaration = `nomen_string ${mixed_name}(nomen_string pattern, ${params.join(", ")})`;
+		// The forward declaration always goes to the header (which the code
+		// file includes at the top) — the runtime section is emitted after
+		// the user/library bodies, so every call site needs it. A static
+		// DECLARATION without a definition in this TU is not warned.
+		status.headers += `${declaration.replace(/^nomen_string /, "static nomen_string ")};\n`;
+		const range = Array.from({ length: arity }, (_, i) => i);
+		status.code += `${declaration.replace(/^nomen_string /, "static nomen_string ")}\n`;
+		status.code += `{\n`;
+		status.code += `    const char *ptrs[${arity}];\n`;
+		status.code += `    long lens[${arity}];\n`;
+		for (const n of range) {
+			const k = kinds[n];
+			const arg = `arg${n + 1}`;
+			if (k === "s") {
+				status.code += `    ptrs[${n}] = ${arg}.ptr; lens[${n}] = ${arg}.len;\n`;
+			} else if (k === "f") {
+				status.code += `    char scratch_f${n}[360];\n`;
+				status.code += `    lens[${n}] = snprintf(scratch_f${n}, sizeof(scratch_f${n}), "%f", ${arg});\n`;
+				status.code += `    ptrs[${n}] = scratch_f${n};\n`;
+			} else {
+				status.code += `    char scratch_${n}[24];\n`;
+				status.code += `    {\n`;
+				status.code += `        int pos = 24;\n`;
+				if (k === "i") {
+					status.code += `        // Magnitude via the two's-complement negate (u stays correct for INT64_MIN).\n`;
+					status.code += `        unsigned long long u = ${arg} < 0 ? (unsigned long long)(-(${arg} + 1LL)) + 1ULL : (unsigned long long)${arg};\n`;
+				} else {
+					status.code += `        unsigned long long u = (unsigned long long)${arg};\n`;
+				}
+				status.code += `        do {\n`;
+				status.code += `            scratch_${n}[--pos] = (char)('0' + (int)(u % 10));\n`;
+				status.code += `            u /= 10;\n`;
+				status.code += `        } while (u != 0);\n`;
+				if (k === "i") {
+					status.code += `        if (${arg} < 0) scratch_${n}[--pos] = '-';\n`;
+				}
+				status.code += `        ptrs[${n}] = scratch_${n} + pos; lens[${n}] = 24 - pos;\n`;
+				status.code += `    }\n`;
+			}
+		}
+		status.code += `    long total = pattern.len - ${2 * arity};\n`;
+		for (const n of range) status.code += `    total += lens[${n}];\n`;
+		status.code += `    char *str = (char *)malloc((size_t)total + 1);\n`;
+		status.code += `    char *dst = str;\n`;
+		status.code += `    const char *src = pattern.ptr;\n`;
+		status.code += `    const char *end = pattern.ptr + pattern.len;\n`;
+		status.code += `    int ai = 0;\n`;
+		status.code += `    while (src < end) {\n`;
+		status.code += `        if (*src == '%' && src + 1 < end && src[1] == 's' && ai < ${arity}) {\n`;
+		status.code += `            int k = ai++;\n`;
+		status.code += `            memcpy(dst, ptrs[k], (size_t)lens[k]);\n`;
+		status.code += `            dst += lens[k];\n`;
+		status.code += `            src += 2;\n`;
+		status.code += `        } else {\n`;
+		status.code += `            *dst++ = *src++;\n`;
+		status.code += `        }\n`;
+		status.code += `    }\n`;
+		status.code += `    *dst = 0;\n`;
+		status.code += `    return (nomen_string){ str, (long)(dst - str) };\n`;
+		status.code += `}\n`;
 	}
 }

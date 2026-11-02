@@ -1,0 +1,40 @@
+import System
+
+// Writer-form interpolation shape (PERF_PLAN items 10/8 remainder) — numeric
+// `\{expr}` arguments lowered WITHOUT the per-argument `<T>.to_string()`
+// malloc: the mixed helper renders each value straight into its own result
+// buffer. Two shapes back to back, n from argv, checksums printed so
+// before/after binaries are comparable; the source builds identically on the
+// pre-change compiler (which still lowers through to_string), so the same
+// file is the A/B receipt:
+//   ints  — `"k=\{i} v=\{i * 2}"` (two int args, the item-10 bench shape)
+//   mixed — `"s=\{name} i=\{i} f=\{f} n=\{neg}"` (string + int + float +
+//           negative int, exercising both the digit loop and the one-`%f`)
+
+pub func main = (Init init) {
+	var n = 1000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var name = "item"
+
+	var total = 0
+	var i = 0
+	while i < n {
+		var string s = "k=\{i} v=\{i * 2}"
+		total += s.length
+		i += 1
+	}
+	Console.write("I \{total}\n")
+
+	var mixed_total = 0
+	var f = 1.5
+	i = 0
+	while i < n {
+		var int neg = 0 - i
+		var string s = "s=\{name} i=\{i} f=\{f} n=\{neg}"
+		mixed_total += s.length
+		i += 1
+	}
+	Console.write("M \{mixed_total}\n")
+}

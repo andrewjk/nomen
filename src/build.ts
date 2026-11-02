@@ -49,6 +49,7 @@ import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
 import { escape_asciz } from "./build_common/string_escapes.ts";
 import { gather_normalized_struct_returners } from "./build_common/struct_return_classification.ts";
+import { parse_interp_name } from "./check/utils/interp_arg_kinds.ts";
 import { stamp_last_use_moves } from "./check/utils/last_use.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
@@ -92,6 +93,7 @@ export default function build(
 		system_struct_names: options.system_struct_names,
 		scoped_declarations: [],
 		interpolate_string_counts: new Set(),
+		interpolate_mixed: new Set(),
 		strings: new Map(),
 		float_literals: new Map(),
 		string_literal_names: new Set(),
@@ -352,6 +354,233 @@ export default function build(
 			status.code += `add sp, sp, #${frame}\n`;
 			status.code += `ldp x29, x30, [sp], #16\n`;
 			status.code += `ret\n`;
+		}
+		// Writer-form interpolation helpers (PERF_PLAN items 10/8
+		// remainder): one per kind-mix the TU calls
+		// (`_string_interpolate_<arity>_<kinds>` — per-argument kinds after
+		// the arity: s = fat string pair, i = signed int, u = unsigned int,
+		// f = float bits). Every numeric argument renders into the helper's
+		// own frame scratch — the append_int digit loop (magnitude via the
+		// two's-complement negate, so INT64_MIN is exact), ONE `%f`
+		// snprintf per float (the item's hand-rolled-`%f` exclusion) — and
+		// then every argument walks as a (ptr, len) pair: the unsuffixed
+		// helper's copy walk, unchanged. Numeric args consume ONE incoming
+		// slot (the raw value); the slot map mirrors the call site's.
+		// Each mix helper is per-TU-local (never .globl) because the system
+		// TU cannot enumerate mixes — a user TU's mix binds its own local
+		// definition, exactly like arities past 7.
+		for (const mixed_name of [...status.interpolate_mixed].sort()) {
+			const { arity, kinds } = parse_interp_name(mixed_name);
+			if (!kinds || kinds.length !== arity) continue;
+			status.code += `\n.p2align 2\n`;
+			status.code += `${mixed_name}:\n`;
+			status.code += `stp x29, x30, [sp, #-16]!\n`;
+			status.code += `mov x29, sp\n`;
+			// Frame: [sp+0] is snprintf's variadic double slot (the outgoing
+			// argument area at a `bl` starts at sp), then arg pair homes at
+			// [HOME + i*8] (ptr) / [HOME + (N+i)*8] (len) — the unsuffixed
+			// walk's convention — then total/buf/pat/patlen, one 8-byte value
+			// spill per numeric argument, one 32-byte int render scratch per
+			// int argument (each pair home points into its own scratch — a
+			// shared scratch would be overwritten by the next render), and one
+			// 368-byte float render scratch per float.
+			const HOME = 8;
+			const argp = (i: number) => HOME + i * 8;
+			const argl = (i: number) => HOME + (arity + i) * 8;
+			const total_off = HOME + arity * 16;
+			const buf_off = total_off + 8;
+			const pat_off = total_off + 16;
+			const patlen_off = total_off + 24;
+			const slot_of: number[] = [];
+			let s = 2;
+			for (const k of kinds) {
+				slot_of.push(s);
+				s += k === "s" ? 2 : 1;
+			}
+			const int_index_of = new Map<number, number>(); // arg index → numeric spill ordinal
+			let float_count = 0;
+			let int_count = 0;
+			kinds.forEach((k, i) => {
+				if (k === "i" || k === "u" || k === "f") {
+					if (k === "f") float_count++;
+					else int_count++;
+					int_index_of.set(i, int_index_of.size);
+				}
+			});
+			const int_home = (i: number) => total_off + 32 + int_index_of.get(i)! * 8;
+			const itmp = (i: number) => total_off + 32 + int_count * 8 + int_index_of.get(i)! * 32;
+			const fscratch_base = total_off + 32 + int_count * 40;
+			const fscratch = (ordinal: number) => fscratch_base + ordinal * 368;
+			const frame = Math.ceil((fscratch_base + float_count * 368) / 16) * 16;
+			const incoming = (slot: number): string =>
+				slot <= 7 ? `x${slot}` : `[x29, #${16 + (slot - 8) * 8}]`;
+			status.code += `sub sp, sp, #${frame}\n`;
+			status.code += `str x0, [sp, #${pat_off}]\n`;
+			status.code += `str x1, [sp, #${patlen_off}]\n`;
+			// Spill every incoming argument to its frame home first — the
+			// render pass runs bl (snprintf), which clobbers x0-x18.
+			for (let i = 0; i < arity; i++) {
+				const k = kinds[i];
+				const slot = slot_of[i];
+				if (k === "s") {
+					// A pair can STRADDLE the register/outgoing boundary (ptr in
+					// x7, len in the caller's outgoing area) — resolve each half
+					// independently.
+					if (slot <= 7) {
+						status.code += `str x${slot}, [sp, #${argp(i)}]\n`;
+					} else {
+						status.code += `ldr x9, [x29, #${16 + (slot - 8) * 8}]\n`;
+						status.code += `str x9, [sp, #${argp(i)}]\n`;
+					}
+					if (slot + 1 <= 7) {
+						status.code += `str x${slot + 1}, [sp, #${argl(i)}]\n`;
+					} else {
+						status.code += `ldr x9, [x29, #${16 + (slot + 1 - 8) * 8}]\n`;
+						status.code += `str x9, [sp, #${argl(i)}]\n`;
+					}
+				} else {
+					const home = int_home(i);
+					const src = incoming(slot);
+					if (slot <= 7) {
+						status.code += `str ${src}, [sp, #${home}]\n`;
+					} else {
+						status.code += `ldr x9, ${src}\n`;
+						status.code += `str x9, [sp, #${home}]\n`;
+					}
+				}
+			}
+			// Length + render pass: total = pattern.len - 2N + Σ lens; every
+			// arg leaves a (ptr, len) pair in its home slots.
+			status.code += `ldr x9, [sp, #${patlen_off}]\n`;
+			status.code += `sub x9, x9, #${2 * arity}\n`;
+			status.code += `str x9, [sp, #${total_off}]\n`;
+			const lbl = (part: string, i: number) => `.Lsi_${part}_${mixed_name.substring(1)}_${i}`;
+			for (let i = 0; i < arity; i++) {
+				const k = kinds[i];
+				if (k === "s") {
+					status.code += `ldr x9, [sp, #${argl(i)}]\n`;
+					status.code += `ldr x10, [sp, #${total_off}]\n`;
+					status.code += `add x9, x9, x10\n`;
+					status.code += `str x9, [sp, #${total_off}]\n`;
+					continue;
+				}
+				const home = int_home(i);
+				if (k === "f") {
+					// float ordinal: count of 'f' args before i
+					let ford = 0;
+					for (let j = 0; j < i; j++) if (kinds[j] === "f") ford++;
+					status.code += `ldr x9, [sp, #${home}]\n`;
+					status.code += `fmov d0, x9\n`;
+					status.code += `str d0, [sp, #0]\n`;
+					status.code += `add x0, sp, #${fscratch(ford)}\n`;
+					status.code += `mov x1, #360\n`;
+					status.code += `adr x2, .Lsi_ffmt_${mixed_name.substring(1)}\n`;
+					status.code += `bl _snprintf\n`;
+					status.code += `str x0, [sp, #${argl(i)}]\n`;
+					status.code += `add x9, sp, #${fscratch(ford)}\n`;
+					status.code += `str x9, [sp, #${argp(i)}]\n`;
+					status.code += `ldr x9, [sp, #${argl(i)}]\n`;
+					status.code += `ldr x10, [sp, #${total_off}]\n`;
+					status.code += `add x9, x9, x10\n`;
+					status.code += `str x9, [sp, #${total_off}]\n`;
+					continue;
+				}
+				// i / u: the append_int digit loop into the argument's own
+				// scratch, rendered backward from its end; the pair home
+				// takes (rendered position, length).
+				status.code += `ldr x9, [sp, #${home}]\n`;
+				status.code += `add x10, sp, #${itmp(i) + 24}\n`;
+				status.code += `mov x11, x9\n`;
+				if (k === "i") {
+					status.code += `tbz x9, #63, ${lbl("pos", i)}\n`;
+					status.code += `neg x11, x11\n`;
+					status.code += `${lbl("pos", i)}:\n`;
+				}
+				status.code += `mov x12, x11\n`;
+				status.code += `${lbl("digit", i)}:\n`;
+				status.code += `mov x13, #10\n`;
+				status.code += `udiv x14, x12, x13\n`;
+				status.code += `msub x15, x14, x13, x12\n`;
+				status.code += `add x15, x15, #48\n`;
+				status.code += `sub x10, x10, #1\n`;
+				status.code += `strb w15, [x10]\n`;
+				status.code += `mov x12, x14\n`;
+				status.code += `cbnz x12, ${lbl("digit", i)}\n`;
+				if (k === "i") {
+					status.code += `tbz x9, #63, ${lbl("store", i)}\n`;
+					status.code += `sub x10, x10, #1\n`;
+					status.code += `mov w15, #45\n`;
+					status.code += `strb w15, [x10]\n`;
+					status.code += `${lbl("store", i)}:\n`;
+				}
+				status.code += `add x13, sp, #${itmp(i) + 24}\n`;
+				status.code += `sub x13, x13, x10\n`;
+				status.code += `str x10, [sp, #${argp(i)}]\n`;
+				status.code += `str x13, [sp, #${argl(i)}]\n`;
+				status.code += `ldr x9, [sp, #${argl(i)}]\n`;
+				status.code += `ldr x10, [sp, #${total_off}]\n`;
+				status.code += `add x9, x9, x10\n`;
+				status.code += `str x9, [sp, #${total_off}]\n`;
+			}
+			status.code += `ldr x0, [sp, #${total_off}]\n`;
+			status.code += `add x0, x0, #1\n`;
+			emit_malloc(status);
+			status.code += `str x0, [sp, #${buf_off}]\n`;
+			// Copy walk — identical to the unsuffixed helper's: every arg is
+			// a (ptr, len) pair by now.
+			status.code += `ldr x9, [sp, #${pat_off}]\n`;
+			status.code += `ldr x10, [sp, #${patlen_off}]\n`;
+			status.code += `add x10, x9, x10\n`;
+			status.code += `ldr x11, [sp, #${buf_off}]\n`;
+			status.code += `mov x12, #0\n`;
+			status.code += `add x16, sp, #${HOME}\n`;
+			status.code += `.Lsi_loop_${mixed_name.substring(1)}:\n`;
+			status.code += `cmp x9, x10\n`;
+			status.code += `b.ge .Lsi_done_${mixed_name.substring(1)}\n`;
+			status.code += `ldrb w13, [x9]\n`;
+			status.code += `mov w14, #37\n`;
+			status.code += `cmp w13, w14\n`;
+			status.code += `b.ne .Lsi_lit_${mixed_name.substring(1)}\n`;
+			status.code += `add x15, x9, #1\n`;
+			status.code += `cmp x15, x10\n`;
+			status.code += `b.ge .Lsi_lit_${mixed_name.substring(1)}\n`;
+			status.code += `ldrb w13, [x15]\n`;
+			status.code += `mov w14, #115\n`;
+			status.code += `cmp w13, w14\n`;
+			status.code += `b.ne .Lsi_lit_${mixed_name.substring(1)}\n`;
+			status.code += `cmp x12, #${arity}\n`;
+			status.code += `b.ge .Lsi_lit_${mixed_name.substring(1)}\n`;
+			status.code += `ldr x13, [x16, x12, lsl #3]\n`;
+			status.code += `add x15, x12, #${arity}\n`;
+			status.code += `ldr x14, [x16, x15, lsl #3]\n`;
+			status.code += `.Lsi_acopy_${mixed_name.substring(1)}:\n`;
+			status.code += `cbz x14, .Lsi_adone_${mixed_name.substring(1)}\n`;
+			status.code += `ldrb w15, [x13]\n`;
+			status.code += `strb w15, [x11]\n`;
+			status.code += `add x13, x13, #1\n`;
+			status.code += `add x11, x11, #1\n`;
+			status.code += `sub x14, x14, #1\n`;
+			status.code += `b .Lsi_acopy_${mixed_name.substring(1)}\n`;
+			status.code += `.Lsi_adone_${mixed_name.substring(1)}:\n`;
+			status.code += `add x12, x12, #1\n`;
+			status.code += `add x9, x9, #2\n`;
+			status.code += `b .Lsi_loop_${mixed_name.substring(1)}\n`;
+			status.code += `.Lsi_lit_${mixed_name.substring(1)}:\n`;
+			status.code += `ldrb w13, [x9]\n`;
+			status.code += `strb w13, [x11]\n`;
+			status.code += `add x11, x11, #1\n`;
+			status.code += `add x9, x9, #1\n`;
+			status.code += `b .Lsi_loop_${mixed_name.substring(1)}\n`;
+			status.code += `.Lsi_done_${mixed_name.substring(1)}:\n`;
+			status.code += `strb wzr, [x11]\n`;
+			status.code += `ldr x0, [sp, #${buf_off}]\n`;
+			status.code += `sub x1, x11, x0\n`;
+			status.code += `add sp, sp, #${frame}\n`;
+			status.code += `ldp x29, x30, [sp], #16\n`;
+			status.code += `ret\n`;
+			// The %f format string — data after the ret (nothing falls
+			// through into it), pc-relative adjacent for the adr.
+			status.code += `.Lsi_ffmt_${mixed_name.substring(1)}: .asciz "%f"\n`;
 		}
 		// Large-frame access shims — rewrite out-of-range `[x29, #imm]`,
 		// `add xN, x29, #imm`, and `sub/add sp, sp, #imm` forms (a >= 16 KB

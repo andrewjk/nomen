@@ -12,8 +12,9 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
-import { is_float_type } from "../built_in_types.ts";
+import { get_built_in_type, is_float_type } from "../built_in_types.ts";
 import { is_box_type } from "../check/utils/box.ts";
+import { parse_interp_name } from "../check/utils/interp_arg_kinds.ts";
 import { is_int_literal, to_decimal_string } from "../int_literal.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -868,11 +869,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			// A fat `string` ARGUMENT consumes two slots — detection is by
 			// the argument's static type, which stays correct even when the
 			// callee signature is still generic. Interpolation helpers take
-			// fat strings too (pattern + rendered args).
+			// fat strings too (pattern + rendered args) — except the
+			// writer-form mixes (PERF_PLAN items 10/8 remainder): a
+			// kind-suffixed helper's numeric arguments (`i`/`u`/`f` after the
+			// arity) consume ONE slot each — the raw value rides the
+			// register, and the helper renders it into its own buffer (no
+			// per-argument `to_string` malloc).
 			const is_interp_call = node.name.startsWith("_string_interpolate_");
+			const interp_kinds = is_interp_call ? parse_interp_name(node.name).kinds : null;
 			for (let i = 0; i < node.params.length; i++) {
 				if (!is_interp_call && (node.ref_param_indices ?? []).includes(i)) continue;
-				if (is_interp_call || arg_is_string(node.params[i])) {
+				if (is_interp_call) {
+					// An unknown kind keeps the string pair (defensive — the
+					// checker suffixes every mix it builds).
+					if (
+						!interp_kinds ||
+						(interp_kinds[i - 1] !== "i" &&
+							interp_kinds[i - 1] !== "u" &&
+							interp_kinds[i - 1] !== "f")
+					) {
+						string_arg_set.add(i);
+					}
+				} else if (arg_is_string(node.params[i])) {
 					string_arg_set.add(i);
 				}
 			}
@@ -921,6 +939,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			const arg_call_free = node.params.map((p) => tree_is_call_free(p, status, new Set()));
 			const arg_deferrable = (i: number): boolean => {
 				if (start_reg + arg_slot[i] >= NUM_REG_ARGS) return false;
+				// A writer-form numeric interpolation argument takes its own
+				// build path (the width re-narrowing above the spill) — never
+				// the deferred materialization (a float leaf's build_operand
+				// parks through d-registers, not the raw-bits x register).
+				if (is_interp_call && interp_kinds && interp_kinds[i - 1] !== "s") return false;
 				const param = node.params[i];
 				if (param.node_type !== "value") return false;
 				const raw = (param as ValueNode).value;
@@ -1379,6 +1402,47 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					} else {
 						emit_struct_address(node.params[i], status);
 					}
+				} else if (
+					// Writer-form interpolation numeric argument: the raw value
+					// (bits in x0 — floats ride integer registers) spills to its
+					// ONE slot. A sub-64-bit int argument is re-narrowed here:
+					// the value paths keep operands width-aware, but an op result
+					// can leave un-narrowed upper bits (an `int8 + 1` sum's true
+					// value wraps mod 2^8), and the helper's digit loop reads the
+					// full register.
+					is_interp_call &&
+					interp_kinds &&
+					(interp_kinds[i - 1] === "i" || interp_kinds[i - 1] === "u")
+				) {
+					build_node(node.params[i], status);
+					ensure_newline(status);
+					const arg_info = get_built_in_type(type_from_value_node(node.params[i])?.name);
+					if (arg_info && arg_info.kind === "int" && (arg_info.bytes ?? 8) < 8) {
+						// Same-WIDTH forms only: `sxtw x0, w0` reads the w-view
+						// of the x register, which the liveness model treats as
+						// a separate register — the load feeding it then looks
+						// dead and the optimizer deletes it. The shift pairs and
+						// masks below read and write the SAME x register, so the
+						// value's liveness is visible end to end.
+						// Storage width is `bytes` — `int`/`uint` keep their
+						// 32-bit literal RANGE but live in a full word, and
+						// their `to_string` renders the whole word.
+						const width = (arg_info.bytes ?? 8) * 8;
+						if (arg_info.signed) {
+							const shift = 64 - width;
+							emit_asm(status, `lsl x0, x0, #${shift}\n`);
+							emit_asm(status, `asr x0, x0, #${shift}\n`);
+						} else if (width === 8) {
+							emit_asm(status, `and x0, x0, #255\n`);
+						} else if (width === 16) {
+							emit_asm(status, `and x0, x0, #65535\n`);
+						} else {
+							emit_asm(status, `and x0, x0, #0xFFFFFFFF\n`);
+						}
+						ensure_newline(status);
+					}
+					emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
+					continue;
 				} else if (arg_deferrable(i)) {
 					deferred_args.push({ param: node.params[i], slot: arg_slot[i] });
 					continue;
@@ -1753,6 +1817,10 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	if (node.name.startsWith("_string_interpolate_")) {
 		status.interpolate_string_counts.add(node.params.length - 1);
+		// A kind-suffixed name (writer-form numeric arguments) collects its
+		// FULL name — the mix helper is emitted per-TU (see build.ts's
+		// helper generator).
+		if (parse_interp_name(node.name).kinds) status.interpolate_mixed.add(node.name);
 		status.last_result_is_heap = true;
 	}
 

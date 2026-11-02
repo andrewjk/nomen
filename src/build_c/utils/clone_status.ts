@@ -17,6 +17,7 @@ export default function clone_status(status: BuildStatus): BuildStatus {
 		scoped_declarations: [],
 		return_assign: status.return_assign,
 		interpolate_string_counts: new Set(),
+		interpolate_mixed: new Set(),
 		platform: status.platform,
 	};
 }
