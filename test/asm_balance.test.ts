@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import { validate_stack_balance } from "../src/build_aarch64/lift_asm";
-import { parse_raw } from "./parse_with_imports";
+import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
 /**
  * Stack-balance validation (the deferred ASM_PLAN phase-1 check, now landed
@@ -172,6 +172,101 @@ f:
 	).toEqual([]);
 });
 
+test("a duplicated entry label starts a fresh root, not the stub's delta", () => {
+	// The parse_with_imports shape: a user TU whose text opens with the
+	// wrapper's no-arg `_main` stub (prologue, no frame, no ret — it falls
+	// through) followed by the user's own `_main` with the real frame. The
+	// second entry must re-root at delta 0 instead of inheriting the stub's
+	// `stp …, [sp, #-16]!` through the fall-through edge (which reported
+	// the real entry's ret at `sp offset -16`).
+	expect(
+		balance(`
+.p2align 2
+.globl _main
+_main:
+	stp x29, x30, [sp, #-16]!
+	// no stack needed
+	mov x29, sp
+.p2align 2
+.globl _main
+_main:
+	stp x29, x30, [sp, #-16]!
+	sub sp, sp, #16
+	mov x29, sp
+	mov x0, #42
+	str x0, [x29, #0]
+.return_1:
+	bl _nomen_audit_check
+	mov x0, #0
+	add sp, sp, #16
+	ldp x29, x30, [sp], #16
+	ret
+.return_0:
+	bl _nomen_audit_check
+	mov x0, #0
+	ldp x29, x30, [sp], #16
+	ret
+`),
+	).toEqual([]);
+});
+
+test("the re-rooted real entry is still checked when it is imbalanced", () => {
+	// Re-rooting must not blind the check: the stub's delta is gone, but the
+	// second entry's own imbalance (a missing pop here) still reports — at
+	// ITS offset, not the stub's.
+	const messages = balance(`
+.p2align 2
+.globl _main
+_main:
+	stp x29, x30, [sp, #-16]!
+	mov x29, sp
+.p2align 2
+.globl _main
+_main:
+	stp x29, x30, [sp, #-16]!
+	ret
+`);
+	expect(messages.length).toBe(1);
+	expect(messages[0]).toContain("unbalanced stack: sp offset -16 at ret");
+});
+
+test("a globl'd entry after another function's ret is checked as its own root", () => {
+	// Only bl-target / marker-preceded labels cut the lift, so `g` shares
+	// f's lifted body — unreachable through f's ret, so without re-rooting
+	// its imbalance would sit in the silent null zone forever.
+	const messages = balance(`
+f:
+	stp x29, x30, [sp, #-16]!
+	ldp x29, x30, [sp], #16
+	ret
+.p2align 2
+.globl g
+g:
+	stp x29, x30, [sp, #-16]!
+	ret
+`);
+	expect(messages.length).toBe(1);
+	expect(messages[0]).toContain("unbalanced stack: sp offset -16 at ret");
+});
+
+test("mid-function non-dot labels (branch joins) keep flowing — no re-root", () => {
+	// A plain label under instructions (`end_N:`-style) is a control-flow
+	// join, not an entry: the conditional branch's fall-through must still
+	// feed it, and its ret stays checkable.
+	expect(
+		balance(`
+f:
+	stp x29, x30, [sp, #-16]!
+	cbz x0, end_1
+	str x19, [sp, #-16]!
+	ldr x19, [sp], #16
+end_1:
+	ldp x29, x30, [sp], #16
+	ret
+`),
+	).toEqual([]);
+});
+
 test("real emitted programs pass the balance check", () => {
 	// Integration: a real build's assembly (System library + user code, the
 	// same text the phase-1 validator sees) must be balance-clean.
@@ -189,6 +284,25 @@ func mix = (ref Buffer<float> a, ref Buffer<float> b, int n) {
 pub func main = () {}
 `);
 	const result = build(parsed.root, { arch: "aarch64" });
+	expect(result.errors ?? []).toEqual([]);
+	expect(balance(result.code as string)).toEqual([]);
+});
+
+test("two mains in a split user TU stay balance-clean", () => {
+	// The FOLLOWUP repro: a test program declaring its own `func main`
+	// inside the parse_with_imports wrapper (the wrapper's no-arg main plus
+	// the user's — two `_main:` labels in one TU), built for aarch64 with
+	// audit on in the split user-TU mode build_and_check_output uses. The
+	// wrapper stub opens the TU (block 0), so the balance check used to
+	// seed it at 0 and hand its `stp …, [sp, #-16]!` delta to the real
+	// entry: `asm: unbalanced stack: sp offset -16 at ret — ret`.
+	const parsed = parse_with_imports(`
+func main = () {
+	var x = 42
+	Console.write("\\{x}\\n")
+}
+`);
+	const result = build(parsed.root, { arch: "aarch64", audit: true, emit_mode: "user" });
 	expect(result.errors ?? []).toEqual([]);
 	expect(balance(result.code as string)).toEqual([]);
 });

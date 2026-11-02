@@ -528,6 +528,15 @@ export function validate_asm(code: string, options: ValidateAsmOptions = {}): Li
  * - Branch targets resolve within the function, including the numeric local
  *   form raw `#arch` blocks use (`1:` / `b.hs 1f` — forward/backward by
  *   suffix); an unresolvable target makes downstream deltas unknown.
+ * - A non-dot label that is redefined in the body or sits under an entry
+ *   marker (.p2align / .text) or its own `.globl` starts a FRESH delta-0
+ *   root, the same way a new function does (its fall-through edge from the
+ *   block above is cut, and its entry delta is seeded at 0). The lift keeps
+ *   adjacent entries (two `_main:` labels — the parse_with_imports wrapper
+ *   plus the user's own main) in one body when a `.globl` line sits between
+ *   the marker and the label; without the re-rooting, the second entry
+ *   inherited the stub's `stp …, [sp, #-16]!` delta and every downstream
+ *   ret reported `sp offset -16`.
  */
 export function validate_stack_balance(code: string): LiftError[] {
 	const { result } = lift_functions(code);
@@ -709,6 +718,18 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 	const stripped_text: string[] = [];
 	const effects: LineEffect[] = [];
 	const is_code: boolean[] = [];
+	// Entry-candidate labels: a non-dot, non-numeric label that is REDEFINED
+	// in this body (two `_main:` labels — the parse_with_imports wrapper's
+	// no-arg main plus the user's own) or that sits under an entry marker
+	// (.p2align / .text) or its own `.globl`. Each starts a fresh delta-0
+	// root below, the same way a new function does: the lift only cuts
+	// bodies at bl-target / entry-marker labels, so a `.globl`-declared
+	// label (the `.globl` line sits BETWEEN the marker and the label) can
+	// share a lifted body with the function above it — and the previous
+	// body's fall-through then leaks its delta into the entry (seeding ONLY
+	// block 0 made a duplicated `_main:` pair report the real entry's ret
+	// at the wrapper stub's `stp …, [sp, #-16]!` offset).
+	const entry_roots: boolean[] = [];
 	// Branch-target maps: named label → FIRST definition line; numeric
 	// label → every definition line in order (Nf/Nb resolve directionally).
 	const named_labels = new Map<string, number>();
@@ -718,14 +739,18 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 		stripped_text.push(t);
 		effects.push({ delta: null, branch: null, cond: false, ret: false, unknown_jump: false });
 		is_code.push(false);
+		entry_roots.push(false);
 		const lm = LABEL_RE.exec(t);
 		if (lm) {
 			if (/^\d+$/.test(lm[1])) {
 				const defs = numeric_labels.get(lm[1]);
 				if (defs) defs.push(i);
 				else numeric_labels.set(lm[1], [i]);
-			} else if (!named_labels.has(lm[1])) {
-				named_labels.set(lm[1], i);
+			} else {
+				const repeated = named_labels.has(lm[1]);
+				if (!repeated) named_labels.set(lm[1], i);
+				entry_roots[i] =
+					!lm[1].startsWith(".") && (repeated || entry_marker_above(stripped_text, i, lm[1]));
 			}
 		}
 		if (!t) continue;
@@ -740,6 +765,7 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 	const blocks: BalanceBlock[] = [];
 	const line_block = new Map<number, number>(); // body line index → block index
 	const pending: { block: number; token: string; from: number }[] = [];
+	const roots: number[] = []; // blocks that start a fresh delta-0 root
 	let cur = -1;
 	let terminated = true; // the body starts a fresh block
 	for (let i = 0; i < body.length; i++) {
@@ -748,6 +774,7 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 		if (LABEL_RE.test(t)) {
 			cur++;
 			blocks.push({ lines: [], delta: 0, ret: false, cond: false, targets: [] });
+			if (entry_roots[i]) roots.push(cur);
 			line_block.set(i, cur);
 			terminated = false;
 			continue;
@@ -784,18 +811,24 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 		blocks[p.block].targets.push(line === null ? null : (line_block.get(line) ?? null));
 	}
 
-	// Pass 4: successors + predecessors. Fallthrough goes to the next block.
+	// Pass 4: successors + predecessors. Fallthrough goes to the next block,
+	// EXCEPT into an entry root: a true function entry is only reached by
+	// bl/b (the ABI delivers sp at the entry value), so the previous body's
+	// fall-through edge never feeds it — cutting it is what keeps a
+	// duplicated entry label from inheriting the stub above it.
+	const is_root = new Set(roots);
 	const preds: number[][] = Array.from({ length: blocks.length }, () => []);
 	for (let b = 0; b < blocks.length; b++) {
 		const blk = blocks[b];
 		if (blk.ret) continue;
+		const fallthrough = b + 1 < blocks.length && !is_root.has(b + 1) ? b + 1 : null;
 		const succs =
 			blk.targets.length > 0
-				? blk.cond && b + 1 < blocks.length
-					? [...blk.targets, b + 1]
+				? blk.cond && fallthrough !== null
+					? [...blk.targets, fallthrough]
 					: blk.targets
-				: b + 1 < blocks.length
-					? [b + 1]
+				: fallthrough !== null
+					? [fallthrough]
 					: [];
 		for (const s of succs) {
 			if (s !== null && s !== undefined) preds[s].push(b);
@@ -811,8 +844,12 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 
 	// Pass 5: dataflow fixpoint on ENTRY deltas. null = bottom (unreached),
 	// number = known, "unknown" = top (conflicting joins / poisoned effects).
+	// Block 0 is the body's entry; every entry-candidate label (pass 1)
+	// seeds its own root at 0 — a fresh function's sp always starts at its
+	// entry value, regardless of what the text above it left on sp.
 	const in_delta: (number | "unknown" | null)[] = Array.from({ length: blocks.length }, () => null);
 	if (blocks.length > 0) in_delta[0] = 0;
+	for (const r of roots) in_delta[r] = 0;
 	const join = (a: number | "unknown" | null, b: number | "unknown" | null) => {
 		if (a === null) return b;
 		if (b === null) return a;
@@ -857,6 +894,22 @@ function prev_is_entry_marker(lines: string[], i: number): boolean {
 		const t = strip_comment(lines[j]).trim();
 		if (!t) continue;
 		return t.startsWith(".p2align") || /^\.text$/.test(t);
+	}
+	return false;
+}
+
+/** True when a label starts a fresh sp-root: the first non-blank line above
+ *  it is an entry marker (.p2align / .text) or the label's own `.globl`.
+ *  Mirrors prev_is_entry_marker plus the `.globl` arm — a `.globl` line
+ *  between the marker and the label is why the lift keeps adjacent function
+ *  entries in ONE body (only bl targets and marker-preceded labels cut). */
+function entry_marker_above(stripped: string[], i: number, name: string): boolean {
+	for (let j = i - 1; j >= 0; j--) {
+		const t = stripped[j];
+		if (!t) continue;
+		if (t.startsWith(".p2align") || /^\.text$/.test(t)) return true;
+		const gm = /^\.glob(?:al|l)\s+(\S+)$/.exec(t);
+		return gm !== null && gm[1] === name;
 	}
 	return false;
 }

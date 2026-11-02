@@ -566,28 +566,6 @@ the failures are a rebuild/worker race, not codegen. Mitigation for a
 touched-core session: run the suite once to rebuild, then judge on the
 second run — or make the prebuild a hard barrier for worker startup.
 
-## Stack-balance validator false positive on a duplicated entry label
-
-Recorded 2026-11-02 while landing PERF_PLAN item 15 (the folds are not
-involved — the error reproduces with the pass disabled, on main@4319c4cc
-byte-identical emission). Reproduce: a test program that declares its own
-`func main` inside the `parse_with_imports` wrapper (two mains in one TU —
-the wrapper's no-arg main plus the user's), built for aarch64 with audit on.
-The build fails its own stack-balance check:
-`asm: unbalanced stack: sp offset -16 at ret — ret`.
-
-The shape: the emitted text carries TWO `_main:` labels (the wrapper stub
-`stp x29, x30, [sp, #-16]! / mov x29, sp` with no frame, then the real
-`_main:` with the frame). `check_function_balance` seeds ONLY
-`in_delta[0] = 0`; the second `_main:` label is just another BLOCK in the
-same lifted function body, so it inherits block 0's delta through the
-fall-through edge (`stp …, [sp, #-16]!` = −16) instead of starting at 0 —
-every downstream delta is off by −16 and the real entry's `ret` reports
-`sp offset -16`. Real programs never emit two entry labels for main, so the
-suite stays green; the sanitizer would be to treat a repeated entry label
-(or any label preceded by `.globl`/`.p2align`) as a fresh delta-0 root, the
-same way a new function is.
-
 ## Negative int64 literals beyond 2^53 lose precision in constant folding
 
 Recorded 2026-11-02 while landing PERF_PLAN items 10/8 (writer-form
