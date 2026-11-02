@@ -2316,13 +2316,12 @@ export function mark_moved_if_struct(
 		mark_local_moved_flag(status, var_name);
 	}
 	// A RETURNED heap string transfers ownership to the caller (the return
-	// cleanup must not free it) — but only in return context (for_return): a
-	// plain `string` arg to a `mv T` param does NOT transfer ownership (an
-	// mv `Buffer<string>` strdup's its own copy — the callee-copies
-	// convention), so the caller retains and frees the original at scope
-	// exit. (Mirrors the C backend's move_param_indices string gate.) A string
-	// field of a moved VALUE struct is likewise released at scope exit via
-	// heap_string_fields — store_T deep-copied it.
+	// cleanup must not free it) — but only in return context (for_return). A
+	// plain `string` arg to a `mv string` param transfers through the
+	// dedicated transfer_string_donor helper (the D3 argument convention —
+	// the callee owns and frees the buffer). A string field of a moved VALUE
+	// struct is likewise released at scope exit via heap_string_fields —
+	// store_T deep-copied it.
 	if (opts?.for_return && status.heap_strings?.has(var_name)) {
 		if (!status.moved) status.moved = new Set<string>();
 		status.moved.add(var_name);
@@ -2331,6 +2330,24 @@ export function mark_moved_if_struct(
 		// heap copy and their flag-guarded cleanup reclaims it.
 		mark_local_moved_flag(status, var_name);
 	}
+}
+
+/**
+ * D3 argument/field-store transfer for a NAMED string donor: the callee (or
+ * the stored field) now owns the buffer, so the donor's scope-exit free is
+ * suppressed — statically via `moved` and, when the donor is a frame-local
+ * owning string, through its runtime owns-flag (a CONDITIONAL transfer — the
+ * call or store sits in a branch — keeps the not-taken path's cleanup live).
+ * Returns false when the name is not a recorded heap-string donor (a rodata
+ * literal alias, a borrow, an already-moved name): the caller must
+ * materialize an owned copy instead — there is nothing to transfer.
+ */
+export function transfer_string_donor(status: BuildStatus, name: string | undefined): boolean {
+	if (!name || !status.heap_strings?.has(name)) return false;
+	if (!status.moved) status.moved = new Set<string>();
+	status.moved.add(name);
+	mark_local_moved_flag(status, name);
+	return true;
 }
 
 /**

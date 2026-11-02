@@ -16,6 +16,7 @@ import {
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_view_value } from "../build_common/view_value.ts";
 import { is_built_in_type } from "../built_in_types.ts";
@@ -26,6 +27,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { string_transfer_donor_owns_heap } from "./build_assignment_node.ts";
 import { ensure_enum_case_take_c } from "./build_enum_node.ts";
 import { emit_nullable_arg_flag } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
@@ -371,6 +373,10 @@ function field_path_root_struct(status: BuildStatus, target: BaseNode): string |
 }
 
 export default function build_access_node(node: AccessNode, status: BuildStatus) {
+	// D3 string-transfer bookkeeping: the resolved method (or trait default)
+	// is scoped to the access_func case, but the post-call move_param walk
+	// below needs the callee's param conventions — record it here.
+	let string_transfer_callee: FunctionNode | undefined;
 	// PERF:
 	let target_type = type_from_value_node(node.target);
 	if (!target_type?.name && node.target.node_type === "value") {
@@ -1233,6 +1239,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				const target_method = target_struct_for_method?.functions.find(
 					(f) => f.name === access_func.name,
 				);
+				string_transfer_callee = target_method;
 				// A value-struct method may overwrite the receiver's plain
 				// string fields through `self` — writes the caller's
 				// heap_string_fields records can't reflect (the method can't
@@ -1273,6 +1280,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								if (trait_func) {
 									trait_default_label = `${trait_name}_${access_func.name}`;
 									trait_default_func = trait_func;
+									string_transfer_callee = trait_func;
 									break;
 								}
 							}
@@ -1893,7 +1901,26 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 								status.code += "&";
 							}
 						}
+						// D3 transfer: a `mv string` method parameter receives
+						// OWNED bytes (the callee frees the pair at its exit). A
+						// donor the ownership predicate cannot vouch for — a
+						// rodata-backed const/literal alias, a borrow temp, a
+						// bare string param — is materialized into an owned copy
+						// here; a heap-owned donor passes as-is (its record drops
+						// in the move_param walk below).
+						const mvp = (target_method ?? trait_default_func)?.params?.[i + self_offset];
+						const callee_mv_string = param_is_string_transfer(
+							target_method ?? trait_default_func,
+							mvp,
+						);
+						const mv_string_arg_materialize =
+							callee_mv_string &&
+							access_func.params[i].node_type === "value" &&
+							typeof (access_func.params[i] as ValueNode).value === "string" &&
+							!string_transfer_donor_owns_heap(status, (access_func.params[i] as ValueNode).value);
+						if (mv_string_arg_materialize) status.code += `nomen_str_dup(`;
 						build_node(access_func.params[i], status);
+						if (mv_string_arg_materialize) status.code += `)`;
 						status.suppress_dereference = false;
 					}
 					// A nullable struct/scalar method parameter (`T? p`) takes a
@@ -1977,15 +2004,35 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					const param = access_func.params[idx];
 					if (param?.node_type === "value") {
 						const vname = (param as ValueNode).value;
-						// A `string` arg to a `mv T` param keeps caller ownership
-						// (a mv Buffer<string> strdup's its own copy), so do NOT
-						// splice it — auto_free must reclaim the original. Resolve
-						// the type from the declaration (a bare variable reference's
+						// D3 transfer: a `mv string` method argument hands the
+						// buffer to the callee — it frees the pair at its exit,
+						// so the donor's scope-exit free is suppressed (the
+						// runtime owns-flag when the donor carries one, else the
+						// moved record). A donor the predicate cannot vouch for
+						// was materialized into an owned copy at the argument
+						// expression above and has nothing to drop. Resolve the
+						// type from the declaration (a bare variable reference's
 						// ValueNode.type is unset post-monomorphization).
 						const decl_hit = find_decl_in_c_scopes(status, vname);
 						const tname =
 							decl_hit?.frame[decl_hit.index].type?.name ?? (param as ValueNode).type?.name;
-						if (tname === "string") continue;
+						if (tname === "string") {
+							const callee_params = string_transfer_callee?.params?.filter((p) => !p.is_self_param);
+							if (!param_is_string_transfer(string_transfer_callee, callee_params?.[idx])) {
+								continue;
+							}
+							if (string_transfer_donor_owns_heap(status, vname)) {
+								const src_flag = status.c_mv_owns_flags?.get(vname);
+								if (src_flag !== undefined) {
+									if (!status.pending_mv_owns_sets) status.pending_mv_owns_sets = [];
+									status.pending_mv_owns_sets.push(`${src_flag} = 1;`);
+								} else {
+									if (!status.moved_string_vars) status.moved_string_vars = new Set();
+									status.moved_string_vars.add(vname);
+								}
+							}
+							continue;
+						}
 						// An enum-with-data `mv` arg keeps caller ownership:
 						// the mv Buffer/List store_T deep-copies it
 						// (`<Enum>_copy`), so auto_free must reclaim the temp.

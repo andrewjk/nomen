@@ -49,17 +49,21 @@ pub mv struct JsonTree {
 		self.nodes = StableList<JsonNode>()
 	}
 
-	// Install node `idx`'s text. Takes a copy of `text`: the pool owns its
-	// node texts, so the field store must own an independent value (the
-	// interior write frees the displaced text). For strings produced by a
-	// StringBuilder, `take_text` installs the builder's buffer with no
-	// copy at all.
-	func set_text = (ref self, int idx, string text) {
+	// Install node `idx`'s text, TAKING ownership of the argument (the D3
+	// mv convention): `set_text(n, mv s)` transfers the caller's buffer
+	// into the pool with no copy anywhere — the field store moves the pair
+	// raw and the caller's variable is invalidated. (Pass `.copy()` for the
+	// keep-the-original spelling: `set_text(n, s.copy())`.) The pool owns
+	// its node texts end to end, so the transferred buffer is freed exactly
+	// once, by the list's destroy or the next text store. For strings
+	// produced by a StringBuilder, `take_text` installs the builder's
+	// buffer with no copy at all.
+	func set_text = (ref self, int idx, mv string text) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
 		ref JsonNode n = self.nodes.at(idx)
-		n.text = text.copy()
+		n.text = mv text
 	}
 
 	// Install node `idx`'s text by TAKING the builder's buffer — the parse
@@ -124,10 +128,16 @@ pub mv struct JsonTree {
 			panic("index out of range")
 		}
 		ref JsonNode n = self.nodes.at(idx)
-		// `??` yields an independently owned copy on both branches (a null
-		// text answers the empty string), so the return contract — the caller
-		// owns the result — is unchanged from the `.copy()` spelling.
-		return n.text ?? ""
+		// The aarch64 `??` yields the left pair AS-IS (no dup), so the
+		// coalesce spelling would return a borrow of the node's text — the
+		// caller's free would take the pool's buffer. Spell the owned copy:
+		// a null text answers a fresh "" and a non-null one takes
+		// `.copy()` (the return contract — the caller owns the result —
+		// is the `.copy()` shape the method always had).
+		if n.text == null {
+			return ""
+		}
+		return n.text.copy()
 	}
 
 	// A non-mv (ptr, len) view over node `idx`'s text — the zero-copy read.

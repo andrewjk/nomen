@@ -10,6 +10,7 @@ import {
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -968,10 +969,26 @@ export default function check_function_call(
 				(typeof (param as ValueNode).value === "string" &&
 					(param as ValueNode).value.startsWith('"') &&
 					(param as ValueNode).value.endsWith('"')));
+		// A method call on a GENERIC instantiation (`map.set(...)` on a
+		// `Map<string, int>`) resolves to the generic template with the type
+		// args substituted in place — the callee body was checked against `T`
+		// and keeps the copy convention (see function_is_generic_mono). The
+		// resolved FunctionNode carries no scope back-pointer at check time,
+		// so the receiver's instantiation is the signal.
+		const param_is_mv_string =
+			param_is_string_transfer(func, func_param) && !(target_type?.type_args?.length ?? 0);
 		if (
 			func_param.is_moved &&
 			!has_mov_keyword &&
-			(param_is_class || param_is_owning_struct) &&
+			(param_is_class ||
+				param_is_owning_struct ||
+				// D3 transfer: the callee owns and FREES a `mv string` parameter,
+				// so a bare owned-string donor must spell the transfer — a
+				// silent borrow would hand the callee the caller's buffer (its
+				// scope-exit free then double-frees). A literal is a fresh
+				// value (the backends materialize an owned copy) and a hoisted
+				// temp is dying anyway — neither demands the keyword.
+				(param_is_mv_string && !arg_is_fresh_literal && param.node_type === "value")) &&
 			arg_is_owned_value &&
 			!arg_is_fresh_literal
 		) {
@@ -983,12 +1000,55 @@ export default function check_function_call(
 				param.start,
 			);
 		}
-		// mv is allowed on any type at the call site. Only invalidate the
-		// caller's variable when the parameter type is a class or a mv
-		// value struct — for the remaining non-mv types (int, plain
-		// struct, etc.), mv is a no-op.
+		// mv is allowed on any type at the call site. The caller's variable is
+		// invalidated when the parameter type is a class, a mv value struct,
+		// or a `mv string` (the D3 transfer — see the branch below); for the
+		// remaining non-mv types (int, plain struct, etc.), mv is a no-op.
 		if (has_mov_keyword && param_value && !node.swap_params?.has(i)) {
 			if (
+				// D3 argument transfer: `f(mv s)` into a `mv string` parameter
+				// hands the buffer to the callee — the donor is invalidated the
+				// same way a `var b = mv a` declaration invalidates `a`. Only a
+				// NAMED donor is invalidated: a literal is a fresh value with
+				// nothing to give up, and a hoisted `_param_N` temp dies with
+				// the statement (the backends transfer its record instead).
+				// (This MUST precede the owning-struct arm — `string` is a
+				// declared mv struct, so that arm would claim it and skip the
+				// string-specific borrow check.)
+				param_is_mv_string &&
+				param.node_type === "value"
+			) {
+				const raw = (param as ValueNode).value;
+				const is_fresh_literal =
+					typeof raw === "string" && raw.startsWith('"') && raw.endsWith('"');
+				const is_hoisted_temp = typeof raw === "string" && raw.startsWith("_param_");
+				if (!is_fresh_literal && !is_hoisted_temp) {
+					// B3 analog: a bare (non-`mv`) string parameter of the
+					// enclosing function is a borrow of the caller's buffer —
+					// the callee would free it at its exit and the outer
+					// caller's scope-exit free would double-free.
+					const donor_param = enclosing_function_param(status, param_value);
+					if (
+						donor_param &&
+						!donor_param.is_moved &&
+						!donor_param.is_self_param &&
+						donor_param.type.name === "string" &&
+						!donor_param.type.is_view &&
+						!donor_param.type.is_ref &&
+						!donor_param.type.is_array
+					) {
+						add_error(
+							status,
+							`cannot transfer ownership out of parameter '${param_value}' — a bare string parameter is a borrow; declare it 'mv' (and pass it with 'mv' at the call site), or .copy() it`,
+							param.start,
+						);
+					} else if (!status.moved_variables?.has(param_value)) {
+						enforce_root_not_frozen(param_value, status, param.start);
+						if (!status.moved_variables) status.moved_variables = new Set();
+						status.moved_variables.add(param_value);
+					}
+				}
+			} else if (
 				func_param.type.name &&
 				(is_class_type(func_param.type.name, status) ||
 					// B4: a trait-typed mv param takes the box — the donor is
@@ -2204,27 +2264,15 @@ export default function check_function_call(
 		}
 	}
 
-	// A `string` argument to a `mv T` parameter must NOT transfer ownership
-	// of the caller's original: a `Buffer<string>` (or other mv container)
-	// strdup's the value into its own slot, so the caller retains and frees the
-	// original. (For class/trait args, mv genuinely transfers the pointer and
-	// the callee frees it — that path is unchanged.) Strip string-typed indices
-	// from move_param_indices so the build does NOT splice the caller's variable
-	// / hoisted temp out of scoped_declarations (which would orphan it). This
-	// covers both the explicit `mv` keyword and the implicit hoisted-temp
-	// transfer. `swap` is unaffected (it has its own replacement source).
-	if (node.move_param_indices?.length) {
-		const filtered = node.move_param_indices.filter((idx) => {
-			const arg = node.params[idx];
-			return !(arg?.node_type === "value" && (arg as ValueNode).type?.name === "string");
-		});
-		if (filtered.length === 0) {
-			node.move_param_indices = undefined;
-		} else if (filtered.length !== node.move_param_indices.length) {
-			node.move_param_indices = filtered;
-		}
-	}
-
+	// A `string` argument to a `mv string` parameter TRANSFERS ownership
+	// (the D3 mv convention, argument position — the same rule a `var b =
+	// mv a` declaration always had): the callee owns the buffer and frees
+	// it at its exit, so the caller's records are dropped and the donor is
+	// invalidated. A donor that does not itself own heap (a literal alias,
+	// a borrow) is materialized into an owned copy at the call site by the
+	// backends — the name is still given up, exactly as the spelling
+	// promises. (For class/trait args, mv transfers the pointer — that path
+	// is unchanged.)
 	return true;
 }
 

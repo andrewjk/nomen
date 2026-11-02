@@ -9,6 +9,7 @@ import {
 	scan_self_string_field_writes,
 } from "../build_common/scan_self_string_writes.ts";
 import { is_container_borrow_accessor_name } from "../build_common/string_return_analysis.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_float_type } from "../built_in_types.ts";
 import {
@@ -62,6 +63,7 @@ import {
 	find_anchor_slot,
 	mark_moved_if_struct,
 	trait_class_for,
+	transfer_string_donor,
 } from "./utils/auto_destroy.ts";
 import {
 	emit_descriptor_address,
@@ -3362,6 +3364,31 @@ function build_access_method(
 			} else {
 				build_node(param, status);
 				ensure_newline(status);
+				// D3 transfer: a `mv string` parameter receives OWNED bytes —
+				// the callee frees the pair at its exit. A donor that does not
+				// itself own heap — a rodata literal (with or without the `mv`
+				// keyword), a literal-alias local, a borrow kept in a temp, a
+				// bare string param — is materialized into an owned copy here.
+				// A heap-recorded donor transfers as-is; its record drops in
+				// the move_param walk below.
+				const callee_mv_string = param_is_string_transfer(
+					access_callee_method,
+					access_callee_params?.[i],
+				);
+				if (callee_mv_string && !status.heap_strings?.has((param as ValueNode).value)) {
+					emit_strdup(status);
+					// The strdup is a bl — x8 is caller-saved, and this call
+					// may be an sret destination preset (a declaration's
+					// struct-return buffer or the in-place splice's slot).
+					// Re-establish it before the call goes out.
+					if (status.call_x8_preset) {
+						if (status.struct_return_buffer_var) {
+							emit_var_address(status, "x8", status.struct_return_buffer_var);
+						} else if (status.call_x8_slot_offset !== undefined) {
+							emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
+						}
+					}
+				}
 			}
 			emit_asm(status, `str x0, [x29, #${view_half_store(i, 0)}]\n`);
 			emit_asm(status, `str x1, [x29, #${view_half_store(i, 1)}]\n`);
@@ -3827,18 +3854,27 @@ function build_access_method(
 		for (const idx of access_func.move_param_indices) {
 			const param = access_func.params[idx];
 			if (param?.node_type === "value") {
-				// A `string` mv arg keeps caller ownership (mv
-				// Buffer<string> strdup's); skip mark_moved so scope-exit
-				// cleanup frees it. Resolve the type from the declaration — a
-				// bare variable reference's ValueNode.type is unset after mono —
-				// searching every scope frame (the variable may live in an
-				// outer scope when the call sits inside an if/loop branch).
+				// D3 transfer: a `mv string` argument hands the buffer to the
+				// callee — it frees the pair at its exit, so the donor's
+				// scope-exit free is suppressed (statically via `moved` and,
+				// for a conditional call site, through the runtime owns-flag).
+				// A donor that owns nothing took the materialized-copy strdup
+				// at the arg build above and has no record to drop. Resolve
+				// the type from the declaration — a bare variable reference's
+				// ValueNode.type is unset after mono — searching every scope
+				// frame (the variable may live in an outer scope when the
+				// call sits inside an if/loop branch).
 				const vname = (param as { value?: string }).value;
 				const decl = all_scope_frames(status)
 					.flat()
 					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
-				if (tname === "string") continue;
+				if (tname === "string") {
+					if (param_is_string_transfer(access_callee_method, access_callee_params?.[idx])) {
+						transfer_string_donor(status, vname);
+					}
+					continue;
+				}
 				// An enum-with-data `mv` arg also keeps caller ownership: an
 				// mv Buffer/List store_T deep-copies its string payloads,
 				// so the caller's temp must still be reclaimed at scope exit.

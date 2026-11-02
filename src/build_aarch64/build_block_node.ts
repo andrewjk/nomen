@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import { should_emit_definition } from "../build_c/utils/is_system_definition.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { function_returns_owned } from "../build_common/string_return_analysis.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { SIMPLE_TYPES } from "../built_in_types.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
@@ -15,7 +16,7 @@ import TraitNode from "../nodes/TraitNode.ts";
 import build_function_node from "./build_function_node.ts";
 import build_struct_node from "./build_struct_node.ts";
 import { emit_stmt_from_nir } from "./emit_nir.ts";
-import { emit_destroy_for_scope } from "./utils/auto_destroy.ts";
+import { emit_destroy_for_scope, mark_heap_string } from "./utils/auto_destroy.ts";
 import emit_allocations from "./utils/emit_allocations.ts";
 
 export default function build_block_node(node: BlockNode, status: BuildStatus) {
@@ -130,6 +131,30 @@ export default function build_block_node(node: BlockNode, status: BuildStatus) {
 		heap_slots: [],
 		struct_decls: [],
 	});
+
+	// D3 transfer: a `mv string` parameter OWNS its buffer — seed its heap
+	// record into the function's ROOT cleanup frame (the scope-exit walk is
+	// frame-driven, so the seed must land after this push and before the
+	// body). Every exit frees the pair unless a consuming `field = mv p`
+	// store or a forwarded `mv p` argument marked the name moved — the
+	// runtime owns-flag (allocated by mark_heap_string) keeps a CONDITIONAL
+	// consumption's not-taken paths reclaiming. Mirrors the C backend's
+	// scoped-declaration + `_mv_owns_` flag registration.
+	if (node.node_type === "func") {
+		const fn = node as FunctionNode;
+		for (const p of fn.params) {
+			if (param_is_string_transfer(fn, p)) {
+				mark_heap_string(status, p.name);
+				// The RETURN path reclaims scoped declarations (it walks
+				// all_scope_frames), so the param needs a declaration record
+				// too — a bare mark only seeds the block-walk frame, and an
+				// early `return` skips that walk.
+				status.scoped_declarations.push(
+					new DeclarationNode(p.start, "private", "var", p.name, p.type),
+				);
+			}
+		}
+	}
 
 	// A FUNCTION body's frame already holds the pass-by-value param
 	// declarations (seeded by build_function_node's prologue BEFORE this

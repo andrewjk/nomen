@@ -633,6 +633,21 @@ export default function build_assignment_node(
 			// old value is still reclaimed below.
 			const rhs_is_null_value =
 				node.right_value.node_type === "value" && (node.right_value as ValueNode).value === "null";
+			// D3 transfer: a `field = mv p` store where `p` is a named string
+			// that owns its bytes takes the buffer RAW (no dup) — the field
+			// becomes the sole owner and the donor's scope-exit free is
+			// suppressed (the runtime owns-flag when it carries one, else the
+			// moved splice). A donor the predicate cannot vouch for keeps the
+			// dup below (the field must own an independent copy).
+			const rhs_donor_name =
+				!rhs_is_null_value &&
+				node.right_value.node_type === "value" &&
+				(node.right_value as ValueNode).is_moved === true &&
+				typeof (node.right_value as ValueNode).value === "string"
+					? (node.right_value as ValueNode).value
+					: undefined;
+			const moved_string_donor_owns =
+				rhs_donor_name !== undefined && string_transfer_donor_owns_heap(status, rhs_donor_name);
 			// Capture the field-access expression (e.g. `b->text`) by building
 			// it in a scratch buffer then rolling back, so it can be referenced
 			// multiple times.
@@ -643,7 +658,7 @@ export default function build_assignment_node(
 			status.code += `{\nnomen_string ${temp} = `;
 			if (rhs_is_null_value) {
 				status.code += `(nomen_string){0, 0}`;
-			} else if (fresh_heap) {
+			} else if (fresh_heap || moved_string_donor_owns) {
 				emit_rhs_value(node.right_value, nir_rhs, status);
 			} else {
 				status.code += `nomen_str_dup(`;
@@ -655,6 +670,15 @@ export default function build_assignment_node(
 				status.code += `free(${field_access}.ptr);\n`;
 			}
 			status.code += `${field_access} = ${temp};\n}\n`;
+			if (moved_string_donor_owns && rhs_donor_name !== undefined) {
+				const src_flag = status.c_mv_owns_flags?.get(rhs_donor_name);
+				if (src_flag !== undefined) {
+					status.code += `${src_flag} = 1;\n`;
+				} else {
+					if (!status.moved_string_vars) status.moved_string_vars = new Set();
+					status.moved_string_vars.add(rhs_donor_name);
+				}
+			}
 			// B1 cutover: OWNING structs never record — their string fields are
 			// uniformly heap and the scope-exit destroy frees them
 			// unconditionally; a record would double-free with that destroy.
@@ -2019,6 +2043,48 @@ function should_value_copy_string_assign(node: AssignmentNode): boolean {
  * (nonexistent) free would hand the target rodata/container memory that the
  * target's auto_free would then free.
  */
+/**
+ * Strict predicate for the D3 string-transfer gates: the name provably owns
+ * an INDEPENDENT heap buffer. Unlike `string_var_owns_heap` it does not
+ * infer from the initializer SHAPE — a destructured binding off a temp
+ * (`var [mv k, _] = pairs.at(i)`) has an access initializer but BORROWS the
+ * container's / rodata bytes, and handing those to a callee that frees its
+ * `mv string` parameter would be an invalid free. Only the explicit
+ * heap-string record (dropped on transfer) qualifies.
+ */
+export function string_transfer_donor_owns_heap(status: BuildStatus, name: string): boolean {
+	if (status.moved_string_vars?.has(name)) return false;
+	if (status.string_borrow_vars?.has(name)) return false;
+	if (status.heap_strings?.has(name)) return true;
+	const hit = find_decl_in_c_scopes(status, name);
+	const decl = hit?.frame[hit.index];
+	if (!decl || decl.type?.name !== "string" || decl.type.is_view || decl.type.is_array)
+		return false;
+	const value = decl.value;
+	if (!value) return false;
+	if (is_string_borrow(value)) return false;
+	// Shape inference for genuine producers only: a call/method result (the C
+	// backend strdup's EVERY string return), a `var` literal init (strdup'd at
+	// declare), or a method-call EXPRESSION. An ACCESS initializer may borrow —
+	// a plain field read, or a destructured binding off a temp
+	// (`var [mv k, _] = pairs.at(i)`) — so only the heap record vouches.
+	if (value.node_type === "func_call") return true;
+	if (value.node_type === "access") {
+		return (value as AccessNode).access?.node_type === "access_func";
+	}
+	if (value.node_type === "value") {
+		const v = value as ValueNode;
+		return (
+			decl.declaration === "var" &&
+			typeof v.value === "string" &&
+			v.value.length >= 2 &&
+			v.value.startsWith('"') &&
+			v.value.endsWith('"')
+		);
+	}
+	return false;
+}
+
 export function string_var_owns_heap(status: BuildStatus, name: string): boolean {
 	if (status.string_borrow_vars?.has(name)) return false;
 	if (status.moved_string_vars?.has(name)) return false;

@@ -9,6 +9,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { ref_param_entry_dup_fields } from "../build_common/scan_ref_string_writes.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { lower_function } from "../nir/from_ast.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import BitsetNode from "../nodes/BitsetNode.ts";
@@ -316,6 +317,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	status.code += `\n{\n`;
 
+	// D3 transfer: a `mv string` parameter OWNS its buffer — declare its
+	// runtime owns-flag up front. The auto-free at exit frees the pair only
+	// when the flag is still 0 (a consuming `field = mv p` store or a
+	// forwarded `mv` argument sets it; a CONDITIONAL consumption keeps the
+	// not-taken paths reclaiming). Registration (the scoped declaration +
+	// heap_strings seed) runs in the param walk below.
+	for (const p of node.params) {
+		if (param_is_string_transfer(node, p)) {
+			status.code += `unsigned char _mv_owns_${c_function_name(p.name)} = 0;\n`;
+		}
+	}
+
 	// A capturing lambda (CLOSURE.md Phase 2): unpack the hidden env
 	// parameter and activate the capture-name rewrite for the body. The
 	// prologue and the saved/restored map mirror the other per-function state
@@ -438,6 +451,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		}
 		const param_struct = status.structs.find((s) => s.name === param.type.name);
 		const param_trait = status.traits.find((t) => t.name === param.type.name);
+		// D3 transfer: a `mv string` param OWNS its buffer — register it like a
+		// heap `var string` local so the scope-exit auto-free reclaims it
+		// (guarded on the `_mv_owns_` flag declared in the prologue above): a
+		// consuming `field = mv p` store or a forwarded `mv p` argument sets
+		// the flag, a conditional consumption keeps the not-taken paths
+		// freeing. Plain string params are not pointer params, so this runs
+		// at the loop top rather than inside the pointer branch.
+		if (param_is_string_transfer(node, param) && node.name !== "main") {
+			const decl = new DeclarationNode(param.start, "private", "var", param.name, param.type);
+			status.scoped_declarations.push(decl);
+			if (!status.heap_strings) status.heap_strings = new Set();
+			status.heap_strings.add(param.name);
+			if (!status.c_mv_owns_flags) status.c_mv_owns_flags = new Map();
+			status.c_mv_owns_flags.set(param.name, `_mv_owns_${c_function_name(param.name)}`);
+		}
 		// `function_ref_params` tracks params that are emitted as pointers in
 		// the C signature (so uses must dereference, and the address is the
 		// param itself when forwarding). Only struct/trait/self/ref params and

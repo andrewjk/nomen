@@ -407,7 +407,12 @@ var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy(
 Construction, methods (`ref self` for mutation), and `#destroy` follow the
 struct rules. Function parameters are **read-only by default** for every
 type; `ref` is a spelled mutable borrow the caller acknowledges at the call
-site; `mv` transfers ownership. Sharing within a scope is spelled at the
+site; `mv` transfers ownership. A `mv string` parameter takes ownership of
+the buffer: the callee frees it at its exit, a `field = mv p` store takes it
+without a copy, and the caller's `mv` argument is invalidated afterwards (a
+literal or other non-owning donor is materialized into an owned copy at the
+call). Constructors' `mv string` params keep the copy convention — they
+strdup into their owning fields. Sharing within a scope is spelled at the
 binding — for a heap value that means aliasing its `Box`:
 
 ```

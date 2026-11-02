@@ -10,6 +10,7 @@ import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_m
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_float_type } from "../built_in_types.ts";
 import { is_box_type } from "../check/utils/box.ts";
@@ -37,6 +38,7 @@ import {
 	resolve_struct_name,
 	clear_heap_string_fields,
 	trait_class_for,
+	transfer_string_donor,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_dispose_lambda_args_a64 } from "./utils/closure_a64.ts";
@@ -277,6 +279,17 @@ function arg_is_string(node: BaseNode): boolean {
 	}
 	const t = type_from_value_node(node);
 	return t?.name === "string" && !t.is_array;
+}
+
+/**
+ * D3 transfer: whether argument `i`'s callee parameter is a declared
+ * `mv string` — the parameter the callee owns and frees at its exit, so the
+ * call site must hand over owned bytes (materializing a copy for any donor
+ * that does not itself own heap).
+ */
+export function callee_param_is_mv_string(node: FunctionCallNode, i: number): boolean {
+	const p = node.resolved_function?.params?.filter((p) => !p.is_self_param)[i];
+	return param_is_string_transfer(node.resolved_function, p);
 }
 
 /**
@@ -952,6 +965,32 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					} else {
 						build_node(param, status);
 						ensure_newline(status);
+						// D3 transfer: a `mv string` parameter receives OWNED
+						// bytes — the callee frees the pair at its exit. A donor
+						// that does not itself own heap — a rodata literal (with
+						// or without the `mv` keyword), a literal-alias local, a
+						// borrow kept in a temp, a bare string param — is
+						// materialized into an owned copy here. A heap-recorded
+						// donor transfers as-is; its record drops in the
+						// move_param walk below.
+						if (
+							callee_param_is_mv_string(node, i) &&
+							!status.heap_strings?.has((param as ValueNode).value)
+						) {
+							emit_strdup(status);
+							// The strdup is a bl — x8 is caller-saved, and this
+							// call may be the sret destination preset (a
+							// declaration's struct-return buffer or the in-place
+							// push's spilled slot). Re-establish it before the
+							// call goes out (mirrors the member-transfer branch).
+							if (status.call_x8_preset) {
+								if (status.struct_return_buffer_var) {
+									emit_var_address(status, "x8", status.struct_return_buffer_var);
+								} else if (status.call_x8_slot_offset !== undefined) {
+									emit_asm(status, `ldr x8, [x29, #${status.call_x8_slot_offset}]\n`);
+								}
+							}
+						}
 					}
 					emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
 					emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
@@ -1740,18 +1779,28 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		for (const idx of node.move_param_indices) {
 			const param = node.params[idx];
 			if (param?.node_type === "value") {
-				// A `string` mv arg keeps caller ownership (mv
-				// Buffer<string> strdup's); skip mark_moved so scope-exit
-				// cleanup frees it. Resolve the type from the declaration — a
-				// bare variable reference's ValueNode.type is unset after mono —
-				// searching every scope frame (the variable may live in an
-				// outer scope when the call sits inside an if/loop branch).
+				// D3 transfer: a `mv string` argument hands the buffer to the
+				// callee — it frees the pair at its exit, so the donor's
+				// scope-exit free is suppressed (statically via `moved` and,
+				// for a conditional call site, through the runtime owns-flag).
+				// A donor that owns nothing took the materialized-copy strdup
+				// at the arg build above and has no record to drop.
 				const vname = (param as { value?: string }).value;
 				const decl = all_scope_frames(status)
 					.flat()
 					.find((d) => d.name === vname);
 				const tname = decl?.type?.name ?? (param as { type?: { name?: string } }).type?.name;
-				if (tname === "string") continue;
+				if (tname === "string") {
+					// The convention's exceptions (`#init`, generic monos,
+					// nullable params) keep the copy convention: their callee
+					// strdups, so the caller's records stay live and free the
+					// argument at scope exit.
+					const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+					if (param_is_string_transfer(node.resolved_function, callee_params?.[idx])) {
+						transfer_string_donor(status, vname);
+					}
+					continue;
+				}
 				// An enum-with-data `mv` arg also keeps caller ownership: an
 				// mv Buffer/List store_T deep-copies its string payloads,
 				// so the caller's temp must still be reclaimed at scope exit.

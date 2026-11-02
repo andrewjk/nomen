@@ -9,11 +9,15 @@ import { has_destroy } from "../build_common/destroy_analysis.ts";
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
+import type ValueNode from "../nodes/ValueNode.ts";
 import { emit_struct_address_param } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
 import { ensure_concurrency_runtime_a64, ensure_weak_runtime_a64 } from "./build_spawn_node.ts";
+import { emit_strdup } from "./utils/audit.ts";
+import { transfer_string_donor } from "./utils/auto_destroy.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_address } from "./utils/stack_var.ts";
@@ -93,13 +97,14 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	//   - "plain": a scalar word.
 	const arg_types = spawn_arg_types(call, status);
 	const region_borrowed = new Set(call.region_borrowed_args ?? []);
-	type ArgClass = "string" | "view" | "struct-copy" | "struct-borrow" | "plain";
+	type ArgClass = "string" | "string-transfer" | "view" | "struct-copy" | "struct-borrow" | "plain";
 	const arg_classes: ArgClass[] = [];
 	const arg_c_types: string[] = [];
 	const struct_mono_names: string[] = [];
 	const struct_owns: boolean[] = [];
 	const struct_string_fieldss: string[][] = [];
 	const is_value_struct_arg: boolean[] = [];
+	const callee_non_self_params = call.resolved_function?.params?.filter((p) => !p.is_self_param);
 	for (let i = 0; i < call.params.length; i++) {
 		const t = arg_types[i];
 		const mono_name = mono_type_name(t);
@@ -107,7 +112,16 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 		const is_trait = !!status.traits.find((tr) => tr.name === mono_name);
 		const is_struct = !!status.structs.find((s) => s.name === mono_name && !s.is_simple_type);
 		if (t.name === "string" && !t.is_view && !t.is_array) {
-			arg_classes.push("string");
+			// D3 transfer: a `mv string` argument to the wrapped call hands
+			// the buffer to the CALLEE — the env packs the pair raw and owns
+			// nothing (the callee's param teardown frees it). A plain string
+			// arg stays caller-owned: the env deep-copies it and the env
+			// destructor frees the copy.
+			const callee_mv_string = param_is_string_transfer(
+				call.resolved_function,
+				callee_non_self_params?.[i],
+			);
+			arg_classes.push(callee_mv_string ? "string-transfer" : "string");
 			arg_c_types.push("nomen_string");
 			struct_mono_names.push("");
 			struct_owns.push(false);
@@ -369,7 +383,12 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 	let total_arg_slots = 0;
 	for (let i = 0; i < call.params.length; i++) {
 		arg_slot.push(total_arg_slots);
-		total_arg_slots += arg_classes[i] === "string" || arg_classes[i] === "view" ? 2 : 1;
+		total_arg_slots +=
+			arg_classes[i] === "string" ||
+			arg_classes[i] === "string-transfer" ||
+			arg_classes[i] === "view"
+				? 2
+				: 1;
 	}
 	// The capture addresses ride as trailing helper arguments: the wrapped
 	// call's args fill the leading slots, the three frame addresses the last
@@ -396,11 +415,32 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 				emit_struct_address_param(call.params[i], status);
 			} else {
 				build_node(call.params[i], status);
+				// D3 transfer: materialize a non-heap donor (the env packs the
+				// pair raw and the wrapped callee frees it — rodata would
+				// crash its teardown).
+				if (
+					arg_classes[i] === "string-transfer" &&
+					call.params[i].node_type === "value" &&
+					!status.heap_strings?.has((call.params[i] as ValueNode).value)
+				) {
+					emit_strdup(status);
+				}
 			}
 			ensure_newline(status);
 			emit_asm(status, `str x0, [x29, #${args_base + arg_slot[i] * 8}]\n`);
-			if (arg_classes[i] === "string" || arg_classes[i] === "view") {
+			if (
+				arg_classes[i] === "string" ||
+				arg_classes[i] === "string-transfer" ||
+				arg_classes[i] === "view"
+			) {
 				emit_asm(status, `str x1, [x29, #${args_base + (arg_slot[i] + 1) * 8}]\n`);
+			}
+			// The env owns nothing for a transferred string — the wrapped
+			// callee's param teardown frees the buffer — so the donor's own
+			// scope-exit free is suppressed (flag-guarded for a conditional
+			// staging).
+			if (arg_classes[i] === "string-transfer") {
+				transfer_string_donor(status, (call.params[i] as ValueNode).value);
 			}
 		}
 		// The nursery capture slots hold FRAME ADDRESSES of the enclosing

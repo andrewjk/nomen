@@ -1,0 +1,44 @@
+import System
+
+// mv-string transfer shape bench — the D3 argument convention (PERF_PLAN
+// item 5's mv-string remainder). The box-store shape builds on both the
+// pre-convention and post-convention compiler, so before/after binaries
+// share one source:
+//   - the argument `box(make(i))` hands the producer's fresh heap buffer to
+//     `box`'s `mv string` parameter (the caller's temp record drops instead
+//     of freeing after the call);
+//   - `b.text = mv s` is the consuming store: the field takes the parameter's
+//     buffer RAW (no strdup), and the parameter's own teardown is suppressed.
+// Before the convention change the callee strdup'd the argument at the store
+// and the caller freed the producer's result after the call — 2 mallocs +
+// 2 frees per iteration; after it the producer's buffer IS the store (1
+// malloc, 1 free at the box's scope exit). n from argv.
+
+mv struct Boxed {
+	var text = ""
+}
+
+func make = (int i, out string) {
+	return "value_" + i.to_string()
+}
+
+func box = (mv string s, out Boxed) {
+	var b = Boxed()
+	b.text = mv s
+	return b
+}
+
+pub func main = (Init init) {
+	var n = 1000000
+	if init.argc > 1 {
+		n = parse_int(init.args.at(1))
+	}
+	var total = 0
+	var int i = 0
+	while i < n; i += 1 {
+		var b = box(make(i))
+		total = total + b.text.length
+	}
+	Console.write(total.to_string())
+	Console.write("\n")
+}

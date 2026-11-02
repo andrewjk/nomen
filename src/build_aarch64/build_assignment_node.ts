@@ -75,6 +75,7 @@ import {
 	record_heap_string_field,
 	resolve_struct_name,
 	trait_class_for,
+	transfer_string_donor,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
@@ -2606,6 +2607,24 @@ export default function build_assignment_node(
 				const rhs_is_null_literal =
 					node.right_value.node_type === "value" &&
 					(node.right_value as ValueNode).value === "null";
+				// D3 transfer: a `field = mv p` store where `p` is a named
+				// string that owns its bytes takes the buffer RAW (no dup) —
+				// the field becomes the sole owner and the donor's scope-exit
+				// free is suppressed (via transfer_string_donor below: the
+				// moved set plus the runtime owns-flag, so a CONDITIONAL
+				// store keeps the not-taken path's cleanup live). A donor the
+				// heap records cannot vouch for keeps the dup below.
+				const rhs_donor_name =
+					!rhs_is_null_literal &&
+					node.right_value.node_type === "value" &&
+					(node.right_value as ValueNode).is_moved === true &&
+					typeof (node.right_value as ValueNode).value === "string"
+						? (node.right_value as ValueNode).value
+						: undefined;
+				const moved_string_donor_owns =
+					rhs_donor_name !== undefined &&
+					field_type?.name === "string" &&
+					!!status.heap_strings?.has(rhs_donor_name);
 				if (rhs_is_null_literal) {
 					emit_asm(status, `mov x0, #0\n`);
 					emit_asm(status, `mov x1, #0\n`);
@@ -2621,6 +2640,9 @@ export default function build_assignment_node(
 				if (rhs_is_null_literal) {
 					// A null pair stores raw — no dup, nothing owned (and the
 					// destroy-side free(NULL) is a no-op).
+				} else if (moved_string_donor_owns) {
+					// The transferred buffer IS the field's value — no dup.
+					rhs_is_heap = true;
 				} else if (!rhs_is_heap) {
 					// A nullable RHS (a `string?` field, or a nullable-typed
 					// variable/call) may carry a NULL pointer — libc strdup
@@ -2696,6 +2718,13 @@ export default function build_assignment_node(
 					} else {
 						status.heap_string_fields?.delete(tracked_key);
 					}
+				}
+				// The transfer's donor bookkeeping runs after the store: the
+				// moved-mark / owns-flag set must not precede the RHS build or
+				// the displaced free (neither reads the donor, but the flag
+				// set parks x9 and the free clobbers x0 — both are done).
+				if (moved_string_donor_owns && rhs_donor_name !== undefined) {
+					transfer_string_donor(status, rhs_donor_name);
 				}
 			} else if (field_is_struct && !node.operator) {
 				const field_struct = status.structs.find((s) => s.name === field_type!.name);

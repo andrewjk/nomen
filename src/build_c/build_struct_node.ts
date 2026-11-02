@@ -9,6 +9,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import { classify_param } from "../build_common/param_classify.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -923,6 +924,21 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			if (param.is_self_param) continue;
 			const param_struct = status.structs.find((s) => s.name === param.type.name);
 			if (!param.is_moved) continue;
+			// D3 transfer: a `mv string` param owns its buffer — register it
+			// like a heap `var string` local so the scope-exit auto-free
+			// reclaims it (guarded on the `_mv_owns_` flag declared after the
+			// signature above). Mirrors build_function_node's free-function
+			// registration for methods.
+			if (param_is_string_transfer(func, param)) {
+				status.scoped_declarations.push(
+					new DeclarationNode(param.start, "private", "var", param.name, param.type),
+				);
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(param.name);
+				if (!status.c_mv_owns_flags) status.c_mv_owns_flags = new Map();
+				status.c_mv_owns_flags.set(param.name, `_mv_owns_${c_function_name(param.name)}`);
+				continue;
+			}
 			if (
 				param_struct?.is_class &&
 				!moved_param_is_consumed(func, param.name, param_struct.name, status.structs, status.traits)
@@ -1077,6 +1093,17 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.headers += `${signature};\n`;
 
 		status.code += `\n{\n`;
+
+		// D3 transfer: a `mv string` method parameter owns its buffer —
+		// declare its runtime owns-flag up front (mirrors build_function_node's
+		// prologue; the auto-free free is guarded on it, so a consuming
+		// `field = mv p` store or a forwarded `mv p` argument skips the free
+		// while a conditional consumption keeps the not-taken paths freeing).
+		for (const p of func.params) {
+			if (param_is_string_transfer(func, p)) {
+				status.code += `unsigned char _mv_owns_${c_function_name(p.name)} = 0;\n`;
+			}
+		}
 
 		// STRUCT_PLAN_3 N3: a class instance's destroy invalidates every
 		// WeakHandle slot holding it (generation bump) — before anything

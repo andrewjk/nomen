@@ -1,11 +1,14 @@
 import { has_destroy, struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import emission_label from "../build_common/emission_label.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { is_built_in_type } from "../built_in_types.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
+import ValueNode from "../nodes/ValueNode.ts";
+import { string_transfer_donor_owns_heap } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
 import { ensure_weak_runtime } from "./build_spawn_node.ts";
 import {
@@ -165,7 +168,17 @@ export function emit_spawn_task_body(
 			return { index: i, kind: "borrowed" as const, struct_name: st?.name };
 		}
 		if (t.name === "string" && !t.is_view && !t.is_array) {
-			return { index: i, kind: "string" as const };
+			// D3 transfer: a `mv string` argument to the wrapped call hands
+			// the buffer to the CALLEE — the env packs the pair raw and owns
+			// nothing (the callee's param teardown frees it). A plain string
+			// arg stays caller-owned: the env deep-copies and the env
+			// destructor frees the copy.
+			const cp = call.resolved_function?.params?.filter((p) => !p.is_self_param)[i];
+			const callee_mv_string = param_is_string_transfer(call.resolved_function, cp);
+			return {
+				index: i,
+				kind: (callee_mv_string ? "string-transfer" : "string") as "string" | "string-transfer",
+			};
 		}
 		if (!t.is_view && !t.is_array && t.name) {
 			const st = arg_mono_struct(t);
@@ -222,7 +235,9 @@ export function emit_spawn_task_body(
 	// nothing. Wired through the descriptor's destroy_env slot, so every
 	// release path (future release, daemon teardown) reclaims the env's
 	// owned state uniformly.
-	const env_owns = owned_args.some((o) => o.kind !== "plain" && o.kind !== "borrowed");
+	const env_owns = owned_args.some(
+		(o) => o.kind !== "plain" && o.kind !== "borrowed" && o.kind !== "string-transfer",
+	);
 	if (env_owns) {
 		header += `static void ${destroy_name}(void *_p) {\n`;
 		header += `\tstruct ${struct_name} *a = (struct ${struct_name} *)_p;\n`;
@@ -280,7 +295,7 @@ export function emit_spawn_task_body(
 /** One spawn argument's env-ownership classification (Phase 3d). */
 export interface OwnedArg {
 	index: number;
-	kind: "string" | "struct" | "borrowed" | "plain";
+	kind: "string" | "string-transfer" | "struct" | "borrowed" | "plain";
 	struct_name?: string;
 	owns?: boolean;
 	string_fields?: string[];
@@ -344,6 +359,31 @@ export default function build_magic_ctor_node(node: FunctionCallNode, status: Bu
 			status.code += `\t_args->arg${i} = nomen_str_dup(`;
 			build_node(call.params[i], status);
 			status.code += ");\n";
+		} else if (owned?.kind === "string-transfer") {
+			// D3 transfer: the env owns nothing — pack the pair raw and drop
+			// the donor's scope-exit free (the wrapped callee's param
+			// teardown frees the buffer at its exit). A donor the ownership
+			// predicate cannot vouch for is materialized into an owned copy.
+			const donor =
+				call.params[i].node_type === "value" ? (call.params[i] as ValueNode).value : undefined;
+			const donor_owns =
+				donor !== undefined &&
+				typeof donor === "string" &&
+				string_transfer_donor_owns_heap(status, donor);
+			status.code += `\t_args->arg${i} = `;
+			if (!donor_owns) status.code += `nomen_str_dup(`;
+			build_node(call.params[i], status);
+			if (!donor_owns) status.code += `)`;
+			status.code += ";\n";
+			if (donor_owns && donor !== undefined) {
+				const src_flag = status.c_mv_owns_flags?.get(donor);
+				if (src_flag !== undefined) {
+					status.code += `\t${src_flag} = 1;\n`;
+				} else {
+					if (!status.moved_string_vars) status.moved_string_vars = new Set();
+					status.moved_string_vars.add(donor);
+				}
+			}
 		} else if (owned?.kind === "struct") {
 			// The env owns a malloc'd copy of the struct's bytes with its
 			// top-level string fields deep-copied; the env destructor
