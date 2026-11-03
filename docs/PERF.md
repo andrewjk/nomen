@@ -4,7 +4,10 @@ What `--release` (`nomen run|build|test --release`, `-r`, or `"release": true`
 in the config file) does, which optimizations exist, and where the aarch64
 backend's performance actually comes from. Measured numbers are best-of-3+
 interleaved medians on Apple Silicon (AArch64) at `bench/benchmark.sh` sizes
-(Oct 2026) — treat them as indicative, not exact. The living performance
+(Oct 2026) — treat them as indicative, not exact, and note the
+measurement-context caveat in docs/PERF_PLAN.md (agent-shell sessions read
+clock-bound code slower than interactive terminals; ratios are the record,
+absolutes are context-relative). The living performance
 record is [`docs/scratch/ASM_PLAN_7.md`](scratch/ASM_PLAN_7.md) (+ addenda) and
 [`docs/ASM_TODO.md`](ASM_TODO.md); the per-item history is
 [`bench/IMPROVEMENTS.md`](bench/IMPROVEMENTS.md).
@@ -75,8 +78,14 @@ Headline outcomes vs the arc's start: the spectral-norm gap to C `-O2`
 (2.25×) is **closed** (−53%); knucleotide −26%, fannkuch −28% (loop-slot
 era); nbody at parity (0.99×). The remaining named gaps: pidigits ~1.5×
 (live accessor staging movs — register-pressure artifacts — and the
-merge-resistant result-tracking diamond) and binarytrees/merkletrees
-(allocation-dominated; see the runtime row below).
+merge-resistant result-tracking diamond) and binarytrees/merkletrees — which
+on P-cores already stand at Nomen/A 1.42s vs Go 1.78s (0.8×), Zig 1.00s,
+Rust 0.92s (1.4×/1.5×). An allocator attempt (Nov 2026,
+docs/scratch/ALLOCATOR_PLAN.md) confirmed those benches are
+**pointer-chasing, cache-latency-bound** — far less sensitive to machine
+state (a fraction of the HEAD build's context spread) once allocation is
+cheap — so the remaining gap is the Box store/destroy walk and
+call overhead: latency-bound codegen territory, not allocator territory.
 
 ## Rejected (tried, unsound or no win)
 
@@ -88,15 +97,26 @@ merge-resistant result-tracking diamond) and binarytrees/merkletrees
 
 ## Not implemented (future work)
 
-| Optimization                                       | Backend | Status / expected win                                                                                                                                     | Notes                                                                                                                                                                                                                                                                                   |
-| -------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| NEON auto-vectorization — elementwise + reductions | aarch64 | **Landed** (2026-08, IMPROVEMENTS.md 33–37; kinds completed 2026-10: shifted reads + byte `.16b`)                                                         | Unrolled `.2d`/`.4s`/`.16b` groups over NIR: f64, 8-byte int, uint32, byte, range fors, MIN_TRIP threshold, guard-free bounds; float reductions under `--fast-math`, integer reductions wrap-exact. Remaining: variable-shift reads need the checker's symbolic cancellation (ASM_TODO) |
-| d0–d7 float _params_                               | aarch64 | ~0 on the current suite (measured: no hot non-inlined float-param calls; `Math.sqrt` is naked-inline)                                                     | The d0 convention's other halves **landed** (2026-08: `fcmp` comparisons + d0 returns). Params remain x-register raw bits; deferred because `function_param_regs` has broad blast radius for no measured win                                                                            |
-| General LICM of loop-invariant array bases/bounds  | aarch64 | Effectively **superseded** — the NIR CFG/region machinery (region pins, scratch/induction hoists, derivation memoization) covers the shapes that mattered | Dominance/alias info beyond that stays out of the text passes                                                                                                                                                                                                                           |
-| Tighter `bl` cache invalidation (per-receiver)     | aarch64 | Small; re-enables within-loop field-cache hits                                                                                                            | Currently any non-inlined call drops every field data-pointer cache entry                                                                                                                                                                                                               |
-| Faster allocator                                   | runtime | Large for binarytrees/merkletrees (allocation-dominated)                                                                                                  | Per-node malloc/free churn vs a slab/bump path                                                                                                                                                                                                                                          |
+| Optimization                                                                            | Backend | Status / expected win                                                                                                                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NEON auto-vectorization — elementwise + reductions                                      | aarch64 | **Landed** (2026-08, IMPROVEMENTS.md 33–37; kinds completed 2026-10: shifted reads + byte `.16b`)                                                                                                                    | Unrolled `.2d`/`.4s`/`.16b` groups over NIR: f64, 8-byte int, uint32, byte, range fors, MIN_TRIP threshold, guard-free bounds; float reductions under `--fast-math`, integer reductions wrap-exact. Remaining: variable-shift reads need the checker's symbolic cancellation (ASM_TODO)                                                                   |
+| d0–d7 float _params_                                                                    | aarch64 | ~0 on the current suite (measured: no hot non-inlined float-param calls; `Math.sqrt` is naked-inline)                                                                                                                | The d0 convention's other halves **landed** (2026-08: `fcmp` comparisons + d0 returns). Params remain x-register raw bits; deferred because `function_param_regs` has broad blast radius for no measured win                                                                                                                                              |
+| General LICM of loop-invariant array bases/bounds                                       | aarch64 | Effectively **superseded** — the NIR CFG/region machinery (region pins, scratch/induction hoists, derivation memoization) covers the shapes that mattered                                                            | Dominance/alias info beyond that stays out of the text passes                                                                                                                                                                                                                                                                                             |
+| Tighter `bl` cache invalidation (per-receiver)                                          | aarch64 | Small; re-enables within-loop field-cache hits                                                                                                                                                                       | Currently any non-inlined call drops every field data-pointer cache entry                                                                                                                                                                                                                                                                                 |
+| ~~Faster allocator~~ **ATTEMPTED + REVERTED (2026-11, docs/scratch/ALLOCATOR_PLAN.md)** | runtime | ~~Large for binarytrees/merkletrees~~ **P-core-NEUTRAL on every bench (trees/json-serde/lru/nsieve, both backends); the apparent win only existed in agent-shell measurement contexts (mechanism verified NOT QoS)** | Complete mmap-reserve/freelist runtime was built, suite-green, and reverted: with allocation made cheap the tree benches are pointer-chasing, cache-latency-bound (the allocator build's context spread is a fraction of the HEAD build's), so there was no clock-bound allocator cost left to remove. Implementation preserved on branch allocator-eager |
 
 ## Reproducing
+
+**Measurement caveat (2026-11, learned the hard way — see
+docs/scratch/ALLOCATOR_PLAN.md):** binaries whose allocation paths continuously fault/mmap (Zig GPA, libc
+malloc churn) read ~35-60% slower (user time) in agent-spawned shells,
+while memory-reusing workloads (freelist reuse, Go's GC arena) and pure
+compute are context-equal; the mechanism was tested and is NOT QoS (a
+`pthread_get_qos_class_np` probe reports USER_INTERACTIVE in the agent
+shell — attribution needs `sudo powermetrics` + `vm_stat` sampling) Never A/B from
+an agent shell alone: measure from an interactive terminal, or bracket every
+run with a context-stable control row (Go matched to the millisecond across
+contexts; `taskpolicy` can only clamp QoS down, never up).
 
 ```sh
 # full benchmark matrix (compile + run, all languages)

@@ -40,11 +40,17 @@ landed; PLAN_7's pidigits target is met-or-structurally-accounted
 
 ## Runtime / library
 
-- **Faster allocator** — per-node `malloc`/`free` churn dominates
-  binarytrees/merkletrees (allocation-dominated benches); a slab/bump path
-  for class allocation is the largest unclaimed perf lever (an `Arena<T>`
-  container exists in the library but the class-allocation path isn't on
-  it).
+- ~~**Faster allocator**~~ **ATTEMPTED + REVERTED (2026-11)** — a complete
+  mmap-reserve/freelist runtime (`src/nomen_alloc.c`, preserved in
+  stash@{0}; full record in docs/scratch/ALLOCATOR_PLAN.md) was built,
+  suite-green, and reverted: **P-core-neutral on every bench measured**
+  (trees, json-serde, lru, nsieve, both backends). With allocation made
+  cheap the tree benches are pointer-chasing, cache-latency-bound — nearly
+  insensitive to machine state that heavily penalizes clock-bound code —
+  so there was no clock-bound allocator cost left to remove. Any future
+  attempt must move the latency-bound floor itself (item-level pooling,
+  arena reuse, or the Box store/destroy walk in codegen); allocator swaps
+  cannot.
 - **Tighter `bl` cache invalidation (per-receiver)** — any non-inlined call
   drops every field data-pointer cache entry
   (`build_function_call_node.ts:1221` deletes all `"."` keys);

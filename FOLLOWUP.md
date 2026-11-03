@@ -658,3 +658,31 @@ frees at scope end), or have remove destroy-and-zero via `destroy_at` +
 `zero` when no batch will overwrite the slot. Costs ~4 instructions per
 remove on int/int tables — which is exactly what tipped 17r from
 net-positive to net-negative, so it wants its own measurement.
+
+## Context measurement hazard: agent/background shells are not the interactive baseline
+
+Recorded 2026-11-03 (full story: docs/scratch/ALLOCATOR_PLAN.md). The same
+binaries measure consistently slower — ~25-40% on clock-bound code — when
+run from agent-spawned shells vs an interactive terminal on this fanless M2
+Air, varying with machine state, and the penalty falls specifically on
+OS-memory-service-heavy allocation paths (page-allocator churn, libc
+malloc/free churn); memory-reusing workloads and pure compute are
+context-equal (verified with a spin probe: ~2.7s in both contexts). An A/B run
+entirely inside an agent shell can therefore turn a neutral change into a
+phantom "Large" win if one side sits on the clock-bound side of the line.
+This produced a false −22%/−31% "Large" receipt for the allocator attempt
+(reverted; the implementation is preserved on branch `allocator-eager`).
+Rules of thumb:
+
+- Measure performance from an interactive terminal, or verify an
+  agent-context measurement with the same run from a terminal.
+- Bracket A/Bs with a context-stable control row (Go binarytrees matched to
+  the millisecond across contexts here; it served as the canary).
+- A workload whose interactive-vs-agent ratio is ~1 is latency-bound; far
+  from 1 is clock-bound. That ratio is itself a useful diagnostic (see
+  ALLOCATOR_PLAN.md).
+- The QoS mechanism was tested and REFUTED: a `pthread_get_qos_class_np`
+  probe reports USER_INTERACTIVE (the highest class) for agent-shell
+  processes — the gap is not a QoS/E-core placement effect. Exact
+  attribution (P-core contention with the desktop session's load, or
+  sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
