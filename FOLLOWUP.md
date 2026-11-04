@@ -4,28 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## Value-struct copy-assignment corners (pre-existing, surfaced by the struct last-use tests)
-
-Recorded 2026-10-29 while landing PERF_PLAN item 3 (move-on-last-use for
-structs, `test/struct_last_use_move.test.ts`). Both reproduce on
-main@66f82e91 unchanged — the new tests deliberately refuse to rewrite these
-shapes, so they pin guards, not the bugs:
-
-- **`p = p.copy()` (self-assignment) is a use-after-free.** The C backend
-  frees the displaced value's fields (`free(p.name.ptr)`) BEFORE the copy
-  call reads them — `Pair_copy(&p)` strdups the just-freed `p.name`. The
-  program prints nothing / crashes (audit mode: stale free). The aarch64
-  backend has the same ordering (displaced free, then the copy reads the
-  source slot). A same-variable RHS needs the `s = s + "x"` treatment:
-  compute the RHS into a temp before the displaced free.
-- **`p2 = p1.copy()` with a displaced old `p2` leaks one allocation** (audit
-  run: `LEAK: 1 allocation(s)`; `var p2 = Pair(); p2 = p1.copy()` with a
-  later read of `p1`). The declared-then-reassigned shape loses the seed's
-  heap string field somewhere in the displaced-value reclaim + fresh-copy
-  store sequence. The declare form (`var p2 = p1.copy()`) is leak-clean, and
-  the move-on-last-use transfer of the same shape is leak-clean too — the
-  loss is specific to the copy-into-displaced-slot path.
-
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
@@ -579,6 +557,23 @@ against HEAD sources then links a system.o with a different struct layout
 `Command failed: .../main.out` with exit 139 on tests that are green on
 HEAD. Fix that session: `rm -rf test/out/system_lib` before judging
 anything. (Found while reverting PERF_PLAN item 18.)
+
+**The PLAIN variant is never prebuilt (recorded 2026-11-04):** the
+globalSetup worker calls `ensure_system_lib(true)` only — the audit:false
+objects (`system_plain.o`) are rebuilt solely by an explicit
+`ensure_system_lib(false)`, which nothing at setup invokes. Stale plain
+objects therefore survive every freshness check whose marker matches: after
+the allocator-eager revert, the local `system_plain.o` (built by the
+allocator-era compiler) still called the deleted `nomen_alloc` runtime and
+every audit:false aarch64 split link failed with `Undefined symbols:
+"_nomen_alloc"` (20 tests) — while the tracked `.hash_plain` matched the
+current build, so the prebuild reported "warm" and never healed it. The
+objects are untracked (only the hashes/names.json are committed), so this
+does not reproduce on a fresh clone (missing object → single-TU fallback);
+the fix for a poisoned machine is deleting the plain objects + markers and
+forcing one `ensure_system_lib(false)`. Longer term: prebuild both audit
+variants in the setup worker, or make the plain variant's freshness key on
+the compiler itself, not just the library source.
 
 ## Orphaned `???`/`!!!` tokenizer symbols
 

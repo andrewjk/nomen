@@ -14,6 +14,7 @@ import {
 } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
+import is_fresh_copy_call from "../build_common/is_fresh_copy_call.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -341,6 +342,27 @@ function get_self_param(node: BaseNode): BaseNode | null {
 		}
 	}
 	return null;
+}
+
+/** Whether the RHS expression names the variable anywhere (its access
+ *  receiver, or a free-call argument) — such a RHS reads the displaced
+ *  value, so the displaced reclaim must run AFTER the RHS is built. */
+function rhs_references_var(rhs: BaseNode, name: string): boolean {
+	if (rhs.node_type === "access") {
+		const target = (rhs as AccessNode).target;
+		if (target.node_type === "value" && (target as ValueNode).value === name) return true;
+	}
+	if (rhs.node_type === "func_call") {
+		const call = rhs as FunctionCallNode;
+		for (const p of call.params ?? []) {
+			if (p.node_type === "value" && (p as ValueNode).value === name) return true;
+			if (p.node_type === "access") {
+				const target = (p as AccessNode).target;
+				if (target.node_type === "value" && (target as ValueNode).value === name) return true;
+			}
+		}
+	}
+	return false;
 }
 
 /**
@@ -1623,11 +1645,19 @@ export default function build_assignment_node(
 				}
 			}
 			if (rhs_is_struct && !rhs_struct) {
-				const self_param = get_self_param(node.right_value);
-				if (self_param && self_param.node_type === "value") {
-					const self_name = (self_param as ValueNode).value;
-					if (self_name !== name) {
-						mark_moved_if_struct(self_param, status);
+				// A deep-copy call (the synthesized struct copy or the
+				// List/Map/Set library copy) borrows its receiver and returns a
+				// fresh value — the donor keeps its state, so its scope-exit
+				// destroy must stay live. Marking it moved set the runtime
+				// owns-flag and the flag-guarded cleanup skipped the free:
+				// one leaked buffer per `dst = src.copy()`.
+				if (!is_fresh_copy_call(node.right_value)) {
+					const self_param = get_self_param(node.right_value);
+					if (self_param && self_param.node_type === "value") {
+						const self_name = (self_param as ValueNode).value;
+						if (self_name !== name) {
+							mark_moved_if_struct(self_param, status);
+						}
 					}
 				}
 			}
@@ -1650,7 +1680,14 @@ export default function build_assignment_node(
 				!paramReg &&
 				!is_local_ref_var(name, status) &&
 				lhs_type_name;
-			if (needs_pre_destroy) {
+			// A RHS that READS the displaced value (`p = p.copy()`, `p = f(p)`)
+			// must not see it reclaimed first — the copy would strdup freed
+			// fields (the self-assignment use-after-free). Build the RHS first
+			// and reclaim after it, mirroring the C backend's temp-first
+			// treatment (expressed here through the sret temp the call already
+			// produced).
+			const rhs_reads_lhs = rhs_references_var(node.right_value, name);
+			if (needs_pre_destroy && !rhs_reads_lhs) {
 				emit_destroy_for_decl(
 					status,
 					name,
@@ -1662,6 +1699,21 @@ export default function build_assignment_node(
 			}
 			get_source_address(node.right_value, status, nir_rhs);
 			ensure_newline(status);
+			if (needs_pre_destroy && rhs_reads_lhs) {
+				// x0 holds the fresh result's address — park it across the
+				// displaced reclaim (the frees' `bl` clobbers x0–x18), then let
+				// the store below copy the result from x0.
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
+				emit_destroy_for_decl(
+					status,
+					name,
+					lhs_type_name,
+					undefined,
+					lhs_decl_type?.type_args,
+					lhs_decl_type?.is_nullable,
+				);
+				emit_asm(status, `ldr x0, [sp], #16\n`);
+			}
 			if (paramReg && is_mutable_param(name, status)) {
 				if (status.function_ref_params?.has(name)) {
 					// A `ref` param's register holds the CALLER's storage address.

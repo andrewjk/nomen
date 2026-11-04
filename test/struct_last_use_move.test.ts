@@ -564,9 +564,10 @@ pub func main = (Init init) {
 	Console.write(p.name)
 }
 `;
-		// Emission-level pin only: a plain `p = p.copy()` has a pre-existing
-		// displaced-value bug of its own (FOLLOWUP.md), so this asserts the
-		// REWRITE decision — the copy must be kept — without pinning that.
+		// Emission-level pin: a plain `p = p.copy()` reads the target, so the
+		// copy must be KEPT (never rewritten to a transfer). The emission is
+		// audit-clean too — the copy materializes into a temp before the
+		// displaced reclaim (test/memory_leaks.test.ts pins the run).
 		const parsed = parse_program(input);
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "c" });

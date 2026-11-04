@@ -411,4 +411,72 @@ Console.write("done")
 `;
 		await build_and_check_output(input, "leak_bare_method_owned", "done");
 	});
+
+	// Value-struct copy-assignment corners (FOLLOWUP.md): the synthesized
+	// deep copy borrows its receiver and returns a fresh value, so the
+	// assignment must treat it like a fresh constructor.
+	test("self-assignment copy reclaims the displaced value after the copy", async () => {
+		// Freeing the displaced value before the call would strdup freed
+		// fields (a use-after-free); never reclaiming it leaked the old
+		// value's heap fields.
+		const input = `
+mv struct Pair {
+	var string name = ""
+	var int a = 0
+}
+
+var p = Pair()
+p.name = "self"
+p = p.copy()
+Console.write("\\{p.name} \\{p.a}")
+`;
+		await build_and_check_output(input, "leak_copy_self_assign", "self 0");
+	});
+
+	test("copy into a displaced slot reclaims the old value and keeps the new one", async () => {
+		// `var p2 = Pair(); p2 = p1.copy()` — the displaced "world" must be
+		// freed and the fresh copy must stay owned by p2 (the variable was
+		// spliced from its scope frame, so the copy's heap field leaked).
+		const input = `
+mv struct Pair {
+	var string name = ""
+	var int a = 0
+}
+
+var p1 = Pair()
+p1.name = "hello"
+p1.a = 7
+var p2 = Pair()
+p2.name = "world"
+p2 = p1.copy()
+Console.write("\\{p2.name} \\{p2.a} \\{p1.name}")
+`;
+		await build_and_check_output(input, "leak_copy_displaced_slot", "hello 7 hello");
+	});
+
+	// The same corners through the List/Map/Set library copy (the container
+	// mono is an owning value struct; the copy borrows its receiver and
+	// returns a fresh container).
+	test("container copy into a displaced slot is audit-clean", async () => {
+		const input = `
+var l1 = List<int>()
+l1.push(1)
+l1.push(2)
+var l2 = List<int>()
+l2.push(9)
+l2 = l1.copy()
+Console.write("\\{l2.length} \\{l1.length}")
+`;
+		await build_and_check_output(input, "leak_container_copy_displaced", "2 2");
+	});
+
+	test("container self-assignment copy is audit-clean", async () => {
+		const input = `
+var l = List<int>()
+l.push(7)
+l = l.copy()
+Console.write("\\{l.length}")
+`;
+		await build_and_check_output(input, "leak_container_copy_self", "1");
+	});
 });

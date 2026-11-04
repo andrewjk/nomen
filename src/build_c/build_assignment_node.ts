@@ -13,6 +13,7 @@ import {
 } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { claim_init_default_seed_reclaim } from "../build_common/init_computed_seeds.ts";
+import is_fresh_copy_call from "../build_common/is_fresh_copy_call.ts";
 import {
 	mono_struct_name,
 	mono_type_name,
@@ -1578,11 +1579,39 @@ export default function build_assignment_node(
 						node.right_value.node_type === "access" &&
 						(node.right_value as AccessNode).access.node_type === "access_func" &&
 						!!((node.right_value as AccessNode).access as AccessFunctionCallNode).owned_return;
+					// The deep-copy call (`p = p1.copy()` — the synthesized struct
+					// copy or the List/Map/Set library copy) is a fresh value too:
+					// it borrows its receiver and returns independently-owned
+					// state, so it aliases no variable's buffer. Without this
+					// the shape fell to the aliasing arms — `p2 = p1.copy()`
+					// spliced the variable (the fresh copy's heap state leaked at
+					// scope exit) and `p = p.copy()` kept the variable without
+					// ever reclaiming the displaced value (the old state leaked).
+					const rhs_is_fresh_copy = !node.swap && is_fresh_copy_call(node.right_value);
 					if (
 						is_fresh_constructor(node, status) ||
 						rhs_is_free_factory ||
-						rhs_is_owned_method_return
+						rhs_is_owned_method_return ||
+						rhs_is_fresh_copy
 					) {
+						// A self-referencing fresh copy (`p = p.copy()`) READS the
+						// displaced value — materialize the copy into a temp BEFORE
+						// the displaced reclaim (the `s = s + "x"` treatment), then
+						// reclaim, then store. Freeing before the call would strdup
+						// freed fields (a use-after-free); keeping the historical
+						// no-reclaim order leaked the old value's fields.
+						if (rhs_is_fresh_copy && rhs_references_var(node, lhs_name)) {
+							const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+							const temp = `_tcopy_${id}`;
+							status.code += `{ struct ${struct_type!.name} ${temp} = `;
+							emit_rhs_value(node.right_value, nir_rhs, status);
+							status.code += `;\n`;
+							release_recorded_string_fields(status, struct_type!, lhs_name);
+							if (needs_destroy) emit_struct_destroys(status, struct_type!, lhs_name);
+							status.code += `${lhs_name} = ${temp};\n}\n`;
+							if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
+							return;
+						}
 						// Fresh constructor / factory / owned method return:
 						// eagerly reclaim the discarded old value, then keep the
 						// variable for a scope-exit free of the new value.
