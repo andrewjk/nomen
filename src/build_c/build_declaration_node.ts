@@ -158,6 +158,40 @@ export default function build_declaration_node(
 			return;
 		}
 	}
+	// BASE↔CASE enum conversion (PERF_PLAN item 13(3)) — the declaration
+	// mirror of the assignment conversion: declare the base/case slot, build
+	// the value into a temp of its own type, copy the CASE-SIZE prefix (the
+	// case mono's layout — tag + its payload — is a byte-prefix of the
+	// parent's), and move-zero the temp so exactly one owner remains. A
+	// `base_to_case` copy is gated on the runtime tag check (the value may
+	// carry another variant — panic like at_or_panic on mismatch). The slot
+	// registers normally below-scope (the enum auto-free walk is tag-guarded
+	// and keys on the declared type), so payload teardown is unchanged.
+	// Function scope only: the temp + block shape needs a frame.
+	if (
+		node.enum_case_conversion &&
+		node.value &&
+		status.current_function &&
+		!node.type.is_array &&
+		!node.type.is_nullable
+	) {
+		const src_type = type_from_value_node(node.value);
+		const src_c = src_type?.name ? c_type(src_type.name) : undefined;
+		const dst_c = c_type(node.type.name);
+		if (src_c) {
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const temp = `_cconv_${id}`;
+			const safe_name = c_function_name(node.name);
+			status.code += `${dst_c} ${safe_name};\n{\n${src_c} ${temp} = `;
+			emit_init_value(node.value, nir_init, status);
+			status.code += `;\n`;
+			status.code += `memcpy(&${safe_name}, &${temp}, sizeof(${src_c}));\n`;
+			status.code += `memset(&${temp}, 0, sizeof(${src_c}));\n}\n`;
+			status.scoped_declarations.push(node);
+			if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
+			return;
+		}
+	}
 	// Return-side NRVO: the checker stamped this binding as the
 	// sole escape of a value-struct-returning function — construct the
 	// initializer directly into the function's `_return_val` slot (the

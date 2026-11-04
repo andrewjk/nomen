@@ -1876,6 +1876,39 @@ export default function build_assignment_node(
 			return;
 		}
 
+		// BASE↔CASE enum conversion assignment (PERF_PLAN item 13(3), stamped
+		// by check_assignment_node): reclaim the displaced payloads of the
+		// base-typed slot (tag-guarded on the PARENT layout), build the case
+		// value, and copy the PARENT-size prefix (the case mono's layout is
+		// a byte-prefix of the parent's; the copied tail bytes are padding
+		// the tag-driven reads never touch). The donor moves: mark_moved
+		// suppresses its scope-exit teardown so exactly one owner remains.
+		if (node.enum_case_conversion?.direction === "case_to_base" && !node.operator) {
+			const case_mono = status.enums.find((e) => e.name === rhs_type.name && e.is_case_mono);
+			const parent = case_mono?.parent_enum;
+			const lhs_enum = parent ? status.enums.find((e) => e.name === parent) : undefined;
+			if (parent && lhs_enum) {
+				const parent_size = get_enum_size(parent, status);
+				const lhs_enum = status.enums.find((e) => e.name === parent);
+				if (
+					lhs_enum?.cases.some((c) =>
+						c.params.some(
+							(p) => p.type.name === "string" || !!enum_payload_destroy_struct(p, status),
+						),
+					)
+				) {
+					emit_enum_payload_frees(status, parent, name);
+				}
+				mark_moved_if_struct(node.right_value, status);
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				ensure_newline(status);
+				emit_var_address(status, "x1", name);
+				emit_struct_copy("x0", "x1", 0, parent_size, status);
+				build_swap(node, status, nir_swap);
+				return;
+			}
+		}
+
 		// Enum with associated data is multi-word (tag + payload). The RHS
 		// builds to a temp address in x0; copy the full enum bytes into the
 		// variable's stack slot (a plain `str` would only store the address).
@@ -1884,8 +1917,16 @@ export default function build_assignment_node(
 		// fields — tag-guarded) BEFORE the copy — scope-exit only reclaims
 		// the final value, so the displaced payload would otherwise leak.
 		if (rhs_is_enum_with_data && !node.operator) {
-			const enum_size = get_enum_size(rhs_type.name, status);
-			const lhs_enum = status.enums.find((e) => e.name === rhs_type.name);
+			// A stamped case→base conversion copies the base layout: the
+			// displaced-payload frees and the copy width key on the PARENT
+			// enum (the slot's declared layout), not the case mono.
+			const conversion_base =
+				node.enum_case_conversion?.direction === "case_to_base"
+					? status.enums.find((e) => e.name === rhs_type.name && e.is_case_mono)?.parent_enum
+					: undefined;
+			const layout_enum = conversion_base ?? rhs_type.name;
+			const enum_size = get_enum_size(layout_enum, status);
+			const lhs_enum = status.enums.find((e) => e.name === layout_enum);
 			if (
 				lhs_enum?.cases.some((c) =>
 					c.params.some(

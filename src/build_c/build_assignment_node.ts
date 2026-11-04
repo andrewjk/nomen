@@ -1805,6 +1805,29 @@ export default function build_assignment_node(
 		}
 	}
 
+	// BASE↔CASE enum conversion assignment (PERF_PLAN item 13(3), stamped by
+	// check_assignment_node): build the value into a temp of its own type,
+	// copy the CASE-SIZE prefix (the case mono's layout — tag + its payload —
+	// is a byte-prefix of the parent's), and move-zero the temp so exactly
+	// one owner remains. The displaced-payload frees above already reclaimed
+	// the LHS's previous value (tag-guarded).
+	if (node.enum_case_conversion && node.left_value.node_type === "value") {
+		const lhs_name = (node.left_value as ValueNode).value;
+		const rhs_type = type_from_value_node(node.right_value);
+		const src_c = rhs_type?.name ? c_type(rhs_type.name) : undefined;
+		if (src_c) {
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const temp = `_cconv_${id}`;
+			status.code += `{ ${src_c} ${temp} = `;
+			build_node(node.right_value, status);
+			status.code += `;\n`;
+			status.code += `memcpy(&${lhs_name}, &${temp}, sizeof(${src_c}));\n`;
+			status.code += `memset(&${temp}, 0, sizeof(${src_c}));\n}\n`;
+			if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
+			return;
+		}
+	}
+
 	// A custom `#init`'s write to a DEFAULTED `self.<field>` displaces the
 	// seeded default; a heap-mv default must be reclaimed ahead of the
 	// raw pair store (value-struct self writes skip the ownership-normalized

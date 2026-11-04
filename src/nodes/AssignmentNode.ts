@@ -31,6 +31,17 @@ export default class AssignmentNode extends BaseNode {
 	 */
 	displaced_is_alias?: boolean;
 
+	/**
+	 * Stamped by check_assignment_node when the assignment is a BASE↔CASE
+	 * enum conversion (PERF_PLAN item 13(3)): the value type is the case
+	 * mono and the target is its parent enum (`case_to_base` — a sound
+	 * widening prefix copy), or the reverse (`base_to_case` — the builder
+	 * emits the runtime tag check and panics on variant mismatch). Both
+	 * backends emit a temp + prefix-copy + move-zero of the source; only
+	 * this stamp's presence triggers the conversion lowering.
+	 */
+	enum_case_conversion?: { direction: "case_to_base" | "base_to_case" };
+
 	constructor(start: number, left_value: BaseNode, right_value: BaseNode, operator?: string) {
 		super("assign", start);
 		this.left_value = left_value;

@@ -22,6 +22,7 @@ import {
 } from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import { value_owns_closure } from "./utils/captures.ts";
+import { case_base_conversion_direction } from "./utils/case_enum.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -543,15 +544,31 @@ export default function check_assignment_node(
 			status,
 			assign.right_value.start,
 		);
-	} else
-		check_type_and_value_match(
-			type_from_value_node(assign.left_value, status),
-			type_from_value_node(assign.right_value, status),
-			value_from_value_node(assign.right_value),
+	} else {
+		// BASE↔CASE enum conversion (PERF_PLAN item 13(3)): stamp the
+		// direction and skip the plain type check — the backends emit the
+		// conversion (a temp + prefix copy + move-zero of the source;
+		// `base_to_case` adds the runtime tag check and panics on variant
+		// mismatch).
+		const assign_lhs_type = type_from_value_node(assign.left_value, status);
+		const assign_rhs_type = type_from_value_node(assign.right_value, status);
+		const conversion_direction = case_base_conversion_direction(
+			assign_lhs_type?.name,
+			assign_rhs_type?.name,
 			status,
-			assign.right_value.start,
-			"assignment",
 		);
+		if (conversion_direction === "case_to_base") {
+			assign.enum_case_conversion = { direction: conversion_direction };
+		} else
+			check_type_and_value_match(
+				type_from_value_node(assign.left_value, status),
+				type_from_value_node(assign.right_value, status),
+				value_from_value_node(assign.right_value),
+				status,
+				assign.right_value.start,
+				"assignment",
+			);
+	}
 
 	// A view-typed field store (`line.text = doc.slice(0, 5)`): the instance
 	// now carries a non-mv borrow rooted at the RHS's owner. Record it on

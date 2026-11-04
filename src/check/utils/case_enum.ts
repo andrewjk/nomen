@@ -166,3 +166,25 @@ export function case_mono_for_construction(
 	const mono = status.enums.find((e) => e.name === mono_name && e.is_case_mono);
 	return mono;
 }
+
+/**
+ * The BASE↔CASE conversion direction for a (target, value) type pair, or
+ * undefined when the pair is not one. `case_to_base` — the case mono's
+ * layout (tag + its payload) is a byte-prefix of the parent enum's, and its
+ * tag is the parent's declared index, so a widening prefix copy is always
+ * sound. `base_to_case` — narrowing needs a runtime tag check (the value
+ * may carry another variant); the builders emit the check and panic on
+ * mismatch. Only case monos with a registered parent participate.
+ */
+export function case_base_conversion_direction(
+	target: string | undefined,
+	value: string | undefined,
+	status: CheckStatus,
+): "case_to_base" | "base_to_case" | undefined {
+	if (!target || !value || target === value) return undefined;
+	const value_enum = status.enums.find((e) => e.name === value && e.is_case_mono);
+	if (value_enum?.parent_enum === target) return "case_to_base";
+	const target_enum = status.enums.find((e) => e.name === target && e.is_case_mono);
+	if (target_enum?.parent_enum === value) return "base_to_case";
+	return undefined;
+}

@@ -67,6 +67,15 @@ export default class DeclarationNode extends BaseNode {
 	 * stamp (`ReturnNode.nrvo_elided`).
 	 */
 	nrvo_sret?: boolean;
+	/**
+	 * BASE↔CASE enum conversion (PERF_PLAN item 13(3)) — the declaration
+	 * mirror of AssignmentNode.enum_case_conversion: the initializer's type
+	 * is the case mono and the declared type is its parent enum
+	 * (`case_to_base`), or the reverse (`base_to_case` — runtime tag check,
+	 * panic on variant mismatch). The backends emit a temp + prefix copy +
+	 * move-zero of the source.
+	 */
+	enum_case_conversion?: { direction: "case_to_base" | "base_to_case" };
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	scope?: BaseNode;

@@ -16,6 +16,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import { borrow_depth_of, borrow_owner_of, is_element_borrow_value } from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import { move_closure_source, value_owns_closure } from "./utils/captures.ts";
+import { case_base_conversion_direction } from "./utils/case_enum.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -267,14 +268,26 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.expected_type = old_expected_type;
 
 			if (result) {
-				check_type_and_value_match(
-					decl.type,
-					type_from_value_node(decl.value, status),
-					value_from_value_node(decl.value),
+				// BASE↔CASE enum conversion (PERF_PLAN item 13(3)): stamp the
+				// direction and skip the plain type check — the backends emit
+				// the conversion (see AssignmentNode.enum_case_conversion).
+				const conversion_direction = case_base_conversion_direction(
+					decl.type?.name,
+					type_from_value_node(decl.value, status)?.name,
 					status,
-					decl.value.start,
-					"declaration",
 				);
+				if (conversion_direction === "case_to_base") {
+					decl.enum_case_conversion = { direction: conversion_direction };
+				} else {
+					check_type_and_value_match(
+						decl.type,
+						type_from_value_node(decl.value, status),
+						value_from_value_node(decl.value),
+						status,
+						decl.value.start,
+						"declaration",
+					);
+				}
 			}
 
 			if (!decl.type.name) {
@@ -360,14 +373,26 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.expected_type = old_expected_type;
 
 			if (result) {
-				check_type_and_value_match(
-					decl.type,
-					type_from_value_node(decl.value, status),
-					value_from_value_node(decl.value),
+				// BASE↔CASE enum conversion (PERF_PLAN item 13(3)): stamp the
+				// direction and skip the plain type check — the backends emit
+				// the conversion (see AssignmentNode.enum_case_conversion).
+				const conversion_direction = case_base_conversion_direction(
+					decl.type?.name,
+					type_from_value_node(decl.value, status)?.name,
 					status,
-					decl.value.start,
-					"declaration",
 				);
+				if (conversion_direction === "case_to_base") {
+					decl.enum_case_conversion = { direction: conversion_direction };
+				} else {
+					check_type_and_value_match(
+						decl.type,
+						type_from_value_node(decl.value, status),
+						value_from_value_node(decl.value),
+						status,
+						decl.value.start,
+						"declaration",
+					);
+				}
 			}
 
 			// STRUCT_PLAN_3 B4 — trait handles are boxed, mv values. The

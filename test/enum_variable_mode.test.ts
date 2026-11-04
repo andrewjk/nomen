@@ -358,6 +358,72 @@ pub func main = (Init init) {
 	});
 });
 
+describe("enum variable mode: base↔case conversions (remainder 13(3))", () => {
+	test("case → base conversion: declaration and assignment — audit clean", async () => {
+		// PERF_PLAN item 13(3), widening half: a case-mono value's layout
+		// (tag + its payload) is a byte-prefix of the parent enum's, so the
+		// conversion copies the case-size prefix into the base slot; the
+		// displaced payload frees run tag-guarded on the parent layout.
+		const input = `
+import System
+
+mv enum Res {
+	case err(string message)
+	case ok(int count)
+}
+
+func main_body = (out int) {
+	var Res.ok r_ok = Res.ok(7)
+	var Res r = Res.err("x".copy())
+	var int t1 = 0
+	match r {
+		case .ok(c) { t1 = c }
+		case .err {}
+	}
+	r = r_ok
+	var int t2 = 0
+	match r {
+		case .ok(c) { t2 = c }
+		case .err {}
+	}
+	Console.write("\\{t1} \\{t2}")
+	return 0
+}
+
+pub func main = (Init init) {
+	Console.write("\\{main_body()}")
+}
+`;
+		await build_and_check_output(input, "enum_case_to_base_conv", "0 70", true);
+	});
+
+	test("base → case stays a type error (runtime-checked narrowing is future work)", () => {
+		const input = `
+import System
+
+mv enum Res {
+	case err(string message)
+	case ok(int count)
+}
+
+func main_body = (out int) {
+	var Res r = Res.ok(7)
+	var Res.ok r_ok = r
+	return 0
+}
+
+pub func main = (Init init) {
+	Console.write("ok")
+}
+`;
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "c" });
+		const errors = [...parsed.errors, ...(result.errors ?? [])];
+		expect(errors.length).toBeGreaterThan(0);
+		expect(errors[0].message).toContain("Type mismatch");
+	});
+});
+
 describe("enum variable mode: sizes", () => {
 	test("the mono's slot is variant-sized (aarch64 frame allocation)", () => {
 		const body = (annotation: string) => `
