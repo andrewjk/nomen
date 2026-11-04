@@ -34,11 +34,19 @@ function resolve_tsx(): string {
  */
 export default async function setup(): Promise<void> {
 	const script = path.resolve(import.meta.dirname, "system_lib_worker.ts");
+	// The prebuild is the barrier workers start behind, so a FAILURE here must
+	// stop the run: proceeding would leave stale/unbuilt objects that the
+	// freshness test's mid-suite self-heal then rebuilds while other workers
+	// are linking — the rebuild/worker race behind the 1–27 spurious
+	// link/audit failures on the first run after a core edit. (Expected
+	// fallbacks — the aarch64 codegen divergence that can make the system asm
+	// unassembleable — are handled inside ensure_system_lib, which removes the
+	// object and exits 0; only unexpected errors get here.)
 	try {
 		await execPromise(`${resolve_tsx()} "${script}"`, { maxBuffer: 10 * 1024 * 1024 });
 	} catch (e) {
-		console.error(
-			`[system_lib] prebuild worker failed:\n${(e as Error).message?.split("\n").slice(0, 6).join("\n")}`,
+		throw new Error(
+			`[system_lib] prebuild worker failed — fix the state in test/out/system_lib (or delete it; the next run rebuilds) and re-run:\n${(e as Error).message?.split("\n").slice(0, 8).join("\n")}`,
 		);
 	}
 	// Both audit variants are prebuilt; a test links the one matching its own

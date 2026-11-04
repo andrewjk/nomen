@@ -47,6 +47,13 @@ export function system_paths(arch: "c" | "aarch64", audit: boolean) {
 		// The System library SOURCE hash the object was built from (the
 		// freshness gate's marker — see system_lib_fresh).
 		libhash: path.join(dir, `.libhash${suffix}`),
+		// The OBJECT ARTIFACT's content hash recorded at build time (see
+		// object_content_hash). The other markers validate the INPUTS (library
+		// source, generated code) — this one validates the object file itself,
+		// so an object compiled from different text (a git-restore desync, a
+		// failed/abandoned build the markers outlived) is detected instead of
+		// blessed.
+		objhash: path.join(dir, `.objhash${suffix}`),
 		src:
 			arch === "c"
 				? path.join(dir, `system${suffix}${process.platform === "darwin" ? ".m" : ".c"}`)
@@ -55,6 +62,78 @@ export function system_paths(arch: "c" | "aarch64", audit: boolean) {
 		// aarch64-only (the C system TU has no companion); unused for "c".
 		companion: path.join(dir, `system${suffix}_companion.o`),
 	};
+}
+
+/**
+ * Content hash of the LINKABLE system artifacts for a variant — the object
+ * itself plus, for aarch64, its companion object (the pair is linked
+ * together and must come from the same build), and for C the staged header
+ * (the user TU's struct layouts must match the object's). Returns null when
+ * any artifact is missing. Memoized on (mtimeMs, size) of each file: warm
+ * runs call this per test (the freshness gate) and re-hashing ~400KB
+ * thousands of times would dominate them, while a rebuild swaps the files
+ * (new mtimes) and must re-validate.
+ */
+const object_hash_memo = new Map<string, string>();
+export function object_content_hash(arch: "c" | "aarch64", audit: boolean): string | null {
+	const paths = system_paths(arch, audit);
+	const files = [paths.obj];
+	// The companion joins only when present: a variant whose build emitted no
+	// use_c bodies has none, and its absence must not read as a missing
+	// artifact (when it DOES exist it is part of the pair — stale bytes there
+	// change the hash and fail the match).
+	if (arch === "aarch64" && fs.existsSync(paths.companion)) files.push(paths.companion);
+	if (arch === "c") files.push(paths.h);
+	const stats: fs.Stats[] = [];
+	for (const file of files) {
+		try {
+			stats.push(fs.statSync(file));
+		} catch {
+			return null;
+		}
+	}
+	const key = `${arch}:${audit}:${stats.map((s) => `${s.mtimeMs}:${s.size}`).join("|")}`;
+	const memoed = object_hash_memo.get(key);
+	if (memoed !== undefined) return memoed;
+	try {
+		const h = crypto.createHash("sha256");
+		for (const file of files) h.update(fs.readFileSync(file));
+		const digest = h.digest("hex").slice(0, 16);
+		object_hash_memo.set(key, digest);
+		return digest;
+	} catch {
+		return null;
+	}
+}
+
+/** Whether the on-disk artifacts match the object-content hash recorded at
+ *  build time. A missing recording (first run after this gate lands, or a
+ *  git restore that brought back markers without objects) reads as NOT
+ *  matching: the artifact is then rebuilt (or the split falls back to
+ *  single-TU) instead of silently linked. */
+function object_hash_matches(arch: "c" | "aarch64", audit: boolean): boolean {
+	const paths = system_paths(arch, audit);
+	let recorded: string;
+	try {
+		recorded = fs.readFileSync(paths.objhash, "utf8");
+	} catch {
+		return false;
+	}
+	const actual = object_content_hash(arch, audit);
+	return actual !== null && actual === recorded;
+}
+
+/** Record the build-time content hash of the linkable artifacts. Called only
+ *  after a successful (re)build, so the recording always describes the bytes
+ *  just written. Atomic rename: concurrent workers read this for the
+ *  freshness gate at any moment. */
+function write_objhash(arch: "c" | "aarch64", audit: boolean): void {
+	const digest = object_content_hash(arch, audit);
+	if (digest === null) return;
+	const file = system_paths(arch, audit).objhash;
+	const tmp = `${file}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+	fs.writeFileSync(tmp, digest);
+	fs.renameSync(tmp, file);
 }
 
 // C backend (audited — the default variant)
@@ -117,20 +196,25 @@ export function current_lib_source_hash(): string {
 }
 
 /**
- * Whether the prebuilt system object may be LINKED into a fresh user TU: the
- * object exists AND the recorded library-source hash matches the CURRENT
- * System library source. The split-build contract is that system.o and the
- * user TU were produced from the same library state — pairing a STALE object
- * (a library edit the prebuild worker never rebuilt: failed worker, watch
- * session) with a fresh user TU is the struct-layout-crash hazard. A
- * not-fresh object is treated exactly like a missing one: single-TU fallback
- * (slower, but both halves always agree).
+ * Whether the prebuilt system object may be LINKED into a fresh user TU:
+ * the object exists AND the recorded library-source hash matches the CURRENT
+ * System library source AND the object artifacts on disk match the content
+ * hash recorded when they were built. The split-build contract is that
+ * system.o and the user TU were produced from the same library state —
+ * pairing a STALE object (a library edit the prebuild worker never rebuilt:
+ * failed worker, watch session) with a fresh user TU is the struct-layout-
+ * crash hazard, and the source-side markers alone cannot see an object that
+ * was compiled from different text than the markers record (the natural
+ * `git checkout core ... test/out` cleanup restores markers but not the
+ * untracked objects). A not-fresh object is treated exactly like a missing
+ * one: single-TU fallback (slower, but both halves always agree).
  */
 export function system_lib_fresh(arch: "c" | "aarch64", audit: boolean): boolean {
 	const paths = system_paths(arch, audit);
 	if (!fs.existsSync(paths.obj)) return false;
 	if (!fs.existsSync(paths.hash)) return false;
 	if (!fs.existsSync(paths.libhash)) return false;
+	if (!object_hash_matches(arch, audit)) return false;
 	try {
 		return fs.readFileSync(paths.libhash, "utf8") === current_lib_source_hash();
 	} catch {
@@ -273,7 +357,13 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 	const c_warm =
 		c_hash === (fs.existsSync(c_paths.hash) ? fs.readFileSync(c_paths.hash, "utf8") : "") &&
 		fs.existsSync(c_paths.obj) &&
-		fs.existsSync(c_paths.h);
+		fs.existsSync(c_paths.h) &&
+		// The markers validate the build INPUTS; the object artifacts must also
+		// match what was recorded when they were actually compiled (an
+		// abandoned experiment or a `git checkout test/out` can leave
+		// marker/object pairs that disagree — the untracked objects are never
+		// restored alongside the tracked markers).
+		object_hash_matches("c", audit);
 	if (c_warm) {
 		ensure_libhash(c_paths);
 	} else {
@@ -286,6 +376,7 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 			await execPromise(`clang -c ${c_paths.src} -o ${tmp}`, { maxBuffer: 10 * 1024 * 1024 });
 			fs.renameSync(tmp, c_paths.obj);
 			fs.writeFileSync(c_paths.hash, c_hash);
+			write_objhash("c", audit);
 			ensure_libhash(c_paths);
 			rebuilt = true;
 		} catch (e) {
@@ -301,6 +392,9 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 			try {
 				fs.rmSync(tmp, { force: true });
 				fs.rmSync(c_paths.obj, { force: true });
+				// Nothing may bless a removed object: drop the recording with it
+				// (a later rebuild writes a fresh one).
+				fs.rmSync(c_paths.objhash, { force: true });
 			} catch {}
 		}
 	}
@@ -330,7 +424,10 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 		// The companion is linked next to the object; a build that emits one
 		// must not be called warm while its companion is missing (the user
 		// link would silently skip it and miss the library use_c bodies).
-		(a64_companion.trim().length === 0 || fs.existsSync(a64_paths.companion));
+		(a64_companion.trim().length === 0 || fs.existsSync(a64_paths.companion)) &&
+		// Same artifact-content gate as the C arm: the markers validate the
+		// build inputs, not the compiled bytes on disk.
+		object_hash_matches("aarch64", audit);
 	if (a64_warm) {
 		ensure_libhash(a64_paths);
 	} else {
@@ -351,6 +448,7 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 			}
 			fs.renameSync(tmp, a64_paths.obj);
 			fs.writeFileSync(a64_paths.hash, a64_hash);
+			write_objhash("aarch64", audit);
 			ensure_libhash(a64_paths);
 			rebuilt = true;
 		} catch (e) {
@@ -364,6 +462,9 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 			try {
 				fs.rmSync(tmp, { force: true });
 				fs.rmSync(a64_paths.obj, { force: true });
+				// Nothing may bless a removed object: drop the recording with it
+				// (a later rebuild writes a fresh one).
+				fs.rmSync(a64_paths.objhash, { force: true });
 			} catch {}
 		}
 	}

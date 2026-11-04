@@ -533,48 +533,6 @@ needs a guard:
 - **Field-path receivers** (`h.items.at(0)`): guards only, no exact
   tracking on field paths.
 
-## System.o prebuild races parallel workers after a core edit
-
-Recorded 2026-10-28. The first `vp test` run after editing `core/**`
-rebuilds `test/out/system_lib/**` (globalSetup prebuild) — when that
-rebuild overlaps cold workers, 1–27 tests fail spuriously (mix of link
-errors and audit-run failures); the NEXT full run is green with zero
-changes. Three consecutive post-rebuild runs settled to stable green, so
-the failures are a rebuild/worker race, not codegen. Mitigation for a
-touched-core session: run the suite once to rebuild, then judge on the
-second run — or make the prebuild a hard barrier for worker startup.
-
-**Stale-object hazard after REVERTING core (recorded 2026-11-03):** the
-prebuild validity check compares the current core sources against the
-`.hash` files in `test/out/system_lib/`. When a session edits `core/**`,
-runs tests (building tombstone-era objects), then REVERTS `core/**` and
-also restores `test/out/system_lib/**` from git (the natural
-`git checkout core ... test/out` cleanup), the restored `.hash` files match
-the reverted sources — so the prebuild happily REUSES the object files that
-were compiled from the NEWER (reverted-away) library. A user TU built
-against HEAD sources then links a system.o with a different struct layout
-(e.g. a `Map` with an extra field) and SEGFAULTS at runtime. Symptom:
-`Command failed: .../main.out` with exit 139 on tests that are green on
-HEAD. Fix that session: `rm -rf test/out/system_lib` before judging
-anything. (Found while reverting PERF_PLAN item 18.)
-
-**The PLAIN variant is never prebuilt (recorded 2026-11-04):** the
-globalSetup worker calls `ensure_system_lib(true)` only — the audit:false
-objects (`system_plain.o`) are rebuilt solely by an explicit
-`ensure_system_lib(false)`, which nothing at setup invokes. Stale plain
-objects therefore survive every freshness check whose marker matches: after
-the allocator-eager revert, the local `system_plain.o` (built by the
-allocator-era compiler) still called the deleted `nomen_alloc` runtime and
-every audit:false aarch64 split link failed with `Undefined symbols:
-"_nomen_alloc"` (20 tests) — while the tracked `.hash_plain` matched the
-current build, so the prebuild reported "warm" and never healed it. The
-objects are untracked (only the hashes/names.json are committed), so this
-does not reproduce on a fresh clone (missing object → single-TU fallback);
-the fix for a poisoned machine is deleting the plain objects + markers and
-forcing one `ensure_system_lib(false)`. Longer term: prebuild both audit
-variants in the setup worker, or make the plain variant's freshness key on
-the compiler itself, not just the library source.
-
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files
