@@ -93,8 +93,22 @@ export default class Type {
 	 * check into a single-case mono enum (see resolve_case_enum_type);
 	 * afterwards only `name` matters — this field survives for rendering
 	 * and re-validation. Undefined on every other type.
+	 *
+	 * Over a GENERIC enum (`Option<int>.some`) the parse keeps the bare
+	 * generic name + `type_args` + `case_name` (name stays "Option" until
+	 * the checker materializes the `Option_int` mono, then the case mono
+	 * `Option_int__some` and rewrites `name`/`case_enum`).
 	 */
 	case_enum?: string;
+
+	/**
+	 * The CASE name of a case-qualified type, recorded at parse so the
+	 * checker can validate it for both spellings: `Res.ok` (derivable from
+	 * the flattened name, but carried explicitly) and `Option<int>.some`
+	 * (not derivable — the name stays the bare generic until the mono
+	 * materializes).
+	 */
+	case_name?: string;
 
 	/**
 	 * True when this type is an array (stack or heap). Reads from

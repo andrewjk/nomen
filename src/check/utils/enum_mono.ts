@@ -57,8 +57,14 @@ export function monomorphize_enum(
 		substitution.set(generic_enum.type_params[i], flat_args[i]);
 	}
 
-	const cases = generic_enum.cases.map((c) => ({
+	const cases = generic_enum.cases.map((c, case_index) => ({
 		name: c.name,
+		// The ORIGINAL declaration index rides every mono case: a full mono's
+		// positions already match it, and a case mono over this mono
+		// (`Option<int>.none` — ONE case at position 0) must store the
+		// base's tag, so `get_enum_case_index`'s `tag_index ?? position`
+		// fallback is not enough there.
+		tag_index: c.tag_index ?? case_index,
 		params: c.params.map((p) => {
 			const direct = substitution.get(p.type.name);
 			// A bare type-param payload (`T value`) becomes the concrete arg.

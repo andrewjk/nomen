@@ -1,7 +1,9 @@
 import add_error from "../../add_error.ts";
 import EnumNode from "../../nodes/EnumNode.ts";
 import type Type from "../../nodes/Type.ts";
+import { type_contains_unresolved_param } from "../check_function_call_node.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { monomorphize_enum } from "./enum_mono.ts";
 
 /**
  * Variable-mode enums (PERF_PLAN item 13, GOOSE #6): a case-qualified type
@@ -30,15 +32,54 @@ export function case_mono_name(base_enum: string, case_name: string): string {
 }
 
 /**
- * Validate a case-qualified type (`type.case_enum` set by the parser,
- * `type.name` already the mangled `Enum_case` form) and materialize the
- * single-case mono enum. Idempotent; rewrites nothing on failure (the
- * caller's unknown-type path reports).
+ * Validate a case-qualified type (`type.case_enum`/`type.case_name` set by
+ * the parser) and materialize the single-case mono enum. Over a GENERIC
+ * base (`Option<int>.some` — name still the bare generic, args attached)
+ * the generic mono materializes FIRST (mono-of-a-mono order) and the
+ * annotation is rewritten to the mono (`name` → `Option_int`, `case_enum` →
+ * `Option_int`, args cleared) before the case mono resolves. Idempotent;
+ * rewrites nothing on failure (the caller's unknown-type path reports).
  */
 export function resolve_case_enum_type(type: Type, status: CheckStatus, start: number): void {
-	const base = type.case_enum!;
-	// The mangled name is `<base>__<case>` (see parse_type).
-	const case_name = type.name.substring(base.length + 2);
+	let base = type.case_enum!;
+	// `case_name` (set at parse for both spellings); the flattened-name
+	// derivation remains for synthesized/replayed annotations.
+	const case_name = type.case_name ?? type.name.substring(base.length + 2);
+	// A generic base (`Option<int>.some`): materialize the instantiation
+	// first, then resolve the case over the mono. Deferred while an arg
+	// still references an unresolved type param (a generic CONTEXT spells
+	// case types over its own params — `Option<T>.some` inside a generic
+	// body materializes per instantiation, like every generic annotation).
+	if (type.type_args?.length) {
+		const generic_enum = status.enums.findLast((e) => e.name === base && e.is_generic);
+		if (!generic_enum) {
+			add_error(
+				status,
+				`Unknown generic enum: ${base} (in case type '${base}<...>.${case_name}')`,
+				start,
+			);
+			return;
+		}
+		if (
+			generic_enum.type_params.length !== type.type_args.length ||
+			type.type_args.some((t) => type_contains_unresolved_param(t, status))
+		) {
+			add_error(
+				status,
+				`Generic enum ${generic_enum.name} requires ${generic_enum.type_params.length} concrete type arguments for a case type ('${base}<...>.${case_name}')`,
+				start,
+			);
+			return;
+		}
+		const mono = monomorphize_enum(generic_enum, type.type_args, status);
+		if (!mono) return;
+		// The annotation now names the mono: the mangled case-mono name
+		// derives from it, and the args drop (the mono is concrete).
+		base = mono.name;
+		type.name = `${mono.name}__${case_name}`;
+		type.case_enum = mono.name;
+		type.type_args = undefined;
+	}
 	const enum_node = status.enums.findLast(
 		(e) => (e.name === base || e.source_name === base) && !e.is_generic,
 	);
@@ -49,7 +90,7 @@ export function resolve_case_enum_type(type: Type, status: CheckStatus, start: n
 	if (enum_node.is_generic) {
 		add_error(
 			status,
-			`a case type on a generic enum ('${base}.${case_name}') is not supported yet`,
+			`a case type on a generic enum ('${base}.${case_name}') requires concrete type arguments`,
 			start,
 		);
 		return;

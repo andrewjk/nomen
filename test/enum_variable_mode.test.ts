@@ -249,6 +249,115 @@ pub func main = (Init init) {
 	});
 });
 
+describe("enum variable mode: case types over generic enums (remainder 13(2))", () => {
+	test("Option<int>.some: construct, match, == — audit clean", async () => {
+		const input = `
+import System
+
+pub enum Option<T> {
+	case none
+	case some(T value)
+}
+
+pub func main = (Init init) {
+	var Option<int>.some o = .some(4)
+	var int total = 0
+	match o {
+		case .some(v) { total = v }
+	}
+	var Option<int>.none n = .none
+	var Option<int> wide = .none
+	wide = .some(total * 2)
+	match wide {
+		case .some(v) { total = v }
+		case .none {}
+	}
+	Console.write("\\{total} \\{o == .some(4)} \\{n == .none}")
+}
+`;
+		await build_and_check_output(input, "enum_gen_case_option_int", "8 true true", true);
+	});
+
+	test("Result<int, string>.ok with an mv string payload — audit clean", async () => {
+		const input = `
+import System
+
+pub checked enum Result<T, E> {
+	case ok(T value)
+	case error(E message)
+}
+
+func parse = (string raw, out Result<int, string>) {
+	if raw == "bad" {
+		return .error("nope".copy())
+	}
+	return .ok(11)
+}
+
+pub func main = (Init init) {
+	var Result<int, string>.ok ok = .ok(11)
+	var int total = 0
+	match ok {
+		case .ok(v) { total = v }
+	}
+	// churn: fresh int payloads per construction — the audit proves each
+	// displaced value is reclaimed exactly once
+	ok = .ok(total * 2)
+	match ok {
+		case .ok(v) { Console.write("\\{v}") }
+	}
+	Console.write("\\{total}")
+}
+`;
+		await build_and_check_output(input, "enum_gen_case_result_mv", "2211", true);
+	});
+
+	test("case-mono construction through the explicit access spelling", async () => {
+		const input = `
+import System
+
+pub enum Option<T> {
+	case none
+	case some(T value)
+}
+
+pub func main = (Init init) {
+	var Option<int>.some o = Option.some(41)
+	var int v = 0
+	match o {
+		case .some(x) { v = x }
+	}
+	Console.write("\\{v + 1}")
+}
+`;
+		await build_and_check_output(input, "enum_gen_case_access_spelling", "42", true);
+	});
+
+	test("the case mono over a mono keeps the base tag (C tag typedef)", () => {
+		// `some` is declaration index 1 in the generic — the case mono's
+		// single case sits at position 0 but must store the base's tag 1,
+		// so the C tag typedef carries the explicit value.
+		const input = `
+import System
+
+pub enum Option<T> {
+	case none
+	case some(T value)
+}
+
+pub func main = (Init init) {
+	var Option<int>.some s = .some(4)
+	Console.write("\\{s == .some(4)}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.headers).toContain("Option_int__some_some = 1");
+	});
+});
+
 describe("enum variable mode: sizes", () => {
 	test("the mono's slot is variant-sized (aarch64 frame allocation)", () => {
 		const body = (annotation: string) => `
@@ -394,16 +503,28 @@ pub func main = (Init init) {
 		expect(errors[0].message).toContain("Type mismatch");
 	});
 
-	test("case type on a generic enum is rejected at parse", () => {
+	test("case type on a generic enum resolves through its mono", () => {
+		// PERF_PLAN remainder 13(2): `Option<int>.some` — the generic mono
+		// (`Option_int`) materializes first, then the case mono over it
+		// (`Option_int__some`), whose single case carries the ORIGINAL
+		// declaration index as its tag.
 		const input = `
+import System
+
+pub enum Option<T> {
+	case none
+	case some(T value)
+}
+
 pub func main = (Init init) {
 	var Option<int>.some o = Option.some(1)
-	Console.write("x")
+	Console.write("\\{o == .some(1)}")
 }
 `;
 		const parsed = parse_raw(input);
-		expect(parsed.errors.length).toBeGreaterThan(0);
-		expect(parsed.errors[0].message).toContain("not supported yet");
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "c" });
+		expect(result.errors ?? []).toEqual([]);
 	});
 
 	test("a case-mono name collision with a declared type is rejected", () => {

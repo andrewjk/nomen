@@ -74,28 +74,29 @@ export default function parse_type(status: ParseStatus): Type {
 		expect_close_angle(status);
 	}
 	// Variable-mode enum (PERF_PLAN item 13): `Enum.case` — a case-qualified
-	// type (`Res.ok`). The type's name flattens to the mangled mono form
-	// (`Res_ok`) — the same flattening generic instantiations use — and
-	// `case_enum` records the base enum so the checker can validate the
-	// case and materialize the single-case mono (see resolve_case_enum_type).
+	// type (`Res.ok`, `Option<int>.some`). The type's name flattens to the
+	// mangled mono form (`Res_ok`) — the same flattening generic
+	// instantiations use — and `case_enum`/`case_name` record the base enum
+	// + case so the checker can validate them and materialize the
+	// single-case mono (see resolve_case_enum_type). Over a GENERIC enum the
+	// name stays the bare generic (the `Option_int` mono must materialize
+	// first — mono-of-a-mono order), so the checker derives the mangled
+	// form after the generic mono exists.
 	if (accept(".", status)) {
 		const case_start = get_index(status);
 		const case_name = consume(status);
 		if (!/^[A-Za-z_]\w*$/.test(case_name)) {
 			add_error(status, `Invalid enum case name: ${case_name}`, case_start);
-		} else if (type.type_args?.length) {
-			add_error(
-				status,
-				`a case type on a generic enum ('${type.name}<...>.${case_name}') is not supported yet`,
-				start,
-			);
 		} else {
 			type.case_enum = type.name;
-			// Double-underscore join: the mangled mono name must not collide
-			// with the BASE enum's C tag constants (`Res_err`/`Res_ok` —
-			// `Res_ok` would steal the constant's identifier in the emitted
-			// C), nor with generic-mono spellings (`Result_int_string`).
-			type.name = `${type.name}__${case_name}`;
+			type.case_name = case_name;
+			if (!type.type_args?.length) {
+				// Double-underscore join: the mangled mono name must not collide
+				// with the BASE enum's C tag constants (`Res_err`/`Res_ok` —
+				// `Res_ok` would steal the constant's identifier in the emitted
+				// C), nor with generic-mono spellings (`Result_int_string`).
+				type.name = `${type.name}__${case_name}`;
+			}
 		}
 	}
 	if (accept("?", status)) {

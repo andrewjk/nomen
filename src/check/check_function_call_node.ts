@@ -1015,7 +1015,7 @@ export function monomorphize(
  * `List<T>` inside `struct Outer<T>`. Such a type can't be monomorphized
  * yet; the enclosing generic's own monomorphization substitutes it later.
  */
-function type_contains_unresolved_param(type: Type, status: CheckStatus): boolean {
+export function type_contains_unresolved_param(type: Type, status: CheckStatus): boolean {
 	if (status.type_params.includes(type.name)) return true;
 	return type.type_args?.some((t) => type_contains_unresolved_param(t, status)) ?? false;
 }
