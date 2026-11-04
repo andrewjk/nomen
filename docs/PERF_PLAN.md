@@ -2487,7 +2487,11 @@ factors: backward-shift keeps the table maximally clean and lru's clusters
 short (its removal cost is the SCAN, 17r's finding), while tombstoning
 trades that scan for permanently dirtier tables. Rejected; 17r's shape win
 stays on the table only for a scheme that also fixes the scan (a different
-data layout, not a different deletion policy).
+data layout, not a different deletion policy). Within the CURRENT layout
+the one unexplored scan lever is backward-shift START-POSITION MEMOIZATION
+(remember, per removed slot, where the next cluster-end scan can resume —
+speculative, unmeasured); shrinking the per-step probe cost is remainders
+item 6.
 
 ## Already rejected — don't re-suggest
 

@@ -562,36 +562,6 @@ map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
 - **Containers other than List/Map** (`LinkedList`, `Tree`) have no
   contract-free read and no effect model — guards only.
 
-## Map/Set.remove is scan-bound (~60% of lru), not shift-bound
-
-Recorded 2026-11-02 while attempting PERF_PLAN item 17r (bulk `move_range`
-for the backward shift — rejected, measurements there). An lru build with
-the `keys.remove(old_key)` call deleted runs the remaining work
-byte-identically flat before/after ANY remove-body change, and cuts lru
-`1000 20000000` from 1.68s to 0.65s — the evict-path remove is ~60% of the
-bench, and its cost is the PROBE SCAN (walk `used`/`hashes` to the cluster
-end computing `home`/`dgap`/`dk` per entry), not the entry moves: at 49%
-load with random keys, successors are usually at their homes (`dk = 0`,
-nothing moveable), so a removal walks the cluster and shifts nothing.
-Batching the shifts therefore cannot pay here (17r's receipt), but the scan
-itself is the bigger fish: tombstone-free linear probing must find the
-cluster end to keep `find_slot` correct, so the levers are algorithmic —
-tombstones (trades the scan for a bump, costs `set`/rehash complexity and
-memory), backward-shift start-position memoization, or a smaller probe
-record. Any of these re-opens 17r's shape win on top.
-
-**Tombstone addendum (2026-11-03): tried and rejected** — the full
-implementation (3-state `used` words, reuse-on-insert, live-driven growth +
-dead-driven same-capacity compaction) measured lru **+37% aarch64 / +38% C**
-(despite the chain-drain shape winning −54% / −9%): under churn, tombstones
-accumulate until the EFFECTIVE occupancy — (live + dead)/cap — equilibrates
-far above the nominal load factor, and all ~40M lru lookups probe through
-near-full tables of dead owning slots. CPython/Go/hashbrown absorb that
-density with structure Nomen's flat scalar probing lacks (compact index
-arrays, `emptyRest` early exit, 16-wide SIMD group scans). Full story and
-numbers: PERF_PLAN item 18. The scan-bound finding above stands; the
-remaining levers are the data layout itself.
-
 ## Map/Set.remove no-shift case can strand owning entries behind `store`
 
 Also recorded 2026-11-02, surfaced by the same 17r ownership analysis
