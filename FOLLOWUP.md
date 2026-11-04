@@ -562,26 +562,6 @@ map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
 - **Containers other than List/Map** (`LinkedList`, `Tree`) have no
   contract-free read and no effect model — guards only.
 
-## Map/Set.remove no-shift case can strand owning entries behind `store`
-
-Also recorded 2026-11-02, surfaced by the same 17r ownership analysis
-(pre-existing on main; the attempt's up-front move-out fixed it, the
-revert restored the original behavior). When a `remove` scans NO shifts
-(empty next slot — the most common case in sparse tables), the removed
-entry's key/value stay owned by their slots while `used[idx]` drops to 0.
-Container `#destroy` still frees them (the per-slot destroy walks every
-slot), so a remove-then-destroy is leak-clean — but a LATER `set()` that
-lands in that hole overwrites the slots through `store`/`store_take`,
-which assume a FRESH slot: owning elements (strings, mv structs with
-owning fields) leak the stranded entry. Repro shape: `m.remove(k)` where
-k's cluster successor is empty, then `m.set` of a colliding key whose
-probe lands on that hole. Fix shape: move-out the removed entry
-unconditionally up front (`Buffer.move(idx)` to a local — zeroes the slot,
-frees at scope end), or have remove destroy-and-zero via `destroy_at` +
-`zero` when no batch will overwrite the slot. Costs ~4 instructions per
-remove on int/int tables — which is exactly what tipped 17r from
-net-positive to net-negative, so it wants its own measurement.
-
 ## Context measurement hazard: agent/background shells are not the interactive baseline
 
 Recorded 2026-11-03 (full story: docs/scratch/ALLOCATOR_PLAN.md). The same

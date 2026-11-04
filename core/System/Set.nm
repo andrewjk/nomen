@@ -150,6 +150,25 @@ pub mv struct Set<T: Hashable + Equatable> {
 				gap = k
 			}
 		}
+		if T_NEEDS_STRDUP {
+			if gap == idx {
+				// No entry shifted: the removed entry still owns its strdup'd
+				// bytes in its slot (a shift's first move would have
+				// reclaimed them — see shift_T above). destroy_at frees the
+				// buffer and zeroes the slot: a later add() that lands in
+				// this hole stores over the bytes assuming a fresh slot, and
+				// a stranded-then-overwritten entry leaks.
+				self.slots.destroy_at(idx)
+			}
+		}
+		if T_IS_VALUE_STRUCT {
+			if gap == idx {
+				// Same hole for a value-struct element: reclaim the slot's
+				// owned fields (destroy_at frees and zeroes; scalars-only
+				// structs reclaim nothing and the call is a no-op).
+				self.slots.destroy_at(idx)
+			}
+		}
 		self.used.store_u32(gap, 0)
 		self.length = self.length - 1
 	}

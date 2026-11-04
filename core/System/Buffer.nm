@@ -813,9 +813,35 @@ pub struct Buffer<T> {
 	internal func destroy_at = (ref self, int i: i >= 0 && i < self.cap) {
 		```
 		#arch: c
+		T* _slots = (T*)(unsigned long long)self->data;
+		#if T_NEEDS_STRDUP
+		// A string slot owns its strdup'd bytes — free the buffer before the
+		// zero. Owning value-struct elements never reach this body: their
+		// destroy_at is replaced at the call site by the owning-buffer
+		// specialization (payload reclaim + zero).
+		free(_slots[i].ptr);
+		#endif
+		memset((void*)&_slots[i], 0, T_SIZE);
 		```
 		```
 		#arch: aarch64
+		// Same contract as the C body: string slots free their strdup'd
+		// buffer first (the T_NEEDS_STRDUP dispatch folds away for every
+		// other element kind); owning value-struct elements take the
+		// call-site specialization instead.
+		ldr x4, [x19, #8]
+		mov x3, #T_SIZE
+		madd x5, x1, x3, xzr
+		add x5, x4, x5
+		mov x9, #T_NEEDS_STRDUP
+		cbz x9, .Lbuffer_destroy_at_T_zero
+		ldr x0, [x5]
+		bl _free
+		.Lbuffer_destroy_at_T_zero:
+		mov x0, x5
+		mov x1, #0
+		mov x2, #T_SIZE
+		bl _memset
 		```
 	}
 

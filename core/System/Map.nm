@@ -248,6 +248,35 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 				gap = k
 			}
 		}
+		if TK_NEEDS_STRDUP {
+			if gap == idx {
+				// No entry shifted: the removed entry still owns its strdup'd
+				// bytes in its slot (a shift's first move would have
+				// reclaimed them — see shift_T above). destroy_at frees the
+				// buffer and zeroes the slot: a later set() that lands in
+				// this hole stores over the bytes assuming a fresh slot, and
+				// a stranded-then-overwritten entry leaks.
+				self.keys.destroy_at(idx)
+			}
+		}
+		if TK_IS_VALUE_STRUCT {
+			if gap == idx {
+				// Same hole for a value-struct key: reclaim the slot's owned
+				// fields (destroy_at frees and zeroes; scalars-only structs
+				// reclaim nothing and the call is a no-op).
+				self.keys.destroy_at(idx)
+			}
+		}
+		if TV_NEEDS_STRDUP {
+			if gap == idx {
+				self.values.destroy_at(idx)
+			}
+		}
+		if TV_IS_VALUE_STRUCT {
+			if gap == idx {
+				self.values.destroy_at(idx)
+			}
+		}
 		self.used.store_u32(gap, 0)
 		self.length = self.length - 1
 	}
