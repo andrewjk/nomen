@@ -174,6 +174,19 @@ const cat = dog as Cat
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("enum case casts (checked narrow, sound widen)", () => {
+		const input = `
+mv enum Res {
+    case err(string message)
+    case ok(int count)
+}
+var Res r = Res.ok(42)
+var Res.ok ok = r as Res.ok
+var Res back = ok as Res
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: string operations", () => {

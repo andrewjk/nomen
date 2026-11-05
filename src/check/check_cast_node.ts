@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { enum_copy_is_deep } from "../build_common/box_clone.ts";
 import {
 	ALL_FLOAT_TYPES,
 	ALL_INT_TYPES,
@@ -9,6 +10,7 @@ import {
 import CastNode from "../nodes/CastNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { case_base_conversion_direction } from "./utils/case_enum.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -93,6 +95,39 @@ export default function check_cast_node(node: CastNode, status: CheckStatus) {
 			`Cannot cast from ${type_name(value_type)} to ${type_name(node.target_type)} in unsafe code (integer ↔ ptr only, or string → ptr char)`,
 			node.start,
 		);
+		return;
+	}
+
+	// BASE↔CASE enum cast (PERF_PLAN item 13(3), the checked case cast): the
+	// widening direction (`case_val as Res`) is a sound prefix copy; the
+	// narrowing direction (`r as Res.ok`) carries a RUNTIME tag check and
+	// panics on variant mismatch — explicit and call-site visible, the
+	// `_or_panic` philosophy (an implicit assignment conversion would be the
+	// language's only implicit runtime panic). Both directions COPY: the
+	// result is an independent value, the source keeps ownership — no moved
+	// stamping. An enum whose payloads have no deep-copy story (a Box
+	// payload) cannot ride the copy — use match. A case↔case pair between
+	// different cases/enums never gets here (the direction detector returns
+	// undefined and the generic error below reports).
+	const enum_case_direction = case_base_conversion_direction(to, from, status);
+	if (enum_case_direction) {
+		const mono_name = enum_case_direction === "base_to_case" ? to : from;
+		const mono = status.enums.find((e) => e.name === mono_name && e.is_case_mono);
+		const parent = mono?.parent_enum;
+		const parent_enum = parent ? status.enums.find((e) => e.name === parent) : undefined;
+		if (parent_enum && !enum_copy_is_deep(parent_enum, status)) {
+			add_error(
+				status,
+				`Cannot cast ${parent} values: a case payload without a deep-copy story cannot ride the checked case cast — use match`,
+				node.start,
+			);
+			return;
+		}
+		node.enum_case_conversion = { direction: enum_case_direction };
+		// The result type is the target annotation itself (the case mono for
+		// narrowing, the parent for widening): type_from_value_node answers
+		// `target_type` for casts, so the surrounding expression check sees
+		// it with no further stamping.
 		return;
 	}
 

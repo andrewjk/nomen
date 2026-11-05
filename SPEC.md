@@ -2175,6 +2175,32 @@ Allowed casts:
 - `bool` ↔ `int`
 - `char` ↔ `int`
 
+#### Enum Case Casts
+
+A base enum value and its case-typed (`Enum.case`) form convert explicitly
+through `as`:
+
+```
+mv enum Res {
+    case err(string message)
+    case ok(int count)
+}
+
+var Res r = Res.ok(42)
+var Res.ok ok = r as Res.ok
+var Res back = ok as Res
+```
+
+- `r as Res.ok` is a **checked cast**: the value's tag is compared at runtime
+  and a variant mismatch panics (`base to case conversion: the value carries
+a different variant`). The check is opt-in and call-site visible — the same
+  philosophy as the `_or_panic` family; an implicit base→case conversion
+  does not exist.
+- Both directions **copy**: the result is an independent value and the source
+  keeps ownership.
+- An enum whose payloads cannot be deep-copied (a trait or class payload)
+  rejects the cast — use `match` to move the payload.
+
 #### Custom Struct Casting
 
 Structs can define custom cast behavior with `func #op_as`:

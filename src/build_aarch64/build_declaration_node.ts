@@ -41,6 +41,7 @@ import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import CastNode from "../nodes/CastNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
@@ -1995,6 +1996,11 @@ export default function build_declaration_node(
 			if (
 				node.value.node_type === "access" ||
 				node.value.node_type === "func_call" ||
+				// A stamped base↔case cast (`r as Res.ok`) leaves its result
+				// blob's ADDRESS in x0 (the struct-rvalue convention — the
+				// result lives in a frame scratch) — copy the enum bytes, a
+				// bare var store would save the scratch pointer.
+				(node.value.node_type === "cast" && !!(node.value as CastNode).enum_case_conversion) ||
 				(node.value.node_type === "value" &&
 					(node.value as ValueNode).is_enum_shorthand &&
 					status.enums.find((e) => e.name === node.type.name && e.has_associated_data))

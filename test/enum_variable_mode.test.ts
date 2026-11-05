@@ -2,6 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
+import check_output from "./check_output";
 import { parse_raw } from "./parse_with_imports";
 
 // Variable-mode enums (PERF_PLAN item 13, GOOSE #6): a case-qualified type
@@ -397,7 +398,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "enum_case_to_base_conv", "0 70", true);
 	});
 
-	test("base → case stays a type error (runtime-checked narrowing is future work)", () => {
+	test("an implicit base → case assignment stays a type error (the checked cast is the surface)", () => {
 		const input = `
 import System
 
@@ -421,6 +422,181 @@ pub func main = (Init init) {
 		const errors = [...parsed.errors, ...(result.errors ?? [])];
 		expect(errors.length).toBeGreaterThan(0);
 		expect(errors[0].message).toContain("Type mismatch");
+	});
+
+	test("checked cast `r as Res.ok` with the matching variant — audit clean", async () => {
+		// PERF_PLAN item 13(3), the narrowing half: an EXPLICIT checked cast —
+		// a runtime tag comparison plus panic on variant mismatch (the
+		// `_or_panic` philosophy; there is no implicit base→case conversion).
+		// COPY semantics: the result is an independent value, the source
+		// keeps ownership. The cast rides the `as` machinery: the target
+		// `Res.ok` is a real type (the case mono).
+		const input = `
+import System
+
+mv enum Res {
+	case err(string message)
+	case ok(int count)
+}
+
+func main_body = (out int) {
+	var Res r = Res.ok(7)
+	var Res.ok narrow = r as Res.ok
+	var int t = 0
+	match narrow {
+		case .ok(c) { t = c }
+	}
+	return t
+}
+
+pub func main = (Init init) {
+	Console.write("\\{main_body()}")
+}
+`;
+		await build_and_check_output(input, "enum_case_cast_narrow_ok", "7", true);
+	});
+
+	test("checked cast with a different variant panics with the message", async () => {
+		const input = `
+import System
+
+mv enum Res {
+	case err(string message)
+	case ok(int count)
+}
+
+func main_body = (out int) {
+	var Res r = Res.err("boom".copy())
+	var Res.ok narrow = r as Res.ok
+	return 0
+}
+
+pub func main = (Init init) {
+	Console.write("\\{main_body()}")
+}
+`;
+		const parsed = parse_raw(input);
+		expect(parsed.errors).toEqual([]);
+		for (const arch of ["aarch64", "c"] as const) {
+			const result = build(parsed.root, { arch, audit: false });
+			expect(result.errors ?? []).toEqual([]);
+			let thrown: unknown;
+			try {
+				await check_output(`enum_case_cast_panic_${arch}`, result, "unreachable", {
+					arch,
+					audit: false,
+				});
+			} catch (e) {
+				thrown = e;
+			}
+			expect(thrown).toBeDefined();
+			const err = thrown as { stdout?: string; stderr?: string; message?: string };
+			expect(`${err.stdout ?? ""}${err.stderr ?? ""}${err.message ?? ""}`).toContain(
+				"base to case conversion: the value carries a different variant",
+			);
+		}
+	});
+
+	test("widening cast `case_val as Res` — sound, no check — audit clean", async () => {
+		const input = `
+import System
+
+mv enum Res {
+	case err(string message)
+	case ok(int count)
+}
+
+func main_body = (out int) {
+	var Res.ok r_ok = Res.ok(5)
+	var Res wide = r_ok as Res
+	var int t = 0
+	match wide {
+		case .ok(c) { t = c * 10 }
+		case .err {}
+	}
+	return t
+}
+
+pub func main = (Init init) {
+	Console.write("\\{main_body()}")
+}
+`;
+		await build_and_check_output(input, "enum_case_cast_widen", "50", true);
+	});
+
+	test("checked cast copies: reassigning the original leaves the result unaffected — audit clean", async () => {
+		// Copy semantics receipt: the cast result deep-copies the payloads
+		// (the `<Mono>_copy` story), so the displaced-payload free at the
+		// original's reassignment can never strand the result — with a
+		// shared-bytes lowering this run would free the result's payload
+		// out from under it (the auditor reports the stale free).
+		const input = `
+import System
+
+mv enum Note {
+	case absent
+	case text(string body)
+}
+
+func main_body = (out int) {
+	var Note n = Note.text("first".copy())
+	var Note.text t = n as Note.text
+	n = Note.text("second".copy())
+	var got = ""
+	match t {
+		case .text(b) { got = b.copy() }
+	}
+	match n {
+		case .text(b) { got = got + "-" + b.copy() }
+		case .absent {}
+	}
+	Console.write(got)
+	return 0
+}
+
+pub func main = (Init init) {
+	Console.write("\\{main_body()}")
+}
+`;
+		await build_and_check_output(input, "enum_case_cast_copy_independence", "first-second", true);
+	});
+
+	test("checked cast on a non-copyable payload enum is rejected (use match)", () => {
+		// A trait payload is an owned instance pointer the copy cannot
+		// duplicate (enum_copy_is_deep's rejection — the same family the
+		// containers refuse). The cast must refuse at check time with the
+		// match guidance.
+		const input = `
+import System
+
+trait Speaker {
+	func speak = (self, out string)
+}
+
+struct Dog {
+	func speak = (self, out string) { return "woof" }
+}
+
+mv enum Slot {
+	case empty
+	case held(Speaker who)
+}
+
+func main_body = (out int) {
+	var Slot s = Slot.held(Dog())
+	var Slot.held narrowed = s as Slot.held
+	return 0
+}
+
+pub func main = (Init init) {
+	Console.write("ok")
+}
+`;
+		const parsed = parse_raw(input);
+		const result = build(parsed.root, { arch: "c" });
+		const errors = [...parsed.errors, ...(result.errors ?? [])];
+		expect(errors.length).toBeGreaterThan(0);
+		expect(errors[0].message).toContain("use match");
 	});
 });
 

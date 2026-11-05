@@ -32,6 +32,15 @@ export function case_mono_name(base_enum: string, case_name: string): string {
 }
 
 /**
+ * The runtime panic text of the checked case cast (`r as Res.ok`, PERF_PLAN
+ * item 13(3)): the value's tag failed the case's tag comparison. Both
+ * backends print this exact string before exiting — the explicit,
+ * call-site-visible check mirrors the `_or_panic` family's wording style.
+ */
+export const CASE_CAST_PANIC_MESSAGE =
+	"base to case conversion: the value carries a different variant";
+
+/**
  * Validate a case-qualified type (`type.case_enum`/`type.case_name` set by
  * the parser) and materialize the single-case mono enum. Over a GENERIC
  * base (`Option<int>.some` — name still the bare generic, args attached)
