@@ -663,3 +663,39 @@ them. Suspects, not chased: the frame-slot forwarding / dead-store pass
 `emit_var_store(status, "d0", ...)` — the pre-pass emission was not
 dumped, so whether the store is never emitted or deleted by a pass is
 unverified.
+
+## Bracket aggregates (`[]`) — remaining work
+
+Fixed 2026-11-06 (tuple `+` concat, `[T1, T2][]` / `Array<[T1, T2]>`
+spellings, array-of-tuples inference, base-spread tuple/array-base
+rejections, the SPEC `const empty = []` example, the call-result-string
+hoist). What REMAINS, deliberately:
+
+- **Raw nested arrays** (`int[][]`, `[[1, 2], [3, 4]]`,
+  `Array<Array<int>>`) are rejected with clear errors, not supported: a
+  `Type` carries a single `storage_kind` discriminant, so an
+  array-of-arrays has no type representation. Supporting them needs a
+  nested element-type field on `Type` plus the `"Array_" + name` idiom
+  (~10 sites per backend) reworked to walk the element chain, and literal
+  seeding that promotes inner raw literals to heap `Array_<T>` values.
+  Until then: non-owning tuples compose (`[int, bool][]`), raw arrays do
+  not.
+
+- **Arrays of tuples cannot hold owning elements** (`[int, string][]` is
+  a check error). Literal tuple fields hold rodata and the element
+  struct's teardown frees its string field unconditionally, so any
+  element copy out of the array frees a static (AUDIT-STALE-FREE).
+  Field READS (`pairs.at(i)._j`) are sound; the generic/variadic flow
+  (`Map(["a", 1])` seeding + mv-destructure downgrade) keeps its
+  established exemption. The proper fix is uniformly-heap element
+  seeding (strdup at construction, like user mv-struct ctors) plus
+  heap_string_fields records keyed through array elements.
+
+- **Call-result string args into a struct `#init` lose their hidden
+  length half on aarch64** (pre-existing, verified on main 2026-11-06:
+  `var t = [1, make_str()]` mis-marshals — `bl _string_copy`'s (ptr, len)
+  return keeps only the ptr, and every later argument shifts). Tuple
+  concat works around it by hoisting each `.copy()` result into a named
+  const before the constructor call. The marshal fix belongs in
+  build_aarch64's arg handling for call-result string args against
+  callees with hidden_len params.

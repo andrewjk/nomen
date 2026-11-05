@@ -24,27 +24,34 @@ export default function parse_type(status: ParseStatus): Type {
 		accept("[", status);
 		// Anonymous enum type: `[.ok(int), .error]` — a case list whose
 		// entries start with `.` (a tuple element can never start with `.`).
+		let type: Type;
 		if (peek_current(status) === ".") {
-			return parse_anon_enum_type(status);
-		}
-		const tuple_types: Type[] = [];
-		if (peek_current(status) !== "]") {
-			tuple_types.push(parse_type(status));
-			while (accept(",", status)) {
-				// Allow trailing comma
-				if (peek_current(status) === "]") break;
+			type = parse_anon_enum_type(status);
+		} else {
+			const tuple_types: Type[] = [];
+			if (peek_current(status) !== "]") {
 				tuple_types.push(parse_type(status));
+				while (accept(",", status)) {
+					// Allow trailing comma
+					if (peek_current(status) === "]") break;
+					tuple_types.push(parse_type(status));
+				}
+			}
+			expect("]", status);
+			// Variadic tuple type: follows `...` prefix handled by caller
+			type = new Type("tuple");
+			type.start = start;
+			type.tuple_types = tuple_types;
+			// Variadic tuple marker — caller may set is_array via the ... prefix
+			if (accept("?", status)) {
+				type.is_nullable = true;
 			}
 		}
-		expect("]", status);
-		// Variadic tuple type: follows `...` prefix handled by caller
-		const type = new Type("tuple");
-		type.start = start;
-		type.tuple_types = tuple_types;
-		// Variadic tuple marker — caller may set is_array via the ... prefix
-		if (accept("?", status)) {
-			type.is_nullable = true;
-		}
+		// `[T1, T2][]` / `[.ok, .err][]` — an array whose element is a
+		// tuple / anonymous enum (both materialize to a struct, so the
+		// single storage_kind holds). Exactly one suffix level: raw nesting
+		// (`[T1, T2][][]`) has no type representation.
+		apply_array_suffix(type, status);
 		return type;
 	}
 
@@ -102,13 +109,7 @@ export default function parse_type(status: ParseStatus): Type {
 	if (accept("?", status)) {
 		type.is_nullable = true;
 	}
-	if (accept("[", status)) {
-		type.is_array = true;
-		if (peek_current(status) !== "]") {
-			type.length = new ValueNode(get_index(status), consume(status));
-		}
-		expect("]", status);
-	}
+	apply_array_suffix(type, status);
 	if (is_pointer) {
 		// A pointer is a bare machine word — no views/refs/arrays of
 		// pointers, and no pointer-to-array. (Pointer-to-pointer would also
@@ -136,10 +137,39 @@ export default function parse_type(status: ParseStatus): Type {
 		if (elem.name === "func") {
 			add_error(status, `a func type cannot be an array or container element type`, start);
 		}
+		if (elem.is_array) {
+			// `Array<Array<...>>` / `Array<int[]>` — a heap array whose element
+			// is itself an array. A Type carries ONE storage_kind, so an
+			// array-of-arrays has no representation; reject with the honest
+			// error instead of silently collapsing to the inner type (which
+			// would make `Array<Array<int>>` indistinguishable from
+			// `Array<int>`).
+			add_error(
+				status,
+				`nested arrays are not supported — 'Array<...>' cannot take an array element type`,
+				start,
+			);
+			return type;
+		}
+		// `Array<[int, string]>` — the element is a tuple. The tuple has no
+		// name of its own (it materializes to a generated struct at check
+		// time), so the flattening below would collapse it to the bare name
+		// "tuple" and lose the element types. Carry the tuple shape on the
+		// array type instead; materialize_type turns the pair into the
+		// materialized `_Tuple_...` struct name (preserving heap storage).
+		if (elem.name === "tuple" && elem.tuple_types?.length) {
+			type.name = elem.name;
+			type.tuple_types = elem.tuple_types;
+			type.is_array = true;
+			type.is_array_heap = true;
+			type.is_nullable = elem.is_nullable;
+			type.type_args = undefined;
+			return type;
+		}
 		type.name = elem.name;
 		type.is_array = true;
-		type.is_nullable = elem.is_nullable;
 		type.is_array_heap = true;
+		type.is_nullable = elem.is_nullable;
 		// Keep a GENERIC element's own args (`Array<Box<Cell>>` → name Box,
 		// args [Cell]): materialize_type flattens the element to its mono
 		// name once the mono can be materialized (check time).
@@ -194,6 +224,34 @@ export default function parse_type(status: ParseStatus): Type {
 		return func_type;
 	}
 	return type;
+}
+
+/**
+ * Apply the `[]` / `[N]` array suffix(es) to a parsed type. Exactly ONE
+ * suffix level is representable (`Type` carries a single `storage_kind`),
+ * so a second `[]` is a clear parse error rather than a silently-collapsed
+ * type: raw nesting (`int[][]`, `[T1, T2][][]`) is not supported. Works for
+ * tuple / anonymous-enum types too (`[T1, T2][]`, `[.ok, .err][]`) — the
+ * suffix makes the type an array whose element is the materialized struct,
+ * which `materialize_type` handles at check time.
+ */
+function apply_array_suffix(type: Type, status: ParseStatus): void {
+	if (!accept("[", status)) return;
+	type.is_array = true;
+	if (peek_current(status) !== "]") {
+		type.length = new ValueNode(get_index(status), consume(status));
+	}
+	expect("]", status);
+	if (accept("[", status)) {
+		add_error(
+			status,
+			`nested raw arrays are not supported — declare a non-array element type, or use [T1, T2][] for tuples`,
+			type.start ?? get_index(status),
+		);
+		// Consume the trailing brackets so parsing can resume cleanly
+		while (peek_current(status) !== "]") consume(status);
+		expect("]", status);
+	}
 }
 
 /**

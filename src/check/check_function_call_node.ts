@@ -915,6 +915,7 @@ export function monomorphize(
 			// Preserve the trusted-internal opt-in across the clone check.
 			allow_internal: status.allow_internal,
 			library_boundary: status.library_boundary,
+			is_mono_body_recheck: true,
 		};
 		check_function_node(cloned, root_status);
 		cloned_inits.push(cloned);
@@ -990,6 +991,7 @@ export function monomorphize(
 			function_emission_names: status.function_emission_names,
 			allow_internal: status.allow_internal,
 			library_boundary: status.library_boundary,
+			is_mono_body_recheck: true,
 		};
 		check_function_node(mono_copy, copy_status);
 	}
@@ -3126,6 +3128,7 @@ function specialize_function(
 		// user function's cloned body is checked here with a fresh status.
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
+		is_mono_body_recheck: true,
 	};
 
 	check_function_node(cloned, root_status);

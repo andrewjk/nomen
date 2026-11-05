@@ -612,20 +612,30 @@ export default function check_function_call(
 		// parameter itself is nullable. Mirrors the save/restore pattern used
 		// in check_operation_node for == / != / ??.
 		const old_allow_null = status.allow_null_value;
+		const old_variadic_arg = status.checking_variadic_arg;
 		if (func_param) {
 			status.expected_type = func_param.type;
 			if (func_param.type.is_nullable) {
 				status.allow_null_value = true;
+			}
+			// A variadic-tuple parameter (`...[TK, TV] pairs`): the argument
+			// array is packed by the variadic machinery, whose seeding records
+			// make owning elements sound. Marked so array-of-tuples gates
+			// stand down (Map(["a", 1]) is an established-sound shape).
+			if (func_param.is_variadic) {
+				status.checking_variadic_arg = true;
 			}
 		}
 
 		if (!check_node(param, status)) {
 			status.expected_type = old_expected_type;
 			status.allow_null_value = old_allow_null;
+			status.checking_variadic_arg = old_variadic_arg;
 			continue;
 		}
 		status.expected_type = old_expected_type;
 		status.allow_null_value = old_allow_null;
+		status.checking_variadic_arg = old_variadic_arg;
 
 		// Writer-form interpolation (PERF_PLAN items 10/8 remainder): an
 		// interpolation argument the parse layer wrapped in `.to_string()`

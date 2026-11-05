@@ -593,6 +593,39 @@ const c = Container([99, "bottles"])
 Console.write("\\{c.payload._0} \\{c.payload._1}")  // "99 bottles"
 ```
 
+#### Tuple Concatenation
+
+`+` concatenates two tuples. The result is a wider tuple — the left operand's
+elements followed by the right operand's:
+
+```
+var [int, string] pair = [1, "a"]
+var triple = pair + [2, true]         // [int, string, int, bool]
+Console.write("\\{triple._2} \\{triple._3}")  // "2 true"
+```
+
+#### Arrays of Tuples
+
+An array type whose element is a tuple is written `[T1, T2][]`; the
+`Array<T>` alias accepts the same spelling:
+
+```
+var [int, bool][] flags = [[1, true], [2, false]]
+var Array<[int, bool]> same = [[3, true]]
+Console.write("\\{flags.at(1)._0}")  // "2"
+```
+
+A bracket-enclosed literal whose elements are same-shaped tuples infers as
+an array of tuples (heterogeneous elements still infer a single tuple).
+The same spelling extends to anonymous enums — `[.ok(int), .error][]` is
+an array whose elements are matched with the usual `case` forms. Tuple
+elements that own heap resources (a `string` or mv-struct field) are
+not supported yet — an array element cannot be copied out of the array
+without freeing a literal-seeded field; read fields directly
+(`flags.at(i)._<n>`) or use a struct. Raw nested arrays (`int[][]`,
+`[[1, 2], [3, 4]]`) are likewise not supported — an array element cannot
+itself be a raw array.
+
 #### Variadic Tuple Parameters
 
 Functions can accept variable numbers of tuple arguments using `...` before a tuple type:
@@ -2026,7 +2059,7 @@ a compile error.
 
 ```
 const numbers = [1, 2, 3, 4, 5]
-const empty = []
+const int[] empty = []
 
 // Array operations
 const combined = [1, 2] + [3, 4]    // [1, 2, 3, 4]

@@ -12,6 +12,7 @@ import {
 	borrowed_param_transfer_error,
 	enclosing_function_param,
 	is_owning_struct_type,
+	type_owns_heap,
 } from "./utils/ownership.ts";
 import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -58,6 +59,30 @@ export default function check_array_values_node(
 				}
 			}
 			if (tuple_types) {
+				// DECLARED arrays of tuples (`var [T1, T2][] x = [[...]]` —
+				// expected carries the materialized `_Tuple_...` struct name):
+				// owning elements are rejected. Literal tuple fields hold
+				// rodata and the element struct's teardown frees its string
+				// field unconditionally, so extracting or copying an element
+				// out of the array frees a static (AUDIT-STALE-FREE). Field
+				// READS (`pairs.at(i)._j`) stay sound. The GENERIC/VARIADIC
+				// flow is exempt: Map's `...[TK, TV] pairs` seeding (bare
+				// "tuple" expected here, and the monomorphized body re-check,
+				// which replays the established variadic packing +
+				// mv-destructure soundness against concrete types).
+				if (
+					expected.name?.startsWith("_Tuple_") &&
+					!status.is_mono_body_recheck &&
+					!status.checking_variadic_arg &&
+					tuple_types.some((t) => type_owns_heap(t, status))
+				) {
+					add_error(
+						status,
+						`an array-of-tuples element cannot own heap resources (a string/mv field) yet — read fields directly (pairs.at(i)._<n>) or use a struct`,
+						array.start,
+					);
+					return false;
+				}
 				// Set expected_type to a single tuple type for each value, but
 				// mark it as an array so the outer array context is preserved.
 				const elem_type = new Type(expected.name!);
@@ -208,6 +233,26 @@ function check_as_tuple(
 }
 
 /**
+ * Structural shape equality for literal-element homogeneity: names must
+ * match, arrays match arrays (`int[]` is NOT `int`), generic args match on
+ * shape, and tuples match on ELEMENT shape — so two same-shaped tuples are
+ * homogeneous (`[[1, "a"], [2, "b"]]` infers an array of tuples, per the
+ * SPEC's heterogeneity rule) while differently-shaped tuples stay
+ * heterogeneous and tuple-ize the outer literal.
+ */
+function same_type_shape(a: Type, b: Type): boolean {
+	if (a.name !== b.name) return false;
+	if (!!a.is_array !== !!b.is_array) return false;
+	const at = a.tuple_types ?? [];
+	const bt = b.tuple_types ?? [];
+	if (at.length !== bt.length) return false;
+	if (at.length) return at.every((t, i) => same_type_shape(t, bt[i]));
+	const aa = a.type_args ?? [];
+	const bb = b.type_args ?? [];
+	return aa.length === bb.length && aa.every((t, i) => same_type_shape(t, bb[i]));
+}
+
+/**
  * Replace `target`'s own properties with those from `source` so any references
  * held by parents observe the new node type.
  */
@@ -331,19 +376,25 @@ function check_as_array_or_inferred_tuple(
 		// heterogeneous literal.
 		const meaningful = value_types.filter((t) => t.name && t.name !== "null");
 		const first_meaningful = meaningful[0];
-		const same_generic_shape = (a: Type, b: Type): boolean => {
-			if (a.name !== b.name) return false;
-			const aa = a.type_args ?? [];
-			const bb = b.type_args ?? [];
-			return (
-				aa.length === bb.length &&
-				aa.every((t, i) => t.name === bb[i]?.name) &&
-				!a.tuple_types?.length &&
-				!b.tuple_types?.length
-			);
-		};
 		const all_same =
-			meaningful.length > 0 && meaningful.every((t) => same_generic_shape(t, first_meaningful));
+			meaningful.length > 0 && meaningful.every((t) => same_type_shape(t, first_meaningful));
+
+		// A homogeneous tuple-element list infers an ARRAY of tuples — but
+		// only for non-owning elements (see check_as_array_of_tuples for the
+		// rodata-teardown rationale).
+		if (all_same && first_meaningful?.tuple_types?.length) {
+			const owning = first_meaningful.tuple_types.some(
+				(t) => type_owns_heap(t, status) && !status.type_params.includes(t.name ?? ""),
+			);
+			if (owning) {
+				add_error(
+					status,
+					`an array-of-tuples element cannot own heap resources (a string/mv field) yet — read fields directly (pairs.at(i)._<n>) or use a struct`,
+					array.start,
+				);
+				return false;
+			}
+		}
 
 		if (!all_same && array.values.length > 0) {
 			const elem_types = value_types.map((t, _i) => {
@@ -409,11 +460,34 @@ function check_as_array_or_inferred_tuple(
 		// whose type args would be lost on this `new Type(name)`).
 		const first_type = value_types[0];
 		if (first_type) {
+			// A raw array cannot be the element of another raw array: a Type
+			// carries a single storage_kind, so nested arrays have no type
+			// representation. Error clearly instead of inferring the bare
+			// element name and mismatching every element (the old behavior:
+			// `[[1, 2], [3, 4]]` inferred `int[]` and failed per element with
+			// "Array<int> (expected int)").
+			if (first_type.is_array) {
+				add_error(
+					status,
+					`nested arrays are not supported — an array literal element cannot itself be an array`,
+					array.values[0].start,
+				);
+				return false;
+			}
 			const elem_name = first_type.type_args?.length ? mono_type_name(first_type) : first_type.name;
 			array.type = new Type(elem_name);
 			array.type.is_array = true;
+			// A tuple element keeps its shape on the outer type so downstream
+			// tuple handling (Case 2 materialization, destructuring
+			// `var [a, b] = pairs.at(i)`) sees the element types.
+			if (first_type.tuple_types?.length) {
+				array.type.tuple_types = first_type.tuple_types;
+			}
 		}
 		array_item_type = new Type(array.type.name);
+		if (first_type?.tuple_types?.length) {
+			array_item_type.tuple_types = first_type.tuple_types;
+		}
 	} else {
 		array_item_type = new Type(array.type.name);
 	}

@@ -9,6 +9,7 @@ import { get_or_create_anon_struct } from "./utils/anon_struct.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import { is_owning_struct_type } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import type_name from "./utils/type_name.ts";
 
 /**
  * Check a standalone anonymous struct literal `[ field = value, ... ]` used as
@@ -88,13 +89,35 @@ function check_anon_struct_with_base(node: AnonStructNode, status: CheckStatus):
 		return false;
 	}
 	const base_type = type_from_value_node(node.base!, status);
+	// Tuples have no overridable fields — their generated `_0`/`_1` fields
+	// carry no defaults and the constructor takes them positionally — so the
+	// spread has nothing to do (and every diagnostic would leak the mangled
+	// `_Tuple_...` struct name). Reject the base explicitly.
+	if (base_type?.tuple_types?.length || base_type?.name?.startsWith("_Tuple_")) {
+		add_error(
+			status,
+			`'[ .. expr, ... ]' needs a struct base with overridable fields — a tuple (${type_name(base_type)}) has none; write the tuple literal directly`,
+			node.base!.start,
+		);
+		status.expected_type = old_expected;
+		return false;
+	}
+	if (base_type?.is_array) {
+		add_error(
+			status,
+			`'[ .. expr, ... ]' needs a struct base — ${type_name(base_type)} is an array; use '+' to concatenate arrays`,
+			node.base!.start,
+		);
+		status.expected_type = old_expected;
+		return false;
+	}
 	const struct = base_type?.name
 		? status.structs.findLast((s) => s.name === base_type.name && !s.is_simple_type)
 		: undefined;
 	if (!struct || struct.is_class) {
 		add_error(
 			status,
-			`'${base_type?.name ?? "expression"}' is not a value struct — '[ .. expr, ... ]' needs a struct base`,
+			`'${base_type ? type_name(base_type) : "expression"}' is not a value struct — '[ .. expr, ... ]' needs a struct base`,
 			node.base!.start,
 		);
 		status.expected_type = old_expected;

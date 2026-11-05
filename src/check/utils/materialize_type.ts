@@ -26,6 +26,15 @@ export default function materialize_type(type: Type, status: CheckStatus): Type 
 	if (type.name === "tuple" && type.tuple_types?.length) {
 		return materialize_tuple_type(type, status);
 	}
+	// `Array<[T1, T2]>` — the parse carries the tuple shape on the heap-array
+	// type (see parse_type's `Array<T>` flattening). Materialize the tuple to
+	// its generated struct and restore the heap storage the tuple
+	// materialization would otherwise demote to a plain stack array.
+	if (type.is_array_heap && type.name === "tuple" && type.tuple_types?.length) {
+		const materialized = materialize_tuple_type(type, status);
+		materialized.is_array_heap = true;
+		return materialized;
+	}
 	if (type.name === "anon_enum" && type.enum_cases?.length) {
 		return materialize_anon_enum_type(type, status);
 	}

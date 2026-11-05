@@ -94,6 +94,35 @@ Console.write("\\{c.payload._0} \\{c.payload._1}")
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("tuple concatenation", () => {
+		const input = `
+var [int, string] pair = [1, "a"]
+var triple = pair + [2, true]
+Console.write("\\{triple._2} \\{triple._3}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("arrays of tuples", () => {
+		const input = `
+var [int, bool][] flags = [[1, true], [2, false]]
+var Array<[int, bool]> same = [[3, true]]
+Console.write("\\{flags.at(1)._0}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("arrays of anonymous enums", () => {
+		const input = `
+var [.ok(int), .error(string)][] results = [.ok(1), .error("x")]
+match results.at(1) {
+    case .ok(v) -> Console.write("ok \\{v}")
+    case .error(m) -> Console.write("err \\{m}")
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("variadic tuple parameters", () => {
 		const input = `
 func sum_pairs = (...[int, int] pairs, out int) {

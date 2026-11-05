@@ -106,6 +106,14 @@ func make_pair = (int a, int b, out [int, int]) {
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual([]);
 	});
+
+	test("tuple + array is rejected", () => {
+		const input = `
+var t = [1, "a"] + [2, 3]
+`;
+		const parsed = parse(input);
+		expect(parsed.errors.some((e) => e.message.includes("No operator + defined"))).toBe(true);
+	});
 });
 
 // BUILD & RUN
@@ -152,6 +160,34 @@ things = [2, "new"]
 Console.write("\\{things._0} \\{things._1}")
 `;
 		await build_and_check_output(input, "tuple_reassign", "2 new");
+	});
+
+	test("tuple concatenation with +", async () => {
+		const input = `
+var pair = [1, "a"]
+var quad = pair + [2, true]
+Console.write("\\{quad._0} \\{quad._1} \\{quad._2} \\{quad._3} \\{pair._1}")
+`;
+		// The trailing pair._1 proves the SOURCE tuple survives the concat —
+		// the result's string field is a copy, not an alias (the audit run
+		// would flag a double free otherwise).
+		await build_and_check_output(input, "tuple_concat", "1 a 2 true a");
+	});
+
+	test("tuple concatenation chained", async () => {
+		const input = `
+var t = [1, "a"] + [2, "b"] + [3, "c"]
+Console.write("\\{t._0} \\{t._2} \\{t._4}")
+`;
+		await build_and_check_output(input, "tuple_concat_chain", "1 2 3");
+	});
+
+	test("tuple concatenation under tuple annotation", async () => {
+		const input = `
+var [int, string, int] t = [1, "a"] + [2]
+Console.write("\\{t._0} \\{t._1} \\{t._2}")
+`;
+		await build_and_check_output(input, "tuple_concat_annotated", "1 a 2");
 	});
 });
 

@@ -1,5 +1,11 @@
 import add_error from "../add_error.ts";
 import { get_built_in_type, is_negatable_type } from "../built_in_types.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
+import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
@@ -23,7 +29,10 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
+import hoist_struct_params from "./utils/hoist_struct_params.ts";
+import { is_owning_struct_type } from "./utils/ownership.ts";
 import { maybe_mark_borrow_to_string_operand } from "./utils/string_mutation_scan.ts";
+import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -123,7 +132,23 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		status.allow_null_value = true;
 	}
 
-	if (!check_node(op.left_value, status)) {
+	// Tuple concatenation under a tuple-typed context (`var [int, string, int]
+	// t = [1, "a"] + [2]`): the operands compose their own shapes — the left
+	// is checked free of the expected type, and the expected type's TAIL (the
+	// elements after the left's arity) becomes the right operand's
+	// expectation, so a bare `[2]` infers a 1-tuple there.
+	const concat_tuple_context = op.op === "+" && !!status.expected_type?.tuple_types?.length;
+	const concat_expected = concat_tuple_context ? status.expected_type : undefined;
+	if (concat_tuple_context) {
+		const saved = status.expected_type;
+		status.expected_type = undefined;
+		const left_ok = check_node(op.left_value, status);
+		status.expected_type = saved;
+		if (!left_ok) {
+			status.allow_null_value = old_allow_null;
+			return false;
+		}
+	} else if (!check_node(op.left_value, status)) {
 		status.allow_null_value = old_allow_null;
 		return false;
 	}
@@ -131,7 +156,24 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	const left_type = type_from_value_node(op.left_value, status);
 
 	const old_expected_type = status.expected_type;
-	status.expected_type = left_type;
+	// Tuple concatenation: the right operand keeps its own shape — a tuple
+	// literal RHS must infer its own element types, not be validated against
+	// the left tuple's shape (`[1, "a"] + [2, true]` widens, not mismatches).
+	// Under the tuple context above, the expected elements after the left's
+	// arity are the right operand's expectation.
+	let right_expected: Type | undefined = left_type;
+	const left_elems = op.op === "+" ? tuple_element_types(left_type, status) : undefined;
+	if (left_elems) {
+		right_expected = undefined;
+		if (concat_expected) {
+			const tail = concat_expected.tuple_types!.slice(left_elems.length);
+			if (tail.length) {
+				right_expected = new Type("tuple");
+				right_expected.tuple_types = tail;
+			}
+		}
+	}
+	status.expected_type = right_expected;
 	const right_result = check_node(op.right_value, status);
 	status.expected_type = old_expected_type;
 	status.allow_null_value = old_allow_null;
@@ -140,6 +182,18 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	}
 
 	const right_type = type_from_value_node(op.right_value, status);
+
+	// Tuple concatenation: `t1 + t2` builds a fresh tuple whose elements are
+	// t1's followed by t2's (`[1, "a"] + [2, true]` is `[1, "a", 2, true]`, a
+	// `[int, string, int, bool]`). Rewritten into the generated tuple struct
+	// constructor over field reads, so construction, ownership, and codegen
+	// reuse the ordinary tuple-literal pipeline unchanged.
+	if (op.op === "+" && left_elems) {
+		const right_elems = tuple_element_types(right_type, status);
+		if (right_elems) {
+			return rewrite_tuple_concat(op, left_elems, right_elems, status);
+		}
+	}
 
 	// Check for custom operator on struct (including arrays, which use the Array struct)
 	const custom_op = find_custom_operator(op, left_type, right_type, status);
@@ -516,4 +570,122 @@ function verify_operator_param_constraint(
 			op.start,
 		);
 	}
+}
+
+/**
+ * The element types of a tuple-typed value: either the tuple shape carried on
+ * the type, or the fields of the materialized generated tuple struct.
+ * Undefined for non-tuple types.
+ */
+function tuple_element_types(t: Type, status: CheckStatus): Type[] | undefined {
+	if (t.tuple_types?.length) return t.tuple_types;
+	if (t.name?.startsWith("_Tuple_")) {
+		const struct = status.structs.findLast((s) => s.name === t.name && !s.is_simple_type);
+		if (struct) return struct.fields.map((f) => f.type);
+	}
+	return undefined;
+}
+
+/**
+ * Whether a tuple-concat element must be `.copy()`'d out of its source field:
+ * anything whose byte-copy would alias heap the source still owns (mv
+ * strings, owning structs/containers). Mirrors the ownership gates of the
+ * tuple-literal element pass (check_tuple_element_ownership).
+ */
+function element_needs_copy(t: Type, status: CheckStatus): boolean {
+	if (t.name === "string" && !t.is_view && !t.is_array) return true;
+	return is_owning_struct_type(t, status);
+}
+
+/**
+ * Rewrite `t1 + t2` in place into a constructor call over field reads:
+ * `_Tuple_(t1 fields + t2 fields)(t1._0, ..., t2._0, ...)`. Non-variable
+ * operands (tuple literals, call results) are hoisted to temps first so
+ * every field read targets an lvalue; struct-typed field reads are hoisted
+ * again by the final pass, exactly as tuple-literal elements are.
+ */
+function rewrite_tuple_concat(
+	op: OperationNode,
+	left_elems: Type[],
+	right_elems: Type[],
+	status: CheckStatus,
+): boolean {
+	const elem_types = [...left_elems, ...right_elems];
+	const struct_name = tuple_struct_name(elem_types);
+	get_or_create_tuple_struct(elem_types, status);
+
+	const constructor = new FunctionCallNode(op.start, struct_name);
+	constructor.params = [op.left_value, op.right_value];
+	hoist_struct_params(constructor, status);
+	const [left_target, right_target] = constructor.params;
+
+	const params: BaseNode[] = [];
+	let result = true;
+	const old_expected = status.expected_type;
+	const operands: [BaseNode, Type[]][] = [
+		[left_target, left_elems],
+		[right_target, right_elems],
+	];
+	for (const [target, elems] of operands) {
+		for (let i = 0; i < elems.length; i++) {
+			let arg: BaseNode = new AccessNode(
+				op.start,
+				target,
+				new AccessFieldNode(op.start, `_${i}`, elems[i]),
+			);
+			if (element_needs_copy(elems[i], status)) {
+				const copy_call = new AccessNode(
+					op.start,
+					arg,
+					new AccessFunctionCallNode(op.start, "copy", elems[i]),
+				);
+				status.expected_type = elems[i];
+				if (!check_node(copy_call, status)) result = false;
+				// The copy result is hoisted to a named const (not re-checked —
+				// the build reads it like any variable): a call-result string
+				// marshalled straight into an `#init` argument list loses its
+				// hidden length half (the args shift after it — the
+				// pre-existing rvalue-arg gap hoist_struct_params exists for).
+				// A named local carries both halves and marshals correctly.
+				const decl_name = `_param_${status.var_name_counter.value++}`;
+				status.allocations.push(
+					new DeclarationNode(op.start, "private", "const", decl_name, elems[i], copy_call),
+				);
+				arg = new ValueNode(op.start, decl_name, elems[i]);
+				params.push(arg);
+				continue;
+			}
+			status.expected_type = elems[i];
+			if (!check_node(arg, status)) result = false;
+			params.push(arg);
+		}
+	}
+	status.expected_type = old_expected;
+
+	constructor.params = params;
+	hoist_struct_params(constructor, status);
+	const new_type = new Type(struct_name);
+	new_type.tuple_types = elem_types;
+	constructor.type = new_type;
+	replace_with_call(op, constructor);
+	return result;
+}
+
+/**
+ * Replace `target` (an OperationNode) with `source` (a FunctionCallNode) in
+ * place, so any references held by parents observe the new node type.
+ */
+function replace_with_call(target: OperationNode, source: FunctionCallNode): void {
+	(target as any).node_type = source.node_type;
+	(target as any).name = source.name;
+	(target as any).type = source.type;
+	(target as any).params = source.params;
+	(target as any).is_static = source.is_static;
+	(target as any).type_args = source.type_args;
+	(target as any).ref_param_indices = source.ref_param_indices;
+	(target as any).move_param_indices = source.move_param_indices;
+	(target as any).swap_params = source.swap_params;
+	(target as any).variadic_param_name = source.variadic_param_name;
+	(target as any).variadic_param_index = source.variadic_param_index;
+	(target as any).resolved_function = source.resolved_function;
 }

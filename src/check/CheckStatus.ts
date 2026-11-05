@@ -278,4 +278,23 @@ export default interface CheckStatus {
 	 * reference before it is user code and may not. Undefined with no library.
 	 */
 	library_boundary?: number;
+
+	/**
+	 * True while re-checking a MONOMORPHIZED generic body (the clone pass in
+	 * check_function_call_node, where substituted concrete types replace the
+	 * type params and `type_params` is empty). Memory-model gates that rely
+	 * on establishing records at construction must stand down here: the
+	 * generic flow's soundness is established by its own machinery (e.g. the
+	 * variadic tuple seeding + mv-destructure downgrade behind `Map(["a", 1])`),
+	 * which the clone re-check replays against concrete types.
+	 */
+	is_mono_body_recheck?: boolean;
+
+	/**
+	 * True while checking an argument to a VARIADIC-TUPLE parameter
+	 * (`...[T1, T2] pairs`) — the variadic packing owns the argument's
+	 * element records, so construction gates that assume a plain declared
+	 * destination stand down (Map(["a", 1]) seeding).
+	 */
+	checking_variadic_arg?: boolean;
 }
