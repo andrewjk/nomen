@@ -705,13 +705,35 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					!!status.heap_array_vars?.has((node.target as ValueNode).value));
 			const wants_inline =
 				target_type.is_array &&
-				!target_is_heap_array &&
-				((access_func.name === "at" && access_func.params.length === 1) ||
-					(access_func.name === "set" && access_func.params.length === 2) ||
-					(access_func.name === "first" && access_func.params.length === 0) ||
-					(access_func.name === "slice" && access_func.params.length === 2));
+				(access_func.inline_nested_access === true ||
+					(!target_is_heap_array &&
+						((access_func.name === "at" && access_func.params.length === 1) ||
+							(access_func.name === "set" && access_func.params.length === 2) ||
+							(access_func.name === "first" && access_func.params.length === 0) ||
+							(access_func.name === "slice" && access_func.params.length === 2))));
 			if (wants_inline) {
+				// A CHAINED nested receiver (`g.at(0).at(1)`,
+				// `g.at(0).set(1, v)`) is an inner HEAP buffer pointer: the
+				// data starts past the `Array_<T>` length header.
+				const chained_nested =
+					access_func.inline_nested_access === true &&
+					target_type.is_array_heap &&
+					node.target.node_type !== "value";
+				const emit_chained_base = () => {
+					status.code += `((${c_type(target_type.name)}*)((char*)`;
+					status.suppress_dereference = true;
+					build_node(node.target, status);
+					status.suppress_dereference = false;
+					status.code += ` + sizeof(struct Array_${target_type.name})))`;
+				};
 				if (access_func.name === "at") {
+					if (chained_nested) {
+						emit_chained_base();
+						status.code += `[`;
+						build_node(access_func.params[0], status);
+						status.code += `]`;
+						break;
+					}
 					status.code += `(`;
 					status.suppress_dereference = true;
 					build_node(node.target, status);
@@ -722,6 +744,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					break;
 				}
 				if (access_func.name === "set") {
+					if (chained_nested) {
+						emit_chained_base();
+						status.code += `[`;
+						build_node(access_func.params[0], status);
+						status.code += `] = `;
+						build_node(access_func.params[1], status);
+						break;
+					}
 					// A string element array's slots are heap-OWNED (the literal
 					// initializer strdup's each row; the scope-exit walk frees
 					// them), so the store is the deep-copy form `Array_string.set`'s
@@ -739,9 +769,13 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						const val = `_iset_v_${id}`;
 						const fresh_heap = is_owned_heap_temp(access_func.params[1], status);
 						status.code += `({ nomen_string* ${slot} = &`;
-						status.suppress_dereference = true;
-						build_node(node.target, status);
-						status.suppress_dereference = false;
+						if (chained_nested) {
+							emit_chained_base();
+						} else {
+							status.suppress_dereference = true;
+							build_node(node.target, status);
+							status.suppress_dereference = false;
+						}
 						status.code += `[`;
 						build_node(access_func.params[0], status);
 						status.code += `]; nomen_string ${val} = `;

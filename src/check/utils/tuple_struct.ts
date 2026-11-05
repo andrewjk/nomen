@@ -38,12 +38,14 @@ export function sanitize_type_name(t: Type): string {
 
 export function clone_type(t: Type): Type {
 	const new_t = new Type(t.name, t.is_static, t.is_array, t.length);
+	new_t.storage_kind = t.storage_kind;
 	new_t.is_ref = t.is_ref;
 	new_t.is_view = t.is_view;
 	new_t.is_nullable = t.is_nullable;
 	new_t.is_return_type = t.is_return_type;
 	new_t.type_args = t.type_args?.map(clone_type);
 	new_t.tuple_types = t.tuple_types?.map(clone_type);
+	new_t.elem = t.elem ? clone_type(t.elem) : undefined;
 	new_t.enum_cases = t.enum_cases?.map((c) => ({
 		name: c.name,
 		types: c.types.map(clone_type),

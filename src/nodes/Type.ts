@@ -79,6 +79,17 @@ export default class Type {
 	tuple_types?: Type[];
 
 	/**
+	 * NESTED-ARRAY element type (`int[][]`, `Array<Array<int>>`). A `Type`
+	 * carries a single `storage_kind`, so an array-of-arrays spells its
+	 * INNER level here: the outer level keeps its own storage (raw `T[][]`
+	 * is a stack array) while the inner level is always HEAP — elements are
+	 * `struct Array_<T>*` pointers (the inner buffer is variable-size inline
+	 * storage, so it can only be referenced, never embedded). Undefined for
+	 * every non-nested array; set together with `is_array` on the OUTER.
+	 */
+	elem?: Type;
+
+	/**
 	 * For anonymous enum types `[.ok(T1, T2), .error]`, the case list.
 	 * When set, `name` is "anon_enum". Like tuples, these are materialized
 	 * into a generated enum during check (see materialize_anon_enum_type);

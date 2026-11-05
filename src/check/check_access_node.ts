@@ -50,6 +50,7 @@ import {
 } from "./utils/ownership.ts";
 import { enforce_detach_owns_captures, enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
+import { clone_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import { view_fields_invalidated } from "./utils/view_fields.ts";
@@ -700,6 +701,40 @@ export function check_access_function_node(
 	// For array types, route method calls to the Array struct
 	let effective_type = target_type;
 	if (target_type.is_array) {
+		// A NESTED array (`int[][]`) at's/set's inline like a raw array —
+		// the element is the inner heap array (a reference), and routing
+		// through the `Array_int` mono would bake plain-int element types
+		// into the substituted body. The build lowers these inline. A
+		// chained receiver — `g.at(0).at(1)` / `g.at(0).set(1, 9)` — is the
+		// same shape: its value is an inner-array pointer, so it takes the
+		// inline form too (the mono call's receiver marshalling would
+		// address the pointer slot).
+		const chained_nested_receiver =
+			target.node_type === "access" &&
+			(target as AccessNode).access?.node_type === "access_func" &&
+			(target as AccessNode).access &&
+			((target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true;
+		if (target_type.elem || chained_nested_receiver) {
+			if (node.name === "at" && node.params.length === 1) {
+				for (const param of node.params) {
+					check_node(param, status);
+				}
+				node.type = target_type.elem ? clone_type(target_type.elem) : new Type(target_type.name);
+				node.inline_nested_access = true;
+				return true;
+			}
+			if (node.name === "set" && node.params.length === 2) {
+				const elem = target_type.elem ?? new Type(target_type.name);
+				for (const param of node.params) {
+					status.expected_type = elem;
+					check_node(param, status);
+				}
+				status.expected_type = undefined;
+				node.type = new Type("void");
+				node.inline_nested_access = true;
+				return true;
+			}
+		}
 		const array_struct = status.structs.find((s) => s.name === "Array");
 		if (array_struct) {
 			// Monomorphize for the element type if generic. The element keeps

@@ -190,6 +190,14 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	borrow_to_string?: boolean;
 	/**
+	 * Set when this `.at(i)`/`.set(i, v)` call targets a NESTED array's outer
+	 * level (`int[][]`): the receiver's slots hold inner heap-array pointers
+	 * and must lower as an inline index load/store (`receiver[i]`), not a
+	 * monomorphized `Array_<T>_at/_set` call (whose receiver marshalling
+	 * takes an address of the pointer slot). Stamped by check_access_node.
+	 */
+	inline_nested_access?: boolean;
+	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring
 	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
 	 * the programmer, so the parameter constraint (bounds check) is skipped —

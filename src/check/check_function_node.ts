@@ -197,6 +197,16 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 					func.return_type_start ?? func.start,
 				);
 			}
+			// A nested array's inner heap buffers are owned by the row that
+			// holds them — returning one would hand the caller pointers into
+			// a dead frame. Locals and parameters only for now.
+			if (func.return_type.is_array && func.return_type.elem) {
+				add_error(
+					function_status,
+					`a function cannot return a nested array yet — keep nested arrays in locals and parameters`,
+					func.return_type_start ?? func.start,
+				);
+			}
 		}
 		// A generic container used only as a return type (e.g.
 		// `out List<string>` with no construction of that exact type) would

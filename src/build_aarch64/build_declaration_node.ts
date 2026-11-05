@@ -1589,7 +1589,9 @@ export default function build_declaration_node(
 	}
 
 	const directive = aarch64_type(node.type.name);
-	const size = aarch64_size(node.type.name);
+	// A nested array's slots hold inner heap-array pointers (`Array_<T>*`):
+	// element size and stores are 8 bytes.
+	const size = node.type.elem ? 8 : aarch64_size(node.type.name);
 
 	// Resolve a generic-typed declaration (e.g. `var Box<Point> b`) to its
 	// monomorphized struct name (Box_Point) so the struct lookup, size
@@ -2051,15 +2053,18 @@ export default function build_declaration_node(
 					: get_struct_size(node.type.name, status)
 				: size;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
-			status.heap_array_vars.add(node.name);
+			// A hoisted nested-array inner temp is OWNED BY THE OUTER ARRAY
+			// (which frees each inner buffer at scope exit), so it is not
+			// registered for its own cleanup.
+			if (!node.transferred_to_outer) status.heap_array_vars.add(node.name);
 			// The literal rows are strdup'd (owned) for string elements —
 			// scope-exit destroy must free each slot before the buffer.
-			if (node.type.name === "string") {
+			if (node.type.name === "string" && !node.transferred_to_outer) {
 				if (!status.heap_owned_string_arrays) status.heap_owned_string_arrays = new Set();
 				status.heap_owned_string_arrays.add(node.name);
 			}
 			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
-			if (class_element) {
+			if (class_element && !node.transferred_to_outer) {
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
 				status.heap_class_arrays.set(node.name, 0);
 			}
@@ -2373,7 +2378,15 @@ export default function build_declaration_node(
 								emit_asm(status, `mov x2, #${element_size}\n`);
 								emit_asm(status, `bl _memcpy\n`);
 							} else {
-								emit_init_value(value, nir_array_element(nir_init, array_values, i), status);
+								// A nested-array element: the slot holds the inner
+								// heap-array POINTER — load the value, not the
+								// temp local's address (the struct convention).
+								const elem_value_type = type_from_value_node(value);
+								if (elem_value_type?.is_array_heap && value.node_type === "value") {
+									emit_var_load(status, "x0", (value as ValueNode).value, 8);
+								} else {
+									emit_init_value(value, nir_array_element(nir_init, array_values, i), status);
+								}
 								ensure_newline(status);
 								if (element_size === 1) {
 									emit_asm(status, `strb w0, [x29, #${slot_offset}]\n`);

@@ -101,6 +101,12 @@ export default class DeclarationNode extends BaseNode {
 	 *  struct layout. Set at check time by check_function_call; consumed by the
 	 *  build backends' declaration emitters. */
 	is_heap_array_literal?: boolean;
+	/** True for a hoisted nested-array inner temp (`_param_N`) whose heap
+	 *  buffer is OWNED BY THE OUTER ARRAY it feeds: its scope-exit free is
+	 *  skipped (the outer array frees each inner buffer instead), so the
+	 *  transfer doesn't double-free. Set at check time by the nested-array
+	 *  literal checking; consumed by both backends' auto-free. */
+	transferred_to_outer?: boolean;
 	/** True for a root `const string[] = [...]` declaration: Mach-O arm64
 	 *  forbids pointer relocations in data sections, so the file-scope data
 	 *  emission lays out only the length word + zeroed element space, and the

@@ -657,6 +657,9 @@ export function free_scoped_declarations(
 			dec.type.is_array &&
 			status.heap_array_vars?.has(dec.name)
 		) {
+			// A hoisted nested-array inner temp: its buffer was TRANSFERRED to
+			// the outer array (which frees each inner buffer at scope exit).
+			if (dec.transferred_to_outer) continue;
 			if (!commented) {
 				status.code += "\n// Auto-free\n";
 				commented = true;
@@ -704,7 +707,22 @@ export function free_scoped_declarations(
 				(s) => s.name === elem_name && !s.is_simple_type && !s.is_generic,
 			);
 			const arr_len = status.stack_array_lengths?.get(dec.name) ?? "0";
-			if (elem_is_string) {
+			if (dec.type.elem) {
+				// NESTED array: each slot holds an inner HEAP buffer
+				// (`struct Array_<T>*`) owned by this outer array. Reclaim the
+				// buffer (and its string slots, when the inner elements are
+				// strings) row by row.
+				const row_name = dec.type.elem.name;
+				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) {\n`;
+				if (row_name === "string") {
+					status.code += `\tfor (long _j = 0; _j < ${cname}[_i]->length; _j++) {\n`;
+					status.code += `\t\tnomen_string* _row = (nomen_string*)((char*)${cname}[_i] + sizeof(struct Array_string));\n`;
+					status.code += `\t\tfree(_row[_j].ptr);\n`;
+					status.code += `\t}\n`;
+				}
+				status.code += `\tfree(${cname}[_i]);\n`;
+				status.code += `}\n`;
+			} else if (elem_is_string) {
 				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${cname}[_i].ptr); }\n`;
 			} else if (elem_is_class) {
 				if (has_destroy(elem_struct!)) {

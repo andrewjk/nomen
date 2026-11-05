@@ -28,6 +28,11 @@ export default function type_name(type: Type): string {
 		return `${prefix}[${cases}]${type.is_nullable ? "?" : ""}`;
 	}
 	if (type.is_array) {
+		// A nested array renders through its element type (`int[][]` →
+		// `Array<Array<int>>`), so hovers and errors show the full shape.
+		if (type.elem) {
+			return `Array<${type_name(type.elem)}>${type.is_nullable ? "?" : ""}`;
+		}
 		const elem = type_name_without_array(type);
 		return `Array<${elem}>${type.is_nullable ? "?" : ""}`;
 	}

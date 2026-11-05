@@ -267,6 +267,18 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			const result = check_node(decl.value, status);
 			status.expected_type = old_expected_type;
 
+			// A NESTED-array row binding (`var row = g.at(i)`) BORROWS the
+			// inner buffer the outer array owns: stamp the transfer-to-outer
+			// contract so neither backend emits a scope-exit free for the row
+			// (the outer's cleanup reclaims it exactly once).
+			if (
+				decl.value?.node_type === "access" &&
+				(decl.value as AccessNode).access.node_type === "access_func" &&
+				((decl.value as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+			) {
+				decl.transferred_to_outer = true;
+			}
+
 			if (result) {
 				// BASE↔CASE enum conversion (PERF_PLAN item 13(3)): stamp the
 				// direction and skip the plain type check — the backends emit
@@ -371,6 +383,18 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.expected_type = decl.type;
 			const result = check_node(decl.value, status);
 			status.expected_type = old_expected_type;
+
+			// A NESTED-array row binding (`var row = g.at(i)`) BORROWS the
+			// inner buffer the outer array owns: stamp the transfer-to-outer
+			// contract so neither backend emits a scope-exit free for the row
+			// (the outer's cleanup reclaims it exactly once).
+			if (
+				decl.value?.node_type === "access" &&
+				(decl.value as AccessNode).access.node_type === "access_func" &&
+				((decl.value as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+			) {
+				decl.transferred_to_outer = true;
+			}
 
 			if (result) {
 				// BASE↔CASE enum conversion (PERF_PLAN item 13(3)): stamp the

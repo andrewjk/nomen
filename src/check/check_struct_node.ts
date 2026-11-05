@@ -267,6 +267,19 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	status.types.push(struct.name);
 	status.structs.push(struct);
 
+	// A nested array's inner heap buffers are owned by the row that holds
+	// them, which lives on the declaring frame — storing one in a struct
+	// would leave dangling row pointers. Locals and parameters only for now.
+	for (const field of struct.fields) {
+		if (field.type.is_array && field.type.elem) {
+			add_error(
+				status,
+				`a struct field cannot be a nested array yet — keep nested arrays in locals and parameters`,
+				field.type_start ?? field.start,
+			);
+		}
+	}
+
 	for (let func of struct.functions) {
 		func.scope = struct;
 		// A generic struct's custom #init is a template: its variadic tuple

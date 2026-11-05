@@ -1533,6 +1533,18 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			emit_asm(status, `ldr x0, [x0]\n`);
 			return;
 		}
+		// A NESTED-array row (`g.at(i).length`): the at call yields the inner
+		// heap-array pointer; its length word is at [ptr + 0].
+		if (
+			node.target.node_type === "access" &&
+			(node.target as AccessNode).access.node_type === "access_func" &&
+			((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+		) {
+			build_node(node.target, status);
+			ensure_newline(status);
+			emit_asm(status, `ldr x0, [x0]\n`);
+			return;
+		}
 		// For stack arrays: load length from the 8-byte prefix at [base - 8]
 		if (node.target.node_type === "value") {
 			const name = (node.target as ValueNode).value;
@@ -2190,12 +2202,22 @@ function build_access_method(
 		// as a pointer to heap data, so they can't be inlined like inline array fields.
 		const length_has_source = !!target_type.length && (target_type.length.start ?? -1) >= 0;
 		const is_fixed_size_field = is_struct_field_target && length_has_source;
+		// A nested-array access (`g.at(0)`, `g.at(0).at(1)`, `g.at(0).set(1, v)`)
+		// is stamped by the checker: its slots hold 8-byte inner-array
+		// pointers, and the chained receiver is a pointer value (no header
+		// skip). The mono call's `ref self` marshalling would address the
+		// pointer slot instead.
+		const nested_access = access_func.inline_nested_access === true;
+		const chained_receiver = nested_access && node.target.node_type !== "value";
 		const can_inline =
-			!elem_struct?.is_class && (node.target.node_type === "value" || is_fixed_size_field);
+			(!elem_struct?.is_class || target_type.elem) &&
+			(node.target.node_type === "value" || is_fixed_size_field || chained_receiver);
 		if (can_inline) {
-			const elem_size = elem_struct
-				? get_struct_size(elem_type_name, status)
-				: aarch64_size(elem_type_name);
+			const elem_size = target_type.elem
+				? 8
+				: elem_struct
+					? get_struct_size(elem_type_name, status)
+					: aarch64_size(elem_type_name);
 			const elem_signed =
 				!elem_struct && is_signed_int_type(elem_type_name) && type_bits(elem_type_name) === 64;
 
@@ -2301,6 +2323,15 @@ function build_access_method(
 			}
 
 			if (use_fast_path) {
+				// A CHAINED nested receiver (`g.at(0).at(1)`): evaluate the
+				// receiver (a pointer value) FIRST into a callee-saved reg —
+				// the inner at clobbers x9/x1 — then the index, then the base.
+				if (chained_receiver) {
+					emit_asm(status, `str x19, [sp, #-16]!\n`);
+					build_node(node.target, status);
+					ensure_newline(status);
+					emit_asm(status, `mov x19, x0\n`);
+				}
 				// Fixed-array pipeline: a repeated (array, index) pair reads
 				// its pinned element-address register instead of re-deriving
 				// the whole address per access.
@@ -2373,6 +2404,23 @@ function build_access_method(
 					}
 				}
 				// Load element
+				if (chained_receiver) {
+					emit_asm(status, `mov x9, x19\n`);
+					// Heap-array buffer layout: length word at +0, data at +8.
+					emit_asm(status, `add x9, x9, #8\n`);
+					emit_asm(status, `ldr x19, [sp], #16\n`);
+					if (elem_is_fat_string) {
+						emit_asm(status, `add x9, x9, x1, lsl #4\n`);
+						emit_asm(status, `ldp x0, x1, [x9]\n`);
+					} else if (elem_size === 8) {
+						emit_asm(status, `ldr x0, [x9, x1, lsl #3]\n`);
+					} else {
+						emit_asm(status, `mov x2, #${elem_size}\n`);
+						emit_asm(status, `mul x1, x1, x2\n`);
+						emit_asm(status, `ldrb w0, [x9, x1]\n`);
+					}
+					return;
+				}
 				if (elem_struct) {
 					// Fill the fixed-array pipeline: pin `base + i*stride` in
 					// a callee-saved register, then hand the address out
@@ -2477,6 +2525,14 @@ function build_access_method(
 				if (field_offset > 0) {
 					emit_asm(status, `add x19, x19, #${field_offset}\n`);
 				}
+			} else if (chained_receiver) {
+				// A chained nested receiver (`g.at(0).set(1, v)`): the
+				// receiver's value IS the inner heap-array pointer; skip the
+				// 8-byte length header to reach the data.
+				build_node(node.target, status);
+				ensure_newline(status);
+				emit_asm(status, `mov x19, x0\n`);
+				emit_asm(status, `add x19, x19, #8\n`);
 			}
 			// Build index argument into x1 (promoted vars/literals emit 1
 			// instruction via build_operand's direct paths)

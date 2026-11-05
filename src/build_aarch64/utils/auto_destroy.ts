@@ -951,6 +951,7 @@ export function emit_moved_local_cleanup(
 	status: BuildStatus,
 	decl: {
 		name: string;
+		transferred_to_outer?: boolean;
 		type: {
 			name: string;
 			type_args?: Type[];
@@ -960,6 +961,8 @@ export function emit_moved_local_cleanup(
 		};
 	},
 ) {
+	// A nested-array row BORROWS the inner buffer the outer array owns.
+	if (decl.transferred_to_outer) return;
 	// A fixed-size array LOCAL of value-struct elements: its elements' owned
 	// fields stay the ROW's own even when the row was transferred — the
 	// receiving field's ctor copy DETACHES (strdups owning elements' string
@@ -1135,6 +1138,49 @@ function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): b
 function emit_fixed_array_local_destroys(status: BuildStatus, decl: DeclarationNode): boolean {
 	if (!decl.type.is_array || !decl.type.length) return false;
 	const arr_len = parseInt((decl.type.length as unknown as { value?: string }).value || "0");
+	// A NESTED array's slots are inner HEAP buffers (`Array_<T>*`) owned by
+	// this outer row: free each buffer at scope exit (a string inner also
+	// frees each row's slot pointers first).
+	if (decl.type.elem) {
+		if (arr_len > 0) {
+			const row_name = decl.type.elem.name;
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			emit_asm(status, `str x19, [sp, #-16]!\n`);
+			emit_asm(status, `str x20, [sp, #-16]!\n`);
+			emit_var_address(status, "x19", decl.name);
+			emit_asm(status, `mov x20, #${arr_len}\n`);
+			const loop = `.Lnested_${id}`;
+			const done = `.Lnested_done_${id}`;
+			emit_asm(status, `${loop}:\n`);
+			emit_asm(status, `ldr x0, [x19]\n`);
+			if (row_name === "string") {
+				// Free the row's fat-string slot pointers (data at row+8,
+				// 16-byte stride).
+				const sloop = `.Lnestr_${id}`;
+				const sdone = `.Lnestr_done_${id}`;
+				emit_asm(status, `mov x9, x0\n`);
+				emit_asm(status, `ldr x10, [x9]\n`);
+				emit_asm(status, `add x9, x9, #8\n`);
+				emit_asm(status, `${sloop}:\n`);
+				emit_asm(status, `cbz x10, ${sdone}\n`);
+				emit_asm(status, `ldr x0, [x9]\n`);
+				emit_free(status);
+				emit_asm(status, `add x9, x9, #16\n`);
+				emit_asm(status, `sub x10, x10, #1\n`);
+				emit_asm(status, `b ${sloop}\n`);
+				emit_asm(status, `${sdone}:\n`);
+				emit_asm(status, `ldr x0, [x19]\n`);
+			}
+			emit_free(status);
+			emit_asm(status, `add x19, x19, #8\n`);
+			emit_asm(status, `sub x20, x20, #1\n`);
+			emit_asm(status, `cbnz x20, ${loop}\n`);
+			emit_asm(status, `${done}:\n`);
+			emit_asm(status, `ldr x20, [sp], #16\n`);
+			emit_asm(status, `ldr x19, [sp], #16\n`);
+		}
+		return true;
+	}
 	const elem_struct = is_struct_type(decl.type.name, status);
 	if (
 		arr_len > 0 &&
@@ -1879,7 +1925,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// with ANY class anchor slot takes THIS walk, and a heap array
 			// temp in the same scope used to leak here (the arm only existed
 			// in the no-slots walk).
-			if (status.heap_array_vars?.has(decl.name)) {
+			if (status.heap_array_vars?.has(decl.name) && !decl.transferred_to_outer) {
 				if (status.heap_owned_string_arrays?.has(decl.name)) {
 					emit_asm(status, `str x19, [sp, #-16]!\n`);
 					emit_asm(status, `str x20, [sp, #-16]!\n`);
@@ -2063,7 +2109,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// the variable holds a malloc'd buffer pointer ([ptr]=length, data
 		// follows). Free the buffer. Class/string element arrays are handled
 		// by heap_class_arrays/heap_string_arrays above (which `continue`).
-		if (status.heap_array_vars?.has(decl.name)) {
+		if (status.heap_array_vars?.has(decl.name) && !decl.transferred_to_outer) {
 			if (status.heap_owned_string_arrays?.has(decl.name)) {
 				// Owned fat-string elements: free every slot's ptr half
 				// (16-byte stride, data at buffer+8), then the buffer.

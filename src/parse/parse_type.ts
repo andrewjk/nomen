@@ -49,9 +49,15 @@ export default function parse_type(status: ParseStatus): Type {
 		}
 		// `[T1, T2][]` / `[.ok, .err][]` — an array whose element is a
 		// tuple / anonymous enum (both materialize to a struct, so the
-		// single storage_kind holds). Exactly one suffix level: raw nesting
-		// (`[T1, T2][][]`) has no type representation.
+		// single storage_kind holds).
 		apply_array_suffix(type, status);
+		if (type.elem) {
+			add_error(
+				status,
+				`nested arrays of tuples/enums are not supported — an element cannot be both a tuple and an array`,
+				start,
+			);
+		}
 		return type;
 	}
 
@@ -138,17 +144,24 @@ export default function parse_type(status: ParseStatus): Type {
 			add_error(status, `a func type cannot be an array or container element type`, start);
 		}
 		if (elem.is_array) {
-			// `Array<Array<...>>` / `Array<int[]>` — a heap array whose element
-			// is itself an array. A Type carries ONE storage_kind, so an
-			// array-of-arrays has no representation; reject with the honest
-			// error instead of silently collapsing to the inner type (which
-			// would make `Array<Array<int>>` indistinguishable from
-			// `Array<int>`).
-			add_error(
-				status,
-				`nested arrays are not supported — 'Array<...>' cannot take an array element type`,
-				start,
-			);
+			if (elem.elem) {
+				add_error(status, `nested arrays deeper than two levels are not supported yet`, start);
+				return type;
+			}
+			// `Array<Array<int>>` / `Array<int[]>` — a nested array. Nested
+			// arrays have a fixed OUTER level and heap INNER levels: the
+			// outer lowers as a stack array of `Array_<T>*` pointers (the
+			// inner buffer's inline storage is variable-size, so it can only
+			// be referenced, never embedded), for both spellings. The inner
+			// level rides on `elem`.
+			if (!elem.is_array_heap) {
+				elem.is_array_heap = true;
+			}
+			type.name = elem.name;
+			type.elem = elem;
+			type.is_array = true;
+			type.is_nullable = undefined;
+			type.type_args = undefined;
 			return type;
 		}
 		// `Array<[int, string]>` — the element is a tuple. The tuple has no
@@ -227,13 +240,12 @@ export default function parse_type(status: ParseStatus): Type {
 }
 
 /**
- * Apply the `[]` / `[N]` array suffix(es) to a parsed type. Exactly ONE
- * suffix level is representable (`Type` carries a single `storage_kind`),
- * so a second `[]` is a clear parse error rather than a silently-collapsed
- * type: raw nesting (`int[][]`, `[T1, T2][][]`) is not supported. Works for
- * tuple / anonymous-enum types too (`[T1, T2][]`, `[.ok, .err][]`) — the
- * suffix makes the type an array whose element is the materialized struct,
- * which `materialize_type` handles at check time.
+ * Apply the `[]` / `[N]` array suffix(es) to a parsed type. Raw nesting
+ * (`int[][]`, `int[][][]`) is supported: every level beyond the first
+ * describes the ELEMENT, carried on `Type.elem`, and the innermost level is
+ * always HEAP (`int[][]` is a stack array of `Array_int*` pointers — the
+ * inner buffer is variable-size inline storage, so it can only be
+ * referenced, never embedded).
  */
 function apply_array_suffix(type: Type, status: ParseStatus): void {
 	if (!accept("[", status)) return;
@@ -242,15 +254,34 @@ function apply_array_suffix(type: Type, status: ParseStatus): void {
 		type.length = new ValueNode(get_index(status), consume(status));
 	}
 	expect("]", status);
+	// A second suffix nests: this type becomes the OUTER level and its
+	// element is the inner array (heap). Two levels are supported
+	// (`int[][]`); the inner buffer's inline variable-size storage can only
+	// be referenced, and a third level would need heap-of-pointer buffers
+	// whose monomorphized method bodies bake in pointer-sized elements — a
+	// larger layout change, rejected with a clear error for now.
 	if (accept("[", status)) {
-		add_error(
-			status,
-			`nested raw arrays are not supported — declare a non-array element type, or use [T1, T2][] for tuples`,
-			type.start ?? get_index(status),
-		);
-		// Consume the trailing brackets so parsing can resume cleanly
-		while (peek_current(status) !== "]") consume(status);
+		const inner = new Type(type.name);
+		inner.is_array = true;
+		// The innermost level is always heap: elements are referenced
+		// through `Array_<T>*` pointers, never embedded.
+		inner.is_array_heap = true;
+		if (peek_current(status) !== "]") {
+			inner.length = new ValueNode(get_index(status), consume(status));
+		}
 		expect("]", status);
+		if (peek_current(status) === "[") {
+			add_error(
+				status,
+				`nested arrays deeper than two levels are not supported yet`,
+				type.start ?? get_index(status),
+			);
+			// Consume the trailing brackets so parsing can resume cleanly
+			while (peek_current(status) !== "]") consume(status);
+			expect("]", status);
+			return;
+		}
+		type.elem = inner;
 	}
 }
 

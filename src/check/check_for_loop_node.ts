@@ -98,10 +98,15 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		if (
 			list_type.is_array &&
 			!enumerable &&
-			has_at &&
-			(list_type.storage_kind === "heap_array" || !!list_type.length)
+			((list_type.elem && !!list_type.length) ||
+				(has_at && (list_type.storage_kind === "heap_array" || !!list_type.length)))
 		) {
-			desugar_array_for_loop(for_loop, list_type, undefined, status);
+			// A nested array (`int[][]`) iterates its inner heap arrays: the
+			// `.at`/`.length` accesses the desugar generates route through the
+			// inline nested-array handling in check_access_node, so no
+			// `Array_<elem>` mono is required. Requires a compile-time outer
+			// length (a raw nested PARAM has no `.length` to bound the loop).
+			desugar_array_for_loop(for_loop, list_type, list_type.elem, status);
 			for_loop.item_is_ref = false;
 			check_for_loop_node(for_loop, status);
 			return;

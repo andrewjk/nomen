@@ -622,9 +622,26 @@ an array whose elements are matched with the usual `case` forms. Tuple
 elements that own heap resources (a `string` or mv-struct field) are
 not supported yet — an array element cannot be copied out of the array
 without freeing a literal-seeded field; read fields directly
-(`flags.at(i)._<n>`) or use a struct. Raw nested arrays (`int[][]`,
-`[[1, 2], [3, 4]]`) are likewise not supported — an array element cannot
-itself be a raw array.
+(`flags.at(i)._<n>`) or use a struct.
+
+#### Nested Arrays
+
+An array whose elements are arrays is written `T[][]` (or
+`Array<Array<T>>`). The OUTER level is fixed-size (a stack array) and each
+inner level is a heap array with its own length, so inner rows may differ
+in length:
+
+```
+var int[][] grid = [[1, 2], [3, 4]]
+var int[2][] fixed = [[1], [2, 3]]
+Console.write("\\{grid.at(1).at(0)} \\{grid.at(0).length}")  // "3 2"
+```
+
+A bracket-enclosed literal whose elements are array literals infers a
+nested array. Two levels are supported, and inner elements must be
+non-owning (a `string[][]` is rejected for now). Nested arrays cannot be
+returned from functions or stored in struct fields yet — keep them in
+locals and parameters.
 
 #### Variadic Tuple Parameters
 

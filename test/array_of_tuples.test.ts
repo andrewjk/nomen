@@ -100,39 +100,37 @@ Console.write("\\{n} \\{b}")
 	});
 });
 
-describe("nested raw arrays are rejected", () => {
-	test("int[][] does not parse", () => {
-		const input = `
-var int[][] grid = [[1, 2]]
-`;
-		const parsed = parse(input);
-		expect(
-			parsed.errors.some((e) => e.message.includes("nested raw arrays are not supported")),
-		).toBe(true);
-	});
-
-	test("Array<Array<int>> does not parse", () => {
-		const input = `
-var Array<Array<int>> grid = [[1, 2]]
-`;
-		const parsed = parse(input);
-		expect(parsed.errors.some((e) => e.message.includes("nested arrays are not supported"))).toBe(
-			true,
-		);
-	});
-
-	test("array literal elements cannot be arrays (clear error, not silent mistyping)", () => {
+describe("nested raw arrays", () => {
+	// Full nested-array coverage lives in nested_arrays.test.ts.
+	test("int[][] parses (fixed outer, heap inner)", () => {
 		const input = `
 pub func main = () {
-	var grid = [[1, 2], [3, 4]]
+	var int[][] grid = [[1, 2], [3, 4]]
 }
 `;
 		const parsed = parse(input);
-		expect(
-			parsed.errors.some((e) =>
-				e.message.includes("an array literal element cannot itself be an array"),
-			),
-		).toBe(true);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("Array<Array<int>> parses", () => {
+		const input = `
+pub func main = () {
+	var Array<Array<int>> grid = [[1, 2], [3, 4]]
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("array literal elements infer an array of arrays", () => {
+		const input = `
+pub func main = () {
+	var grid = [[1, 2], [3, 4]]
+	var int n = grid.at(0).at(1)
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
 	});
 });
 

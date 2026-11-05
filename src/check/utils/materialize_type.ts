@@ -26,6 +26,13 @@ export default function materialize_type(type: Type, status: CheckStatus): Type 
 	if (type.name === "tuple" && type.tuple_types?.length) {
 		return materialize_tuple_type(type, status);
 	}
+	// A NESTED array (`int[][]`, `Array<Array<int>>`): materialize the inner
+	// level's generics (best effort — simple element types are unchanged) and
+	// keep the rest of the shape.
+	if (type.is_array && type.elem) {
+		type.elem = materialize_type(type.elem, status);
+		return type;
+	}
 	// `Array<[T1, T2]>` — the parse carries the tuple shape on the heap-array
 	// type (see parse_type's `Array<T>` flattening). Materialize the tuple to
 	// its generated struct and restore the heap storage the tuple

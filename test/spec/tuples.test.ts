@@ -123,6 +123,15 @@ match results.at(1) {
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("nested arrays", () => {
+		const input = `
+var int[][] grid = [[1, 2], [3, 4]]
+var int[2][] fixed = [[1], [2, 3]]
+Console.write("\\{grid.at(1).at(0)} \\{grid.at(0).length}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("variadic tuple parameters", () => {
 		const input = `
 func sum_pairs = (...[int, int] pairs, out int) {

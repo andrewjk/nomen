@@ -669,17 +669,9 @@ unverified.
 Fixed 2026-11-06 (tuple `+` concat, `[T1, T2][]` / `Array<[T1, T2]>`
 spellings, array-of-tuples inference, base-spread tuple/array-base
 rejections, the SPEC `const empty = []` example, the call-result-string
-hoist). What REMAINS, deliberately:
-
-- **Raw nested arrays** (`int[][]`, `[[1, 2], [3, 4]]`,
-  `Array<Array<int>>`) are rejected with clear errors, not supported: a
-  `Type` carries a single `storage_kind` discriminant, so an
-  array-of-arrays has no type representation. Supporting them needs a
-  nested element-type field on `Type` plus the `"Array_" + name` idiom
-  (~10 sites per backend) reworked to walk the element chain, and literal
-  seeding that promotes inner raw literals to heap `Array_<T>` values.
-  Until then: non-owning tuples compose (`[int, bool][]`), raw arrays do
-  not.
+hoist, and nested arrays `int[][]` / `Array<Array<int>>` /
+`[[1, 2], [3, 4]]` — fixed-size outer row of heap inner rows, scalar
+inner elements). What REMAINS, deliberately:
 
 - **Arrays of tuples cannot hold owning elements** (`[int, string][]` is
   a check error). Literal tuple fields hold rodata and the element
@@ -699,3 +691,11 @@ hoist). What REMAINS, deliberately:
   const before the constructor call. The marshal fix belongs in
   build_aarch64's arg handling for call-result string args against
   callees with hidden_len params.
+
+- **Nested-array extensions** (deliberate v1 limits): inner elements
+  must be non-owning (`string[][]` is rejected — the aarch64 fat-string
+  staging + row ownership walks reject the shape), only two levels, and
+  nested arrays cannot be returned from functions or stored in struct
+  fields (locals and parameters only). Lifting these needs per-row
+  ownership records threaded through the row free walks and a
+  heap-of-pointer buffer variant for three-plus levels.

@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -14,7 +15,7 @@ import {
 	is_owning_struct_type,
 	type_owns_heap,
 } from "./utils/ownership.ts";
-import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
+import { clone_type, get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -40,6 +41,12 @@ export default function check_array_values_node(
 				status,
 			);
 		}
+	}
+
+	// Case 1b: expected is a NESTED array (`var int[][] g = [[...]]`) — each
+	// element is an inner heap array.
+	if (expected?.is_array && expected.elem) {
+		return check_as_array_of_arrays(array, status, expected);
 	}
 
 	// Case 2: expected is an array of tuples (`_Tuple_...[]` or `[T1, T2][]`).
@@ -253,6 +260,73 @@ function same_type_shape(a: Type, b: Type): boolean {
 }
 
 /**
+ * Hoist checked array-literal elements to named consts of `elem_type` so the
+ * build can materialize each inner HEAP buffer at a declaration (heap
+ * literals are only lowered as declaration initializers). The literal's own
+ * checked type stays as-is; the declaration's type drives the materialization.
+ */
+function hoist_array_elements(array: ArrayValuesNode, status: CheckStatus, elem_type: Type): void {
+	for (let i = 0; i < array.values.length; i++) {
+		const value = array.values[i];
+		const decl_name = `_param_${status.var_name_counter.value++}`;
+		const decl = new DeclarationNode(
+			value.start,
+			"private",
+			"const",
+			decl_name,
+			clone_type(elem_type),
+			value,
+		);
+		// The OUTER array owns the buffer: its auto-free frees each inner one,
+		// so the temp's own free is skipped (see transferred_to_outer).
+		decl.transferred_to_outer = true;
+		status.allocations.push(decl);
+		array.values[i] = new ValueNode(value.start, decl_name, clone_type(elem_type));
+	}
+}
+
+/**
+ * Validate a nested-array literal against an expected nested array type
+ * (`var int[][] g = [[1, 2], [3, 4]]`): each element is checked against the
+ * inner HEAP array type, then hoisted so its buffer materializes at a
+ * declaration. The outer level stays a fixed stack array of pointers.
+ */
+function check_as_array_of_arrays(
+	array: ArrayValuesNode,
+	status: CheckStatus,
+	expected: Type,
+): boolean {
+	const elem = expected.elem!;
+	// Owning inner elements (string/mv) are not supported yet: their heap
+	// slots need per-row ownership records the outer row free can't see (the
+	// aarch64 fat-string staging + scope-exit walks reject the shape).
+	if (elem.name === "string" || is_owning_struct_type(elem, status)) {
+		add_error(
+			status,
+			`an array-of-arrays inner element cannot own heap resources (a string/mv element) yet`,
+			array.start,
+		);
+		return false;
+	}
+	const old_expected = status.expected_type;
+	let result = true;
+	for (const value of array.values) {
+		status.expected_type = clone_type(elem);
+		if (!check_node(value, status)) result = false;
+	}
+	status.expected_type = old_expected;
+	if (!result) return false;
+
+	hoist_array_elements(array, status, elem);
+	array.type = new Type(expected.name, expected.is_static, expected.is_array, expected.length);
+	array.type.elem = clone_type(elem);
+	if (!array.type.length) {
+		array.type.length = new ValueNode(-1, array.values.length.toString(), new Type("int"));
+	}
+	return true;
+}
+
+/**
  * Replace `target`'s own properties with those from `source` so any references
  * held by parents observe the new node type.
  */
@@ -459,21 +533,30 @@ function check_as_array_or_inferred_tuple(
 		// so the container sites key one mono (`Box_Cell`, not bare `Box`
 		// whose type args would be lost on this `new Type(name)`).
 		const first_type = value_types[0];
-		if (first_type) {
-			// A raw array cannot be the element of another raw array: a Type
-			// carries a single storage_kind, so nested arrays have no type
-			// representation. Error clearly instead of inferring the bare
-			// element name and mismatching every element (the old behavior:
-			// `[[1, 2], [3, 4]]` inferred `int[]` and failed per element with
-			// "Array<int> (expected int)").
-			if (first_type.is_array) {
+		if (first_type?.is_array) {
+			// NESTED array (`[[1, 2], [3, 4]]`): the inner literals become
+			// HEAP buffers (their variable-size inline storage can only be
+			// referenced, never embedded), hoisted to named consts so the
+			// build materializes each buffer at a declaration. The outer
+			// level stays a fixed stack array of `Array_<T>*` pointers.
+			if (first_type.name === "string" || is_owning_struct_type(first_type, status)) {
 				add_error(
 					status,
-					`nested arrays are not supported — an array literal element cannot itself be an array`,
+					`an array-of-arrays inner element cannot own heap resources (a string/mv element) yet`,
 					array.values[0].start,
 				);
 				return false;
 			}
+			const elem = new Type(first_type.name);
+			elem.is_array = true;
+			elem.is_array_heap = true;
+			elem.elem = first_type.elem;
+			hoist_array_elements(array, status, elem);
+			array.type = new Type(first_type.name);
+			array.type.is_array = true;
+			array.type.elem = elem;
+			array_item_type = clone_type(elem);
+		} else if (first_type) {
 			const elem_name = first_type.type_args?.length ? mono_type_name(first_type) : first_type.name;
 			array.type = new Type(elem_name);
 			array.type.is_array = true;
@@ -484,7 +567,7 @@ function check_as_array_or_inferred_tuple(
 				array.type.tuple_types = first_type.tuple_types;
 			}
 		}
-		array_item_type = new Type(array.type.name);
+		array_item_type = array.type.elem ? clone_type(array.type.elem) : new Type(array.type.name);
 		if (first_type?.tuple_types?.length) {
 			array_item_type.tuple_types = first_type.tuple_types;
 		}

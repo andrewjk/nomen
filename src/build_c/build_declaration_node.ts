@@ -60,6 +60,7 @@ import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_range_node, { evaluate_constant } from "./build_range_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
+import array_elem_c_type from "./utils/array_elem_c_type.ts";
 import build_lambda_value from "./utils/build_lambda_value.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes, splice_decl_from_c_scopes } from "./utils/c_scope.ts";
@@ -1088,7 +1089,7 @@ export default function build_declaration_node(
 			// It borrows from its source and is never auto-freed.
 			status.code += `nomen_view ${safe_name}`;
 		} else if (node.type.is_array && !is_stack_array) {
-			status.code += `${c_type(node.type.name)} *${safe_name}`;
+			status.code += `${array_elem_c_type(node.type)} *${safe_name}`;
 			// A heap array emitted as a plain `T*` pointer (e.g. from
 			// `Array.with(v, n)`, whose inferred type carries a runtime length
 			// so it doesn't take the struct-header path above) is still
@@ -1104,7 +1105,7 @@ export default function build_declaration_node(
 				status.heap_array_vars.add(safe_name);
 			}
 		} else {
-			status.code += `${c_type(node.type.name)} ${safe_name}`;
+			status.code += `${is_stack_array ? array_elem_c_type(node.type) : c_type(node.type.name)} ${safe_name}`;
 			// A no-initializer string local zero-initializes its pair: the
 			// reassign paths free the displaced `.ptr` eagerly, which must see
 			// NULL (a valid no-op free), never stack garbage.
@@ -1139,12 +1140,16 @@ export default function build_declaration_node(
 			const elem_struct = status.structs.find((s) => s.name === elem_name);
 			const elem_is_class = !!elem_struct?.is_class;
 			const elem_is_string = elem_name === "string";
+			// A NESTED array's elements are inner HEAP buffers (`Array_<T>*`
+			// pointers) — the outer owns and frees each one at scope exit.
+			const elem_is_heap_array = !!node.type.elem;
 			const elem_struct_needs_destroy =
 				!elem_is_class &&
 				!elem_is_string &&
+				!elem_is_heap_array &&
 				!!status.structs.find((s) => s.name === elem_name && !s.is_simple_type && !s.is_generic) &&
 				struct_needs_destroy_by_name(elem_name, status);
-			if (elem_is_string || elem_is_class || elem_struct_needs_destroy) {
+			if (elem_is_string || elem_is_class || elem_is_heap_array || elem_struct_needs_destroy) {
 				if (!status.stack_array_vars) status.stack_array_vars = new Set();
 				status.stack_array_vars.add(safe_name);
 				if (!status.stack_array_lengths) status.stack_array_lengths = new Map();
