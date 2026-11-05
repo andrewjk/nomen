@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { ALL_FLOAT_TYPES, ALL_INT_TYPES } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -7,6 +8,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import type { Operator } from "../nodes/OperationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -85,6 +87,53 @@ export default function check_assignment_node(
 		return false;
 	}
 	status.is_assignment_target = false;
+
+	// COMPOUND ASSIGNMENT OPERATOR DISPATCH (SPEC, Operator Functions):
+	// `x op= y` routes to the same operator functions as `x op y` when the
+	// left operand is a struct with the matching `#op_*` defined — and the
+	// scalar `/=`/`%=` forms have no raw store lowering on either backend
+	// (the aarch64 compound store only has add/sub/mul arms; C `%=` is
+	// int-only). Rather than teach both assignment builders the
+	// compound-operator store, REWRITE the node into the explicit spelling
+	// `x = x op y` — the exact AST the hand-written form parses into — so
+	// the operation check (operand match, `#op_*` discovery, the
+	// no-operator error) and both backends' tested binary lowerings do the
+	// work with zero assignment-side changes. Scalars keep the compound
+	// node for `+=`/`-=`/`*=` (the raw store the loop/NEON machinery
+	// specializes on), and pointers keep it for every op (raw pointer
+	// arithmetic). A `swap` suffix stays on the compound path.
+	if (is_compound && !assign.swap) {
+		const lhs_type = type_from_value_node(assign.left_value, status);
+		const lhs_name = lhs_type?.name;
+		const arith = assign.operator!.slice(0, -1) as Operator;
+		const is_primitive =
+			!!lhs_name &&
+			!lhs_type.is_nullable &&
+			!lhs_type.is_pointer &&
+			!lhs_type.is_array &&
+			(ALL_INT_TYPES.includes(lhs_name) ||
+				ALL_FLOAT_TYPES.includes(lhs_name) ||
+				lhs_name === "bool" ||
+				lhs_name === "char");
+		const lhs_struct =
+			!!lhs_name &&
+			status.structs.find((s) => s.name === lhs_name && !s.is_simple_type) !== undefined;
+		const scalar_divmod = is_primitive && (arith === "/" || arith === "%");
+		if (((lhs_struct || lhs_type.is_array) && !lhs_type.is_pointer) || scalar_divmod) {
+			// The rewritten op starts at the LEFT operand — the same position
+			// the binary spelling's op node carries — so operator errors
+			// ("No operator % defined for type …") point where the
+			// hand-written form's would.
+			assign.right_value = new OperationNode(
+				assign.left_value.start,
+				arith,
+				assign.left_value,
+				assign.right_value,
+				lhs_type,
+			);
+			assign.operator = undefined;
+		}
+	}
 
 	// May-be-null path tracking for a dotted field assignment (`o.inner = null`
 	// marks the path may-be-null; `o.inner = Inner(…)` clears it), mirroring

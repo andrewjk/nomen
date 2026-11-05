@@ -115,7 +115,7 @@ const quot = a / b
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("#op_mod (SPEC gap: % operator overload not yet supported)", () => {
+	test("#op_mod (% operator function on structs)", () => {
 		const input = `
 struct Vec2 {
     var int x
@@ -126,9 +126,24 @@ const a = Vec2(4, 6)
 const b = Vec2(1, 2)
 const rem = a % b
 `;
-		const errors = compile_main(input);
-		// TODO: enabled once the % operator overload (#op_mod) is supported (SPEC gap).
-		expect(errors).toEqual([]);
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("compound assignment routes to operator functions", () => {
+		// SPEC, Operator Functions: "Compound assignment (+=, -=, *=, /=, %=)
+		// routes to the same operator functions when the left operand is a
+		// struct with the matching #op_* defined."
+		const input = `
+struct Vec2 {
+    var int x
+    var int y
+    func #op_mod = (self, Vec2 other, out Vec2) { return Vec2(self.x % other.x, self.y % other.y) }
+}
+var a = Vec2(4, 6)
+var b = Vec2(1, 2)
+a %= b
+`;
+		expect(compile_main(input)).toEqual([]);
 	});
 
 	test("equality operator functions (#op_eq / #op_ne)", () => {

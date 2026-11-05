@@ -425,7 +425,9 @@ function parse_statement_start(status: ParseStatus) {
 			}
 			case "+=":
 			case "-=":
-			case "*=": {
+			case "*=":
+			case "/=":
+			case "%=": {
 				const op = current_value;
 				accept(op, status);
 				const rhs = parse_expression(status);

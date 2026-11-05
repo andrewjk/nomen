@@ -447,7 +447,9 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case "=":
 			case "+=":
 			case "-=":
-			case "*=": {
+			case "*=":
+			case "/=":
+			case "%=": {
 				if (!allow_assignment) {
 					if (is_move) node.is_moved = true;
 					return node;
