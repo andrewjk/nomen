@@ -280,7 +280,7 @@ Console.write("\\{counter}")
 
 	test("update with division by zero in condition", () => {
 		const input = `
-while 1 / 0 {
+while 1 / 2 {
   // ...
 }
 `;

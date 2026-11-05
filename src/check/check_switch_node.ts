@@ -109,6 +109,10 @@ export default function check_switch_node(switch_node: SwitchNode, status: Check
 				(acc, bs) => intersect_strs(acc, bs.values[i]?.lower_bound_inclusive_exprs),
 				first?.lower_bound_inclusive_exprs?.slice(),
 			);
+			value.nonzero_exprs = branch_statuses.reduce<string[] | undefined>(
+				(acc, bs) => intersect_strs(acc, bs.values[i]?.nonzero_exprs),
+				first?.nonzero_exprs?.slice(),
+			);
 		}
 	}
 

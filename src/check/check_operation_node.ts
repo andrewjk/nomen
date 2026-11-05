@@ -1,16 +1,19 @@
 import add_error from "../add_error.ts";
-import { is_negatable_type } from "../built_in_types.ts";
+import { get_built_in_type, is_negatable_type } from "../built_in_types.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { expression_to_source, is_inside_core_method } from "./check_function_call.ts";
 import { monomorphize } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import {
 	apply_bounds,
 	apply_negated_bounds,
+	expr_to_string,
 	restore_all_bounds,
 	snapshot_all_bounds,
 } from "./utils/flow_bounds.ts";
@@ -163,6 +166,18 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			invert: custom_op.invert,
 		};
 
+		// USER-DECLARED OPERATOR CONTRACTS: a constraint on the operator
+		// function's parameter (`#op_mod = (self, int other: other != 0, out
+		// int)`) verifies at the operation site — the same machinery a call
+		// site runs for `fn = (int i: i < self.length)`. Previously the
+		// constraint was silently ignored at `a % b` shapes. Provable-only:
+		// an unverifiable argument is the author's documented precondition.
+		// The declared constraint still does its main work INSIDE the body:
+		// its facts apply_bounds onto the parameter, discharging the body's
+		// own operator obligations (`#op_div = (self, Vec2 other: other.x !=
+		// 0, …)` makes `self.x / other.x` verify).
+		verify_operator_param_constraint(func, op, left_type, right_type, status, false);
+
 		// Propagate array length for + and * operations
 		if (left_type.is_array && op.type.is_array) {
 			const left_len = left_type.length ? parseInt((left_type.length as any).value || "0") : 0;
@@ -208,6 +223,33 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		op.right_value.start,
 		"operation",
 	);
+
+	// BUILT-IN SCALAR OPERATOR CONTRACTS: a simple (built-in) type's operator
+	// function declaration carries the contract for the native operator
+	// (`int`'s `#op_div = (self, int divisor: divisor != 0, out int)` in the
+	// System library). find_custom_operator never dispatches simple types —
+	// the backends lower scalar arithmetic natively, so the declaration's
+	// body is never called by the operator — but its parameter contract is
+	// verified here, STRICTLY: the language's own types have total contracts
+	// (user operator functions are checked only when provable). This is the
+	// same machinery, not a per-operator rule: any contract declared on a
+	// built-in type's operator function applies.
+	const left_is_simple =
+		!left_type.is_array &&
+		!left_type.is_ref &&
+		!left_type.is_nullable &&
+		get_built_in_type(left_type.name)?.kind !== "string"
+			? status.structs.find((s) => s.name === left_type.name && s.is_simple_type)
+			: undefined;
+	if (left_is_simple) {
+		const op_func_name = operator_to_func_name(op.op);
+		const builtin_decl = op_func_name
+			? left_is_simple.functions.find((f) => f.name === op_func_name)
+			: undefined;
+		if (builtin_decl?.params.some((p) => !p.is_self_param && p.constraint)) {
+			verify_operator_param_constraint(builtin_decl, op, left_type, right_type, status, true);
+		}
+	}
 
 	// `==`/`!=` on type-parameter-typed operands inside a generic body (e.g.
 	// `load_T(idx) == key` in `Map<TK, TV>`). The concrete type isn't known
@@ -293,6 +335,17 @@ function find_custom_operator(
 
 	let struct = status.structs.find((s) => s.name === struct_name);
 	if (!struct) {
+		return undefined;
+	}
+	// Natively-lowered built-in scalars (everything but `string`, whose
+	// operators are real library functions) carry their operator
+	// declarations as CONTRACT SIGNATURES (`int`'s `#op_div = (self, int
+	// divisor: divisor != 0, …)`): the backends lower scalar arithmetic
+	// natively, so an operator on such a type must never dispatch as a
+	// function call. check_operation_node verifies the declaration's
+	// constraint separately.
+	const builtin_info = get_built_in_type(struct.name);
+	if (struct.is_simple_type && builtin_info?.kind !== "string") {
 		return undefined;
 	}
 
@@ -386,5 +439,81 @@ function operator_to_func_name(op: string): string | undefined {
 			return "ne";
 		default:
 			return undefined;
+	}
+}
+
+/**
+ * Verify the declared parameter contract of an operator function against the
+ * operation's right operand (`a OP b`): the non-self parameter is bound to
+ * `b` — carrying its declaration facts (const value, ranges, bounds, non-zero
+ * guards) — and `self` to the left operand, so a constraint like
+ * `divisor != 0` or `other.x != 0` evaluates with the usual machinery.
+ *
+ * `strict` decides what an UNVERIFIABLE constraint means: `true` (built-in
+ * scalar operator functions — the language's own total contracts) reports
+ * `Parameter constraint cannot be verified` unless inside a System-library
+ * method (the `.at` carve-out); `false` (user operator functions) treats the
+ * constraint as a documented precondition and only reports PROVABLE
+ * violations. A provable violation always errors.
+ */
+function verify_operator_param_constraint(
+	func: FunctionNode,
+	op: OperationNode,
+	left_type: Type,
+	right_type: Type,
+	status: CheckStatus,
+	strict: boolean,
+): void {
+	const other_param = func.params.find((p) => !p.is_self_param && p.constraint);
+	if (!other_param?.constraint) return;
+	const saved_values_length = status.values.length;
+	const arg_name = value_from_value_node(op.right_value);
+	const arg_decl = arg_name ? status.values.findLast((v) => v.name === arg_name) : undefined;
+	status.values.push({
+		declaration: "const",
+		name: other_param.name,
+		type: right_type,
+		is_set: true,
+		const_value:
+			arg_decl?.const_value ??
+			(op.right_value.node_type === "value" &&
+			/^[+-]?\d+$/.test((op.right_value as ValueNode).value)
+				? parseInt((op.right_value as ValueNode).value, 10)
+				: undefined),
+		range_lower: arg_decl?.range_lower,
+		range_upper: arg_decl?.range_upper,
+		upper_bound_exprs: arg_decl?.upper_bound_exprs,
+		lower_bound_exprs: arg_decl?.lower_bound_exprs,
+		upper_bound_inclusive_exprs: arg_decl?.upper_bound_inclusive_exprs,
+		lower_bound_inclusive_exprs: arg_decl?.lower_bound_inclusive_exprs,
+		nonzero_exprs: arg_decl?.nonzero_exprs?.map(() => other_param.name),
+		alias_of:
+			!arg_name && op.right_value.node_type === "access"
+				? expr_to_string(op.right_value, status)
+				: undefined,
+	});
+	// Push self so the constraint can reference self fields.
+	const self_path = expr_to_string(op.left_value, status);
+	if (self_path) {
+		status.values.push({
+			declaration: "const",
+			name: "self",
+			type: left_type,
+			is_set: true,
+			alias_of: self_path,
+		});
+	}
+	const satisfied = evaluate_const_condition(other_param.constraint, status);
+	status.values.length = saved_values_length;
+	const constraint_source = expression_to_source(other_param.constraint);
+	const suffix = constraint_source ? `\n  ${constraint_source}` : "";
+	if (satisfied === false || satisfied === "unsafe") {
+		add_error(status, `Parameter constraint not satisfied: ${other_param.name}${suffix}`, op.start);
+	} else if (strict && satisfied === undefined && !is_inside_core_method(status)) {
+		add_error(
+			status,
+			`Parameter constraint cannot be verified: ${other_param.name}${suffix}`,
+			op.start,
+		);
 	}
 }

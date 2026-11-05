@@ -25,6 +25,7 @@ export type BoundsSnapshot = {
 	lower_bound_exprs?: string[];
 	upper_bound_inclusive_exprs?: string[];
 	lower_bound_inclusive_exprs?: string[];
+	nonzero_exprs?: string[];
 };
 
 /**
@@ -43,6 +44,7 @@ export function snapshot_bounds(name: string, status: CheckStatus): BoundsSnapsh
 		lower_bound_exprs: decl.lower_bound_exprs?.slice(),
 		upper_bound_inclusive_exprs: decl.upper_bound_inclusive_exprs?.slice(),
 		lower_bound_inclusive_exprs: decl.lower_bound_inclusive_exprs?.slice(),
+		nonzero_exprs: decl.nonzero_exprs?.slice(),
 	};
 }
 
@@ -72,6 +74,7 @@ export function snapshot_all_bounds(status: CheckStatus): Map<object, FullBounds
 			lower_bound_exprs: v.lower_bound_exprs?.slice(),
 			upper_bound_inclusive_exprs: v.upper_bound_inclusive_exprs?.slice(),
 			lower_bound_inclusive_exprs: v.lower_bound_inclusive_exprs?.slice(),
+			nonzero_exprs: v.nonzero_exprs?.slice(),
 			upper_bound_expr: v.upper_bound_expr,
 			lower_bound_expr: v.lower_bound_expr,
 			alias_of: v.alias_of,
@@ -92,6 +95,7 @@ export function restore_all_bounds(status: CheckStatus, snap: Map<object, FullBo
 		v.lower_bound_exprs = s.lower_bound_exprs;
 		v.upper_bound_inclusive_exprs = s.upper_bound_inclusive_exprs;
 		v.lower_bound_inclusive_exprs = s.lower_bound_inclusive_exprs;
+		v.nonzero_exprs = s.nonzero_exprs;
 		v.upper_bound_expr = s.upper_bound_expr;
 		v.lower_bound_expr = s.lower_bound_expr;
 		v.alias_of = s.alias_of;
@@ -449,6 +453,40 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 			const decl = status.values.findLast((v) => v.name === eq.target);
 			if (decl) decl.known_length = eq.value;
 			return;
+		}
+	}
+
+	// Non-zero guard: `n != 0` (either operand order, integer zero literal)
+	// proves the variable non-zero for the guarded scope — the divisor
+	// contract's discharge (`x / n`, `x % n` carry an implicit `n != 0`).
+	// Recorded as a dedicated fact (the var's own canonical path in
+	// `nonzero_exprs`): `n != 0` means `n >= 1 || n <= -1`, which no single
+	// entry in the bound lists above expresses soundly.
+	if (condition.node_type === "op") {
+		const nz = condition as OperationNode;
+		if (nz.op === "!=") {
+			const is_zero_lit = (x: BaseNode): boolean =>
+				x.node_type === "value" && /^[+-]?0+$/.test((x as ValueNode).value);
+			const as_path = (x: BaseNode): string | undefined => {
+				if (x.node_type === "value") {
+					const v = (x as ValueNode).value;
+					return /^[A-Za-z_][\w.]*$/.test(v) ? v : undefined;
+				}
+				if (x.node_type === "access") return expr_to_string(x, status);
+				return undefined;
+			};
+			let path: string | undefined;
+			if (is_zero_lit(nz.left_value)) path = as_path(nz.right_value);
+			else if (is_zero_lit(nz.right_value)) path = as_path(nz.left_value);
+			if (path) {
+				const base = path.split(".")[0];
+				const decl = status.values.findLast((v) => v.name === base);
+				if (decl) {
+					if (!decl.nonzero_exprs) decl.nonzero_exprs = [];
+					if (!decl.nonzero_exprs.includes(path)) decl.nonzero_exprs.push(path);
+					return;
+				}
+			}
 		}
 	}
 

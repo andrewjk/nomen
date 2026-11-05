@@ -448,6 +448,7 @@ export default function check_assignment_node(
 		left_value.lower_bound_exprs = undefined;
 		left_value.upper_bound_inclusive_exprs = undefined;
 		left_value.lower_bound_inclusive_exprs = undefined;
+		left_value.nonzero_exprs = undefined;
 		left_value.path_bounds = undefined;
 		left_value.alias_of = undefined;
 		left_value.class_alias_of = undefined;

@@ -9,15 +9,6 @@ needed to pick it up later.
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
 the "STRUCT_PLAN_3" labels below are its section names.)
 
-### Test-corpus skips that name live gaps
-
-Each skip masks a real post-R/B1/D3 gap (verified still failing
-2026-10-09):
-
-- **`operations` (2) + `interpolate_string` (1)**: compile-time
-  division/modulo-by-zero detection — a language-feature ask ("TODO: This
-  needs runtime protection"), not a backend bug.
-
 ### D3 residuals (`string` is mv)
 
 - **`string` captures are read-invalidated but memory-snapshotted**: the

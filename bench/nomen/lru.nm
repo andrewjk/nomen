@@ -120,6 +120,13 @@ pub func main = (Init init) {
 	}
 
 	const int M = size * 10
+	// The divisor contract on `%` needs a provably non-zero modulus; M is
+	// runtime (size from argv), so clamp once — for every real size the
+	// clamp is a no-op and the hot loop is unchanged.
+	var m = M
+	if m < 1 {
+		m = 1
+	}
 	var rng0_state = 0
 	var rng1_state = 1
 
@@ -132,12 +139,12 @@ pub func main = (Init init) {
 	var i = 0
 	while i < n; i += 1 {
 		rng0_state = (1103515245 * rng0_state + 12345) & 2147483647
-		const int n0 = rng0_state % M
+		const int n0 = rng0_state % m
 
 		lru.put(n0, n0)
 
 		rng1_state = (1103515245 * rng1_state + 12345) & 2147483647
-		const int n1 = rng1_state % M
+		const int n1 = rng1_state % m
 
 		if lru.get(n1) >= 0 {
 			hit += 1

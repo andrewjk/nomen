@@ -23,6 +23,7 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 			lower_bound_exprs: v.lower_bound_exprs?.slice(),
 			upper_bound_inclusive_exprs: v.upper_bound_inclusive_exprs?.slice(),
 			lower_bound_inclusive_exprs: v.lower_bound_inclusive_exprs?.slice(),
+			nonzero_exprs: v.nonzero_exprs?.slice(),
 			path_bounds: v.path_bounds
 				? new Map(
 						[...v.path_bounds].map(([k, b]) => [

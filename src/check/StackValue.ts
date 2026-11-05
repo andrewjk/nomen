@@ -64,6 +64,16 @@ export default interface StackValue {
 	upper_bound_inclusive_exprs?: string[];
 	lower_bound_inclusive_exprs?: string[];
 	/**
+	 * Non-zero facts: canonical paths of THIS variable that a `!= 0` guard
+	 * (`if n != 0 { ... }`, a `while n != 0` body) proved non-zero for the
+	 * guarded scope. Each entry is the variable's own canonical path (e.g.
+	 * "n", "self.count") — membership of the current path discharges a
+	 * `path != 0` constraint (the divisor contract on `/` and `%`). These
+	 * are NOT derivable from the bound lists above: `n != 0` means
+	 * `n >= 1 || n <= -1`, which no single bound expresses soundly.
+	 */
+	nonzero_exprs?: string[];
+	/**
 	 * @deprecated use upper_bound_exprs / lower_bound_exprs
 	 */
 	upper_bound_expr?: string;

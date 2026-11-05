@@ -105,7 +105,12 @@ m.set("a", 1)
 m.set("b", 2)
 Console.write("\\{m.get("b")}\\n")
 `);
-		expect(code).not.toContain("sdiv");
+		// Scope the check to find_slot: the library's integer division
+		// functions (`int_div`/`uint_div`) legitimately emit sdiv — they ARE
+		// division — now that the divisor contract lives on their
+		// declarations. The bucket index must not.
+		const find_slot = asm_function_body(code, "Map_string_int_find_slot:");
+		expect(find_slot).not.toContain("sdiv");
 	});
 });
 

@@ -96,7 +96,7 @@ import { struct_has_view_fields } from "./utils/view_fields.ts";
  * treatment by naming alone, shipping unverified runtime indices as
  * unchecked loads/stores.
  */
-function is_inside_core_method(status: CheckStatus): boolean {
+export function is_inside_core_method(status: CheckStatus): boolean {
 	for (let i = status.stack.length - 1; i >= 0; i--) {
 		const node = status.stack[i];
 		if (node.node_type === "func") {
@@ -518,6 +518,7 @@ export default function check_function_call(
 		lower_bound_exprs?: string[];
 		upper_bound_inclusive_exprs?: string[];
 		lower_bound_inclusive_exprs?: string[];
+		nonzero_exprs?: string[];
 		upper_bound_expr?: string;
 		lower_bound_expr?: string;
 		alias_of?: string;
@@ -1389,6 +1390,11 @@ export default function check_function_call(
 		// so the constraint evaluator can prove `n - 1 < self.length` via the
 		// alias-through-arithmetic path. Shifted by the constant for offset args.
 		let alias_of: string | undefined;
+		// Non-zero guard facts on the argument (`if n != 0` before the call).
+		// Transferred under the PARAMETER's name at the push below — every
+		// fact in the list describes the arg's value, so the identity is the
+		// param's after substitution.
+		let nonzero_exprs: string[] | undefined;
 		if (param.node_type === "value") {
 			const decl = status.values.findLast((v) => v.name === (param as ValueNode).value);
 			if (decl) {
@@ -1398,6 +1404,7 @@ export default function check_function_call(
 				lower_bound_exprs = decl.lower_bound_exprs;
 				upper_bound_inclusive_exprs = decl.upper_bound_inclusive_exprs;
 				lower_bound_inclusive_exprs = decl.lower_bound_inclusive_exprs;
+				nonzero_exprs = decl.nonzero_exprs;
 				upper_bound_expr = decl.upper_bound_expr;
 				lower_bound_expr = decl.lower_bound_expr;
 				// Default to the argument's own path when the outer
@@ -1619,6 +1626,7 @@ export default function check_function_call(
 			lower_bound_exprs,
 			upper_bound_inclusive_exprs,
 			lower_bound_inclusive_exprs,
+			nonzero_exprs: nonzero_exprs?.map(() => func_param.name),
 			upper_bound_expr,
 			lower_bound_expr,
 			alias_of,
@@ -1642,6 +1650,7 @@ export default function check_function_call(
 					lower_bound_exprs: ca.lower_bound_exprs,
 					upper_bound_inclusive_exprs: ca.upper_bound_inclusive_exprs,
 					lower_bound_inclusive_exprs: ca.lower_bound_inclusive_exprs,
+					nonzero_exprs: ca.nonzero_exprs,
 					upper_bound_expr: ca.upper_bound_expr,
 					lower_bound_expr: ca.lower_bound_expr,
 					alias_of: ca.alias_of,
@@ -2352,7 +2361,7 @@ function find_lhs_var_name(status: CheckStatus): string | undefined {
 }
 
 /** Render a constraint expression AST back to a source-like string. */
-function expression_to_source(node: BaseNode | null | undefined): string {
+export function expression_to_source(node: BaseNode | null | undefined): string {
 	if (!node) return "";
 	if (node.node_type === "value") return (node as ValueNode).value;
 	if (node.node_type === "access") {

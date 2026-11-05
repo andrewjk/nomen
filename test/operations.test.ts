@@ -376,22 +376,22 @@ x = "hello" + "world"
 		expect(parsed.errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
 	});
 
-	// TODO: This needs runtime protection
-	test.skip("division by zero", () => {
+	test("division by zero", () => {
 		const input = `
 const x = 5 / 0
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Parameter constraint not satisfied: divisor");
 	});
 
-	// TODO: This needs runtime protection
-	test.skip("modulo by zero", () => {
+	test("modulo by zero", () => {
 		const input = `
 const x = 5 % 0
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Parameter constraint not satisfied: divisor");
 	});
 
 	test("undefined variable in operation", () => {

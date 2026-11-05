@@ -103,7 +103,7 @@ struct Vec2 {
     func #op_add = (self, Vec2 other, out Vec2) { return Vec2(self.x + other.x, self.y + other.y) }
     func #op_sub = (self, Vec2 other, out Vec2) { return Vec2(self.x - other.x, self.y - other.y) }
     func #op_mul = (self, Vec2 other, out Vec2) { return Vec2(self.x * other.x, self.y * other.y) }
-    func #op_div = (self, Vec2 other, out Vec2) { return Vec2(self.x / other.x, self.y / other.y) }
+    func #op_div = (self, Vec2 other: other.x != 0 && other.y != 0, out Vec2) { return Vec2(self.x / other.x, self.y / other.y) }
 }
 const a = Vec2(4, 6)
 const b = Vec2(1, 2)
@@ -120,7 +120,7 @@ const quot = a / b
 struct Vec2 {
     var int x
     var int y
-    func #op_mod = (self, Vec2 other, out Vec2) { return Vec2(self.x % other.x, self.y % other.y) }
+    func #op_mod = (self, Vec2 other: other.x != 0 && other.y != 0, out Vec2) { return Vec2(self.x % other.x, self.y % other.y) }
 }
 const a = Vec2(4, 6)
 const b = Vec2(1, 2)
@@ -137,11 +137,34 @@ const rem = a % b
 struct Vec2 {
     var int x
     var int y
-    func #op_mod = (self, Vec2 other, out Vec2) { return Vec2(self.x % other.x, self.y % other.y) }
+    func #op_mod = (self, Vec2 other: other.x != 0 && other.y != 0, out Vec2) { return Vec2(self.x % other.x, self.y % other.y) }
 }
 var a = Vec2(4, 6)
 var b = Vec2(1, 2)
 a %= b
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("division and modulo by zero (divisor contract)", () => {
+		const input = `
+struct Ratio {
+    var int value
+
+    func #op_div = (self, int scale: scale != 0, out Ratio) {
+        return Ratio(self.value / scale)
+    }
+}
+
+var r = Ratio(100)
+var half = r / 2        // 2 is provably non-zero
+
+var n = 2
+var q = 10 / n          // n's initializer proves it non-zero
+
+if n != 0 {
+    var third = 10 / n  // the guard discharges the divisor contract
+}
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

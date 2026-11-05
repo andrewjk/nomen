@@ -2136,11 +2136,11 @@ struct Vec2 {
         return Vec2(self.x * other.x, self.y * other.y)
     }
 
-    func #op_div = (self, Vec2 other, out Vec2) {
+    func #op_div = (self, Vec2 other: other.x != 0 && other.y != 0, out Vec2) {
         return Vec2(self.x / other.x, self.y / other.y)
     }
 
-    func #op_mod = (self, Vec2 other, out Vec2) {
+    func #op_mod = (self, Vec2 other: other.x != 0 && other.y != 0, out Vec2) {
         return Vec2(self.x % other.x, self.y % other.y)
     }
 }
@@ -2156,6 +2156,50 @@ const rem = a % b   // Vec2(0, 0)
 
 Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) routes to the same operator
 functions when the left operand is a struct with the matching `#op_*` defined.
+
+### Division and Modulo by Zero
+
+Integer `/` and `%` carry a compile-time divisor contract: the right operand is
+treated as if declared `int other: other != 0`. A divisor the checker can prove
+zero is a compile error, and a runtime divisor that cannot be proven non-zero
+must be guarded — the same contract model `.at()` applies to indices:
+
+```
+struct Ratio {
+    var int value
+
+    func #op_div = (self, int scale: scale != 0, out Ratio) {
+        return Ratio(self.value / scale)
+    }
+}
+
+var r = Ratio(100)
+var half = r / 2        // 2 is provably non-zero
+
+var n = 2
+var q = 10 / n          // n's initializer proves it non-zero
+
+if n != 0 {
+    var third = 10 / n  // the guard discharges the divisor contract
+}
+```
+
+- `5 / 0` and `5 % 0` are compile errors: `Parameter constraint not
+satisfied: divisor`.
+- An unverifiable runtime divisor errors with `Parameter constraint cannot be
+verified` unless the code is inside the System library; discharge it with a
+  guard (`if n != 0`, `if n > 0`, a clamp) or a provably non-zero value.
+- Float division by zero is unconstrained (IEEE ±inf / NaN).
+- The contract is declared as a parameter constraint on the built-in integer
+  types' operator functions (`#op_div = (self, int divisor: divisor != 0, out
+int)`); scalar arithmetic still lowers natively, so those declarations are
+  contract signatures. Any operator function — built-in or user-defined —
+  carries its contracts the same way, and the checker applies them at every
+  operation site.
+- A constraint declared on a user operator function's parameter
+  (`#op_div … int scale: scale != 0`) verifies at the operation site — a
+  provably violating argument is an error — and its facts discharge the
+  function body's own divisions.
 
 ### Cast Operator (`as`)
 

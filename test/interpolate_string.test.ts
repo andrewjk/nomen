@@ -173,12 +173,13 @@ Console.write("\\{p}")
 		expect(parsed.errors.length).toBeGreaterThan(0);
 	});
 
-	test.skip("interpolation with division by zero", () => {
+	test("interpolation with division by zero", () => {
 		const input = `
 const x = 1
 Console.write("\\{x / 0}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.length).toBeGreaterThan(0);
+		expect(parsed.errors[0].message).toContain("Parameter constraint not satisfied: divisor");
 	});
 });

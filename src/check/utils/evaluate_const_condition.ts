@@ -533,6 +533,51 @@ function evaluate_operation(
 			) {
 				return true;
 			}
+			// `n != 0` on an integer — the divisor contract on `/` and `%`:
+			// discharge from a recorded non-zero guard fact (`if n != 0 { … }`,
+			// a `while n != 0` body), or from numeric bounds that IMPLY
+			// non-zero (`n > 0` ⇒ ≥ 1; `n >= 1`; `n < 0` ⇒ ≤ -1; `n <= -1`).
+			// Bounds are consulted numerically only: a symbolic bound
+			// ("list.length") proves a length non-negative, not an arbitrary
+			// int non-zero, so it stays conservative (undefined).
+			const is_int_zero = (s: string | undefined): boolean => s === "0";
+			const nonzero_discharge = (var_name: string | undefined): boolean => {
+				if (!var_name) return false;
+				const decl = lookup(var_name);
+				if (!decl) return false;
+				// The guard fact itself: the var's own canonical path. Dotted
+				// paths ("self.count") store on the base var keyed by path.
+				if (decl.nonzero_exprs?.includes(var_name)) return true;
+				const numeric = (e: string | undefined): number | undefined =>
+					e !== undefined && /^-?\d+$/.test(e) ? parseInt(e, 10) : undefined;
+				for (const l of decl.lower_bound_exprs ?? []) {
+					const v = numeric(l);
+					if (v !== undefined && v >= 0) return true;
+				}
+				for (const l of decl.lower_bound_inclusive_exprs ?? []) {
+					const v = numeric(l);
+					if (v !== undefined && v >= 1) return true;
+				}
+				for (const u of decl.upper_bound_exprs ?? []) {
+					const v = numeric(u);
+					if (v !== undefined && v <= 0) return true;
+				}
+				for (const u of decl.upper_bound_inclusive_exprs ?? []) {
+					const v = numeric(u);
+					if (v !== undefined && v <= -1) return true;
+				}
+				return false;
+			};
+			if (
+				(left_var &&
+					is_int_zero(expr_to_string(op.right_value, status)) &&
+					nonzero_discharge(left_var)) ||
+				(right_var &&
+					is_int_zero(expr_to_string(op.left_value, status)) &&
+					nonzero_discharge(right_var))
+			) {
+				return true;
+			}
 		}
 	}
 

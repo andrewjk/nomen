@@ -53,7 +53,7 @@ describe("compound assignment operator dispatch", () => {
 struct Point {
   var int x
   var int y
-  pub func #op_mod = (self, Point other, out Point) {
+  pub func #op_mod = (self, Point other: other.x != 0 && other.y != 0, out Point) {
     return Point(self.x % other.x, self.y % other.y)
   }
 }

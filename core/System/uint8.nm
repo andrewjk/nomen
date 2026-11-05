@@ -2,6 +2,17 @@
  * An 8-bit unsigned integer
  **/
 pub struct uint8: Stringable, Hashable, Equatable {
+
+	// The divisor contract (SPEC, Division and Modulo by Zero): scalar
+	// arithmetic lowers natively, so these declarations are the contract
+	// signatures the checker enforces at every `/` and `%` site.
+	func #op_div = (self, uint8 divisor: divisor != 0, out uint8) {
+		return self / divisor
+	}
+
+	func #op_mod = (self, uint8 divisor: divisor != 0, out uint8) {
+		return self % divisor
+	}
 	pub func hash = (self, out uint) {
 		return self as uint
 	}

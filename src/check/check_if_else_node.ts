@@ -213,6 +213,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 					if_v?.lower_bound_inclusive_exprs,
 					else_v?.lower_bound_inclusive_exprs,
 				);
+				value.nonzero_exprs = intersect_strs(if_v?.nonzero_exprs, else_v?.nonzero_exprs);
 				value.known_length = union_known(if_v?.known_length, else_v?.known_length);
 			} else if (if_falls_through) {
 				value.range_lower = if_v?.range_lower;
@@ -221,6 +222,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				value.lower_bound_exprs = if_v?.lower_bound_exprs?.slice();
 				value.upper_bound_inclusive_exprs = if_v?.upper_bound_inclusive_exprs?.slice();
 				value.lower_bound_inclusive_exprs = if_v?.lower_bound_inclusive_exprs?.slice();
+				value.nonzero_exprs = if_v?.nonzero_exprs?.slice();
 				value.upper_bound_expr = if_v?.upper_bound_expr;
 				value.lower_bound_expr = if_v?.lower_bound_expr;
 				value.known_length = if_v?.known_length;
@@ -232,6 +234,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 				value.lower_bound_exprs = else_v?.lower_bound_exprs?.slice();
 				value.upper_bound_inclusive_exprs = else_v?.upper_bound_inclusive_exprs?.slice();
 				value.lower_bound_inclusive_exprs = else_v?.lower_bound_inclusive_exprs?.slice();
+				value.nonzero_exprs = else_v?.nonzero_exprs?.slice();
 				value.upper_bound_expr = else_v?.upper_bound_expr;
 				value.lower_bound_expr = else_v?.lower_bound_expr;
 				value.known_length = else_v?.known_length;

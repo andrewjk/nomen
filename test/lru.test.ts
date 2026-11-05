@@ -15,6 +15,11 @@ pub func main = () {
 	var int n = 100
 
 	var int M = size * 10
+	// The divisor contract needs a provably non-zero modulus; clamp once
+	// (a no-op for every real size).
+	if M < 1 {
+		M = 1
+	}
 	var int rng0_state = 0
 	var int rng1_state = 1
 
