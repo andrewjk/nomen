@@ -182,6 +182,31 @@ Console.write("\\{t._0} \\{t._2} \\{t._4}")
 		await build_and_check_output(input, "tuple_concat_chain", "1 2 3");
 	});
 
+	test("call-result string elements own heap storage", async () => {
+		const input = `
+func make_str = (out string) {
+	return "zz"
+}
+var t = [1, make_str()]
+Console.write("\\{t._0} \\{t._1}")
+`;
+		// aarch64 regression: a literal-returning callee used to hand the
+		// tuple ctor a rodata pointer that the field teardown freed.
+		await build_and_check_output(input, "tuple_call_result_string", "1 zz");
+	});
+
+	test("call-result string elements in several positions", async () => {
+		const input = `
+func make_str = (out string) {
+	return "zz"
+}
+var a = [make_str(), 1]
+var b = [1, make_str(), true]
+Console.write("\\{a._0} \\{a._1} \\{b._0} \\{b._1} \\{b._2}")
+`;
+		await build_and_check_output(input, "tuple_call_result_string_mix", "zz 1 1 zz true");
+	});
+
 	test("tuple concatenation under tuple annotation", async () => {
 		const input = `
 var [int, string, int] t = [1, "a"] + [2]

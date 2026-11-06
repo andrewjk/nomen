@@ -668,22 +668,14 @@ unverified.
 
 Fixed 2026-11-06/07 (tuple `+` concat, `[T1, T2][]` / `Array<[T1, T2]>`
 spellings, array-of-tuples inference, base-spread tuple/array-base
-rejections, the SPEC `const empty = []` example, the call-result-string
-hoist, nested arrays `int[][]` / `Array<Array<int>>` / `[[1, 2], [3, 4]]`
-(fixed-size outer row of heap inner rows, scalar inner elements), and
-owning elements in arrays of tuples — constructor args are `.copy()`'d and
-the element teardown walks free the heap-seeded fields; plain destructuring
-of an owning element is rejected in favour of `var e = pairs.at(i)`).
-What REMAINS, deliberately:
-
-- **Call-result string args into a struct `#init` lose their hidden
-  length half on aarch64** (pre-existing, verified on main 2026-11-06:
-  `var t = [1, make_str()]` mis-marshals — `bl _string_copy`'s (ptr, len)
-  return keeps only the ptr, and every later argument shifts). Tuple
-  concat and the owning-element seeding work around it by hoisting each
-  `.copy()` result into a named const before the constructor call. The
-  marshal fix belongs in build_aarch64's arg handling for call-result
-  string args against callees with hidden_len params.
+rejections, the SPEC `const empty = []` example, nested arrays `int[][]` /
+`Array<Array<int>>` / `[[1, 2], [3, 4]]` (fixed-size outer row of heap
+inner rows, scalar inner elements), owning elements in arrays of tuples,
+and call-result strings into tuple `#init`s — the declaration records/frees
+every heap string field; on aarch64 a field whose element is a borrow-classified
+expression is copied in place after construction, while the C backend's
+blanket return-strdup makes every non-value element heap). What REMAINS,
+deliberately:
 
 - **Nested-array extensions** (deliberate v1 limits): inner elements
   must be non-owning (`string[][]` is rejected — the aarch64 fat-string

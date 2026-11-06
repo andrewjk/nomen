@@ -893,13 +893,13 @@ export default function build_return_node(
 			// the overridden fields follow the override value's ownership.
 			const mv = owns_strings_uniformly(return_struct);
 			const skip = call.field_overrides?.length
-				? override_return_string_fields(return_struct, call.field_overrides, status.heap_strings, {
-						base_skip: ctor_return_owned_string_fields(return_struct, call, status.heap_strings),
+				? override_return_string_fields(return_struct, call.field_overrides, status, {
+						base_skip: ctor_return_owned_string_fields(return_struct, call, status),
 						base_uniformly_owned: mv || undefined,
 					})
 				: mv
 					? new Set(direct_string_fields(return_struct).map((f) => f.name))
-					: ctor_return_owned_string_fields(return_struct, call, status.heap_strings);
+					: ctor_return_owned_string_fields(return_struct, call, status);
 			for (const field of direct_string_fields(return_struct)) {
 				if (skip.has(field.name)) continue;
 				status.code += `_return_val.${field.name} = nomen_str_dup(_return_val.${field.name});\n`;
@@ -927,7 +927,7 @@ export default function build_return_node(
 				node.value.node_type === "func_call"
 					? (node.value as FunctionCallNode).field_overrides
 					: (node.value as unknown as { fields: { name: string; value: BaseNode }[] }).fields;
-			const skip = override_return_string_fields(return_struct, overrides, status.heap_strings, {
+			const skip = override_return_string_fields(return_struct, overrides, status, {
 				base_uniformly_owned: true,
 			});
 			for (const field of direct_string_fields(return_struct)) {

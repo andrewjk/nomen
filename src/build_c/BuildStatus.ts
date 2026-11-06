@@ -658,6 +658,13 @@ export default interface BuildStatus {
 	 */
 	heap_string_tuple_fields?: Map<string, number[]>;
 	/**
+	 * Deferred in-place string-field copies for a tuple LITERAL's non-owned
+	 * expression elements (aarch64): emitted after the constructor call, then
+	 * the fields are recorded as owned (heap_string_tuple_fields) and freed at
+	 * scope exit.
+	 */
+	tuple_pending_field_strdups?: Map<string, { struct: string; skip: Set<string> }>;
+	/**
 	 * String variables that are reassigned a freshly-allocated (heap) value at
 	 * some point (e.g. `s = s + "x"` in a loop). Their initial literal value is
 	 * heap-allocated too, so reassignment can always free the old value.

@@ -312,7 +312,7 @@ export default function build_declaration_node(
 				for (const field of direct_string_fields(tuple_struct)) {
 					const idx = parseInt(field.name.replace(/^_/, ""), 10);
 					const element = tuple_call.params[idx];
-					if (element && tuple_return_owned_element(element, status.heap_strings)) {
+					if (element && tuple_return_owned_element(element, status.heap_strings, true)) {
 						if (!status.heap_string_fields) status.heap_string_fields = new Set();
 						status.heap_string_fields.add(`${node.name}.${field.name}`);
 					}

@@ -1222,13 +1222,43 @@ export default function build_declaration_node(
 		const init_is_tuple_literal = String(tuple_call.name ?? "").startsWith("_Tuple_");
 		if (tuple_struct && (init_is_tuple_call || init_is_tuple_literal)) {
 			const offsets: number[] = [];
-			for (const field of direct_string_fields(tuple_struct)) {
-				if (init_is_tuple_literal) {
+			const all_string_fields = direct_string_fields(tuple_struct);
+			const copy_fields = new Set<string>();
+			if (init_is_tuple_call) {
+				// A tuple-returning CALL is normalized to uniformly-heap fields
+				// at its return (see build_return_node) — every field owns.
+				for (const field of all_string_fields) {
+					offsets.push(get_field_offset(tuple_struct.name, field.name, status));
+				}
+			} else {
+				// A tuple LITERAL transfers each arg raw. A field whose element
+				// is NOT already heap-owned but is a real expression (a
+				// borrow-classified call result, a container borrow accessor)
+				// is copied in place AFTER construction (see
+				// tuple_pending_field_strdups) — the field then owns a heap
+				// copy and the record below frees it. Literal seeds /
+				// non-transferred literals stay rodata (no copy, no record).
+				for (const field of all_string_fields) {
 					const idx = parseInt(field.name.replace(/^_/, ""), 10);
 					const element = tuple_call.params[idx];
-					if (!element || !tuple_return_owned_element(element, status.heap_strings)) continue;
+					if (!element) continue;
+					const owned = tuple_return_owned_element(element, status);
+					const needs_copy = !owned && element.node_type !== "value";
+					if (owned || needs_copy) {
+						offsets.push(get_field_offset(tuple_struct.name, field.name, status));
+					}
+					if (needs_copy) copy_fields.add(field.name);
 				}
-				offsets.push(get_field_offset(tuple_struct.name, field.name, status));
+				if (copy_fields.size) {
+					const skip = new Set(
+						all_string_fields.map((f) => f.name).filter((n) => !copy_fields.has(n)),
+					);
+					if (!status.tuple_pending_field_strdups) status.tuple_pending_field_strdups = new Map();
+					status.tuple_pending_field_strdups.set(node.name, {
+						struct: tuple_struct.name,
+						skip,
+					});
+				}
 			}
 			if (offsets.length) {
 				if (!status.heap_string_tuple_fields) status.heap_string_tuple_fields = new Map();
@@ -3764,6 +3794,15 @@ export default function build_declaration_node(
 	// synthetic AssignmentNodes reuse the existing assignment build path.
 	if (node.value && has_field_overrides(node.value)) {
 		emit_field_overrides(node.name, node.value, build_node, status);
+	}
+	// A tuple LITERAL's non-owned EXPRESSION string elements get their heap
+	// copy in place now that the constructor has run (the record above frees
+	// them at scope exit).
+	const pending_copies = status.tuple_pending_field_strdups?.get(node.name);
+	if (pending_copies && status.function_return_label) {
+		status.tuple_pending_field_strdups!.delete(node.name);
+		emit_var_address(status, "x0", node.name);
+		emit_string_field_strdups_at(status, pending_copies.struct, "x0", 0, pending_copies.skip);
 	}
 }
 

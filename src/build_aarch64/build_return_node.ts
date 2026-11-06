@@ -1118,19 +1118,10 @@ export default function build_return_node(
 					const skip_fields = mv
 						? new Set(direct_string_fields(ret_struct).map((f) => f.name))
 						: call.field_overrides?.length
-							? override_return_string_fields(
-									ret_struct,
-									call.field_overrides,
-									status.heap_strings,
-									{
-										base_skip: ctor_return_owned_string_fields(
-											ret_struct,
-											call,
-											status.heap_strings,
-										),
-									},
-								)
-							: ctor_return_owned_string_fields(ret_struct, call, status.heap_strings);
+							? override_return_string_fields(ret_struct, call.field_overrides, status, {
+									base_skip: ctor_return_owned_string_fields(ret_struct, call, status),
+								})
+							: ctor_return_owned_string_fields(ret_struct, call, status);
 					emit_string_field_strdups_at(status, ret_struct.name, "x8", 0, skip_fields);
 				}
 				// FORWARDED normalizing base with overrides, in both checked
@@ -1185,7 +1176,7 @@ export default function build_return_node(
 					for (const field of direct_string_fields(ret_struct)) {
 						const idx = parseInt(field.name.replace(/^_/, ""), 10);
 						const element = tuple_call.params[idx];
-						if (element && tuple_return_owned_element(element, status.heap_strings)) {
+						if (element && tuple_return_owned_element(element, status)) {
 							skip_fields.add(field.name);
 						}
 					}

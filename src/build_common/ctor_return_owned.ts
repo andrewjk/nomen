@@ -21,7 +21,10 @@ import tuple_return_owned_element from "./tuple_return_owned_element.ts";
 export default function ctor_return_owned_string_fields(
 	return_struct: StructNode,
 	call: FunctionCallNode,
-	heap_strings: Set<string> | undefined,
+	heap_strings:
+		| Set<string>
+		| { heap_strings?: Set<string>; heap_returning_functions?: Set<string> }
+		| undefined,
 ): Set<string> {
 	const skip = new Set<string>();
 	const required = return_struct.fields.filter((f) => f.value == null);
@@ -56,7 +59,10 @@ function override_value_for_field(
 export function override_return_string_fields(
 	return_struct: StructNode,
 	overrides: { name: string; value: BaseNode }[] | undefined,
-	heap_strings: Set<string> | undefined,
+	heap_strings:
+		| Set<string>
+		| { heap_strings?: Set<string>; heap_returning_functions?: Set<string> }
+		| undefined,
 	opts: { base_skip?: Set<string>; base_uniformly_owned?: boolean },
 ): Set<string> {
 	const skip = new Set<string>();
