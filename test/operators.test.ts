@@ -109,6 +109,47 @@ Console.write("\\{g}")
 		await build_and_check_output(input, "op_scalar_float_div_compound", "3.000000 3.000000");
 	});
 
+	test("scalar float % and %= lower to fmod", async () => {
+		// AArch64 has no scalar remainder instruction and C has no `%` on
+		// doubles, so both backs lower a float remainder to the libm `fmod`
+		// (truncated semantics — the sign follows the dividend, like the
+		// integer `%`).
+		const input = `
+var float a = 17.5 % 5.0
+Console.write("\\{a} ")
+var float f = 17.5
+f %= 5.0
+Console.write("\\{f} ")
+var float b = -17.5
+var float c = 5.0
+Console.write("\\{b % c} \\{(-b) % c}")
+`;
+		await build_and_check_output(
+			input,
+			"op_scalar_float_mod",
+			"2.500000 2.500000 -2.500000 2.500000",
+		);
+	});
+
+	test("float % with call operands and nesting", async () => {
+		// `fmod` is a call, so it is excluded from the call-free float
+		// expression tree; the operand evaluation must still spill safely
+		// around call-bearing operands and nested trees.
+		const input = `
+func half = (float v, out float) { return v / 2.0 }
+var float a = half(17.5) % 5.0
+var float b = 17.5 % half(5.0)
+var float c = (17.5 % 5.0) + 1.0
+var float d = 10.0 / (17.5 % 5.0)
+Console.write("\\{a} \\{b} \\{c} \\{d}")
+`;
+		await build_and_check_output(
+			input,
+			"op_scalar_float_mod_exprs",
+			"3.750000 0.000000 3.500000 4.000000",
+		);
+	});
+
 	test("no operator function: struct %= is a check error", () => {
 		const input = `
 struct Point {

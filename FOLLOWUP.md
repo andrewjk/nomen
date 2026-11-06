@@ -631,20 +631,3 @@ fails first). Fix direction: the key compare needs the slot's address (the
 (`Set<string>` churn passes). aarch64 not characterized (C fails first).
 Once fixed, a `Set<Rec>` churn shape belongs in
 `test/map_set_remove_strand.test.ts` next to the string one.
-
-## Float `%` lowers to multiplication (aarch64) / invalid C (C backend)
-
-Recorded 2026-11-07, while fixing the float literal-initializer store. A
-float remainder is accepted by the checker, but neither backend implements
-it: `var float f = 17.5 % 5.0` emits `fmul d0, d0, d1` on aarch64 (a
-silently wrong result — 87.5 instead of 2.5) because `map_float_op`'s
-default arm returns `fmul` for `%`; the C backend emits the raw
-`(17.5 % 5.0)`, which clang rejects (`%` on `double` is invalid C). This is
-why the scalar float `%=` runtime case is still absent from
-`test/operators.test.ts` (the plain `/=` case landed). Fix direction:
-decide the semantics (`fmod` is the C analogue) and lower `%` to a
-`fmod`/`bl _fmod` call on both backends — or reject float `%` in the
-checker if the operators are meant to be closed under the non-remainder
-set. Lucky that the aarch64 side is caught only by a result assertion, not
-a compile error: a `%=` on a float literal initializer now executes (the
-store fix), so a wrong-arithmetic receipt is one test away.

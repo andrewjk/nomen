@@ -217,6 +217,10 @@ export function float_tree_ok(node: BaseNode, budget: { n: number }): boolean {
 	if (node.node_type === "op") {
 		const op = node as OperationNode;
 		if (is_float_type(node) && !is_comparison((node as OperationNode).op)) {
+			// `%` lowers to a libm `fmod` CALL — a call clobbers v0–v31, so
+			// it can never join a call-free float tree (the normal
+			// operation path emits the call).
+			if (op.op === "%") return false;
 			// float binary: both sides must themselves be tree-able
 			if (!op.left_value || !op.right_value) return false;
 			return float_tree_ok(op.left_value, budget) && float_tree_ok(op.right_value, budget);
@@ -1688,6 +1692,24 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				: "d0";
 		const hinted = dest !== "d0";
 		status.float_dest_hint = undefined;
+		// Float remainder: AArch64 has no scalar remainder instruction —
+		// lower to the libm `fmod` call (truncated semantics, matching the
+		// integer `%` sign rule; the result comes back in d0). A call
+		// clobbers caller-saved v-registers, so the dest hint above is
+		// consumed and the operands are always spilled instead of assuming
+		// `d1` survives a complex or call-bearing operand build.
+		if (node.op === "%") {
+			build_float_operand(node.left_value!, "d0", status);
+			ensure_newline(status);
+			emit_asm(status, `str d0, [sp, #-16]!\n`);
+			build_float_operand(node.right_value!, "d0", status);
+			ensure_newline(status);
+			emit_asm(status, `fmov d1, d0\n`);
+			emit_asm(status, `ldr d0, [sp], #16\n`);
+			emit_asm(status, `bl _fmod\n`);
+			if (!caller_wants_d0) emit_asm(status, `fmov x0, d0\n`);
+			return;
+		}
 		const emit_fop = (mnemonic: string, a: string, b: string) => {
 			emit_asm(status, `${mnemonic} ${dest}, ${a}, ${b}\n`);
 		};

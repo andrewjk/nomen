@@ -1,5 +1,6 @@
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { is_float_type } from "../built_in_types.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -424,6 +425,19 @@ export function is_owned_heap_temp(
 }
 
 function build_default_binary(node: OperationNode, status: BuildStatus) {
+	// Float remainder: C has no `%` for floating types. Lower to the libm
+	// `fmod` call — truncated semantics, matching the integer `%` sign
+	// rule. `<math.h>` is in the prelude and libm is linked.
+	const left_is_float = is_float_type(type_from_value_node(node.left_value)?.name ?? "");
+	const right_is_float = is_float_type(type_from_value_node(node.right_value)?.name ?? "");
+	if (node.op === "%" && (left_is_float || right_is_float)) {
+		status.code += `fmod(`;
+		build_node(node.left_value, status);
+		status.code += `, `;
+		build_node(node.right_value, status);
+		status.code += `)`;
+		return;
+	}
 	// Wrap binary operations in parens so C's precedence can't misinterpret
 	// them when they're nested as operands of other expressions.
 	status.code += `(`;
