@@ -144,22 +144,20 @@ export default function parse_type(status: ParseStatus): Type {
 			add_error(status, `a func type cannot be an array or container element type`, start);
 		}
 		if (elem.is_array) {
-			if (elem.elem) {
-				add_error(status, `nested arrays deeper than two levels are not supported yet`, start);
-				return type;
-			}
-			// `Array<Array<int>>` / `Array<int[]>` — a nested array. Nested
-			// arrays have a fixed OUTER level and heap INNER levels: the
-			// outer lowers as a stack array of `Array_<T>*` pointers (the
-			// inner buffer's inline storage is variable-size, so it can only
-			// be referenced, never embedded), for both spellings. The inner
-			// level rides on `elem`.
+			// `Array<Array<int>>` / `Array<int[]>` / `Array<Array<Array<int>>>` —
+			// a nested array. Nested arrays are HEAP-OF-POINTERS at every level:
+			// a level whose slots hold row references lowers as a heap
+			// `Array_<T>`-shaped buffer of `Array_<T>*` pointers (the inner
+			// buffer's inline storage is variable-size, so it can only be
+			// referenced, never embedded). The spelling flattens onto `elem`,
+			// which may itself carry a chain for three-plus levels.
 			if (!elem.is_array_heap) {
 				elem.is_array_heap = true;
 			}
 			type.name = elem.name;
 			type.elem = elem;
 			type.is_array = true;
+			type.is_array_heap = true;
 			type.is_nullable = undefined;
 			type.type_args = undefined;
 			return type;
@@ -241,11 +239,13 @@ export default function parse_type(status: ParseStatus): Type {
 
 /**
  * Apply the `[]` / `[N]` array suffix(es) to a parsed type. Raw nesting
- * (`int[][]`, `int[][][]`) is supported: every level beyond the first
- * describes the ELEMENT, carried on `Type.elem`, and the innermost level is
- * always HEAP (`int[][]` is a stack array of `Array_int*` pointers — the
- * inner buffer is variable-size inline storage, so it can only be
- * referenced, never embedded).
+ * (`int[][]`, `int[][][]`, …) is supported at any depth: every level beyond
+ * the first describes the ELEMENT, carried on `Type.elem` as a chain, and
+ * every level is HEAP — a nested array is a heap `Array_<T>`-shaped buffer
+ * whose slots are `Array_<T>*` row pointers (the row buffer's inline
+ * variable-size storage can only be referenced, never embedded). The
+ * outermost level keeps a spelled compile-time `length` (`int[2][]`) as a
+ * literal-count check; the heap header carries the runtime length.
  */
 function apply_array_suffix(type: Type, status: ParseStatus): void {
 	if (!accept("[", status)) return;
@@ -254,35 +254,47 @@ function apply_array_suffix(type: Type, status: ParseStatus): void {
 		type.length = new ValueNode(get_index(status), consume(status));
 	}
 	expect("]", status);
-	// A second suffix nests: this type becomes the OUTER level and its
-	// element is the inner array (heap). Two levels are supported
-	// (`int[][]`); the inner buffer's inline variable-size storage can only
-	// be referenced, and a third level would need heap-of-pointer buffers
-	// whose monomorphized method bodies bake in pointer-sized elements — a
-	// larger layout change, rejected with a clear error for now.
-	if (accept("[", status)) {
+	// Each further suffix nests one level deeper: the current type becomes
+	// the OUTER level and its element is the inner array (heap). All levels
+	// of a nested array are heap-of-pointers, so the outer level is heap
+	// storage too (a `struct Array_<T>*`, not a raw stack C array).
+	while (accept("[", status)) {
+		// The recursive row-destroy walk allocates one callee-saved register
+		// pair per level (plus one for the innermost owned-slot loop) — five
+		// levels (four elem links) is the x19–x28 budget.
+		if (nested_chain_depth(type) >= 4) {
+			add_error(
+				status,
+				`nested arrays deeper than five levels are not supported`,
+				type.start ?? get_index(status),
+			);
+		}
 		const inner = new Type(type.name);
 		inner.is_array = true;
-		// The innermost level is always heap: elements are referenced
-		// through `Array_<T>*` pointers, never embedded.
+		// The inner level is always heap: elements are referenced through
+		// `Array_<T>*` pointers, never embedded.
 		inner.is_array_heap = true;
 		if (peek_current(status) !== "]") {
 			inner.length = new ValueNode(get_index(status), consume(status));
 		}
 		expect("]", status);
-		if (peek_current(status) === "[") {
-			add_error(
-				status,
-				`nested arrays deeper than two levels are not supported yet`,
-				type.start ?? get_index(status),
-			);
-			// Consume the trailing brackets so parsing can resume cleanly
-			while (peek_current(status) !== "]") consume(status);
-			expect("]", status);
-			return;
-		}
+		inner.elem = type.elem;
 		type.elem = inner;
+		// Every level of the chain is heap; the outer keeps its own spelled
+		// length (checked against literal counts) but lowers as a pointer.
+		type.is_array_heap = true;
 	}
+}
+
+/** How many `elem` links a type's nested-array chain carries (0 = flat). */
+function nested_chain_depth(type: Type): number {
+	let depth = 0;
+	let t = type.elem;
+	while (t) {
+		depth += 1;
+		t = t.elem;
+	}
+	return depth;
 }
 
 /**

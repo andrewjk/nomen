@@ -1522,6 +1522,25 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			}
 			return;
 		}
+		// A NESTED array's `.length` is the outer buffer's header word: the
+		// variable/param/register holds the buffer POINTER — load it, then
+		// the length at [ptr + 0]. Runs before the registries so nested
+		// params (dispatch-only registrations) lower correctly too.
+		if (target_type.elem && node.target.node_type === "value") {
+			const name = (node.target as ValueNode).value;
+			const paramReg = get_param_reg(name, status);
+			if (paramReg) {
+				if (paramReg !== "x0") emit_asm(status, `mov x0, ${paramReg}\n`);
+			} else if (is_local_ref_var(name, status)) {
+				emit_deref_var_address(status, "x0", name);
+				emit_asm(status, `ldr x0, [x0]\n`);
+			} else {
+				emit_var_load(status, "x0", name, 8);
+			}
+			ensure_newline(status);
+			emit_asm(status, `ldr x0, [x0]\n`);
+			return;
+		}
 		// For heap arrays: load pointer, then load length from [pointer]
 		if (
 			node.target.node_type === "value" &&
@@ -2240,15 +2259,31 @@ function build_access_method(
 				access_func.params[1].node_type === "value" &&
 				node.target.node_type === "value";
 
+			// A NESTED receiver's slots are row POINTERS even when the row's
+			// own elements are strings — the fat (ptr, len) pair lowering
+			// applies only to a real string row (a chained inner level).
 			const elem_is_fat_string =
-				elem_type_name === "string" && !elem_struct && !target_type.is_view;
+				elem_type_name === "string" && !elem_struct && !target_type.is_view && !target_type.elem;
 			if (set_fast) {
 				// .set() fast path: base → x9, index → x1, value → x2, store.
 				// Base is built first so a param-register base (e.g. an array
 				// passed in x1) is read before x1 is overwritten by the index.
 				const name = (node.target as ValueNode).value;
 				const paramReg = get_param_reg(name, status);
-				if (paramReg) {
+				if (nested_access) {
+					// A NESTED receiver holds the heap outer-buffer POINTER —
+					// the row-pointer slots sit past the 8-byte length header.
+					if (paramReg) {
+						emit_asm(status, `mov x9, ${paramReg}\n`);
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x9", name);
+						emit_asm(status, `ldr x9, [x9]\n`);
+					} else {
+						emit_var_address(status, "x9", name);
+						emit_asm(status, `ldr x9, [x9]\n`);
+					}
+					emit_asm(status, `add x9, x9, #8\n`);
+				} else if (paramReg) {
 					emit_asm(status, `mov x9, ${paramReg}\n`);
 				} else if (is_local_ref_var(name, status)) {
 					emit_deref_var_address(status, "x9", name);
@@ -2357,7 +2392,21 @@ function build_access_method(
 				if (node.target.node_type === "value") {
 					const name = (node.target as ValueNode).value;
 					const paramReg = get_param_reg(name, status);
-					if (paramReg) {
+					if (nested_access) {
+						// A NESTED receiver holds the heap outer-buffer POINTER
+						// (a param register, a frame slot, or a ref slot) — the
+						// row-pointer slots sit past the 8-byte length header.
+						if (paramReg) {
+							emit_asm(status, `mov x9, ${paramReg}\n`);
+						} else if (is_local_ref_var(name, status)) {
+							emit_deref_var_address(status, "x9", name);
+							emit_asm(status, `ldr x9, [x9]\n`);
+						} else {
+							emit_var_address(status, "x9", name);
+							emit_asm(status, `ldr x9, [x9]\n`);
+						}
+						emit_asm(status, `add x9, x9, #8\n`);
+					} else if (paramReg) {
 						emit_asm(status, `mov x9, ${paramReg}\n`);
 					} else if (is_local_ref_var(name, status)) {
 						emit_deref_var_address(status, "x9", name);
@@ -2374,6 +2423,44 @@ function build_access_method(
 					} else {
 						emit_var_address(status, "x9", name);
 					}
+				} else if (
+					nested_access &&
+					(node.target as AccessNode).access.node_type === "access_field"
+				) {
+					// A NESTED field receiver (`b.grid.at(0)`): the field holds
+					// the heap outer-buffer POINTER — load its value, then the
+					// row-pointer slots sit past the 8-byte length header.
+					// (A chained access_func receiver is parked in x19 above
+					// and takes the chained load below.)
+					const inner_access = node.target as AccessNode;
+					const inner_field = inner_access.access as AccessFieldNode;
+					const inner_base = inner_access.target;
+					const inner_target_type = type_from_value_node(inner_base);
+					const field_offset = get_field_offset(
+						inner_target_type?.name || "",
+						inner_field.name,
+						status,
+					);
+					if (inner_base.node_type === "value") {
+						const base_name = (inner_base as ValueNode).value;
+						const bpReg = get_param_reg(base_name, status);
+						if (bpReg) {
+							emit_asm(status, `mov x9, ${bpReg}\n`);
+						} else if (is_local_ref_var(base_name, status)) {
+							emit_deref_var_address(status, "x9", base_name);
+						} else {
+							emit_var_address(status, "x9", base_name);
+						}
+					} else {
+						build_node(inner_base, status);
+						ensure_newline(status);
+						emit_asm(status, `mov x9, x0\n`);
+					}
+					if (field_offset > 0) {
+						emit_asm(status, `add x9, x9, #${field_offset}\n`);
+					}
+					emit_asm(status, `ldr x9, [x9]\n`);
+					emit_asm(status, `add x9, x9, #8\n`);
 				} else if (is_fixed_size_field) {
 					const inner_access = node.target as AccessNode;
 					const inner_field = inner_access.access as AccessFieldNode;
@@ -2412,13 +2499,38 @@ function build_access_method(
 					if (elem_is_fat_string) {
 						emit_asm(status, `add x9, x9, x1, lsl #4\n`);
 						emit_asm(status, `ldp x0, x1, [x9]\n`);
+					} else if (elem_struct) {
+						// Struct element: hand out the element's ADDRESS (the
+						// struct-rvalue convention — the following field hop
+						// reads through it).
+						if (elem_size === 8) {
+							emit_asm(status, `add x0, x9, x1, lsl #3\n`);
+						} else {
+							emit_asm(status, `mov x2, #${elem_size}\n`);
+							emit_asm(status, `mul x1, x1, x2\n`);
+							emit_asm(status, `add x0, x9, x1\n`);
+						}
 					} else if (elem_size === 8) {
 						emit_asm(status, `ldr x0, [x9, x1, lsl #3]\n`);
 					} else {
 						emit_asm(status, `mov x2, #${elem_size}\n`);
 						emit_asm(status, `mul x1, x1, x2\n`);
-						emit_asm(status, `ldrb w0, [x9, x1]\n`);
+						if (elem_size === 1) {
+							emit_asm(status, `ldrb w0, [x9, x1]\n`);
+						} else if (elem_size === 2) {
+							emit_asm(status, `ldrh w0, [x9, x1]\n`);
+						} else if (elem_size === 4) {
+							emit_asm(status, `ldr w0, [x9, x1]\n`);
+						} else {
+							emit_asm(status, `ldr x0, [x9, x1]\n`);
+						}
 					}
+					return;
+				}
+				// A NESTED level's slots are row POINTERS — load the value
+				// (the struct pipeline below hands out slot ADDRESSES).
+				if (target_type.elem) {
+					emit_asm(status, `ldr x0, [x9, x1, lsl #3]\n`);
 					return;
 				}
 				if (elem_struct) {
@@ -2481,7 +2593,20 @@ function build_access_method(
 			if (node.target.node_type === "value") {
 				const name = (node.target as ValueNode).value;
 				const paramReg = get_param_reg(name, status);
-				if (paramReg) {
+				if (nested_access) {
+					// A NESTED receiver holds the heap outer-buffer POINTER —
+					// the row-pointer slots sit past the 8-byte length header.
+					if (paramReg) {
+						emit_asm(status, `mov x19, ${paramReg}\n`);
+					} else if (is_local_ref_var(name, status)) {
+						emit_deref_var_address(status, "x19", name);
+						emit_asm(status, `ldr x19, [x19]\n`);
+					} else {
+						emit_var_address(status, "x19", name);
+						emit_asm(status, `ldr x19, [x19]\n`);
+					}
+					emit_asm(status, `add x19, x19, #8\n`);
+				} else if (paramReg) {
 					emit_asm(status, `mov x19, ${paramReg}\n`);
 				} else if (is_local_ref_var(name, status)) {
 					emit_deref_var_address(status, "x19", name);
@@ -2502,6 +2627,40 @@ function build_access_method(
 					// Local var/const array: data is inline, emit_var_address points to first element
 					emit_var_address(status, "x19", name);
 				}
+			} else if (nested_access && (node.target as AccessNode).access.node_type === "access_field") {
+				// A NESTED field receiver (`b.grid.set(0, v)`): the field
+				// holds the heap outer-buffer POINTER — load its value, then
+				// header-skip to the row-pointer slots. (A chained access_func
+				// receiver takes the chained arm below.)
+				const inner_access = node.target as AccessNode;
+				const inner_field = inner_access.access as AccessFieldNode;
+				const inner_base = inner_access.target;
+				const inner_target_type = type_from_value_node(inner_base);
+				const field_offset = get_field_offset(
+					inner_target_type?.name || "",
+					inner_field.name,
+					status,
+				);
+				if (inner_base.node_type === "value") {
+					const base_name = (inner_base as ValueNode).value;
+					const bpReg = get_param_reg(base_name, status);
+					if (bpReg) {
+						emit_asm(status, `mov x19, ${bpReg}\n`);
+					} else if (is_local_ref_var(base_name, status)) {
+						emit_deref_var_address(status, "x19", base_name);
+					} else {
+						emit_var_address(status, "x19", base_name);
+					}
+				} else {
+					build_node(inner_base, status);
+					ensure_newline(status);
+					emit_asm(status, `mov x19, x0\n`);
+				}
+				if (field_offset > 0) {
+					emit_asm(status, `add x19, x19, #${field_offset}\n`);
+				}
+				emit_asm(status, `ldr x19, [x19]\n`);
+				emit_asm(status, `add x19, x19, #8\n`);
 			} else if (is_fixed_size_field) {
 				// Fixed-size struct field array (e.g., h.args.at(0)): compute field address
 				const inner_access = node.target as AccessNode;
@@ -2575,6 +2734,44 @@ function build_access_method(
 				}
 			} else {
 				// set(): build value into x2, compute offset and store
+				if (elem_is_fat_string) {
+					// Deep-copy semantics: free the outgoing ptr, strdup the
+					// incoming one, carry the len half. The VALUE pair is
+					// built FIRST (build_node emits it into (x0, x1)) and
+					// spilled — the index build and the strdup/free calls
+					// below clobber x1 — then reloaded into (x2, x3). The
+					// row base stays parked in x19; the slot address takes
+					// x22 so the parked pair survives the calls.
+					if (access_func.params.length > 1) {
+						build_node(access_func.params[1], status);
+						ensure_newline(status);
+					}
+					const val_spill = allocate_stack_space(status, 16, 16);
+					emit_pair_store_x29(status, val_spill);
+					if (access_func.params.length > 0) {
+						build_operand(access_func.params[0], "x1", status);
+						ensure_newline(status);
+					}
+					emit_pair_load_x29(status, val_spill, "x2", "x3");
+					emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+					emit_asm(status, `str x22, [sp, #-16]!\n`);
+					emit_asm(status, `mov x20, x2\n`);
+					emit_asm(status, `mov x21, x3\n`);
+					emit_asm(status, `lsl x22, x1, #4\n`);
+					emit_asm(status, `add x22, x19, x22\n`);
+					emit_asm(status, `ldr x0, [x22]\n`);
+					emit_free(status);
+					emit_asm(status, `mov x0, x20\n`);
+					emit_strdup(status);
+					emit_asm(status, `str x0, [x22]\n`);
+					emit_asm(status, `str x21, [x22, #8]\n`);
+					emit_asm(status, `ldr x22, [sp], #16\n`);
+					emit_asm(status, `ldp x20, x21, [sp], #16\n`);
+					// The x19 save that wrapped the receiver build (see the
+					// shared tail below) — this path returns before it.
+					emit_asm(status, `ldr x19, [sp], #16\n`);
+					return;
+				}
 				if (access_func.params.length > 1) {
 					const value_param = access_func.params[1];
 					if (elem_struct && value_param.node_type === "value") {
@@ -2598,22 +2795,6 @@ function build_access_method(
 						ensure_newline(status);
 						emit_asm(status, `mov x2, x0\n`);
 					}
-				}
-				if (elem_is_fat_string) {
-					// Deep-copy semantics: free the outgoing ptr, strdup the
-					// incoming one, carry the len half. x19 base, x1 index,
-					// value pair in (x2, x3).
-					emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
-					emit_asm(status, `lsl x21, x1, #4\n`);
-					emit_asm(status, `add x9, x19, x21\n`);
-					emit_asm(status, `ldr x0, [x9]\n`);
-					emit_free(status);
-					emit_asm(status, `mov x0, x2\n`);
-					emit_strdup(status);
-					emit_asm(status, `str x0, [x9]\n`);
-					emit_asm(status, `str x3, [x9, #8]\n`);
-					emit_asm(status, `ldp x20, x21, [sp], #16\n`);
-					return;
 				}
 				if (elem_struct) {
 					// Struct element: x2 is address of value, memcpy to computed address

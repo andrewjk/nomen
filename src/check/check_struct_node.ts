@@ -267,16 +267,12 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	status.types.push(struct.name);
 	status.structs.push(struct);
 
-	// A nested array's inner heap buffers are owned by the row that holds
-	// them, which lives on the declaring frame — storing one in a struct
-	// would leave dangling row pointers. Locals and parameters only for now.
+	// A nested-array FIELD is legal: the field holds the heap outer-buffer
+	// pointer (its slots are row pointers), owned by the struct — transfers
+	// in via `mv`, and the destroy walks reclaim the rows recursively.
 	for (const field of struct.fields) {
-		if (field.type.is_array && field.type.elem) {
-			add_error(
-				status,
-				`a struct field cannot be a nested array yet — keep nested arrays in locals and parameters`,
-				field.type_start ?? field.start,
-			);
+		if (field.type.is_array && field.type.elem && !field.type.is_array_heap) {
+			field.type.is_array_heap = true;
 		}
 	}
 

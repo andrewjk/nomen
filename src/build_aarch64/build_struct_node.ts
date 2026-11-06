@@ -817,7 +817,14 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 			}
 			continue;
 		}
-		if (field.type.is_array && field.type.length && (field.type.length.start ?? -1) >= 0) {
+		// A NESTED-array field is a heap outer-buffer pointer — the inline
+		// fixed-array staging below would write rows into the struct bytes.
+		if (
+			field.type.is_array &&
+			!field.type.elem &&
+			field.type.length &&
+			(field.type.length.start ?? -1) >= 0
+		) {
 			// A fixed-size string array's elements are fat (ptr, len) pairs:
 			// 16-byte stride, copied as a pair — an 8-byte word copy would
 			// leave every len half holding garbage.

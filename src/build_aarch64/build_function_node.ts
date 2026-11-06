@@ -1127,10 +1127,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				// the C backend's build_parameter_node promotion, so the body and
 				// the signature stay consistent. Variadic `...T` params are
 				// excluded by the `is_variadic` guard.
-				const arr_struct = !param.is_variadic ? array_struct_name(param.type, status) : undefined;
+				const arr_struct = !param.is_variadic
+					? param.type.elem
+						? `Array_${param.type.name}`
+						: array_struct_name(param.type, status)
+					: undefined;
 				if (arr_struct) {
 					if (!status.heap_array_vars) status.heap_array_vars = new Set();
 					status.heap_array_vars.add(param.name);
+					// A NESTED param is a BORROW of the caller's heap outer
+					// buffer — steer dispatch only. It must NOT join
+					// `heap_nested_array_types`: the recursive row walk is a
+					// cleanup path, and the caller owns the rows.
 				} else {
 					status.function_array_params!.add(param.name);
 				}

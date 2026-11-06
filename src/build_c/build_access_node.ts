@@ -35,6 +35,7 @@ import build_nursery_spawn from "./build_nursery_spawn.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import build_parameter_node from "./build_parameter_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import array_elem_c_type from "./utils/array_elem_c_type.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { find_decl_in_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
@@ -712,15 +713,21 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							(access_func.name === "first" && access_func.params.length === 0) ||
 							(access_func.name === "slice" && access_func.params.length === 2))));
 			if (wants_inline) {
-				// A CHAINED nested receiver (`g.at(0).at(1)`,
-				// `g.at(0).set(1, v)`) is an inner HEAP buffer pointer: the
-				// data starts past the `Array_<T>` length header.
-				const chained_nested =
-					access_func.inline_nested_access === true &&
-					target_type.is_array_heap &&
-					node.target.node_type !== "value";
+				// A NESTED receiver (`g.at(0)`, `g.at(0).at(1)`,
+				// `g.at(0).set(1, v)`) — bare local, chained expression, param,
+				// or field — holds/produces a heap outer-buffer POINTER whose
+				// slots are row pointers: the data starts past the
+				// `Array_<T>` length header.
+				const chained_nested = access_func.inline_nested_access === true;
 				const emit_chained_base = () => {
-					status.code += `((${c_type(target_type.name)}*)((char*)`;
+					// The slot type: a level with `elem` holds row POINTERS
+					// (`struct Array_<T>*`), so the chained expression stays
+					// pointer-typed (`.length`/`.at` on the result dereference
+					// it); an innermost scalar level keeps the plain C type.
+					const slot_c = target_type.elem
+						? array_elem_c_type(target_type)
+						: c_type(target_type.name);
+					status.code += `((${slot_c}*)((char*)`;
 					status.suppress_dereference = true;
 					build_node(node.target, status);
 					status.suppress_dereference = false;
@@ -744,7 +751,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					break;
 				}
 				if (access_func.name === "set") {
-					if (chained_nested) {
+					// A string-slot store deep-copies (below) — including a
+					// chained nested STRING ROW slot (`g.at(1).set(0, "z")`):
+					// the row owns its heap copies, so a raw pair store would
+					// leak the displaced copy and strand rodata in a walked
+					// slot. Only a level whose slots are row POINTERS
+					// (`target_type.elem`) takes the plain pointer store.
+					const set_is_string_slot = target_type.name === "string" && !target_type.elem;
+					if (chained_nested && !set_is_string_slot) {
 						emit_chained_base();
 						status.code += `[`;
 						build_node(access_func.params[0], status);
@@ -763,7 +777,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					// one buffer — a fresh-heap producer result transfers as-is,
 					// anything else is strdup'd (the struct-field store's
 					// fresh_heap convention).
-					if (target_type.name === "string") {
+					if (set_is_string_slot) {
 						const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 						const slot = `_iset_${id}`;
 						const val = `_iset_v_${id}`;

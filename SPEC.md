@@ -629,21 +629,25 @@ array's fields); use `var e = pairs.at(i)` instead.
 #### Nested Arrays
 
 An array whose elements are arrays is written `T[][]` (or
-`Array<Array<T>>`). The OUTER level is fixed-size (a stack array) and each
-inner level is a heap array with its own length, so inner rows may differ
-in length:
+`Array<Array<T>>`); deeper chains (`T[][][]`, `Array<Array<Array<T>>>`) are
+supported up to five levels. Every level is a heap array with its own
+length, so inner rows may differ in length:
 
 ```
 var int[][] grid = [[1, 2], [3, 4]]
 var int[2][] fixed = [[1], [2, 3]]
+var int[][][] cube = [[[1], [2, 3]], [[4]]]
 Console.write("\\{grid.at(1).at(0)} \\{grid.at(0).length}")  // "3 2"
+Console.write("\\{cube.at(0).at(1).at(1)}")                  // "3"
 ```
 
 A bracket-enclosed literal whose elements are array literals infers a
-nested array. Two levels are supported, and inner elements must be
-non-owning (a `string[][]` is rejected for now). Nested arrays cannot be
-returned from functions or stored in struct fields yet — keep them in
-locals and parameters.
+nested array. Any element type is allowed, including owning ones —
+`string[][]`, arrays of `mv` structs — and the scope-exit destroy walks
+reclaim every row and its owned slots exactly once. A nested-array value is
+a single pointer, so it can be returned from functions, passed as a
+parameter, and stored in a struct field; `mv` transfers it between
+owners.
 
 #### Variadic Tuple Parameters
 

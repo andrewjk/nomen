@@ -58,6 +58,10 @@ export function clone_type(type: Type): Type {
 	t.is_nullable = type.is_nullable;
 	t.type_args = type.type_args?.map(clone_type);
 	t.tuple_types = type.tuple_types?.map(clone_type);
+	// The nested-array elem chain (`int[][]` → inner heap row level): a clone
+	// that dropped it would demote every hoisted/rewritten nested type to a
+	// flat heap array — the build would materialize row pointers as scalars.
+	t.elem = type.elem ? clone_type(type.elem) : undefined;
 	t.enum_cases = type.enum_cases?.map((c) => ({
 		name: c.name,
 		types: c.types.map(clone_type),

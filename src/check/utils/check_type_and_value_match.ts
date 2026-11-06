@@ -39,9 +39,10 @@ export default function check_type_and_value_match(
 	} else if (effective_target.name && value_type.name) {
 		if (effective_target.is_array !== value_type.is_array) {
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
-		} else if ((effective_target.elem?.name ?? "") !== (value_type.elem?.name ?? "")) {
-			// Nested-array element types must agree (`int[][]` is not
-			// `string[][]`, and neither is `int[]`).
+		} else if (!nested_elem_chains_match(effective_target, value_type)) {
+			// Nested-array element chains must agree in full depth and element
+			// name (`int[][]` is not `string[][]`, and neither is
+			// `int[][][]`).
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		} else if (value_type.name === "null" && effective_target.is_nullable) {
 			return;
@@ -190,4 +191,21 @@ function can_class_int_coerce(target: string, value: string, status: CheckStatus
 	if (target === "int" && is_class_type(value, status)) return true;
 	if (is_class_type(target, status) && value === "int") return true;
 	return false;
+}
+
+/**
+ * Full-depth nested-element agreement: walk both `elem` chains level by
+ * level. A chain mismatch at ANY depth (presence or element name) fails —
+ * `int[][]` is not `int[][][]`, and neither is `string[][]`.
+ */
+function nested_elem_chains_match(target: Type, value: Type): boolean {
+	let t = target.elem;
+	let v = value.elem;
+	while (t || v) {
+		if (!t || !v) return false;
+		if (t.name !== v.name) return false;
+		t = t.elem;
+		v = v.elem;
+	}
+	return true;
 }

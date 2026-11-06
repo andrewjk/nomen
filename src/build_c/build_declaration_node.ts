@@ -1053,6 +1053,16 @@ export default function build_declaration_node(
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);
+		} else if (node.type.is_array && node.type.elem) {
+			// A NESTED array declared from a non-literal, non-call initializer
+			// (`var g2 = mv g`, a row transferred out of an outer array): the
+			// value is the heap outer-buffer POINTER (`struct Array_<T>*` — its
+			// slots are row pointers), so the declaration is a plain pointer.
+			// Ownership follows the initializer (an `mv` transfer re-registers
+			// the donor's cleanup as skipped), so no unconditional
+			// `heap_array_vars` registration here — the moved-stamp gates the
+			// heap walk below.
+			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 		} else if (is_class_type) {
 			if (node.is_module_init) {
 				// A root-scope class global: the DEFINITION lives at file scope
@@ -1140,16 +1150,12 @@ export default function build_declaration_node(
 			const elem_struct = status.structs.find((s) => s.name === elem_name);
 			const elem_is_class = !!elem_struct?.is_class;
 			const elem_is_string = elem_name === "string";
-			// A NESTED array's elements are inner HEAP buffers (`Array_<T>*`
-			// pointers) — the outer owns and frees each one at scope exit.
-			const elem_is_heap_array = !!node.type.elem;
 			const elem_struct_needs_destroy =
 				!elem_is_class &&
 				!elem_is_string &&
-				!elem_is_heap_array &&
 				!!status.structs.find((s) => s.name === elem_name && !s.is_simple_type && !s.is_generic) &&
 				struct_needs_destroy_by_name(elem_name, status);
-			if (elem_is_string || elem_is_class || elem_is_heap_array || elem_struct_needs_destroy) {
+			if (elem_is_string || elem_is_class || elem_struct_needs_destroy) {
 				if (!status.stack_array_vars) status.stack_array_vars = new Set();
 				status.stack_array_vars.add(safe_name);
 				if (!status.stack_array_lengths) status.stack_array_lengths = new Map();
@@ -1244,7 +1250,13 @@ export default function build_declaration_node(
 			if (is_heap_literal_init && node.value.node_type === "array") {
 				const arr = node.value as ArrayValuesNode;
 				const elem_name = node.type.name;
-				const elem_c = heap_elem_c_type(elem_name, status);
+				// A NESTED array's slots are row POINTERS (`struct Array_<T>*`)
+				// — the same 8-byte stride as scalars on every supported
+				// target, so the buffer shape matches `struct Array_<T>` and
+				// the brace list memcpy's the hoisted row temps' pointer values.
+				const elem_c = node.type.elem
+					? array_elem_c_type(node.type)
+					: heap_elem_c_type(elem_name, status);
 				const count = arr.values.length;
 				status.code += `;\n`;
 				status.code += `${safe_name} = malloc(sizeof(struct Array_${elem_name}) + ${count}L * sizeof(${elem_c}));\n`;
@@ -1286,7 +1298,15 @@ export default function build_declaration_node(
 				status.code += `${safe_name} = malloc(sizeof(struct Array_${elem_name}) + ${count}L * sizeof(${elem_c}));\n`;
 				status.code += `${safe_name}->_vt = 0;\n`;
 				status.code += `${safe_name}->length = ${count}L;\n`;
-				if (elem_name === "string") {
+				if (node.type.elem) {
+					// A NESTED source is a heap outer-buffer POINTER: its
+					// row-pointer slots sit past the length header. The copy is
+					// the raw-array borrow convention — the outer slots are
+					// copied, rows are shared (`.set` through a plain nested
+					// param writes the caller's rows, exactly like a raw `T[]`
+					// param's inline stores).
+					status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), (struct Array_${elem_name} **)((char *)${src_name} + sizeof(struct Array_${elem_name})), ${count}L * sizeof(struct Array_${elem_name} *));\n`;
+				} else if (elem_name === "string") {
 					status.code += `{ nomen_string* _dst = (nomen_string*)((char *)${safe_name} + sizeof(struct Array_string)); nomen_string* _src = ${src_name}; for (long _i = 0; _i < ${count}L; _i++) { _dst[_i] = nomen_str_dup(_src[_i]); } }\n`;
 				} else {
 					status.code += `memcpy((char *)${safe_name} + sizeof(struct Array_${elem_name}), ${src_name}, ${count}L * sizeof(${elem_c}));\n`;

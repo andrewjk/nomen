@@ -118,10 +118,14 @@ export function get_type_size(
 		return get_enum_size(type.name, status);
 	}
 	const element_size = aarch64_size(type.name);
-	if (type.is_array && type.length && (type.length.start ?? -1) >= 0) {
+	// A NESTED-array field is a heap outer-buffer POINTER (its slots are row
+	// pointers) — never inline row storage, whatever compile-time length the
+	// annotation spells.
+	if (type.is_array && !type.elem && type.length && (type.length.start ?? -1) >= 0) {
 		const length = parseInt((type.length as ValueNode).value || "0");
 		return 8 + element_size * length;
 	}
+	if (type.is_array) return 8;
 	return element_size;
 }
 

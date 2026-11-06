@@ -957,12 +957,17 @@ export function emit_moved_local_cleanup(
 			type_args?: Type[];
 			is_nullable?: boolean;
 			is_array?: boolean;
+			elem?: unknown;
 			length?: BaseNode;
 		};
 	},
 ) {
 	// A nested-array row BORROWS the inner buffer the outer array owns.
 	if (decl.transferred_to_outer) return;
+	// A NESTED-array local is a heap outer-buffer POINTER: a move transfers
+	// it wholesale, so nothing is released here (the receiving owner's
+	// recursive row walk reclaims the rows exactly once).
+	if (decl.type.is_array && decl.type.elem) return;
 	// A fixed-size array LOCAL of value-struct elements: its elements' owned
 	// fields stay the ROW's own even when the row was transferred — the
 	// receiving field's ctor copy DETACHES (strdups owning elements' string
@@ -1022,6 +1027,138 @@ export function emit_moved_local_cleanup(
 }
 
 /**
+ * Emit the recursive reclaim for a NESTED array buffer's ROWS. On entry x0
+ * holds the heap buffer pointer (length word at [x0], row-pointer slots at
+ * [x0 + 8...]). For each row: free its OWNED contents first — a deeper
+ * nesting recurses, a `string` innermost level frees every slot's ptr half,
+ * an owning value struct runs its `#destroy` + field destroys per element —
+ * then free the row buffer itself. Does NOT free the buffer whose pointer
+ * arrived in x0: the caller re-loads and frees it after the walk (every
+ * contents walk clobbers x0). All loop state lives in callee-saved register
+ * pairs (x19/x20 for this level, deeper levels take the next pairs) so the
+ * state survives every `bl free`.
+ */
+function emit_nested_rows_destroy(status: BuildStatus, type: Type, depth = 0): void {
+	const elem = type.elem!;
+	const cursor = `x${19 + depth * 2}`;
+	const counter = `x${20 + depth * 2}`;
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const loop = `.Lnhd${depth}_${id}`;
+	const done = `.Lnhd${depth}d_${id}`;
+	const skip_row = `.Lnhd${depth}r_${id}`;
+	emit_asm(status, `str ${cursor}, [sp, #-16]!\n`);
+	emit_asm(status, `str ${counter}, [sp, #-16]!\n`);
+	emit_asm(status, `mov ${cursor}, x0\n`);
+	emit_asm(status, `ldr ${counter}, [${cursor}]\n`);
+	emit_asm(status, `add ${cursor}, ${cursor}, #8\n`);
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `cbz ${counter}, ${done}\n`);
+	emit_asm(status, `ldr x0, [${cursor}]\n`);
+	emit_asm(status, `cbz x0, ${skip_row}\n`);
+	if (elem.elem) {
+		// Deeper nesting: the row IS the next level's outer buffer — its
+		// walk frees the row's rows and the row buffers; x0 is clobbered.
+		emit_nested_rows_destroy(status, elem, depth + 1);
+	} else if (elem.name === "string") {
+		// Free the row's owned fat-string slots (data at row+8, 16-byte
+		// stride) with their own callee-saved pair.
+		const scur = `x${19 + (depth + 1) * 2}`;
+		const scnt = `x${20 + (depth + 1) * 2}`;
+		const sloop = `.Lnhd${depth}s_${id}`;
+		const sdone = `.Lnhd${depth}sd_${id}`;
+		const sskip = `.Lnhd${depth}ss_${id}`;
+		emit_asm(status, `str ${scur}, [sp, #-16]!\n`);
+		emit_asm(status, `str ${scnt}, [sp, #-16]!\n`);
+		emit_asm(status, `mov ${scur}, x0\n`);
+		emit_asm(status, `ldr ${scnt}, [${scur}]\n`);
+		emit_asm(status, `add ${scur}, ${scur}, #8\n`);
+		emit_asm(status, `${sloop}:\n`);
+		emit_asm(status, `cbz ${scnt}, ${sdone}\n`);
+		emit_asm(status, `ldr x0, [${scur}]\n`);
+		emit_asm(status, `cbz x0, ${sskip}\n`);
+		emit_free(status);
+		emit_asm(status, `${sskip}:\n`);
+		emit_asm(status, `add ${scur}, ${scur}, #16\n`);
+		emit_asm(status, `sub ${scnt}, ${scnt}, #1\n`);
+		emit_asm(status, `b ${sloop}\n`);
+		emit_asm(status, `${sdone}:\n`);
+		emit_asm(status, `ldr ${scnt}, [sp], #16\n`);
+		emit_asm(status, `ldr ${scur}, [sp], #16\n`);
+	} else {
+		const elem_struct = is_struct_type(elem.name, status);
+		if (
+			elem_struct &&
+			!elem_struct.is_class &&
+			(has_destroy(elem_struct) || struct_needs_destroy(elem_struct, status))
+		) {
+			// Owning value-struct elements: run each element's destroy
+			// (`#destroy` or the auto reclaim) in place — elements sit at
+			// row+8, elem_size stride; the length word bounds the walk.
+			// emit_destroy_for_array_elem keeps x21/x22 intact (frees only
+			// touch caller-saved registers) and re-derives x0 from the base
+			// callback per step.
+			const elem_size = get_struct_size(elem_struct.name, status);
+			const jcur = `x${19 + (depth + 1) * 2}`;
+			const jcnt = `x${20 + (depth + 1) * 2}`;
+			const jloop = `.Lnhd${depth}e_${id}`;
+			const jdone = `.Lnhd${depth}ed_${id}`;
+			emit_asm(status, `str ${jcur}, [sp, #-16]!\n`);
+			emit_asm(status, `str ${jcnt}, [sp, #-16]!\n`);
+			emit_asm(status, `mov ${jcur}, x0\n`);
+			emit_asm(status, `ldr ${jcnt}, [${jcur}]\n`);
+			emit_asm(status, `add ${jcur}, ${jcur}, #8\n`);
+			emit_asm(status, `${jloop}:\n`);
+			emit_asm(status, `cbz ${jcnt}, ${jdone}\n`);
+			emit_destroy_for_array_elem(
+				status,
+				elem_struct,
+				() => {
+					emit_asm(status, `mov x0, ${jcur}\n`);
+				},
+				0,
+			);
+			emit_asm(status, `add ${jcur}, ${jcur}, #${elem_size}\n`);
+			emit_asm(status, `sub ${jcnt}, ${jcnt}, #1\n`);
+			emit_asm(status, `b ${jloop}\n`);
+			emit_asm(status, `${jdone}:\n`);
+			emit_asm(status, `ldr ${jcnt}, [sp], #16\n`);
+			emit_asm(status, `ldr ${jcur}, [sp], #16\n`);
+		}
+	}
+	// Free the row buffer itself (x0 was clobbered by the contents walks —
+	// re-load it from the cursor slot).
+	emit_asm(status, `ldr x0, [${cursor}]\n`);
+	emit_free(status);
+	emit_asm(status, `${skip_row}:\n`);
+	emit_asm(status, `add ${cursor}, ${cursor}, #8\n`);
+	emit_asm(status, `sub ${counter}, ${counter}, #1\n`);
+	emit_asm(status, `b ${loop}\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr ${counter}, [sp], #16\n`);
+	emit_asm(status, `ldr ${cursor}, [sp], #16\n`);
+}
+
+/**
+ * A heap-registered NESTED array declaration (`heap_nested_array_types`):
+ * free every row (and its owned contents) through the buffer pointer, then
+ * the buffer itself. x0 is clobbered.
+ */
+function emit_nested_heap_decl_destroy(status: BuildStatus, decl_name: string): boolean {
+	const type = status.heap_nested_array_types?.get(decl_name);
+	if (!type) return false;
+	emit_var_load(status, "x0", decl_name, 8);
+	const skip = `.Lnhdnull_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	emit_nested_rows_destroy(status, type);
+	// The rows are gone — free the outer buffer itself (re-load: the walk
+	// clobbered x0).
+	emit_var_load(status, "x0", decl_name, 8);
+	emit_free(status);
+	emit_asm(status, `${skip}:\n`);
+	return true;
+}
+
+/**
  * Emit the reclaim for a heap-registered ARRAY declaration: an owned
  * fat-string array (`heap_string_arrays` — heap or inline storage), a
  * class-element array (`heap_class_arrays`), or a heap `Array<T>` buffer
@@ -1040,6 +1177,14 @@ export function emit_moved_local_cleanup(
  */
 function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): boolean {
 	const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	if (status.heap_nested_array_types?.has(decl_name)) {
+		// NESTED array: free every row's owned contents, each row buffer,
+		// then the outer buffer (x19+ register pairs survive every free).
+		emit_asm(status, `str x19, [sp, #-16]!\n`);
+		emit_nested_heap_decl_destroy(status, decl_name);
+		emit_asm(status, `ldr x19, [sp], #16\n`);
+		return true;
+	}
 	if (status.heap_string_arrays?.has(decl_name)) {
 		const registered = status.heap_string_arrays.get(decl_name)!;
 		const len = Math.abs(registered);
@@ -1926,6 +2071,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// temp in the same scope used to leak here (the arm only existed
 			// in the no-slots walk).
 			if (status.heap_array_vars?.has(decl.name) && !decl.transferred_to_outer) {
+				if (status.heap_nested_array_types?.has(decl.name)) {
+					emit_asm(status, `str x19, [sp, #-16]!\n`);
+					emit_nested_heap_decl_destroy(status, decl.name);
+					emit_asm(status, `ldr x19, [sp], #16\n`);
+					continue;
+				}
 				if (status.heap_owned_string_arrays?.has(decl.name)) {
 					emit_asm(status, `str x19, [sp, #-16]!\n`);
 					emit_asm(status, `str x20, [sp, #-16]!\n`);
@@ -1999,6 +2150,10 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// is_pure_borrow_element_load).
 			if (is_pure_borrow_element_load(decl, status)) continue;
 			if (emit_fixed_array_local_destroys(status, decl)) continue;
+			// An ARRAY decl is a buffer, never a struct value: its element
+			// type may share a struct's name, but the array arms own the
+			// cleanup (a transferred row belongs to the outer buffer).
+			if (decl.type.is_array) continue;
 			const resolved_decl = resolve_decl_struct(decl, status);
 			if (!resolved_decl) continue;
 			const struct_type = resolved_decl.struct_type;
@@ -2110,6 +2265,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// follows). Free the buffer. Class/string element arrays are handled
 		// by heap_class_arrays/heap_string_arrays above (which `continue`).
 		if (status.heap_array_vars?.has(decl.name) && !decl.transferred_to_outer) {
+			if (status.heap_nested_array_types?.has(decl.name)) {
+				emit_asm(status, `str x19, [sp, #-16]!\n`);
+				emit_nested_heap_decl_destroy(status, decl.name);
+				emit_asm(status, `ldr x19, [sp], #16\n`);
+				continue;
+			}
 			if (status.heap_owned_string_arrays?.has(decl.name)) {
 				// Owned fat-string elements: free every slot's ptr half
 				// (16-byte stride, data at buffer+8), then the buffer.
@@ -2175,6 +2336,9 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// is_pure_borrow_element_load).
 		if (is_pure_borrow_element_load(decl, status)) continue;
 		if (emit_fixed_array_local_destroys(status, decl)) continue;
+		// An ARRAY decl is a buffer, never a struct value (see the
+		// heap-slots walk above).
+		if (decl.type.is_array) continue;
 		const resolved_decl = resolve_decl_struct(decl, status);
 		if (!resolved_decl) continue;
 		const struct_type = resolved_decl.struct_type;

@@ -396,6 +396,15 @@ export default interface BuildStatus {
 	moved_class_params?: Map<string, string>;
 	heap_array_vars?: Set<string>;
 	/**
+	 * For each registered NESTED-array variable (a heap outer buffer whose
+	 * slots are row pointers — `type.elem` set), the variable's full nested
+	 * `Type`. The recursive destroy walks (`emit_nested_heap_destroy` and
+	 * the C row walk) need the elem chain to know how deep the rows go and
+	 * what each innermost level owns; the plain `heap_array_vars` set only
+	 * carries the name.
+	 */
+	heap_nested_array_types?: Map<string, Type>;
+	/**
 	 * Set while building a FILE-SCOPE fixed-size `string[]` literal
 	 * initializer: static C initializers cannot call `nomen_str_dup`, so
 	 * `build_array_values_node` lowers string-literal elements to static

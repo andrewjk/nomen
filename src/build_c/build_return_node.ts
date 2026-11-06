@@ -34,6 +34,7 @@ import build_node from "./build_node.ts";
 import { is_owned_heap_temp } from "./build_operation_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_expr_from_nir, nir_array_elements } from "./emit_nir.ts";
+import array_elem_c_type from "./utils/array_elem_c_type.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { materialize_func_value } from "./utils/closure.ts";
@@ -144,13 +145,19 @@ export default function build_return_node(
 		// C can't return arrays by value, so materialize the literal into a
 		// temp stack array; the heap-allocate-and-copy path below then moves
 		// it into an Array_<T> buffer and returns the pointer (mirrors how a
-		// `var nums = [1, 2, 3]` declaration lowers to `long nums[3]`).
+		// `var nums = [1, 2, 3]` declaration lowers to `long nums[3]`). A
+		// NESTED literal's slots are row pointers, so the staging (and the
+		// heap copy) uses the row-pointer slot type.
 		const arr = node.value as ArrayValuesNode;
 		return_array_len = arr.values.length;
 		return_array_var = "_return_array";
 		const elem_struct = status.structs.find((s) => s.name === ret_type.name && !s.is_simple_type);
 		const elem_is_class = !!elem_struct?.is_class;
-		const elem_c_type = elem_is_class ? `struct ${ret_type.name}*` : c_type(ret_type.name);
+		const elem_c_type = ret_type.elem
+			? array_elem_c_type(ret_type)
+			: elem_is_class
+				? `struct ${ret_type.name}*`
+				: c_type(ret_type.name);
 		status.code += `${elem_c_type} ${return_array_var}[${return_array_len}] = `;
 		build_array_values_node(arr, status, nir_array_elements(nir_value, arr));
 		status.code += ";\n";
@@ -295,12 +302,24 @@ export default function build_return_node(
 
 	// Array return path: heap-allocate the Array_<T> buffer, copy the stack
 	// array's elements into it, auto-free remaining scope locals, then return.
-	if (ret_type?.is_array && return_array_var && return_array_len > 0) {
+	// A NESTED value return (`return g` where g is a nested local) skips this
+	// path entirely: g's value is ALREADY the heap outer-buffer pointer — the
+	// generic expression path below returns (transfers) it directly.
+	if (
+		ret_type?.is_array &&
+		return_array_var &&
+		return_array_len > 0 &&
+		!(ret_type.elem && node.value.node_type === "value")
+	) {
 		const elem_name = ret_type.name;
 		const array_struct = `Array_${elem_name}`;
 		const elem_struct = status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
 		const elem_is_class = !!elem_struct?.is_class;
-		const elem_c_type = elem_is_class ? `struct ${elem_name}*` : c_type(elem_name);
+		const elem_c_type = ret_type.elem
+			? array_elem_c_type(ret_type)
+			: elem_is_class
+				? `struct ${elem_name}*`
+				: c_type(elem_name);
 		status.code += `struct ${array_struct}* _return_val = malloc(sizeof(struct ${array_struct}) + ${return_array_len} * sizeof(${elem_c_type}));\n`;
 		status.code += `_return_val->length = ${return_array_len};\n`;
 		status.code += `${elem_c_type}* _return_data = (${elem_c_type}*)((char*)_return_val + sizeof(struct ${array_struct}));\n`;

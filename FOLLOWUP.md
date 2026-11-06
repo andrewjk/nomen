@@ -664,23 +664,17 @@ them. Suspects, not chased: the frame-slot forwarding / dead-store pass
 dumped, so whether the store is never emitted or deleted by a pass is
 unverified.
 
-## Bracket aggregates (`[]`) — remaining work
+## Flat `Array<mv-struct>` literal leaks in split mode
 
-Fixed 2026-11-06/07 (tuple `+` concat, `[T1, T2][]` / `Array<[T1, T2]>`
-spellings, array-of-tuples inference, base-spread tuple/array-base
-rejections, the SPEC `const empty = []` example, nested arrays `int[][]` /
-`Array<Array<int>>` / `[[1, 2], [3, 4]]` (fixed-size outer row of heap
-inner rows, scalar inner elements), owning elements in arrays of tuples,
-and call-result strings into tuple `#init`s — the declaration records/frees
-every heap string field; on aarch64 a field whose element is a borrow-classified
-expression is copied in place after construction, while the C backend's
-blanket return-strdup makes every non-value element heap). What REMAINS,
-deliberately:
-
-- **Nested-array extensions** (deliberate v1 limits): inner elements
-  must be non-owning (`string[][]` is rejected — the aarch64 fat-string
-  staging + row ownership walks reject the shape), only two levels, and
-  nested arrays cannot be returned from functions or stored in struct
-  fields (locals and parameters only). Lifting these needs per-row
-  ownership records threaded through the row free walks and a
-  heap-of-pointer buffer variant for three-plus levels.
+Recorded 2026-11-07, while landing nested-array owning rows (which build the
+same shape recursively and are audit-clean). `var Array<Rec> rs = [Rec("a"),
+Rec("b")]` where `Rec` is an `mv struct` with a string field compiles and
+prints correctly, but the audit reports 2 leaked allocations on both
+backends: the literal's hoisted element temps are never freed (the
+`heap_array_vars` cleanup covers the buffer's slots only for class/string
+elements, and the value-struct element's `#destroy`/field reclaim is not
+reached at scope exit). Pre-existing, unrelated to the nested-array work's
+own rows (those free element-0's fields through the `Array_Rec` row walk
+only because the row buffer owns them). A fix would extend the heap
+literal's element teardown to owning value-struct elements on both
+backends — likely alongside a `Map`/`Set` element-teardown review.

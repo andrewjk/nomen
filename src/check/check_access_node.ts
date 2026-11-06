@@ -119,6 +119,16 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			(node.target.node_type === "access" &&
 				(node.target as AccessNode).access.node_type === "access_func")) &&
 		is_owning_struct_type_requiring_move(target_type, status) &&
+		// A NESTED-array row read (`g.at(0).at(1)` on an mv-element nested
+		// array) is a BORROW — the row buffer is owned by the outer array
+		// (its recursive walk frees it exactly once), so hoisting it as an
+		// owning temp would double-free AND break the chained-inline lowering
+		// (the hop through a bare value temp loses the nested stamp).
+		!(
+			node.target.node_type === "access" &&
+			(node.target as AccessNode).access.node_type === "access_func" &&
+			((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+		) &&
 		// D3: a STRING call result stays inline — the call-site borrow/owned
 		// normalization (string_return_analysis) already emits a balanced
 		// statement expression for it (strdup + free of the temp), while a

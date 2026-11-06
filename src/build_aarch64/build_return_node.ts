@@ -58,7 +58,12 @@ import {
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_descriptor_address, materialize_func_value_a64 } from "./utils/closure_a64.ts";
-import { allocate_stack_space, emit_var_address, emit_var_store } from "./utils/stack_var.ts";
+import {
+	allocate_stack_space,
+	emit_var_address,
+	emit_var_load,
+	emit_var_store,
+} from "./utils/stack_var.ts";
 
 let temp_counter = 0;
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
@@ -307,7 +312,13 @@ export default function build_return_node(
 		arr.values.forEach((value, i) => {
 			const slot = array_literal_offset + i * element_size;
 			const raw = resolve_static_value(value, status);
-			if (raw !== null && is_string_array) {
+			if (return_type_top.elem && value.node_type === "value") {
+				// A NESTED literal return: the slot holds the hoisted row
+				// temp's heap-buffer POINTER (its value, not its address).
+				emit_var_load(status, "x0", (value as ValueNode).value, 8);
+				ensure_newline(status);
+				emit_asm(status, `str x0, [x29, #${slot}]\n`);
+			} else if (raw !== null && is_string_array) {
 				// Fat-string row: {strdup(label ptr), compile-time len}. The
 				// strdup makes the buffer OWN its rows — scope-exit destroy
 				// frees each slot, so rodata pointers must never land here.
@@ -1195,14 +1206,24 @@ export default function build_return_node(
 
 		const return_type = status.function_return_type;
 		if (return_type?.is_array) {
-			const struct_element = status.structs.find(
-				(s) => s.name === return_type.name && !s.is_simple_type,
-			);
-			const element_size = struct_element
-				? struct_element.is_class
-					? 8
-					: get_struct_size(return_type.name, status)
-				: aarch64_size(return_type.name);
+			// A NESTED value return (`return g`): g's value IS the heap
+			// outer-buffer pointer — transfer it directly (the moved-stamp
+			// below skips this frame's cleanup). No stack-to-heap copy. A
+			// nested LITERAL return still takes the staging + heap-copy path
+			// (it materializes the returned outer buffer) — slots are 8-byte
+			// row pointers regardless of the innermost type.
+			const nested_return =
+				!!return_type.elem && node.value?.node_type === "value" && array_literal_len === 0;
+			const struct_element = return_type.elem
+				? undefined
+				: status.structs.find((s) => s.name === return_type.name && !s.is_simple_type);
+			const element_size = nested_return
+				? 8
+				: struct_element
+					? struct_element.is_class
+						? 8
+						: get_struct_size(return_type.name, status)
+					: aarch64_size(return_type.name);
 			const var_name =
 				array_literal_len > 0
 					? "_return_array"
@@ -1213,8 +1234,9 @@ export default function build_return_node(
 				var_name && array_literal_len === 0
 					? status.scoped_declarations?.find((d) => d.name === var_name)
 					: undefined;
-			const array_len =
-				array_literal_len > 0
+			const array_len = nested_return
+				? 0
+				: array_literal_len > 0
 					? array_literal_len
 					: decl?.value?.node_type === "array"
 						? (decl.value as any).values.length

@@ -17,8 +17,10 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
 import type ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import array_elem_c_type from "./utils/array_elem_c_type.ts";
 import c_function_name from "./utils/c_function_name.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import { emit_load_owned_copies_destroy } from "./utils/owning_buffer_specialize.ts";
@@ -664,35 +666,46 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
-			const elem_name = dec.type.name;
-			const elem_struct = status.structs.find((s) => s.name === elem_name);
-			const elem_is_class = !!elem_struct?.is_class;
-			const elem_is_string = elem_name === "string";
-			const elem_c_type = elem_is_class ? `struct ${elem_name}*` : elem_name;
-			if (elem_is_class) {
-				status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
-				status.code += `\t${elem_c_type}* _data = (${elem_c_type}*)((char*)${cname} + sizeof(struct Array_${elem_name}));\n`;
-				status.code += `\t${elem_name}_destroy(_data[_i]); free(_data[_i]);\n`;
-				status.code += `}\n`;
-			} else if (elem_is_string) {
-				// Function-returned string arrays own each element (the fat
-				// slots own their heap buffers), so free every slot's ptr
-				// before the buffer.
-				status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
-				status.code += `\tnomen_string* _data = (nomen_string*)((char*)${cname} + sizeof(struct Array_string));\n`;
-				status.code += `\tfree(_data[_i].ptr);\n`;
-				status.code += `}\n`;
+			if (dec.type.elem) {
+				// NESTED array: the buffer's slots are row POINTERS owned by
+				// this outer buffer — walk the rows recursively (a string or
+				// owning-struct innermost level frees its owned slots first),
+				// then free each row buffer and finally the outer itself.
+				emit_nested_buffer_free(status, dec.type, cname);
+			} else {
+				const elem_name = dec.type.name;
+				const elem_struct = status.structs.find((s) => s.name === elem_name);
+				const elem_is_class = !!elem_struct?.is_class;
+				const elem_is_string = elem_name === "string";
+				const elem_c_type = elem_is_class ? `struct ${elem_name}*` : elem_name;
+				if (elem_is_class) {
+					status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
+					status.code += `\t${elem_c_type}* _data = (${elem_c_type}*)((char*)${cname} + sizeof(struct Array_${elem_name}));\n`;
+					status.code += `\t${elem_name}_destroy(_data[_i]); free(_data[_i]);\n`;
+					status.code += `}\n`;
+				} else if (elem_is_string) {
+					// Function-returned string arrays own each element (the fat
+					// slots own their heap buffers), so free every slot's ptr
+					// before the buffer.
+					status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
+					status.code += `\tnomen_string* _data = (nomen_string*)((char*)${cname} + sizeof(struct Array_string));\n`;
+					status.code += `\tfree(_data[_i].ptr);\n`;
+					status.code += `}\n`;
+				}
+				status.code += `free(${cname});\n`;
 			}
-			status.code += `free(${cname});\n`;
 		}
 		// Stack (fixed-size) C arrays: the backing array is not malloc'd, but
 		// each element may own heap data (string / class / struct needing
 		// destroy). Free each element element-by-element at scope exit. The
 		// array is contiguous (`T name[N]`), so index directly into `name[_i]`
-		// — no header offset like the heap Array_<T> buffer.
+		// — no header offset like the heap Array_<T> buffer. (Nested arrays
+		// are heap-of-pointers at every level, so they never register here —
+		// their cleanup is the heap walk above.)
 		if (
 			!is_destructured_field_access &&
 			dec.type.is_array &&
+			!dec.type.elem &&
 			status.stack_array_vars?.has(dec.name)
 		) {
 			if (!commented) {
@@ -707,22 +720,7 @@ export function free_scoped_declarations(
 				(s) => s.name === elem_name && !s.is_simple_type && !s.is_generic,
 			);
 			const arr_len = status.stack_array_lengths?.get(dec.name) ?? "0";
-			if (dec.type.elem) {
-				// NESTED array: each slot holds an inner HEAP buffer
-				// (`struct Array_<T>*`) owned by this outer array. Reclaim the
-				// buffer (and its string slots, when the inner elements are
-				// strings) row by row.
-				const row_name = dec.type.elem.name;
-				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) {\n`;
-				if (row_name === "string") {
-					status.code += `\tfor (long _j = 0; _j < ${cname}[_i]->length; _j++) {\n`;
-					status.code += `\t\tnomen_string* _row = (nomen_string*)((char*)${cname}[_i] + sizeof(struct Array_string));\n`;
-					status.code += `\t\tfree(_row[_j].ptr);\n`;
-					status.code += `\t}\n`;
-				}
-				status.code += `\tfree(${cname}[_i]);\n`;
-				status.code += `}\n`;
-			} else if (elem_is_string) {
+			if (elem_is_string) {
 				status.code += `for (long _i = 0; _i < ${arr_len}; _i++) { free(${cname}[_i].ptr); }\n`;
 			} else if (elem_is_class) {
 				if (has_destroy(elem_struct!)) {
@@ -744,6 +742,60 @@ export function struct_needs_destroy_by_name(name: string, status: BuildStatus):
 	const struct = status.structs.find((s) => s.name === name && !s.is_simple_type && !s.is_generic);
 	if (!struct) return false;
 	return struct_needs_destroy(struct, status);
+}
+
+/**
+ * Emit the recursive reclaim for a NESTED array buffer (`expr` is a
+ * `struct Array_<T>*` whose slots are row pointers, owned by this buffer):
+ * for each row, free its OWNED contents first — a deeper nesting recurses,
+ * a `string` innermost level frees every slot's ptr half, an owning value
+ * struct runs its field destroys — then free the row buffer. Finally free
+ * the outer buffer itself. Both the row buffers and the owned contents are
+ * exactly-once owned: literal staging strdup'd/constructed them into the
+ * rows, and only the outer buffer's walk reaches them.
+ */
+export function emit_nested_buffer_free(
+	status: BuildStatus,
+	type: Type,
+	expr: string,
+	depth = 0,
+): void {
+	const i = depth === 0 ? "_i" : `_i${depth}`;
+	const j = depth === 0 ? "_j" : `_j${depth}`;
+	const row = depth === 0 ? "_row" : `_row${depth}`;
+	const elem = type.elem!;
+	const slot_c = array_elem_c_type(type);
+	status.code += `for (long ${i} = 0; ${i} < ${expr}->length; ${i}++) {\n`;
+	status.code += `\t${slot_c} ${row} = ((${slot_c}*)((char*)${expr} + sizeof(struct Array_${type.name})))[${i}];\n`;
+	if (elem.elem) {
+		// Deeper nesting: the recursion reclaims the row's rows, the row
+		// buffers, AND the row itself (its trailing `free(${expr})`) — the
+		// outer level must not free it again.
+		emit_nested_buffer_free(status, elem, row, depth + 1);
+	} else {
+		if (elem.name === "string") {
+			status.code += `\tfor (long ${j} = 0; ${j} < ${row}->length; ${j}++) {\n`;
+			status.code += `\t\tnomen_string* _d = (nomen_string*)((char*)${row} + sizeof(struct Array_string));\n`;
+			status.code += `\t\tfree(_d[${j}].ptr);\n`;
+			status.code += `\t}\n`;
+		} else {
+			const elem_struct = status.structs.find(
+				(s) => s.name === elem.name && !s.is_simple_type && !s.is_generic,
+			);
+			if (elem_struct && struct_needs_destroy(elem_struct, status)) {
+				status.code += `\tfor (long ${j} = 0; ${j} < ${row}->length; ${j}++) {\n`;
+				emit_struct_destroys(
+					status,
+					elem_struct,
+					`((struct ${elem.name}*)((char*)${row} + sizeof(struct Array_${elem.name})))[${j}]`,
+				);
+				status.code += `\t}\n`;
+			}
+		}
+		status.code += `\tfree(${row});\n`;
+	}
+	status.code += `}\n`;
+	status.code += `free(${expr});\n`;
 }
 
 /**

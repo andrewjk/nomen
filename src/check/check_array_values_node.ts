@@ -7,6 +7,7 @@ import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
@@ -259,6 +260,12 @@ function same_type_shape(a: Type, b: Type): boolean {
 function hoist_array_elements(array: ArrayValuesNode, status: CheckStatus, elem_type: Type): void {
 	for (let i = 0; i < array.values.length; i++) {
 		const value = array.values[i];
+		// Already a reference to a hoisted temp — a DEEPER level's hoist ran
+		// first (three-plus levels: the middle literal's inner rows were
+		// hoisted when the middle literal was checked in place). Keep the
+		// reference: wrapping it in an alias temp would add a pointer-copy
+		// declaration per slot for nothing.
+		if (value.node_type === "value" && (value as ValueNode).type?.is_array) continue;
 		const decl_name = `_param_${status.var_name_counter.value++}`;
 		const decl = new DeclarationNode(
 			value.start,
@@ -288,17 +295,6 @@ function check_as_array_of_arrays(
 	expected: Type,
 ): boolean {
 	const elem = expected.elem!;
-	// Owning inner elements (string/mv) are not supported yet: their heap
-	// slots need per-row ownership records the outer row free can't see (the
-	// aarch64 fat-string staging + scope-exit walks reject the shape).
-	if (elem.name === "string" || is_owning_struct_type(elem, status)) {
-		add_error(
-			status,
-			`an array-of-arrays inner element cannot own heap resources (a string/mv element) yet`,
-			array.start,
-		);
-		return false;
-	}
 	const old_expected = status.expected_type;
 	let result = true;
 	for (const value of array.values) {
@@ -310,10 +306,19 @@ function check_as_array_of_arrays(
 
 	hoist_array_elements(array, status, elem);
 	array.type = new Type(expected.name, expected.is_static, expected.is_array, expected.length);
+	// A nested array is heap-of-pointers at EVERY level — the outer included
+	// (a `struct Array_<T>*` whose slots are row pointers) — so the literal
+	// materialises as a heap buffer and rides the heap-array cleanup walks.
+	array.type.is_array_heap = true;
 	array.type.elem = clone_type(elem);
 	if (!array.type.length) {
 		array.type.length = new ValueNode(-1, array.values.length.toString(), new Type("int"));
 	}
+	// Materialize the `Array_<T>` header mono: the hoisted row temps are
+	// never themselves run through the declaration checker, so this is the
+	// only place their buffer type is instantiated — without it the backends
+	// reference a struct that is never emitted (`struct Array_Rec` incomplete).
+	instantiate_generic_type(array.type, status);
 	return true;
 }
 
@@ -581,19 +586,11 @@ function check_as_array_or_inferred_tuple(
 		// whose type args would be lost on this `new Type(name)`).
 		const first_type = value_types[0];
 		if (first_type?.is_array) {
-			// NESTED array (`[[1, 2], [3, 4]]`): the inner literals become
-			// HEAP buffers (their variable-size inline storage can only be
-			// referenced, never embedded), hoisted to named consts so the
-			// build materializes each buffer at a declaration. The outer
-			// level stays a fixed stack array of `Array_<T>*` pointers.
-			if (first_type.name === "string" || is_owning_struct_type(first_type, status)) {
-				add_error(
-					status,
-					`an array-of-arrays inner element cannot own heap resources (a string/mv element) yet`,
-					array.values[0].start,
-				);
-				return false;
-			}
+			// NESTED array (`[[1, 2], [3, 4]]`, `[[["a"]]]`): every level — the
+			// outer included — becomes a HEAP buffer (a level's slots are
+			// `Array_<T>*` row pointers; the innermost holds scalars), hoisted
+			// to named consts so the build materializes each buffer at a
+			// declaration.
 			const elem = new Type(first_type.name);
 			elem.is_array = true;
 			elem.is_array_heap = true;
@@ -601,8 +598,12 @@ function check_as_array_or_inferred_tuple(
 			hoist_array_elements(array, status, elem);
 			array.type = new Type(first_type.name);
 			array.type.is_array = true;
+			array.type.is_array_heap = true;
 			array.type.elem = elem;
 			array_item_type = clone_type(elem);
+			// Materialize the `Array_<T>` header mono for the hoisted row
+			// temps (see check_as_array_of_arrays).
+			instantiate_generic_type(array.type, status);
 		} else if (first_type) {
 			const elem_name = first_type.type_args?.length ? mono_type_name(first_type) : first_type.name;
 			array.type = new Type(elem_name);

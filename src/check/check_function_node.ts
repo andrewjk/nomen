@@ -197,15 +197,15 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 					func.return_type_start ?? func.start,
 				);
 			}
-			// A nested array's inner heap buffers are owned by the row that
-			// holds them — returning one would hand the caller pointers into
-			// a dead frame. Locals and parameters only for now.
+			// A nested array is heap-of-pointers at every level — the returned
+			// value is a single heap buffer pointer (its slots are row
+			// pointers), so a return transfers it like any `Array<T>` result
+			// and the caller's cleanup reclaims the rows recursively.
 			if (func.return_type.is_array && func.return_type.elem) {
-				add_error(
-					function_status,
-					`a function cannot return a nested array yet — keep nested arrays in locals and parameters`,
-					func.return_type_start ?? func.start,
-				);
+				const elem = func.return_type.elem;
+				if (!elem.is_array_heap) {
+					elem.is_array_heap = true;
+				}
 			}
 		}
 		// A generic container used only as a return type (e.g.

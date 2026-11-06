@@ -2090,6 +2090,11 @@ export default function check_function_call(
 				t.storage_kind = "heap_array";
 				return t;
 			};
+			// A NESTED-array param (`int[][]`, `int[2][]`) keeps its full elem
+			// chain on the hoisted temp — the slots are row pointers, so a
+			// flattened elem type would materialize the rows as scalars.
+			const heap_temp_type_of = (param_t: Type): Type =>
+				param_t.elem ? clone_type(param_t) : heap_temp_type(param_t.name);
 			let hoisted_type = param_type;
 			// STRUCT_PLAN_3 B4/T2: a value-struct conformer temp bound to a
 			// `mv Trait` param must lower as a HEAP BOX (the callee frees
@@ -2111,7 +2116,7 @@ export default function check_function_call(
 			// the stack-array path.
 			if (arg_is_array_like && param_is_heap_array && param_type.length) {
 				hoisted.is_heap_array_literal = true;
-				hoisted_type = heap_temp_type(param_type.name);
+				hoisted_type = heap_temp_type_of(param_type);
 				hoisted.type = hoisted_type;
 			}
 			// A stack-array VARIABLE arg (`sum(v)` where `v` is a
@@ -2123,7 +2128,7 @@ export default function check_function_call(
 			// copy path).
 			else if (param_is_heap_array && param_type.length) {
 				hoisted.is_heap_array_copy = true;
-				hoisted_type = heap_temp_type(param_type.name);
+				hoisted_type = heap_temp_type_of(param_type);
 				hoisted.type = hoisted_type;
 			}
 			status.allocations.push(hoisted);

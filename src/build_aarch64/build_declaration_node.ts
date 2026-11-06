@@ -1994,6 +1994,11 @@ export default function build_declaration_node(
 		!is_borrowed_class_ref &&
 		!is_field_struct_borrow(node) &&
 		!pure_borrow_element_load &&
+		// An ARRAY of structs is not a struct: its element type may resolve
+		// to a struct name, but the declaration is a buffer (the array arms
+		// own the cleanup) — tracking it here would free element-0's fields
+		// through the array's slot bytes.
+		!node.type.is_array &&
 		struct_type &&
 		struct_needs_destroy(struct_type, status)
 	) {
@@ -2074,9 +2079,13 @@ export default function build_declaration_node(
 		if (array_literal_values || range_literal_values) {
 			const values = array_literal_values ?? (range_literal_values as string[]);
 			const is_range = !!range_literal_values;
-			const struct_element = status.structs.find(
-				(s) => s.name === node.type.name && !s.is_simple_type,
-			);
+			// A NESTED array's slots are row POINTERS — never string pairs or
+			// class handles — so the per-element ownership registries stay out
+			// and the slot stride is 8 bytes regardless of the innermost type.
+			const nested_slots = !!node.type.elem;
+			const struct_element = nested_slots
+				? undefined
+				: status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
 			const element_size = struct_element
 				? struct_element.is_class
 					? 8
@@ -2086,15 +2095,21 @@ export default function build_declaration_node(
 			// A hoisted nested-array inner temp is OWNED BY THE OUTER ARRAY
 			// (which frees each inner buffer at scope exit), so it is not
 			// registered for its own cleanup.
-			if (!node.transferred_to_outer) status.heap_array_vars.add(node.name);
+			if (!node.transferred_to_outer) {
+				status.heap_array_vars.add(node.name);
+				if (nested_slots) {
+					if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+					status.heap_nested_array_types.set(node.name, node.type);
+				}
+			}
 			// The literal rows are strdup'd (owned) for string elements —
 			// scope-exit destroy must free each slot before the buffer.
-			if (node.type.name === "string" && !node.transferred_to_outer) {
+			if (node.type.name === "string" && !nested_slots && !node.transferred_to_outer) {
 				if (!status.heap_owned_string_arrays) status.heap_owned_string_arrays = new Set();
 				status.heap_owned_string_arrays.add(node.name);
 			}
 			const class_element = status.structs.find((s) => s.name === node.type.name && s.is_class);
-			if (class_element && !node.transferred_to_outer) {
+			if (class_element && !nested_slots && !node.transferred_to_outer) {
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
 				status.heap_class_arrays.set(node.name, 0);
 			}
@@ -2137,6 +2152,24 @@ export default function build_declaration_node(
 						} else {
 							emit_asm(status, `str x0, [x9, #${slot}]\n`);
 						}
+					} else if (nested_slots && !is_range) {
+						// A nested-array element: the slot holds the inner
+						// heap-array POINTER. A bare reference loads the hoisted
+						// row temp's pointer VALUE (never its address — the
+						// struct convention); anything else (a call) yields the
+						// row pointer in x0 directly.
+						if ((value as BaseNode).node_type === "value") {
+							emit_var_load(status, "x0", (value as ValueNode).value, 8);
+							ensure_newline(status);
+						} else {
+							emit_init_value(
+								value as BaseNode,
+								nir_array_element(nir_init, array_literal_node, i),
+								status,
+							);
+						}
+						emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
+						emit_asm(status, `str x0, [x9, #${slot}]\n`);
 					} else if (element_size > 8 && struct_element && !struct_element.is_class) {
 						// Value-struct element: a bare local's value load yields
 						// only the struct's FIRST word (the vtable pointer), so
@@ -2206,6 +2239,23 @@ export default function build_declaration_node(
 						} else {
 							emit_asm(status, `str x0, [x9, #${slot}]\n`);
 						}
+					} else if (nested_slots && !is_range) {
+						// A nested-array element: the slot holds the inner
+						// heap-array POINTER — a bare reference loads the hoisted
+						// row temp's pointer value; anything else (a call)
+						// yields the row pointer in x0 directly.
+						if ((value as BaseNode).node_type === "value") {
+							emit_var_load(status, "x0", (value as ValueNode).value, 8);
+						} else {
+							emit_init_value(
+								value as BaseNode,
+								nir_array_element(nir_init, array_literal_node, i),
+								status,
+							);
+							ensure_newline(status);
+						}
+						emit_asm(status, `ldr x9, [${node.name}]\n`);
+						emit_asm(status, `str x0, [x9, #${slot}]\n`);
 					} else if (element_size > 8 && struct_element && !struct_element.is_class) {
 						// Value-struct element: evaluate the value's ADDRESS
 						// (a bare local's value load yields only the first
@@ -2251,9 +2301,10 @@ export default function build_declaration_node(
 		if (node.is_heap_array_copy && node.value?.node_type === "value") {
 			const src_name = (node.value as ValueNode).value;
 			const src_type = type_from_value_node(node.value);
-			const struct_element = status.structs.find(
-				(s) => s.name === node.type.name && !s.is_simple_type,
-			);
+			// A NESTED copy's slots are row pointers — 8-byte stride.
+			const struct_element = node.type.elem
+				? undefined
+				: status.structs.find((s) => s.name === node.type.name && !s.is_simple_type);
 			const element_size = struct_element
 				? struct_element.is_class
 					? 8
@@ -2333,6 +2384,39 @@ export default function build_declaration_node(
 				}
 			}
 			return;
+		}
+		// A NESTED array declared from a non-literal, non-call initializer
+		// (`var g2 = mv g`): the value is the heap outer-buffer POINTER —
+		// store it in an 8-byte slot and register the owner so auto-destroy
+		// runs the recursive row walk.
+		if (node.type.elem && node.value) {
+			const is_call_init =
+				node.value.node_type === "func_call" ||
+				(node.value.node_type === "access" &&
+					(node.value as AccessNode).access.node_type === "access_func");
+			if (!is_call_init) {
+				if (!status.heap_array_vars) status.heap_array_vars = new Set();
+				if (!node.transferred_to_outer) {
+					status.heap_array_vars.add(node.name);
+					if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+					status.heap_nested_array_types.set(node.name, node.type);
+				}
+				if (status.function_return_label) {
+					const offset = allocate_stack_space(status, 8);
+					status.stack_offsets!.set(node.name, offset);
+					emit_init_value(node.value, nir_init, status);
+					ensure_newline(status);
+					emit_asm(status, `str x0, [x29, #${offset}]\n`);
+				} else {
+					emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
+					emit_init_value(node.value, nir_init, status);
+					ensure_newline(status);
+					emit_asm(status, `adr x1, ${node.name}\n`);
+					emit_asm(status, `str x0, [x1]\n`);
+				}
+				check_heap();
+				return;
+			}
 		}
 		if (node.value && node.value.node_type === "array") {
 			const array_values = node.value as ArrayValuesNode;
@@ -2703,10 +2787,15 @@ export default function build_declaration_node(
 		) {
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(node.name);
+			if (node.type.elem) {
+				if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+				status.heap_nested_array_types.set(node.name, node.type);
+			}
 			// An `Array<string>`-returning call (Array.with / a helper) hands
 			// back a buffer of OWNED heap copies — record it so scope-exit
-			// destroy frees each slot before the buffer itself.
-			if (node.type.name === "string") {
+			// destroy frees each slot before the buffer itself. A NESTED
+			// array's slots are row pointers, not owned strings — excluded.
+			if (node.type.name === "string" && !node.type.elem) {
 				if (!status.heap_owned_string_arrays) status.heap_owned_string_arrays = new Set();
 				status.heap_owned_string_arrays.add(node.name);
 			}
@@ -2730,6 +2819,39 @@ export default function build_declaration_node(
 			}
 			check_heap();
 		} else {
+			// A NESTED array with no (or a non-call) initializer: an 8-byte
+			// pointer slot holding the heap outer-buffer pointer (null when
+			// there is no initializer at all). Registered so auto-destroy
+			// runs the recursive row walk.
+			if (node.type.elem) {
+				if (!status.heap_array_vars) status.heap_array_vars = new Set();
+				if (!node.transferred_to_outer) {
+					status.heap_array_vars.add(node.name);
+					if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+					status.heap_nested_array_types.set(node.name, node.type);
+				}
+				if (status.function_return_label) {
+					const offset = allocate_stack_space(status, 8);
+					status.stack_offsets!.set(node.name, offset);
+					if (node.value) {
+						emit_init_value(node.value, nir_init, status);
+					} else {
+						emit_asm(status, `mov x0, #0\n`);
+					}
+					ensure_newline(status);
+					emit_asm(status, `str x0, [x29, #${offset}]\n`);
+				} else {
+					emit_data(status, `${node.name}: .space 8\n.p2align 2\n`);
+					if (node.value) {
+						emit_init_value(node.value, nir_init, status);
+						ensure_newline(status);
+						emit_asm(status, `adr x1, ${node.name}\n`);
+						emit_asm(status, `str x0, [x1]\n`);
+					}
+				}
+				check_heap();
+				return;
+			}
 			const array_length = node.type.length ? parseInt((node.type.length as ValueNode).value) : 0;
 			const array_size = size * array_length;
 			if (status.function_return_label && node.declaration === "var") {
