@@ -402,6 +402,68 @@ function heapify_owning_tuple_elements(array: ArrayValuesNode, status: CheckStat
 }
 
 /**
+ * Owning array elements must be uniquely owned by the array: the scope-exit
+ * teardown destroys each element's owned fields (and frees each string
+ * slot), so a bare variable element would alias the donor (which frees its
+ * own copy too — a double free). Mirror the tuple-literal rule: an explicit
+ * or inferred `mv` transfers, `.copy()`/fresh constructions own their bytes,
+ * and a plain variable read is rejected. Tuple/anon structs keep their
+ * literal-time ownership handling; nested literals skip this (their rows are
+ * internal hoisted temps, and each row literal is checked on its own).
+ */
+function check_owning_struct_array_elements(
+	array: ArrayValuesNode,
+	elem_type: Type,
+	status: CheckStatus,
+): boolean {
+	const is_string = elem_type?.name === "string";
+	const is_owning_struct =
+		!!elem_type?.name &&
+		!is_string &&
+		!elem_type.name.startsWith("_Tuple_") &&
+		!elem_type.name.startsWith("_Anon_") &&
+		is_owning_struct_type(elem_type, status);
+	if (!is_string && !is_owning_struct) return false;
+	let rejected = false;
+	for (const value of array.values) {
+		const vn = value as ValueNode;
+		if (vn.node_type !== "value") continue;
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(vn.value) || vn.value === "null") continue;
+		const t = type_from_value_node(value, status);
+		if (t.is_array) continue;
+		if (is_string) {
+			if (t.name !== "string" || t.is_view || t.is_array) continue;
+		} else if (t.name !== elem_type.name || !is_owning_struct_type(t, status)) {
+			continue;
+		}
+		// B3: transferring a bare (non-`mv`) owning-struct parameter is a
+		// borrow the caller keeps — the same rejection tuple literals use.
+		const transfer_error = borrowed_param_transfer_error(
+			enclosing_function_param(status, vn.value),
+			status,
+		);
+		if (transfer_error) {
+			add_error(status, transfer_error, value.start);
+			rejected = true;
+		} else if (vn.is_moved || vn.literal_last_use_move) {
+			vn.is_moved = true;
+			if (!status.moved_variables) status.moved_variables = new Set();
+			status.moved_variables.add(vn.value);
+		} else {
+			add_error(
+				status,
+				is_string
+					? `string local '${vn.value}' is read again after the literal — use 'mv ${vn.value}' or '${vn.value}.to_string()'`
+					: `cannot copy '${t.name}' by value — it owns heap resources; use 'mv ${vn.value}' or '${vn.value}.copy()'`,
+				value.start,
+			);
+			rejected = true;
+		}
+	}
+	return rejected;
+}
+
+/**
  * Validate an array literal where each element should be a tuple, given the
  * tuple's element type (`elem_type` is a single tuple type — not array).
  * Each value is materialized into a tuple constructor in place, and the
@@ -638,6 +700,15 @@ function check_as_array_or_inferred_tuple(
 			value.start,
 			"array",
 		);
+	}
+
+	// Owning array elements: the array's scope-exit teardown reclaims each
+	// element's owned fields, so every slot must uniquely own them — a bare
+	// variable element would alias the donor (a double free). Nested literals
+	// skip this: their rows are internal hoisted temps, and each row literal
+	// already ran this check on its own elements.
+	if (!array.type.elem && check_owning_struct_array_elements(array, array_item_type, status)) {
+		result = false;
 	}
 
 	if (!array.type.length) {

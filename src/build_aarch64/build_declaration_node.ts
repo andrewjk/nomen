@@ -80,6 +80,7 @@ import {
 	is_field_struct_borrow,
 	set_trait_class_local,
 	track_struct_decl,
+	transfer_string_donor,
 } from "./utils/auto_destroy.ts";
 import { build_swap_params } from "./utils/build_swap.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
@@ -109,6 +110,21 @@ import {
 	emit_view_string_arg,
 	is_view_value,
 } from "./utils/view_value.ts";
+
+/**
+ * A `mv` element transfers ownership into the array literal: the donor's
+ * scope-exit reclaim must skip it. Mark the runtime owns-flag (the move may
+ * sit in a branch, so the static-only skip is not enough); a heap string
+ * donor uses its dedicated transfer path, a struct/enum/trait/class value
+ * the generic moved-struct helper.
+ */
+export function mark_moved_array_element(value: BaseNode, status: BuildStatus): void {
+	if (value.node_type !== "value" || !(value as ValueNode).is_moved) return;
+	const name = (value as ValueNode).value;
+	if (!transfer_string_donor(status, name)) {
+		mark_moved_if_struct(value, status);
+	}
+}
 
 /**
  * Pass a struct-typed param by address. For ValueNode (variable references)
@@ -2113,6 +2129,23 @@ export default function build_declaration_node(
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
 				status.heap_class_arrays.set(node.name, 0);
 			}
+			// An OWNING value-struct element (mv string fields etc.): the
+			// literal staging constructs each element fresh (the ctor
+			// strdup'd its owned fields), so the scope-exit walk must destroy
+			// each element before freeing the buffer.
+			const owned_struct_element = nested_slots
+				? undefined
+				: status.structs.find(
+						(s) => s.name === node.type.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+					);
+			if (
+				owned_struct_element &&
+				struct_needs_destroy(owned_struct_element, status) &&
+				!node.transferred_to_outer
+			) {
+				if (!status.heap_struct_arrays) status.heap_struct_arrays = new Map();
+				status.heap_struct_arrays.set(node.name, owned_struct_element.name);
+			}
 			const str_labels = emit_string_array_labels(
 				values.filter((v): v is BaseNode => typeof v !== "string"),
 				status,
@@ -2132,6 +2165,7 @@ export default function build_declaration_node(
 				emit_asm(status, `str x0, [x9]\n`);
 				values.forEach((value, i) => {
 					const slot = 8 + i * element_size;
+					mark_moved_array_element(value as BaseNode, status);
 					const raw = is_range ? value : resolve_static_value(value as BaseNode, status);
 					if (typeof raw === "string" && raw.startsWith('"')) {
 						// strdup the label ptr: the buffer OWNS its rows (the
@@ -2223,6 +2257,7 @@ export default function build_declaration_node(
 				emit_asm(status, `str x0, [x9]\n`);
 				values.forEach((value, i) => {
 					const slot = 8 + i * element_size;
+					mark_moved_array_element(value as BaseNode, status);
 					const raw = is_range ? value : resolve_static_value(value as BaseNode, status);
 					if (typeof raw === "string" && raw.startsWith('"')) {
 						const label = resolve_array_element(raw, str_labels);
@@ -2442,6 +2477,7 @@ export default function build_declaration_node(
 					status.stack_offsets!.set(node.name, offset);
 					array_values.values.forEach((value, i) => {
 						const slot_offset = offset + i * element_size;
+						mark_moved_array_element(value as BaseNode, status);
 						// STRUCT_PLAN_3 B4: a value-struct conformer element in a
 						// TRAIT-typed array boxes — the slot holds the heap
 						// handle (vtable at offset 0), not inline bytes.
@@ -2523,6 +2559,7 @@ export default function build_declaration_node(
 					emit_data(status, `.quad ${array_values.values.length}\n`);
 					emit_data(status, `${node.name}: .space ${total_size}\n.p2align 2\n`);
 					array_values.values.forEach((value, i) => {
+						mark_moved_array_element(value as BaseNode, status);
 						const element_trait_boxed =
 							!!status.traits.find((t) => t.name === node.type.name) &&
 							is_struct_constructor(value, status);

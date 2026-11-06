@@ -678,6 +678,17 @@ export function free_scoped_declarations(
 				const elem_is_class = !!elem_struct?.is_class;
 				const elem_is_string = elem_name === "string";
 				const elem_c_type = elem_is_class ? `struct ${elem_name}*` : elem_name;
+				// A LITERAL-built array of owning value-struct elements: each
+				// slot was constructed fresh (the ctor strdup'd its owned
+				// strings), so the destructor must reclaim each element's
+				// fields before the buffer goes. Restricted to literal
+				// initializers — a call-produced array's element ownership is
+				// the callee's business (e.g. `Array.with` byte-copies one
+				// seed into every slot, which must not be freed n times).
+				const elem_struct_type =
+					!elem_is_class && !elem_is_string && dec.value?.node_type === "array"
+						? status.structs.find((s) => s.name === elem_name && !s.is_simple_type && !s.is_generic)
+						: undefined;
 				if (elem_is_class) {
 					status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
 					status.code += `\t${elem_c_type}* _data = (${elem_c_type}*)((char*)${cname} + sizeof(struct Array_${elem_name}));\n`;
@@ -690,6 +701,17 @@ export function free_scoped_declarations(
 					status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
 					status.code += `\tnomen_string* _data = (nomen_string*)((char*)${cname} + sizeof(struct Array_string));\n`;
 					status.code += `\tfree(_data[_i].ptr);\n`;
+					status.code += `}\n`;
+				} else if (elem_struct_type && struct_needs_destroy(elem_struct_type, status)) {
+					// Owned value-struct fields (mv string members, nested mv
+					// structs): destroy each element in place. The elements sit
+					// past the `Array_<T>` header, `sizeof(struct <T>)` apart.
+					status.code += `for (long _i = 0; _i < ${cname}->length; _i++) {\n`;
+					emit_struct_destroys(
+						status,
+						elem_struct_type,
+						`((${elem_c_type}*)((char*)${cname} + sizeof(struct Array_${elem_name})))[_i]`,
+					);
 					status.code += `}\n`;
 				}
 				status.code += `free(${cname});\n`;

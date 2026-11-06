@@ -1175,6 +1175,51 @@ function emit_nested_heap_decl_destroy(status: BuildStatus, decl_name: string): 
  * after a `return`, but still emitted) may carry the same decl's reclaim,
  * and duplicating `.Lhosa_${name}` broke the assembler.
  */
+/**
+ * An OWNING value-struct element array (a literal-built heap `Array<Rec>`
+ * whose ctor strdup'd each element's fields): destroy each element in place
+ * before the caller frees the buffer. Elements sit past the `Array_<T>`
+ * header, `get_struct_size` apart. x19/x20 are saved and restored here;
+ * `emit_destroy_for_array_elem` only clobbers caller-saved registers (and
+ * any callee-saved it uses itself are saved by the callee).
+ */
+function emit_heap_struct_array_destroy(
+	status: BuildStatus,
+	decl_name: string,
+	elem_type_name: string,
+): void {
+	const elem_struct = status.structs.find(
+		(s) => s.name === elem_type_name && !s.is_simple_type && !s.is_class && !s.is_generic,
+	);
+	if (!elem_struct) return;
+	const elem_size = get_struct_size(elem_type_name, status);
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	emit_asm(status, `str x19, [sp, #-16]!\n`);
+	emit_asm(status, `str x20, [sp, #-16]!\n`);
+	emit_var_load(status, "x0", decl_name, 8);
+	emit_asm(status, `mov x19, x0\n`);
+	emit_asm(status, `ldr x20, [x19]\n`);
+	emit_asm(status, `add x19, x19, #8\n`);
+	const loop = `.Lhsa_struct_${id}`;
+	const done = `.Lhsa_struct_done_${id}`;
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `cbz x20, ${done}\n`);
+	emit_destroy_for_array_elem(
+		status,
+		elem_struct,
+		() => {
+			emit_asm(status, `mov x0, x19\n`);
+		},
+		0,
+	);
+	emit_asm(status, `add x19, x19, #${elem_size}\n`);
+	emit_asm(status, `sub x20, x20, #1\n`);
+	emit_asm(status, `b ${loop}\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x20, [sp], #16\n`);
+	emit_asm(status, `ldr x19, [sp], #16\n`);
+}
+
 function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): boolean {
 	const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 	if (status.heap_nested_array_types?.has(decl_name)) {
@@ -1244,6 +1289,11 @@ function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): b
 	if (status.heap_array_vars?.has(decl_name)) {
 		emit_asm(status, `str x19, [sp, #-16]!\n`);
 		emit_asm(status, `str x20, [sp, #-16]!\n`);
+		if (status.heap_struct_arrays?.has(decl_name)) {
+			// Owned value-struct elements: destroy each element's fields in
+			// place, then the buffer.
+			emit_heap_struct_array_destroy(status, decl_name, status.heap_struct_arrays.get(decl_name)!);
+		}
 		if (status.heap_owned_string_arrays?.has(decl_name)) {
 			// Owned fat-string elements: free every slot's ptr half (16-byte
 			// stride, data at buffer+8), then the buffer.
@@ -2077,6 +2127,15 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 					emit_asm(status, `ldr x19, [sp], #16\n`);
 					continue;
 				}
+				if (status.heap_struct_arrays?.has(decl.name)) {
+					// Literal-built Array<owning struct>: destroy each element's
+					// fields, then fall through to the buffer free below.
+					emit_heap_struct_array_destroy(
+						status,
+						decl.name,
+						status.heap_struct_arrays.get(decl.name)!,
+					);
+				}
 				if (status.heap_owned_string_arrays?.has(decl.name)) {
 					emit_asm(status, `str x19, [sp, #-16]!\n`);
 					emit_asm(status, `str x20, [sp, #-16]!\n`);
@@ -2270,6 +2329,15 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_nested_heap_decl_destroy(status, decl.name);
 				emit_asm(status, `ldr x19, [sp], #16\n`);
 				continue;
+			}
+			if (status.heap_struct_arrays?.has(decl.name)) {
+				// Literal-built Array<owning struct>: destroy each element's
+				// fields, then fall through to the buffer free below.
+				emit_heap_struct_array_destroy(
+					status,
+					decl.name,
+					status.heap_struct_arrays.get(decl.name)!,
+				);
 			}
 			if (status.heap_owned_string_arrays?.has(decl.name)) {
 				// Owned fat-string elements: free every slot's ptr half

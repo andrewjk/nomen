@@ -427,6 +427,15 @@ export default interface BuildStatus {
 	 */
 	stack_array_lengths?: Map<string, string>;
 	heap_class_arrays?: Map<string, number>;
+	/**
+	 * For each LITERAL-initialized heap array whose element is an OWNING
+	 * value struct, the element's struct name. The scope-exit walk destroys
+	 * each element in place (its ctor strdup'd the owned string fields)
+	 * before freeing the buffer. Literal initializers only: a call-produced
+	 * array's element ownership belongs to the callee (e.g. `Array.with`
+	 * byte-copies one seed into every slot, which must not be freed n times).
+	 */
+	heap_struct_arrays?: Map<string, string>;
 	function_return_type?: Type;
 	/**
 	 * When the current function returns a nullable struct value type, this

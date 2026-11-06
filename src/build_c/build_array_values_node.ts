@@ -30,6 +30,21 @@ export default function build_array_values_node(
 	const static_init = status.static_string_array_inits === true;
 	node.values.forEach((value, i) => {
 		if (i > 0) status.code += ", ";
+		// A `mv` element transfers ownership into the array: the donor's
+		// scope-exit reclaim must skip it (its runtime owns-flag decides,
+		// since the move may sit in a branch). Defer the flag set to the
+		// statement boundary — appending it mid-initializer would break the
+		// surrounding expression.
+		if (
+			value.node_type === "value" &&
+			(value as ValueNode).is_moved &&
+			status.c_mv_owns_flags?.get((value as ValueNode).value)
+		) {
+			if (!status.pending_mv_owns_sets) status.pending_mv_owns_sets = [];
+			status.pending_mv_owns_sets.push(
+				`${status.c_mv_owns_flags.get((value as ValueNode).value)} = 1;`,
+			);
+		}
 		// A string-literal element (`"hello"`) is a read-only C string literal.
 		// An array of strings takes ownership of its elements, so it must hold
 		// heap copies — otherwise the scope-exit free would `free` rodata and

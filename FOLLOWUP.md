@@ -663,18 +663,3 @@ them. Suspects, not chased: the frame-slot forwarding / dead-store pass
 `emit_var_store(status, "d0", ...)` — the pre-pass emission was not
 dumped, so whether the store is never emitted or deleted by a pass is
 unverified.
-
-## Flat `Array<mv-struct>` literal leaks in split mode
-
-Recorded 2026-11-07, while landing nested-array owning rows (which build the
-same shape recursively and are audit-clean). `var Array<Rec> rs = [Rec("a"),
-Rec("b")]` where `Rec` is an `mv struct` with a string field compiles and
-prints correctly, but the audit reports 2 leaked allocations on both
-backends: the literal's hoisted element temps are never freed (the
-`heap_array_vars` cleanup covers the buffer's slots only for class/string
-elements, and the value-struct element's `#destroy`/field reclaim is not
-reached at scope exit). Pre-existing, unrelated to the nested-array work's
-own rows (those free element-0's fields through the `Array_Rec` row walk
-only because the row buffer owns them). A fix would extend the heap
-literal's element teardown to owning value-struct elements on both
-backends — likely alongside a `Map`/`Set` element-teardown review.
