@@ -157,8 +157,12 @@ export function optimize_frame_slots(code: string): string {
 	 *  drops instead of materializing. mul_to's carry-flag residue
 	 *  (`str x0, [x29, #144]` twice per iteration of the hottest pidigits
 	 *  loop, the value living in registers between) is exactly this
-	 *  shape. */
-	const clobber = (reg: string, at_idx = -1) => {
+	 *  shape. `slot_reader` disables the kill: the clobbering instruction
+	 *  itself READS the slot (a `ldr` of it), so "no read between" is
+	 *  false and the pending store must reach memory first — otherwise a
+	 *  literal initializer is dropped and the load reads uninitialized
+	 *  bytes (the float-initializer receipt). */
+	const clobber = (reg: string, at_idx = -1, slot_reader = false) => {
 		if (!reg) return;
 		const sib = sibling_reg(reg);
 		zextW.delete(reg.startsWith("w") ? `x${reg.slice(1)}` : reg);
@@ -171,6 +175,7 @@ export function optimize_frame_slots(code: string): string {
 			) {
 				if (
 					store_store_kill_on &&
+					!slot_reader &&
 					at_idx >= 0 &&
 					s.pendIdx !== undefined &&
 					no_slot_read_between(off, s.pendIdx + 1, at_idx) &&
@@ -279,7 +284,13 @@ export function optimize_frame_slots(code: string): string {
 				s0?.pendText !== undefined &&
 				s0.pendKey === key &&
 				s0.pendReg === data_reg.name &&
-				(key === "gpr64" || (reload_width > 0 && known !== undefined && known >= reload_width))
+				// Full-width GPR or FPR reload into the store's own register:
+				// the register still holds exactly the stored bits (an fpr
+				// `ldr dN` reads the full width, so unlike `sN` it is an
+				// identity). Sub-width reloads need the zext fact.
+				(key === "gpr64" ||
+					key === "fpr64" ||
+					(reload_width > 0 && known !== undefined && known >= reload_width))
 			) {
 				// Commit the store AT ITS ORIGINAL POSITION (a later flush
 				// could land it after epilogue instructions that mv
@@ -292,7 +303,7 @@ export function optimize_frame_slots(code: string): string {
 				slots.set(off, fresh);
 				return;
 			}
-			clobber(data_reg.name, i);
+			clobber(data_reg.name, i, true);
 		}
 
 		// Attach (don't detach!) the slot state so mutations persist.

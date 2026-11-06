@@ -118,4 +118,53 @@ describe("frame-slot optimization", () => {
 		const out = opt(["_f:", "str x1, [x29, #40]", "ldrb w0, [x29, #40]", "ret"].join("\n"));
 		expect(out).toContain("ldrb w0, [x29, #40]");
 	});
+
+	test("float literal initializer survives a later same-register reload", () => {
+		// `var float f = 7.5; f = f / 2.5`: the initializer store is pending
+		// when the assignment reads the slot back into d0. The load must not
+		// let the store-store kill drop the initializer — the register still
+		// holds the stored bits, so the reload is elided and the store is
+		// committed first.
+		const out = opt(
+			[
+				"_f:",
+				"fmov d0, #7.5",
+				"str d0, [x29, #0]",
+				"fmov d1, #2.5",
+				"ldr d0, [x29, #0]",
+				"fdiv d0, d0, d1",
+				"str d0, [x29, #0]",
+				"ret",
+			].join("\n"),
+		);
+		const store_idx = out.indexOf("str d0, [x29, #0]");
+		const div_idx = out.indexOf("fdiv d0, d0, d1");
+		expect(store_idx).toBeGreaterThan(-1);
+		expect(store_idx < div_idx).toBe(true);
+		// The same-register reload is elided (d0 already holds 7.5).
+		expect(out).not.toContain("ldr d0, [x29, #0]");
+	});
+
+	test("load-triggered clobber materializes a pending sub-width store", () => {
+		// Same shape at 32-bit width: `fpr32` same-register reloads are not
+		// elided (the load zeroes the upper bits), but the load still READS
+		// the slot — the pending initializer must reach memory instead of
+		// being killed by the store-store heuristic.
+		const out = opt(
+			[
+				"_f:",
+				"fmov s0, #1.5",
+				"str s0, [x29, #0]",
+				"ldr s0, [x29, #0]",
+				"fadd s0, s0, s0",
+				"str s0, [x29, #0]",
+				"ret",
+			].join("\n"),
+		);
+		const store_idx = out.indexOf("str s0, [x29, #0]");
+		const load_idx = out.indexOf("ldr s0, [x29, #0]");
+		expect(store_idx).toBeGreaterThan(-1);
+		expect(store_idx < load_idx).toBe(true);
+		expect(load_idx).toBeGreaterThan(-1);
+	});
 });

@@ -94,6 +94,21 @@ Console.write(y.to_string())
 		await build_and_check_output(input, "op_scalar_divmod_compound", "3 2");
 	});
 
+	test("scalar float /= after a literal initializer", async () => {
+		// The literal initializer's store must not be elided when the
+		// assignment reads the slot back (`var float f = 7.5` followed by
+		// `f = f / 2.5` / `f /= 2.5` used to divide the uninitialized slot).
+		const input = `
+var float f = 7.5
+f = f / 2.5
+Console.write("\\{f} ")
+var float g = 7.5
+g /= 2.5
+Console.write("\\{g}")
+`;
+		await build_and_check_output(input, "op_scalar_float_div_compound", "3.000000 3.000000");
+	});
+
 	test("no operator function: struct %= is a check error", () => {
 		const input = `
 struct Point {

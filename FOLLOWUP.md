@@ -632,34 +632,19 @@ fails first). Fix direction: the key compare needs the slot's address (the
 Once fixed, a `Set<Rec>` churn shape belongs in
 `test/map_set_remove_strand.test.ts` next to the string one.
 
-## aarch64: float literal-initializer store elided when a later assignment reads the slot
+## Float `%` lowers to multiplication (aarch64) / invalid C (C backend)
 
-Recorded 2026-11-05, during the compound-assignment (`/=` / `%=` /
-operator-dispatch) work. On the aarch64 backend, a float local initialized
-from a LITERAL whose slot is later assigned a binary-op result that READS
-the local loses its initializer store:
-
-```
-var float f = 7.5
-f = f / 2.5        // reads the uninitialized slot — prints 0
-```
-
-The emitted asm materializes the literal into `d0`
-(`fmov d0, #7.5` — rematerialized from the `.double` pool entry, which is
-left behind dead) but never stores it to f's frame slot, while the
-assignment's RHS reads the slot (`ldr d0, [x29, #0]`) — so the division
-runs over garbage. Verified pre-existing on stashed clean main (2026-11-05:
-`var float f = 7.5` + read alone passes; adding `f = f / 2.5` fails with
-"0"). The C backend is unaffected (`double f = 7.5; f = (f / 2.5);` —
-valid C, correct result). Expression initializers are unaffected
-(`var float f = 7.5 / 2.5` stores and reads correctly), so the workaround
-is to initialize from a computed expression rather than a literal. This is
-what blocks the scalar float `/=` / `%=` runtime tests added with the
-compound-assignment work (the int and struct forms are pinned in
-`test/operators.test.ts`); once fixed, a float `/=` case belongs next to
-them. Suspects, not chased: the frame-slot forwarding / dead-store pass
-(`optimize_frame_slots`, asm_opt.ts) or the float-pool remat pass
-(asm_remat.ts) interacting with the declaration fast path's
-`emit_var_store(status, "d0", ...)` — the pre-pass emission was not
-dumped, so whether the store is never emitted or deleted by a pass is
-unverified.
+Recorded 2026-11-07, while fixing the float literal-initializer store. A
+float remainder is accepted by the checker, but neither backend implements
+it: `var float f = 17.5 % 5.0` emits `fmul d0, d0, d1` on aarch64 (a
+silently wrong result — 87.5 instead of 2.5) because `map_float_op`'s
+default arm returns `fmul` for `%`; the C backend emits the raw
+`(17.5 % 5.0)`, which clang rejects (`%` on `double` is invalid C). This is
+why the scalar float `%=` runtime case is still absent from
+`test/operators.test.ts` (the plain `/=` case landed). Fix direction:
+decide the semantics (`fmod` is the C analogue) and lower `%` to a
+`fmod`/`bl _fmod` call on both backends — or reject float `%` in the
+checker if the operators are meant to be closed under the non-remainder
+set. Lucky that the aarch64 side is caught only by a result assertion, not
+a compile error: a `%=` on a float literal initializer now executes (the
+store fix), so a wrong-arithmetic receipt is one test away.
