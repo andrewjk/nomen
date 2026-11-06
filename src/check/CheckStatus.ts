@@ -110,6 +110,14 @@ export default interface CheckStatus {
 	 */
 	allocations: DeclarationNode[];
 	/**
+	 * Destructuring temps (`_tuple_dst_N`) whose RHS is an ARRAY-ELEMENT load
+	 * (`var [a, b] = pairs.at(i)`): the temp holds a byte copy of the element,
+	 * so its owning fields are still co-owned by the array slot — the
+	 * inferred-transfer destructuring rule must not apply (it would free the
+	 * array's field twice). Populated in check_declaration_node.
+	 */
+	tuple_dst_from_array?: Set<string>;
+	/**
 	 * A counter for making new var names that (hopefully) don't clash. It needs
 	 * to be in an object so that it continues to be incremented after the status
 	 * is cloned

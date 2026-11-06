@@ -267,6 +267,20 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			const result = check_node(decl.value, status);
 			status.expected_type = old_expected_type;
 
+			// A destructuring temp (`_tuple_dst_N = pairs.at(i)`) byte-copies
+			// an ARRAY ELEMENT: its owning fields are still owned by the array
+			// slot, so record the provenance — the binding gate below must not
+			// infer a transfer from it.
+			if (
+				decl.name.startsWith("_tuple_dst_") &&
+				decl.value?.node_type === "access" &&
+				(decl.value as AccessNode).access.node_type === "access_func" &&
+				(type_from_value_node((decl.value as AccessNode).target, status)?.is_array ?? false)
+			) {
+				if (!status.tuple_dst_from_array) status.tuple_dst_from_array = new Set();
+				status.tuple_dst_from_array.add(decl.name);
+			}
+
 			// A NESTED-array row binding (`var row = g.at(i)`) BORROWS the
 			// inner buffer the outer array owns: stamp the transfer-to-outer
 			// contract so neither backend emits a scope-exit free for the row
@@ -383,6 +397,20 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.expected_type = decl.type;
 			const result = check_node(decl.value, status);
 			status.expected_type = old_expected_type;
+
+			// A destructuring temp (`_tuple_dst_N = pairs.at(i)`) byte-copies
+			// an ARRAY ELEMENT: its owning fields are still owned by the array
+			// slot, so record the provenance — the binding gate below must not
+			// infer a transfer from it.
+			if (
+				decl.name.startsWith("_tuple_dst_") &&
+				decl.value?.node_type === "access" &&
+				(decl.value as AccessNode).access.node_type === "access_func" &&
+				(type_from_value_node((decl.value as AccessNode).target, status)?.is_array ?? false)
+			) {
+				if (!status.tuple_dst_from_array) status.tuple_dst_from_array = new Set();
+				status.tuple_dst_from_array.add(decl.name);
+			}
 
 			// A NESTED-array row binding (`var row = g.at(i)`) BORROWS the
 			// inner buffer the outer array owns: stamp the transfer-to-outer
@@ -748,7 +776,26 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 						? ((decl.value as AccessNode).target as ValueNode).value
 						: "";
 				const temp_rhs = af_is_destructure_temp(target_name);
-				if (!decl.value.is_moved && !temp_rhs) {
+				// A destructuring temp seeded by an ARRAY-ELEMENT load
+				// (`var [a, b] = pairs.at(i)`) byte-copies the element: its
+				// owning fields are still owned by the array slot, so the
+				// inferred transfer would free them twice. PLAIN bindings are
+				// rejected; an explicit `mv` binding keeps the existing
+				// borrow-copy/swap rules, and the generic/variadic flow
+				// (`Map`'s pairs-init) keeps its established-sound packing.
+				if (
+					temp_rhs &&
+					status.tuple_dst_from_array?.has(target_name) &&
+					!access_field.destructure_move &&
+					!status.is_mono_body_recheck &&
+					!status.checking_variadic_arg
+				) {
+					add_error(
+						status,
+						`cannot destructure '${field_type.name}' out of an array element — bind the element first (\`var e = pairs.at(i)\`) or read the field with .copy()`,
+						decl.value.start,
+					);
+				} else if (!decl.value.is_moved && !temp_rhs) {
 					add_error(
 						status,
 						`cannot copy '${field_type.name}' out of field '${field_name}' by value — it owns heap resources; use 'mv ... swap <replacement>'${field_type.name === "string" ? ", or .copy() for a deep copy" : ""}`,

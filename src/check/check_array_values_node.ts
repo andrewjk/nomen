@@ -1,5 +1,7 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -17,6 +19,7 @@ import {
 } from "./utils/ownership.ts";
 import { clone_type, get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import { default as type_name } from "./utils/type_name.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_array_values_node(
@@ -66,35 +69,23 @@ export default function check_array_values_node(
 				}
 			}
 			if (tuple_types) {
-				// DECLARED arrays of tuples (`var [T1, T2][] x = [[...]]` —
-				// expected carries the materialized `_Tuple_...` struct name):
-				// owning elements are rejected. Literal tuple fields hold
-				// rodata and the element struct's teardown frees its string
-				// field unconditionally, so extracting or copying an element
-				// out of the array frees a static (AUDIT-STALE-FREE). Field
-				// READS (`pairs.at(i)._j`) stay sound. The GENERIC/VARIADIC
-				// flow is exempt: Map's `...[TK, TV] pairs` seeding (bare
-				// "tuple" expected here, and the monomorphized body re-check,
-				// which replays the established variadic packing +
-				// mv-destructure soundness against concrete types).
-				if (
-					expected.name?.startsWith("_Tuple_") &&
-					!status.is_mono_body_recheck &&
-					!status.checking_variadic_arg &&
-					tuple_types.some((t) => type_owns_heap(t, status))
-				) {
-					add_error(
-						status,
-						`an array-of-tuples element cannot own heap resources (a string/mv field) yet — read fields directly (pairs.at(i)._<n>) or use a struct`,
-						array.start,
-					);
-					return false;
-				}
 				// Set expected_type to a single tuple type for each value, but
 				// mark it as an array so the outer array context is preserved.
+				// Owning elements (string/mv tuple fields) are seeded uniformly
+				// heap by check_as_array_of_tuples (see
+				// heapify_owning_tuple_elements) — DECLARED arrays only; the
+				// generic/variadic flow (`Map`'s `...[TK, TV] pairs` seeding)
+				// keeps its established packing.
 				const elem_type = new Type(expected.name!);
 				elem_type.tuple_types = tuple_types;
-				return check_as_array_of_tuples(array, status, elem_type);
+				return check_as_array_of_tuples(
+					array,
+					status,
+					elem_type,
+					expected.name !== "tuple" &&
+						!status.checking_variadic_arg &&
+						!status.is_mono_body_recheck,
+				);
 			}
 		}
 	}
@@ -345,6 +336,67 @@ function replace_in_place(target: ArrayValuesNode, source: FunctionCallNode) {
 }
 
 /**
+ * Make an array-of-tuples literal's OWNING elements uniformly heap: every
+ * owning constructor ARGUMENT (a `string`/mv value) is deep-copied via
+ * `.copy()` and hoisted to a temp whose cleanup is transferred to the
+ * element — the constructor byte-assigns the copy, so the element slots own
+ * heap fields and the scope-exit element walk frees them exactly once.
+ * Without this the fields hold literal-seeded rodata that the element
+ * teardown would try to free (AUDIT-STALE-FREE).
+ *
+ * A bare owning tuple VARIABLE element is rejected: copying it would alias
+ * its fields (same rule as copying any owning struct by value).
+ */
+function heapify_owning_tuple_elements(array: ArrayValuesNode, status: CheckStatus): void {
+	for (let i = 0; i < array.values.length; i++) {
+		const value = array.values[i];
+		const vt = type_from_value_node(value, status);
+		if (!vt.name?.startsWith("_Tuple_") || !type_owns_heap(vt, status)) continue;
+		// The element must be a fresh tuple CONSTRUCTION to seed its args.
+		if (value.node_type !== "func_call") {
+			add_error(
+				status,
+				`cannot copy '${type_name(vt)}' into an array of tuples by value — it owns heap resources; use a fresh tuple literal or '.copy()'`,
+				value.start,
+			);
+			continue;
+		}
+		const call = value as FunctionCallNode;
+		for (let j = 0; j < call.params.length; j++) {
+			const param = call.params[j];
+			const pt = type_from_value_node(param, status);
+			if (!type_owns_heap(pt, status)) continue;
+			const old_expected = status.expected_type;
+			status.expected_type = clone_type(pt);
+			const copy_call = new AccessNode(
+				param.start,
+				param,
+				new AccessFunctionCallNode(param.start, "copy", clone_type(pt)),
+			);
+			if (!check_node(copy_call, status)) {
+				status.expected_type = old_expected;
+				continue;
+			}
+			status.expected_type = old_expected;
+			// Hoist the copy result: a call-result string marshalled straight
+			// into a constructor loses its hidden length half on aarch64.
+			const decl_name = `_param_${status.var_name_counter.value++}`;
+			const decl = new DeclarationNode(
+				param.start,
+				"private",
+				"const",
+				decl_name,
+				clone_type(pt),
+				copy_call,
+			);
+			decl.transferred_to_outer = true;
+			status.allocations.push(decl);
+			call.params[j] = new ValueNode(param.start, decl_name, clone_type(pt));
+		}
+	}
+}
+
+/**
  * Validate an array literal where each element should be a tuple, given the
  * tuple's element type (`elem_type` is a single tuple type — not array).
  * Each value is materialized into a tuple constructor in place, and the
@@ -354,6 +406,7 @@ function check_as_array_of_tuples(
 	array: ArrayValuesNode,
 	status: CheckStatus,
 	elem_type: Type,
+	seed_owning: boolean,
 ): boolean {
 	const old_expected = status.expected_type;
 	let result = true;
@@ -367,6 +420,10 @@ function check_as_array_of_tuples(
 		}
 	}
 	status.expected_type = old_expected;
+
+	// Owning elements (string/mv tuple fields) get uniformly-heap seeding so
+	// the element teardown walks free exactly one copy.
+	if (result && seed_owning) heapify_owning_tuple_elements(array, status);
 
 	// Set the outer array type
 	array.type = new Type(elem_type.name);
@@ -453,21 +510,11 @@ function check_as_array_or_inferred_tuple(
 		const all_same =
 			meaningful.length > 0 && meaningful.every((t) => same_type_shape(t, first_meaningful));
 
-		// A homogeneous tuple-element list infers an ARRAY of tuples — but
-		// only for non-owning elements (see check_as_array_of_tuples for the
-		// rodata-teardown rationale).
+		// A homogeneous tuple-element list infers an ARRAY of tuples; owning
+		// elements are seeded uniformly heap below (heapify), matching the
+		// mv-struct array convention.
 		if (all_same && first_meaningful?.tuple_types?.length) {
-			const owning = first_meaningful.tuple_types.some(
-				(t) => type_owns_heap(t, status) && !status.type_params.includes(t.name ?? ""),
-			);
-			if (owning) {
-				add_error(
-					status,
-					`an array-of-tuples element cannot own heap resources (a string/mv field) yet — read fields directly (pairs.at(i)._<n>) or use a struct`,
-					array.start,
-				);
-				return false;
-			}
+			heapify_owning_tuple_elements(array, status);
 		}
 
 		if (!all_same && array.values.length > 0) {

@@ -666,31 +666,24 @@ unverified.
 
 ## Bracket aggregates (`[]`) — remaining work
 
-Fixed 2026-11-06 (tuple `+` concat, `[T1, T2][]` / `Array<[T1, T2]>`
+Fixed 2026-11-06/07 (tuple `+` concat, `[T1, T2][]` / `Array<[T1, T2]>`
 spellings, array-of-tuples inference, base-spread tuple/array-base
 rejections, the SPEC `const empty = []` example, the call-result-string
-hoist, and nested arrays `int[][]` / `Array<Array<int>>` /
-`[[1, 2], [3, 4]]` — fixed-size outer row of heap inner rows, scalar
-inner elements). What REMAINS, deliberately:
-
-- **Arrays of tuples cannot hold owning elements** (`[int, string][]` is
-  a check error). Literal tuple fields hold rodata and the element
-  struct's teardown frees its string field unconditionally, so any
-  element copy out of the array frees a static (AUDIT-STALE-FREE).
-  Field READS (`pairs.at(i)._j`) are sound; the generic/variadic flow
-  (`Map(["a", 1])` seeding + mv-destructure downgrade) keeps its
-  established exemption. The proper fix is uniformly-heap element
-  seeding (strdup at construction, like user mv-struct ctors) plus
-  heap_string_fields records keyed through array elements.
+hoist, nested arrays `int[][]` / `Array<Array<int>>` / `[[1, 2], [3, 4]]`
+(fixed-size outer row of heap inner rows, scalar inner elements), and
+owning elements in arrays of tuples — constructor args are `.copy()`'d and
+the element teardown walks free the heap-seeded fields; plain destructuring
+of an owning element is rejected in favour of `var e = pairs.at(i)`).
+What REMAINS, deliberately:
 
 - **Call-result string args into a struct `#init` lose their hidden
   length half on aarch64** (pre-existing, verified on main 2026-11-06:
   `var t = [1, make_str()]` mis-marshals — `bl _string_copy`'s (ptr, len)
   return keeps only the ptr, and every later argument shifts). Tuple
-  concat works around it by hoisting each `.copy()` result into a named
-  const before the constructor call. The marshal fix belongs in
-  build_aarch64's arg handling for call-result string args against
-  callees with hidden_len params.
+  concat and the owning-element seeding work around it by hoisting each
+  `.copy()` result into a named const before the constructor call. The
+  marshal fix belongs in build_aarch64's arg handling for call-result
+  string args against callees with hidden_len params.
 
 - **Nested-array extensions** (deliberate v1 limits): inner elements
   must be non-owning (`string[][]` is rejected — the aarch64 fat-string

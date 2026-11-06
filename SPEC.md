@@ -620,9 +620,11 @@ an array of tuples (heterogeneous elements still infer a single tuple).
 The same spelling extends to anonymous enums — `[.ok(int), .error][]` is
 an array whose elements are matched with the usual `case` forms. Tuple
 elements that own heap resources (a `string` or mv-struct field) are
-not supported yet — an array element cannot be copied out of the array
-without freeing a literal-seeded field; read fields directly
-(`flags.at(i)._<n>`) or use a struct.
+supported: their fields are seeded as heap copies and the array's
+teardown frees them exactly once. Read such a field with `.copy()` when
+binding it to a local, and bind an element before destructuring it —
+`var [a, b] = pairs.at(i)` is rejected (the element copy would share the
+array's fields); use `var e = pairs.at(i)` instead.
 
 #### Nested Arrays
 

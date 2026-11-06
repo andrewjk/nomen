@@ -52,26 +52,57 @@ describe("array of tuples", () => {
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("owning tuple elements are rejected (rodata teardown hazard)", () => {
+	test("owning tuple elements are seeded heap (string fields)", () => {
 		const input = `
 	var [int, string][] pairs = [[1, "a"], [2, "b"]]
+	var string s = pairs.at(1)._1.copy()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("inferred owning-element arrays work too", () => {
+		const input = `
+	var pairs = [[1, "a"], [2, "b"]]
+	Console.write("\\{pairs.at(0)._1}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("destructuring an owning element out of the array is rejected", () => {
+		const input = `
+	var [int, string][] pairs = [[1, "a"]]
+	var [n, s] = pairs.at(0)
 `;
 		expect(
 			compile_main(input).some((e) =>
-				e.message.includes("an array-of-tuples element cannot own heap resources"),
+				e.message.includes("cannot destructure 'string' out of an array element"),
 			),
 		).toBe(true);
 	});
 
-	test("inferred owning-element arrays are rejected too", () => {
+	test("run: owning-element construction and field reads", async () => {
 		const input = `
-	var pairs = [[1, "a"], [2, "b"]]
+var [int, string][] pairs = [[1, "a"], [2, "b"]]
+Console.write("\\{pairs.at(0)._0} \\{pairs.at(1)._1}")
 `;
-		expect(
-			compile_main(input).some((e) =>
-				e.message.includes("an array-of-tuples element cannot own heap resources"),
-			),
-		).toBe(true);
+		await build_and_check_output(input, "array_of_tuples_owning", "1 b");
+	});
+
+	test("run: inferred owning-element array", async () => {
+		const input = `
+var pairs = [[1, "a"], [2, "b"]]
+Console.write("\\{pairs.at(1)._0} \\{pairs.at(0)._1}")
+`;
+		await build_and_check_output(input, "array_of_tuples_owning_infer", "2 a");
+	});
+
+	test("run: copying an owning element out", async () => {
+		const input = `
+var [int, string][] pairs = [[1, "a"]]
+var e = pairs.at(0)
+Console.write("\\{e._0} \\{e._1} \\{pairs.at(0)._1}")
+`;
+		await build_and_check_output(input, "array_of_tuples_owning_copyout", "1 a a");
 	});
 
 	test("run: index and read tuple fields", async () => {

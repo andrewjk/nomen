@@ -97,6 +97,12 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Trusted-internal opt-in: a build-wide flag, inherited by every clone.
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
+		// Memory-model context flags: a cloned function/block body must keep
+		// the same flow context (mono re-check / variadic-arg seeding) and
+		// the shared destructure-temp provenance set.
+		is_mono_body_recheck: status.is_mono_body_recheck,
+		checking_variadic_arg: status.checking_variadic_arg,
+		tuple_dst_from_array: status.tuple_dst_from_array,
 		// Nursery context: block clones (if/else/while inside `async { }`)
 		// stay inside the same nursery, so both the depth and the stack of
 		// body scope depths carry into every clone (spawn_region.ts reads
