@@ -1386,11 +1386,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const return_enum_size = get_enum_sret_size(node.type?.name, status);
 		let return_temp_offset: number | undefined;
 		if (return_struct || return_enum_size !== undefined) {
+			// Allocate the result sret buffer; x8 is (re)preset immediately
+			// before the operator call — see the note there.
 			return_temp_offset = allocate_stack_space(
 				status,
 				return_struct ? get_struct_size(node.type!.name, status) : return_enum_size!,
 			);
-			emit_asm(status, `add x8, x29, #${return_temp_offset}\n`);
 		}
 
 		// For array + and *, allocate result with length prefix and call the
@@ -1401,10 +1402,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				? parseInt((node.type.length as any).value || "0", 10)
 				: 0;
 
-			// Allocate result buffer with length prefix
+			// Allocate result buffer with length prefix; x8 is (re)preset
+			// immediately before the call (see the note there).
 			const alloc_start = allocate_stack_space(status, 8 + elem_size * result_len);
 			return_temp_offset = alloc_start + 8;
-			emit_asm(status, `add x8, x29, #${return_temp_offset}\n`);
 		}
 
 		// Check if operands are owned heap temps before building them. A
@@ -1490,6 +1491,19 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 
 		// Restore right operand into x1
 		emit_asm(status, `ldr x1, [x29, #${right_spill}]\n`);
+
+		// Re-establish the result sret buffer AFTER operand evaluation: a
+		// CALL operand clobbers x8 (the indirect-result register), so a
+		// preset made before the operands was lost and the operator wrote
+		// its result into the operand call's temp instead of ours (the
+		// `p + mk(...)` corruption — x0/x1 carry the operand addresses and
+		// are untouched by this add).
+		if (
+			return_temp_offset !== undefined &&
+			(return_struct || return_enum_size !== undefined || is_array_op)
+		) {
+			emit_asm(status, `add x8, x29, #${return_temp_offset}\n`);
+		}
 
 		const label =
 			node.operator_func.mangled_name ||

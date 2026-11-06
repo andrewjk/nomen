@@ -38,6 +38,53 @@ Console.write("\\{p2.x} \\{p2.y}")
 `;
 		await build_and_check_output(input, "op_mul_struct", "8 12");
 	});
+
+	test("operator with call operands", async () => {
+		// A call operand clobbers the ABI's indirect-result register (x8), so
+		// the aarch64 operator call must re-establish its own result sret
+		// buffer after operand evaluation — otherwise the operator writes its
+		// result into the operand call's temp (the `p + mk(...)` corruption).
+		const input = `
+struct Point {
+  var int x
+  var int y
+  pub func #op_add = (self, Point other, out Point) {
+    return Point(self.x + other.x, self.y + other.y)
+  }
+}
+
+func mk = (int x, int y, out Point) {
+  return Point(x, y)
+}
+
+var p = mk(1, 2)
+var q = p + mk(10, 20)
+var r = mk(100, 200) + mk(1000, 2000)
+Console.write("\\{q.x} \\{q.y} \\{r.x} \\{r.y}")
+`;
+		await build_and_check_output(input, "op_call_operands", "11 22 1100 2200");
+	});
+
+	test("compound operator with a call operand", async () => {
+		const input = `
+struct Point {
+  var int x
+  var int y
+  pub func #op_add = (self, Point other, out Point) {
+    return Point(self.x + other.x, self.y + other.y)
+  }
+}
+
+func mk = (int x, int y, out Point) {
+  return Point(x, y)
+}
+
+var p = mk(1, 2)
+p += mk(10, 20)
+Console.write("\\{p.x} \\{p.y}")
+`;
+		await build_and_check_output(input, "op_call_operand_compound", "11 22");
+	});
 });
 
 // COMPOUND ASSIGNMENT — routes to the same operator functions as the binary
