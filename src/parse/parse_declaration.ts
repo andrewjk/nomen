@@ -65,6 +65,27 @@ export default function parse_declaration(
 	status.stack.push(decl);
 
 	accept(keyword, status);
+	// `var mv T name = ...` — `mv` after `var` is the ownership modifier, not
+	// a type name (`mv` is reserved; no type can be named it). Rewrite the
+	// declaration to the canonical `mv T name = ...` spelling so the same
+	// ownership semantics apply and the type substitutes normally. Without
+	// this the parser silently read `mv` as the TYPE and `T` as the name,
+	// leaving the real name's initializer as a dangling assignment — inside a
+	// folded-constant generic arm (never generically checked) that emitted
+	// `mv T;` + `v = ...` as garbage C. Guarded on the next token so
+	// `var mv = 5` still reports `mv` as a reserved name.
+	const after_var = status.tokens[status.i + 1]?.value;
+	if (
+		declaration === "var" &&
+		!is_readonly &&
+		peek_current(status) === "mv" &&
+		after_var !== undefined &&
+		after_var !== "=" &&
+		after_var !== ":"
+	) {
+		consume(status);
+		decl.declaration = "mv";
+	}
 	if (peek_current(status) === "func") {
 		parse_function_type_declaration(decl, status);
 	} else {

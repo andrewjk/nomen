@@ -580,30 +580,3 @@ Rules of thumb:
   processes — the gap is not a QoS/E-core placement effect. Exact
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
-
-## Declarations inside folded-constant generic arms emit unsubstituted types
-
-Recorded 2026-11-04, while fixing the Map/Set.remove no-shift strand (the
-landed fix routes around it). A generic-param-typed DECLARATION inside a
-constant-marker arm — `var mv TV removed_value = self.values.move(idx)`
-inside `if TV_NEEDS_STRDUP { ... }` in `core/System/Map.nm` — lowered to
-literal C text `mv TV;` followed by the assignment: the declaration's Type
-kept the generic param name (unsubstituted) AND the `mv` declaration
-keyword leaked into the emitted C (`use of undeclared identifier 'mv'`).
-The arm is skipped by the generic check (`is_unchecked_constant_condition`),
-and the mono pipeline (clone → `substitute_raw_types` →
-`fold_substituted_constant_ifs` → `substitute_node_types`) substitutes
-value-node tokens and raw blocks, but something in the declare path loses
-the substitution for arms that were never generically checked. Root cause
-not diagnosed — `substitute_node_types` has a "declare" case that calls
-`substitute_type`, so the loss is between the fold splice and that walk.
-
-Notes for picking it up: `mv` declarations of a generic param have NO
-precedent elsewhere in core/System (this attempt was the first), so the
-corner was never exercised; value tokens DO substitute correctly in the
-same arms (the `destroy_at` calls in the landed fix fold and emit fine);
-and aarch64 was not separately characterized (the C build fails first).
-Workaround until fixed: express the arm's effect through a primitive whose
-raw body handles the element kind via `#if T_*` tokens (the landed
-`Buffer.destroy_at` + `Map/Set.remove` shape), not through a generic
-`mv` declaration.

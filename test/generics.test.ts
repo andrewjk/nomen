@@ -591,3 +591,44 @@ Console.write("\\{go()}")
 `;
 	await build_and_check_output(input, "generic_struct_field_access", "[x=31,y=42]0");
 });
+
+test("generics -- var mv declaration inside a folded constant arm", async () => {
+	// `var mv T name = ...` is accepted as the ownership-modifier spelling of
+	// the canonical `mv T name = ...`. Inside a folded-constant arm the body
+	// is never generically checked, so the mono pipeline alone must substitute
+	// the declaration's type: the misparsed `mv`-as-a-type form emitted
+	// `mv T;` + `<name> = ...` as garbage C.
+	const input = `
+mv struct Box<T> {
+	var T value
+	pub func probe = (ref self, out int) {
+		var int extra = 0
+		if T_NEEDS_STRDUP {
+			var mv string owned = self.value.to_string()
+			extra = owned.length
+		}
+		return extra
+	}
+}
+var Box<string> b = Box("hi")
+Console.write(b.probe().to_string())
+`;
+	await build_and_check_output(input, "generic_const_arm_var_mv_decl", "2");
+});
+
+test("generics -- var mv local declaration matches the mv spelling", async () => {
+	const input = `
+var s = "hi".to_string()
+var mv string t = s.to_string()
+Console.write(t)
+`;
+	await build_and_check_output(input, "var_mv_local_decl", "hi");
+});
+
+test("generics -- var mv with no type word keeps the reserved-name error", () => {
+	const parsed = parse_with_imports(`var mv = 5`);
+	expect(
+		parsed.errors.some((e) => e.message.includes("'mv' is a reserved word")),
+		JSON.stringify(parsed.errors),
+	).toBe(true);
+});
