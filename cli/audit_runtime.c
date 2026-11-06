@@ -51,13 +51,20 @@ typedef struct {
 	unsigned long pad; // keeps the payload 16-byte aligned
 } nomen_audit_header;
 
+// True when the NOMEN_AUDIT_TRACE env var is on. The getenv is not cached —
+// the trace is a developer diagnostic, and alloc/free volumes under it are
+// already dominated by the fprintf.
+static int audit_trace(void) {
+	return getenv("NOMEN_AUDIT_TRACE") != 0;
+}
+
 static void *audit_alloc(unsigned long size) {
 	nomen_audit_header *header = (nomen_audit_header *)malloc(size + sizeof(nomen_audit_header));
 	if (!header) return 0;
 	header->magic = NOMEN_AUDIT_MAGIC;
 	header->size = size;
 	header->state = NOMEN_AUDIT_LIVE;
-	if (getenv("NOMEN_AUDIT_TRACE")) fprintf(stderr, "ALLOC %lu\n", (unsigned long)size);
+	if (audit_trace()) fprintf(stderr, "ALLOC %p %lu\n", (void *)(header + 1), (unsigned long)size);
 	__atomic_add_fetch(&nomen_malloc_count, 1, __ATOMIC_SEQ_CST);
 	return (void *)(header + 1);
 }
@@ -74,7 +81,7 @@ static nomen_audit_header *audit_header(void *ptr) {
 // Retire a block: poison the header first so a second free of the same pointer
 // is recognized as stale, then hand the memory back and drop the count.
 static void audit_release(nomen_audit_header *header) {
-	if (getenv("NOMEN_AUDIT_TRACE")) fprintf(stderr, "FREE %lu\n", (unsigned long)header->size);
+	if (audit_trace()) fprintf(stderr, "FREE %p %lu\n", (void *)(header + 1), (unsigned long)header->size);
 	header->magic = 0;
 	header->state = NOMEN_AUDIT_DEAD;
 	__atomic_sub_fetch(&nomen_malloc_count, 1, __ATOMIC_SEQ_CST);
@@ -157,6 +164,9 @@ void nomen_free_wrap(void *ptr) {
 	// of passing it on, and leave the count alone: an unmatched free is not
 	// evidence that a live block was reclaimed.
 	if (!header || header->state != NOMEN_AUDIT_LIVE) {
+		if (audit_trace())
+			fprintf(stderr, "STALE-FREE %p (%s)\n", ptr,
+					header ? "already freed" : "not an audit allocation");
 		audit_record_stale();
 		audit_report_stale(0);
 		return;
