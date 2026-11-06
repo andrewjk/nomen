@@ -133,4 +133,52 @@ Console.write("\\{s.length}")
 `;
 		await build_and_check_output(input, "strand_set_string_churn", "32");
 	});
+
+	test("value-struct key churn (Set<Rec>, C address-of-rvalue fix)", async () => {
+		// `find_slot` compares the slot's key with the probe value through the
+		// element's `==`. The C backend used to emit `&Buffer_Rec_load(...)` —
+		// the address of a BY-VALUE call result, which clang rejects — so a
+		// `Set<Rec>` never compiled. The operand is now materialized into a
+		// temp before the operator call.
+		const input = `
+mv struct Rec: Hashable, Equatable {
+	var int key
+	var string name
+}
+
+var Set<Rec> s = Set<Rec>()
+var int i = 0
+while i < 16 {
+	s.add(Rec(i, "k\\{i}"))
+	i += 1
+}
+var int r = 0
+while r < 16 {
+	s.remove(Rec(r, "k\\{r}"))
+	r += 2
+}
+Console.write("\\{s.length} \\{s.has(Rec(1, "k\\{1}"))} \\{s.has(Rec(2, "k\\{2}"))}")
+`;
+		await build_and_check_output(input, "strand_set_rec_keys_churn", "8 true false");
+	});
+
+	test("value-struct key churn (Map<Rec, int>)", async () => {
+		const input = `
+mv struct Rec: Hashable, Equatable {
+	var int key
+	var string name
+}
+
+var m = Map<Rec, int>()
+var int i = 0
+while i < 8 {
+	m.set(Rec(i, "k\\{i}"), i * 10)
+	i += 1
+}
+m.remove(Rec(0, "k0"))
+m.set(Rec(8, "k8"), 80)
+Console.write("\\{m.length} \\{m.get_or(Rec(3, "k3"), -1)} \\{m.get_or(Rec(8, "k8"), -1)} \\{m.has(Rec(0, "k0"))}")
+`;
+		await build_and_check_output(input, "strand_map_rec_keys_churn", "8 30 80 false");
+	});
 });

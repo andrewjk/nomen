@@ -608,26 +608,33 @@ raw body handles the element kind via `#if T_*` tokens (the landed
 `Buffer.destroy_at` + `Map/Set.remove` shape), not through a generic
 `mv` declaration.
 
-## Set<Rec>: value-struct keys fail to compile (address of a by-value load)
+## aarch64: struct operator call with a CALL operand corrupts the result
 
-Recorded 2026-11-04, during the Map/Set.remove strand verification. A
-`Set<Rec>` whose element is a value struct (`Hashable, Equatable`) fails to
-compile on the C backend: `find_slot`'s key compare emits
+Recorded 2026-11-07, while fixing the C `Set<Rec>` address-of-rvalue compile
+failure (that fix did not touch this — verified identical on stashed
+HEAD). On the aarch64 backend, a struct `#op_*` operator whose operand is a
+function CALL evaluates the other operand into a caller-saved register and
+then the call clobbers it:
 
-```c
-Rec_eq(&Buffer_Rec_load(&self->slots, idx), &*value)
+```
+struct Point { var int x; var int y
+  pub func #op_add = (self, Point other, out Point) {
+    return Point(self.x + other.x, self.y + other.y)
+  }
+}
+func mk = (int x, int y, out Point) { return Point(x, y) }
+var p = mk(1, 2)
+var q = p + mk(10, 20)   // aarch64 prints garbage (e.g. "69187" vs "11 22")
+p += mk(10, 20)          // same shape (the checker rewrites it to p = p + mk(...))
 ```
 
-— `Buffer_Rec_load` returns `struct Rec` BY VALUE (an rvalue) and the
-generic Set body's `==` lowering takes its address. clang: "cannot take the
-address of an rvalue of type 'struct Rec'". Verified pre-existing on clean
-main (stash test, 2026-11-04) — unrelated to the strand fix, which is why
-`test/map_set_remove_strand.test.ts` covers Set churn with string elements
-only. Map's `find_slot` compares keys through the same body shape, so
-`Map<Rec, V>` presumably has the identical failure (unverified — the C side
-fails first). Fix direction: the key compare needs the slot's address (the
-`slot_ptr` interior-borrow primitive, or a load into a temp before the
-`==` call) for value-struct keys; string/scalar keys are unaffected
-(`Set<string>` churn passes). aarch64 not characterized (C fails first).
-Once fixed, a `Set<Rec>` churn shape belongs in
-`test/map_set_remove_strand.test.ts` next to the string one.
+The emitted sequence builds the left `&p` into x0, then `bl main_mk` for the
+right operand (which clobbers x0), then stores whatever the call left in x0
+as the operand temp — so `Point_add` receives a stale/garbage pointer for
+one side. The C backend is correct (`Point_add(&p, ({ Point _op_tmp =
+main_mk(10,20); &_op_tmp; }))` runs fine). Fix direction: the aarch64
+operator-call operand evaluation needs the call-free spill discipline the
+float/int binary paths already use (evaluate a call-bearing operand into a
+frame temp / callee-saved slot before building the other side), or a
+call-free gate that materializes both operands into `_op_tmp` slots first.
+A `p + mk(...)` runtime case belongs in `test/operators.test.ts` once fixed.

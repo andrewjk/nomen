@@ -1,6 +1,7 @@
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
+import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -506,16 +507,19 @@ function build_operand(node: any, status: BuildStatus) {
 		build_node(node, status);
 		return;
 	}
-	// Struct/trait operands are passed by address. If the operand is already an
-	// lvalue (a variable or member/element access) we can take its address
-	// directly. Otherwise it's an rvalue (e.g. a freshly-constructed struct
-	// `M(5)`, an arithmetic result, or a cast) and `&<rvalue>` is invalid C —
-	// materialize it into a temporary first via a GCC statement-expression.
+	// Struct/trait operands are passed by address. Only a genuine C lvalue can
+	// be addressed directly: a variable or a FIELD access. A method-call result
+	// (`self.slots.load(idx)`, a heap `Array<T>` mono `.at(i)`) is an RVALUE
+	// struct in C — `&<call>` is invalid ("cannot take the address of an
+	// rvalue"), so materialize it into a temporary first via a GCC
+	// statement-expression. (Only the C backend needs this: the aarch64 struct
+	// value convention hands a call result back as its address already.)
+	// Everything else — a fresh constructor, an arithmetic result, a cast, or
+	// any method call — is likewise materialized.
+	const is_field_access =
+		node.node_type === "access" && (node as AccessNode).access?.node_type === "access_field";
 	const is_lvalue =
-		node.node_type === "value" ||
-		node.node_type === "access" ||
-		node.node_type === "access_field" ||
-		node.node_type === "access_func";
+		node.node_type === "value" || node.node_type === "access_field" || is_field_access;
 	if (is_lvalue) {
 		status.code += `&`;
 		build_node(node, status);
