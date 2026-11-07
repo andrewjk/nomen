@@ -35,6 +35,7 @@ import {
 	monomorphize_enum,
 	stamp_in_place_enum_payloads,
 } from "./utils/enum_mono.ts";
+import { root_and_path_of, verify_field_effects_at_receiver_call } from "./utils/field_effects.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
@@ -1061,6 +1062,11 @@ export function check_access_function_node(
 	// Check for calling a mutating method on a const variable
 	// (detected by `ref self` on the first parameter)
 	if (func.params[0]?.is_self_param && (func.params[0].is_ref || func.params[0].type?.is_ref)) {
+		// Declared field effects (FIELD_EFFECTS.md) rules 2 and 3: when the
+		// receiver is rooted at the current function's `ref` parameter, the
+		// touched field (or the callee's declared set, for a bare-parameter
+		// receiver) must be inside the caller's declared set.
+		verify_field_effects_at_receiver_call(target, func, status, node.start);
 		// A mutating call may free or displace the receiver's contents, so every
 		// live child-group borrow rooted at this receiver is now stale. Resolve
 		// the ultimate owner so field-path receivers (e.g. z.animals.push) and
@@ -1122,7 +1128,18 @@ export function check_access_function_node(
 			return false;
 		}
 		if (owner && !push_keeps_element_borrows(target_type, func)) {
-			invalidate_borrows_of(status, owner);
+			// Field-scoped invalidation (FIELD_EFFECTS.md): a mutator call on a
+			// field-path receiver (`z.animals.push(…)`) is confined under that
+			// field of the root — the callee cannot name the root — so only
+			// borrows taken through the first path segment die. A bare-variable
+			// receiver uses the callee's declared set (wildcard = whole owner,
+			// today's behavior when the method declares no clause).
+			const receiver_path = root_and_path_of(target);
+			const fields =
+				receiver_path && receiver_path.path.length
+					? [receiver_path.path[0]]
+					: func.params[0]?.field_set;
+			invalidate_borrows_of(status, owner, fields);
 		}
 	}
 

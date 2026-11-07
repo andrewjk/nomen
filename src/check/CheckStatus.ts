@@ -305,4 +305,22 @@ export default interface CheckStatus {
 	 * destination stand down (Map(["a", 1]) seeding).
 	 */
 	checking_variadic_arg?: boolean;
+
+	/**
+	 * The function whose body is currently being checked (FIELD_EFFECTS.md).
+	 * Set by check_function_node and shared through block clones (an if/while
+	 * body stays in the same function); a nested function's check overwrites
+	 * it. The declared-effect verification resolves the current `ref`
+	 * parameters through it.
+	 */
+	current_function?: FunctionNode;
+
+	/**
+	 * Undeclared field mutations recorded while checking (FIELD_EFFECTS.md):
+	 * writes and mutator calls through an un-annotated `ref` parameter.
+	 * Shared by reference through clones so records made inside branch
+	 * bodies reach the warning pass, which turns each entry into a lint
+	 * warning carrying a field-set quick fix.
+	 */
+	ref_param_writes?: import("./utils/field_effects.ts").RefParamWrites;
 }

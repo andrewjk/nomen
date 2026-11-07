@@ -80,10 +80,24 @@ Recorded 2026-10-12, out of the Valen group-borrowing comparison
 ([docs/GROUP_BORROWING.md](./docs/GROUP_BORROWING.md)). **Superseded design
 (2026-10-23)**: the body-scan mechanism sketched below was rejected
 (reasoning burden, scan/fixpoint cost) in favor of signature-declared effect
-sets — `ref self mutates data, cache` — verified against the body at the
-definition. The plumbing half of the sketch (`borrowed_via`, field-scoped
-`invalidate_borrows_of`) survives unchanged. Full design, syntax decisions,
-staging, and tests: [`docs/FIELD_EFFECTS.md`](./docs/FIELD_EFFECTS.md).
+sets. **Implemented 2026-11-07** as designed in
+[`docs/FIELD_EFFECTS.md`](./docs/FIELD_EFFECTS.md), with these deviations the
+implementation settled: the set is a bare brace group after the parameter
+name (`ref item { name }`, `{}` for the empty set) — the `mutates` keyword was
+dropped as misleading (the set is about displacement, not writes), and with it
+the `mutates nothing` spelling; the set is allowed on EVERY `ref` parameter
+(free functions included), not only `ref self` — free `ref` params had gained
+their own whole-owner invalidation site (check_function_call) before this
+landed, so the set narrowed them the same way. Un-annotated `ref` parameters
+stay wildcards; a lint warning (with the editor quick fix that adds the set)
+fires when a free `ref` parameter's body actually mutates a heap-bearing field
+through it. A second lint flags the idle reference: a `ref`/`ref self`
+parameter never written through (not even by a forwarded mutable borrow) is
+suggested to become a plain parameter (or bare `self`). The plumbing half of
+the sketch (`borrowed_via`, field-scoped `invalidate_borrows_of`) landed as
+sketched. Tests: test/field_effects.test.ts,
+test/field_effects_quickfix.test.ts, test/spec/types.test.ts ("spec: declared
+field effects").
 
 Today ANY `ref self`
 method call invalidates ALL live child-group borrows rooted at the receiver's
@@ -580,3 +594,30 @@ Rules of thumb:
   processes — the gap is not a QoS/E-core placement effect. Exact
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
+
+## First check of a struct with a direct string field reports offset-less errors and suppresses the warning pass
+
+Recorded 2026-11-07, found while landing FIELD_EFFECTS.md (confirmed on
+pristine main — not introduced by it). A module whose structs have direct
+`string` fields makes the FIRST check pass report, with `start: -1`:
+
+- `cannot copy field 'name' into parameter 'name' by value — it owns heap
+resources; use 'mv ... swap <replacement>' or .copy()`
+- `cannot copy 'string' out of field 'name' by value — ...`
+
+`parse.ts`'s `format_errors` filters `start < 0`, so the user sees `ok: false`
+with an EMPTY error list — and since `check()` only runs the warning pass on a
+clean check, all lint warnings (unused values, and now the FIELD_EFFECTS
+wildcard-ref-parameter hint, which powers the editor quick fix) are silently
+dropped for exactly the programs that use string fields. A second `check()` of
+the same root is clean — the state the first pass mutated (auto-init
+`mv`-param stamping / string-field records) suppresses it — so the bug is a
+first-check non-idempotency, not a standing condition.
+
+Suspected shape: the auto-generated `#init` body assigns `self.name = name`
+through the string-field copy rule before the mv-param machinery
+(`mark_owning_auto_init_params`) has marked the synthesized param — worth
+reproducing from `parse_struct.ts`'s synthesized `#init` and checking the
+error's start offset is the param/field, not `-1`. Until then, language tests
+that need the warning pass avoid direct string fields on structs (see
+test/field_effects.test.ts's `run` note).

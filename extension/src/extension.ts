@@ -16,6 +16,7 @@ import {
 	NomenDefinitionProvider,
 	NomenDocumentFormattingProvider,
 	NomenHoverProvider,
+	NomenQuickFixProvider,
 	NomenReferenceProvider,
 	format_edits,
 } from "./providers.ts";
@@ -48,6 +49,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			new NomenDocumentFormattingProvider(),
 		),
 		vscode.languages.registerCompletionItemProvider(selector, new NomenCompletionProvider(), "."),
+		vscode.languages.registerCodeActionsProvider(selector, new NomenQuickFixProvider(), {
+			providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
+		}),
 		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
 		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),
 		vscode.commands.registerCommand("nomen.format.force", () => forceFormat()),

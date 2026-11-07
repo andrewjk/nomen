@@ -10,6 +10,7 @@ import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import type CompileError from "../types/CompileError.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { field_set_quick_fix, type FieldSetQuickFix } from "./utils/field_effects.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 /**
@@ -46,6 +47,56 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 	// Per-function: unused params/locals and `var`-never-changed. Analyse every
 	// FunctionNode in the tree (top-level, methods, and lambdas).
 	for_each_function(root, (func) => analyse_function(func, status));
+
+	// Declared field sets and idle references (FIELD_EFFECTS.md):
+	//  - a `ref` parameter never written through (not even by a forwarded
+	//    mutable borrow) has no reason to be a reference — suggest a plain
+	//    parameter, or bare `self` for a receiver;
+	//  - an un-annotated `ref` parameter whose body mutates a heap-bearing
+	//    field through it stays allowed (wildcard invalidation), but the
+	//    warning carries a structured quick fix so the editor can add the
+	//    narrowing field set.
+	if (status.ref_param_writes?.size) {
+		const entries = [...status.ref_param_writes.values()].sort(
+			(a, b) => a.param.start - b.param.start,
+		);
+		for (const entry of entries) {
+			const param = entry.param;
+			if (!entry.wrote) {
+				add_warning(
+					status,
+					param.is_self_param
+						? `Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'`
+						: `Ref parameter '${param.name}' is never written through — take it by value (or drop 'ref')`,
+					param.name_start ?? param.start,
+				);
+				continue;
+			}
+			// Un-annotated `ref self` stays the accepted norm (zero churn);
+			// the wildcard hint is for free `ref` parameters only.
+			if (param.field_set !== undefined || param.is_self_param) continue;
+			const fields = [...entry.fields].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+			const whole = entry.whole ? `; calls through the bare parameter may change any field` : "";
+			if (!fields.length) {
+				add_warning(
+					status,
+					`Ref parameter '${param.name}' may change any field of the aliased variable — declare a field set ('{ … }') to narrow invalidation for callers${whole}`,
+					param.start,
+				);
+				continue;
+			}
+			add_warning(
+				status,
+				`Ref parameter '${param.name}' changes ${fields
+					.map((f) => `'${f}'`)
+					.join(
+						", ",
+					)} through the alias without declaring it — add '{ ${fields.join(", ")} }' to narrow invalidation for callers${whole}`,
+				param.start,
+				field_set_quick_fix(param, fields),
+			);
+		}
+	}
 
 	// Monomorphised clones share their original's offsets, so the same warning
 	// can be emitted more than once — collapse exact duplicates.
@@ -246,7 +297,12 @@ function is_discard(name: string): boolean {
 	return name.startsWith("_");
 }
 
-function add_warning(status: CheckStatus, message: string, start: number): void {
+function add_warning(
+	status: CheckStatus,
+	message: string,
+	start: number,
+	quick_fix?: FieldSetQuickFix,
+): void {
 	if (!status.warnings) status.warnings = [];
-	status.warnings.push({ message, start, line: 0, column: 0 });
+	status.warnings.push({ message, start, line: 0, column: 0, ...(quick_fix ? { quick_fix } : {}) });
 }

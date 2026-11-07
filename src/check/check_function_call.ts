@@ -45,6 +45,7 @@ import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
 	NON_NEGATIVE_FIELDS,
 } from "./utils/evaluate_const_condition.ts";
+import { verify_field_effects_at_ref_arg } from "./utils/field_effects.ts";
 import {
 	apply_bounds,
 	collect_return_bounds,
@@ -760,7 +761,17 @@ export default function check_function_call(
 				revert_hoisted_element_borrows(status, ref_owner);
 			}
 			if (ref_owner) {
-				invalidate_borrows_of(status, ref_owner);
+				// Field-scoped invalidation (FIELD_EFFECTS.md): a callee that
+				// declares a field set (`{ … }`) on this parameter poisons only the
+				// borrows taken through those fields of the argument; an
+				// un-annotated parameter is a wildcard (whole owner).
+				invalidate_borrows_of(status, ref_owner, func_param?.field_set);
+			}
+			// Declared field effects rule 3: forwarding the current function's
+			// clause-bound parameter (or a field path into it) must stay inside
+			// the caller's declared set.
+			if (func_param?.type.is_ref) {
+				verify_field_effects_at_ref_arg(param, func_param, status, param.start);
 			}
 		}
 		// OWNED value-struct parameter: the callee fully owns a normalized

@@ -14,6 +14,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 import { collect_rebound_names } from "./utils/devirtualize.ts";
+import { ensure_ref_param_write } from "./utils/field_effects.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { struct_has_view_fields } from "./utils/view_fields.ts";
@@ -168,6 +169,21 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// references keep erroring.
 	function_status.enclosing_closure = func.is_closure ? func : undefined;
 	if (func.is_closure && !func.captures) func.captures = [];
+	// Declared-effect context (FIELD_EFFECTS.md): the body's verification
+	// resolves the current `ref` parameters through the owning function.
+	function_status.current_function = func;
+	// Seed the write-tracking entry for every `ref` parameter before the body
+	// runs. A parameter that is never written through (not even by a
+	// forwarded mutable borrow) is an idle reference — the warning pass lints
+	// it. Library internals and bodyless declarations (trait signatures,
+	// foreign functions) have no body-level intent to judge.
+	if (func.has_body && !func.is_library) {
+		for (const param of func.params) {
+			if (param.is_ref || param.type.is_ref) {
+				ensure_ref_param_write(function_status, param, func.name);
+			}
+		}
+	}
 	// Parallel-length equations are scoped to the function whose params
 	// declared them; a nested function's params may shadow the outer names,
 	// so it starts with a clean slate.

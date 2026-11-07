@@ -1,6 +1,28 @@
 # Field-Scoped Borrow Invalidation by Declared Effect Sets
 
-Written 2026-10-23. Picks up the FOLLOWUP.md entry "Field-scoped borrow
+Written 2026-10-23. **Implemented 2026-11-07** — see FOLLOWUP.md's
+"Field-scoped borrow invalidation" entry for the settled deviations. Tests:
+`test/field_effects.test.ts`, `test/field_effects_quickfix.test.ts`,
+`test/spec/types.test.ts` ("spec: declared field effects").
+
+**Final syntax (2026-11-07): the keyword was dropped — the set is a bare
+brace group after the parameter name.** Every `mutates { … }` spelling below
+is superseded by:
+
+```
+ref Item item              // wildcard — may displace anything
+ref Item item { name }     // may displace `name` (and paths through it)
+ref Item item {}           // displaces nothing (value-type writes still OK)
+ref self { data }          // the same set on a method receiver
+```
+
+Bare braces are unambiguous (anonymous structs use `[ field = value ]`, and
+no other grammar produces `{` in a parameter list). The bare form also made
+the `mutates nothing` spelling unnecessary: `{}` says "no fields" without a
+verb that contradicts an `int` write. Everything below is the design
+record; read `mutates { … }` as the brace set.
+
+Picks up the FOLLOWUP.md entry "Field-scoped borrow
 invalidation (Valen-style effect precision)" (recorded 2026-10-12, out of the
 Valen comparison in [GROUP_BORROWING.md](./GROUP_BORROWING.md)) and replaces
 that entry's proposed mechanism: instead of scanning method bodies for the
@@ -238,28 +260,42 @@ Decisions made 2026-10-23, with the alternatives and why they lost:
      (Verified 2026-10-23: the checker has exactly two invalidation sites —
      the `ref self` arm and view-source reassignment — so free `ref` params
      don't invalidate today, and self-only attachment loses nothing.)
-- **Keyword — `mutates`.** Alternatives considered:
-  - `mut` (Valen's word): rejected — differs from `mv` by one letter, and
-    `mv` saturates transfer positions in this language. `mv data` / `mut
-data` in adjacent lines will be misread as typos forever.
-  - `in` (echoing Valen's `entity in world.entities[]`): rejected — reads as
-    _placement_ ("self lives in data"), and the clause is _capability_.
-  - `writes`: viable fallback — accurate (`self.items.push(…)` is a write
-    through `items`), no collisions, one letter shorter.
-  - The length of `mutates` is a one-time read cost per mutator, on the line
-    that most needs documentation; the `mut`/`mv` collision would be a
-    permanent tax on every read.
-- **Set delimitation — open, pick at implementation time.**
-  - Comma list terminated by the first non-identifier token
-    (`mutates items, mv List<T> other` — `mv`/`ref`/`out`/a type all end the
-    set). Needs an LL(k) rule and formatter/LSP awareness; keeps the param
-    list brace-free.
-  - Braced set (`mutates {data, cache}`): unambiguous, visually grouped, and
-    gives the empty case a tidy spelling (`mutates {}` vs `mutates nothing`).
-    The empty case needs a spelling either way (`mutates nothing` / `mutates
-{}`); `pure` was rejected — bare-`self` already _is_ the read-only case,
-    and an empty-mutates `ref self` method is a genuinely different middle
-    ground ("mutates self, but only value-type storage").
+- **Keyword — none (final, 2026-11-07).** The keyword was dropped entirely;
+  the set is written as bare braces (`ref Item item { name }`). Earlier
+  candidates and why each lost:
+  - `mutates` (the original choice): misleading — the set is about
+    _displacing_ storage, not about writes. `self.n = self.n + 1` mutates but
+    declares nothing; a keyword that says "mutates" while the empty set is
+    legal reads as a contradiction.
+  - `mut` (Valen's word): differs from `mv` by one letter, and `mv`
+    saturates transfer positions. `mv data` / `mut data` in adjacent lines
+    are misread as typos forever.
+  - `in` (Valen's `entity in world.entities[]`): reads as _placement_
+    ("self lives in data"); the set is _capability_.
+  - `writes`: same misleading axis as `mutates` — a scalar write is a write.
+  - `displaces`: semantically exact, but unpleasant to say and read, and
+    jargon for a surface-level feature.
+  - `takes`: reads as "the function takes…" and connotes consumption (`mv`),
+    and `takes nothing` contradicts the parameter list itself.
+  - Overloading `mv`: rejected — ownership transfer is an orthogonal axis;
+    `ref x mv { … }` reads like moving fields out.
+  - A symbol (`&`, `~`, `!`, `@`, …): every candidate collides with an
+    operator or has no precedent; Nomen is keyword-forward.
+  - **Bare braces** won: practically unambiguous (anonymous structs use
+    `[ … ]`), the shortest spelling, and the brace group already reads as "a
+    set of names". Once seen in a signature it is self-explanatory, and the
+    empty case is just `{}` — no verb, no contradiction.
+- **Set delimitation — braced (final).**
+  - Comma list terminated by the first non-identifier token (`mutates items,
+mv List<T> other`): rejected — needs an LL(k) rule and formatter/LSP
+    awareness, and reads worse than a grouped set.
+  - Braced set: unambiguous, visually grouped, tidy empty case (`{}`).
+    `pure` was rejected — bare-`self` already _is_ the read-only case, and an
+    empty-set `ref self` method is a genuinely different middle ground
+    ("writes self, but only value-type storage").
+  - With the keyword gone there is no `nothing` spelling: `{}` is the empty
+    set, and the idle-reference lint catches a `ref` parameter that is never
+    written through at all (drop `ref`, or use bare `self`).
 
 ## Honest costs (accepted)
 

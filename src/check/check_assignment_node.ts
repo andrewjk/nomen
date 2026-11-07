@@ -17,6 +17,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import {
 	borrow_depth_of,
 	borrow_owner_of,
+	borrowed_via_of,
 	invalidate_element_borrows_of,
 	invalidate_view_borrows_of,
 	is_element_borrow_value,
@@ -29,6 +30,7 @@ import check_func_argument_signature from "./utils/check_func_argument_signature
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
+import { verify_field_effects_at_assignment } from "./utils/field_effects.ts";
 import {
 	snapshot_bounds,
 	track_assignment_bounds,
@@ -87,6 +89,11 @@ export default function check_assignment_node(
 		return false;
 	}
 	status.is_assignment_target = false;
+
+	// Declared field effects (FIELD_EFFECTS.md) rule 1: a write through a
+	// clause-bound `ref` parameter (`item.name = …`) must target a declared
+	// field; un-annotated parameters pass but are recorded for the lint.
+	verify_field_effects_at_assignment(assign.left_value, status, assign.left_value.start);
 
 	// COMPOUND ASSIGNMENT OPERATOR DISPATCH (SPEC, Operator Functions):
 	// `x op= y` routes to the same operator functions as `x op y` when the
@@ -1004,6 +1011,7 @@ export default function check_assignment_node(
 			} else {
 				left_value.borrow_depth = rhs_borrow_depth;
 				left_value.borrowed_from = borrow_owner_of(assign.right_value, status);
+				left_value.borrowed_via = borrowed_via_of(assign.right_value, status);
 				left_value.is_element_borrow =
 					is_element_borrow_value(assign.right_value, status) || undefined;
 				// Re-assigning a (possibly invalidated) borrow refreshes it: the
@@ -1049,6 +1057,7 @@ export default function check_assignment_node(
 		} else {
 			left_value.borrow_depth = undefined;
 			left_value.borrowed_from = undefined;
+			left_value.borrowed_via = undefined;
 			left_value.is_element_borrow = undefined;
 			left_value.borrow_invalidated = false;
 		}

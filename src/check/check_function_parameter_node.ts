@@ -7,6 +7,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import { is_box_type } from "./utils/box.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
+import { validate_field_set } from "./utils/field_effects.ts";
 import { apply_bounds, strip_length_equalities } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import {
@@ -199,6 +200,12 @@ export default function check_function_parameter_node(
 		is_param: true,
 		is_moved: param.is_moved,
 	});
+
+	// Declared field set (FIELD_EFFECTS.md): the named fields must exist on
+	// the aliased struct — a typo would silently narrow nothing.
+	if (param.field_set !== undefined) {
+		validate_field_set(param, status);
+	}
 
 	// Equalities already stripped at signature-registration time (so no call
 	// site ever sees them, regardless of declaration order) become ASSUMED

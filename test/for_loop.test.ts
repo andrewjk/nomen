@@ -484,7 +484,7 @@ for x of 1, 2, 3 {
   // ...
 }
 `;
-		const expected = [test_error(input, "Expected {", 2, 10)];
+		const expected = [test_error(input, "Expected {", 2, 11)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

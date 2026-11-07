@@ -13,7 +13,12 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { borrow_depth_of, borrow_owner_of, is_element_borrow_value } from "./utils/borrow.ts";
+import {
+	borrow_depth_of,
+	borrow_owner_of,
+	borrowed_via_of,
+	is_element_borrow_value,
+} from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
 import { move_closure_source, value_owns_closure } from "./utils/captures.ts";
 import { case_base_conversion_direction } from "./utils/case_enum.ts";
@@ -1029,6 +1034,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			decl_depth: status.scope_depth,
 			borrow_depth: pushed_borrow_depth,
 			borrowed_from: decl.value ? borrow_owner_of(decl.value, status) : undefined,
+			borrowed_via: decl.value ? borrowed_via_of(decl.value, status) : undefined,
 			is_element_borrow: is_element_borrow_value(decl.value, status) || undefined,
 			has_view_borrows: !!view_borrows?.size || undefined,
 			view_field_owners:

@@ -245,7 +245,7 @@ while x < 3; x += 1; {
   // body
 }
 `;
-		const expected = [test_error(input, "Expected {", 3, 19)];
+		const expected = [test_error(input, "Expected {", 3, 20)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

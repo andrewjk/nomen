@@ -287,6 +287,68 @@ var int mutable = 1
 makeFive(ref mutable) // OK — mutable is now 5
 ```
 
+#### Declared Field Effects
+
+A `ref` parameter may declare the fields of the caller's variable it may
+displace, as a brace set after the parameter name. The declaration is the
+contract: the compiler verifies the function body against it, and a call
+invalidates borrowed values taken through exactly the declared fields —
+borrows taken through sibling fields stay live.
+
+```
+mv struct Stats {
+    var int hits
+}
+
+mv struct Item {
+    var int weight
+    var Box<Stats> stats
+}
+
+func rebalance = (ref Item item { stats }) {
+    item.stats = mv Box<Stats>(mv Stats(0))
+}
+
+func touch = (ref Item item {}, int by) {
+    item.weight = item.weight + by   // value-type fields never need declaring
+}
+
+var Item item = Item(1, mv Box<Stats>(mv Stats(2)))
+var Box<Stats> s = item.stats        // borrow rooted at item, via stats
+touch(ref item, 1)                   // declared: {} — s stays live
+rebalance(ref item)                  // declared: { stats }
+Console.write("\{s.hits}")          // Error: borrow 's' was invalidated
+```
+
+Fields are listed inside the braces (`{ stats, cache }`); the empty set `{}`
+declares that no field is displaced — the body may still write value-type
+storage. An un-annotated `ref` parameter is a wildcard: it may displace
+anything, and every borrow rooted at the argument is invalidated. Bare `self`
+is a read-only receiver and has nothing to declare; a `ref self` method may
+carry the set exactly like a free `ref` parameter (`ref self { data }`).
+
+The body is verified against the declaration by three local rules:
+
+1. A write through the parameter (`item.stats = ...`) must target a declared
+   field — unless the field is pure value storage (an `int`, or any field with
+   no heap interior).
+2. A mutating method call on a field of the parameter (`item.stats.recount()`)
+   requires that field in the declared set.
+3. Forwarding the parameter to another `ref` parameter (or calling another
+   `ref self` method on the parameter itself) requires the callee's declared
+   set to be a subset of the caller's.
+
+```
+func bad = (ref Item item {}) {
+    item.stats = mv Box<Stats>(mv Stats(0))
+}
+// Error: 'bad' declares an empty field set, but the body writes item.stats
+```
+
+A trait's method declaration carries the set, and calls through the trait type
+use it. A conforming method must declare a subset of the trait's set — a
+conformer that widens the set is rejected at the declaration.
+
 ### Range Types
 
 Ranges produce an array of integers from `start` to `end` (exclusive):
@@ -1270,6 +1332,8 @@ func makeFive = (ref int x) {
 ```
 
 `var` creates a mutable copy — changes don't affect the caller. `ref` passes a pointer to the caller's variable — changes are visible to the caller. The `ref` keyword is required at both the definition and call site (see [Reference Types](#reference-types)).
+
+A `ref` parameter may declare the fields it may displace as a brace set after its name (`ref Item item { stats }`), which narrows the invalidation of the caller's borrows to exactly those fields — see [Declared Field Effects](#declared-field-effects).
 
 #### Function-Typed Parameters (Higher-Order Functions)
 

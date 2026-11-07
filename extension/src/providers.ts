@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 
+import type { FieldSetQuickFix } from "../../src/check/utils/field_effects.ts";
 import { format_source } from "../../src/format.ts";
 import {
 	all_members,
@@ -191,6 +192,78 @@ export class NomenDocumentFormattingProvider implements vscode.DocumentFormattin
 		const force = vscode.workspace.getConfiguration("nomen").get<boolean>("format.force", false);
 		return format_edits(document, force);
 	}
+}
+
+/**
+ * Quick fixes for declared field effects (docs/FIELD_EFFECTS.md): the
+ * checker attaches a structured edit (`CompileError.quick_fix`) to
+ * declared-effect diagnostics — an un-annotated `ref` parameter whose body
+ * mutates a heap field (a warning), or a clause violation (an error). This
+ * provider applies the edit: insert the `mutates { … }` clause, or extend /
+ * replace the declared set.
+ */
+export class NomenQuickFixProvider implements vscode.CodeActionProvider {
+	provideCodeActions(
+		document: vscode.TextDocument,
+		_range: vscode.Range,
+		context: vscode.CodeActionContext,
+	): vscode.CodeAction[] {
+		const state = get_analysis(document);
+		if (!state) return [];
+
+		const actions: vscode.CodeAction[] = [];
+		for (const diagnostic of context.diagnostics) {
+			const fix = matching_quick_fix(state, document, diagnostic);
+			if (!fix) continue;
+			const edit = quick_fix_edit(document, fix);
+			if (!edit) continue;
+			const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
+			action.edit = new vscode.WorkspaceEdit();
+			action.edit.set(document.uri, [edit]);
+			action.diagnostics = [diagnostic];
+			action.isPreferred = true;
+			actions.push(action);
+		}
+		return actions;
+	}
+}
+
+/** The compiler diagnostic a VSCode diagnostic came from — matched by message
+ *  and start offset (both derive from the same CompileError). */
+function matching_quick_fix(
+	state: DocumentAnalysis,
+	document: vscode.TextDocument,
+	diagnostic: vscode.Diagnostic,
+): FieldSetQuickFix | undefined {
+	const offset = document.offsetAt(diagnostic.range.start);
+	for (const error of [...state.errors, ...state.warnings]) {
+		if (error.start !== offset || error.message !== diagnostic.message) continue;
+		if (error.quick_fix) return error.quick_fix;
+	}
+	return undefined;
+}
+
+function quick_fix_edit(
+	document: vscode.TextDocument,
+	fix: FieldSetQuickFix,
+): vscode.TextEdit | undefined {
+	if (fix.insert_offset !== undefined && fix.insert_text !== undefined) {
+		return vscode.TextEdit.insert(document.positionAt(fix.insert_offset), fix.insert_text);
+	}
+	if (
+		fix.replace_start !== undefined &&
+		fix.replace_end !== undefined &&
+		fix.replace_text !== undefined
+	) {
+		return vscode.TextEdit.replace(
+			new vscode.Range(
+				document.positionAt(fix.replace_start),
+				document.positionAt(fix.replace_end),
+			),
+			fix.replace_text,
+		);
+	}
+	return undefined;
 }
 
 /** Compute the edits that format `document`. When `force`, bypass the

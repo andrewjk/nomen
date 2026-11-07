@@ -45,6 +45,14 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// while / match bodies) must see the same set. check_function_node
 		// assigns a fresh scan for each nested function.
 		devirt_rebound_names: status.devirt_rebound_names,
+		// Current-function context: block clones (if/else/while) stay in the
+		// same function, so they keep it; check_function_node overwrites it
+		// for a freshly-entered function. The declared-effect verification
+		// resolves the current `ref` parameters through it.
+		current_function: status.current_function,
+		// Undeclared field-effect records: shared by reference so a write
+		// inside a branch body reaches the warning pass.
+		ref_param_writes: status.ref_param_writes,
 		// Inherited from the current function: block clones (if/else/while)
 		// stay in the same function, so they keep the enclosing base. Only
 		// `check_function_node` resets it for a freshly-entered function.

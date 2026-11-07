@@ -66,6 +66,12 @@ export default function tokenize(input: string, preserve_source = false): Token[
 				}
 			} else {
 				let value = input[status.i];
+				// The symbol's own offset. `status.start` still names the last
+				// WORD's start here, so pushing with it stamped every
+				// word-adjacent symbol with the wrong position (a `)` right
+				// after `nothing` reported nothing's offset) — which left
+				// symbol-anchored errors and editor offsets one token behind.
+				const symbol_start = status.i;
 				if (value === '"') {
 					// It's a string -- process until the next quote, including interpolations
 					let end = consume_string(input, status);
@@ -235,9 +241,9 @@ export default function tokenize(input: string, preserve_source = false): Token[
 						}
 					}
 					// Pop a "raw" token before the value so we can find it when parsing
-					status.tokens.push({ value: "raw", i: status.start });
+					status.tokens.push({ value: "raw", i: symbol_start });
 				}
-				status.tokens.push({ value, i: status.start });
+				status.tokens.push({ value, i: symbol_start });
 			}
 			status.start = status.i + 1;
 		}

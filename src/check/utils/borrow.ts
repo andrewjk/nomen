@@ -170,6 +170,60 @@ function is_element_load_pure_borrow(access: AccessNode, status: CheckStatus): b
 }
 
 /**
+ * The field path (excluding the owner root) a borrow-expression was taken
+ * through — the via-half of the (`borrowed_from`, `borrowed_via`) borrow key
+ * (FIELD_EFFECTS.md). Mirrors `borrow_owner_of`'s classification:
+ *  - field access (`h.data`) → "data"; deeper paths keep the full tail
+ *    (`a.b.c` → "b.c");
+ *  - a borrow-returning method call roots at its receiver's path
+ *    (`z.animals.at(i)` → "animals"); a bare-variable receiver has no field
+ *    in its path → undefined (the borrow points at the owner as a whole);
+ *  - a variable holding a borrow → that variable's own path.
+ *
+ * Declared-effect invalidation (`invalidate_borrows_of`'s `fields`) matches
+ * a declared field F against this path by exact match or path prefix
+ * (`data` covers `data.items`).
+ */
+export function borrowed_via_of(node: BaseNode, status: CheckStatus): string | undefined {
+	if (node.node_type === "access") {
+		const access = node as AccessNode;
+		if (access.access.node_type === "access_field") {
+			const tail = borrowed_via_of(access.target, status);
+			const field = (access.access as { name?: string }).name ?? "";
+			return field ? (tail ? `${tail}.${field}` : field) : tail;
+		}
+		if (access.access.node_type === "access_func") {
+			// A borrow-returning method roots at its receiver's path; a bare
+			// variable receiver contributes no field, so the borrow stays
+			// unstamped (conservatively invalidated by every mutator).
+			return borrowed_via_of(access.target, status);
+		}
+		return undefined;
+	}
+	if (node.node_type === "value") {
+		const decl = status.values.findLast((v) => v.name === (node as ValueNode).value);
+		return decl?.borrowed_via;
+	}
+	return undefined;
+}
+
+/**
+ * Whether a declared field set poisons a borrow taken via `path`. The set
+ * holds top-level field names; a declared field kills the borrow when the
+ * borrow's path IS that field or lives under it (`data` covers `data.x` —
+ * displacing `data` displaces everything through it). Unstamped borrows are
+ * poisoned regardless (conservative default).
+ */
+export function declared_fields_cover_path(
+	fields: string[] | undefined,
+	path: string | undefined,
+): boolean {
+	if (!path) return true;
+	if (!fields?.length) return false;
+	return fields.some((f) => path === f || path.startsWith(`${f}.`));
+}
+
+/**
  * Resolve an access target down to its ultimate mv variable name. Recurses
  * through field paths so `z.animals` → `z` (and `a.b.c` → `a`).
  */
@@ -262,12 +316,17 @@ export function invalidate_element_borrows_of(status: CheckStatus, owner: string
  * own scope ends), so they must NOT be invalidated here. Only views — whose
  * backing buffer is reclaimed immediately on reassignment — need this.
  */
-export function invalidate_view_borrows_of(status: CheckStatus, owner: string) {
+export function invalidate_view_borrows_of(status: CheckStatus, owner: string, fields?: string[]) {
 	for (const v of status.values) {
 		if (!v.borrowed_from && !v.view_field_owners?.size) continue;
 		const field_borrows = v.has_view_borrows && !!v.view_field_owners?.has(owner);
 		if (v.borrowed_from === owner && v.type?.is_view) {
-			v.borrow_invalidated = true;
+			// With a declared field-effect set (FIELD_EFFECTS.md), only the
+			// borrows taken through a declared field die; a view slice
+			// borrowed from another field of the same owner survives.
+			if (fields === undefined || declared_fields_cover_path(fields, v.borrowed_via)) {
+				v.borrow_invalidated = true;
+			}
 		} else if (field_borrows) {
 			if (!status.invalidated_view_structs) status.invalidated_view_structs = new Set();
 			status.invalidated_view_structs.add(v.name);
@@ -284,14 +343,31 @@ export function invalidate_view_borrows_of(status: CheckStatus, owner: string) {
  * invalidator above — this pass must not poison the whole struct variable for
  * uses of its non-view fields.
  */
-export function invalidate_borrows_of(status: CheckStatus, owner: string) {
+/**
+ * Mark every live child-group borrow rooted at `owner` as invalidated, because
+ * a `ref self` / `var self` call on (or mv-field assignment to) `owner` may
+ * free or displace the contents those borrows point into. Reading an
+ * invalidated borrow is rejected later in check_value_node. View-field borrows
+ * (struct values with view_field_owners) are handled by the view-specific
+ * invalidator above — this pass must not poison the whole struct variable for
+ * uses of its non-view fields.
+ *
+ * With a declared field set (FIELD_EFFECTS.md — the callee's
+ * `{ … }` set), only the borrows taken through a declared field
+ * die; sibling-field borrows stay live. Borrows with no stamped path are
+ * still poisoned conservatively. `undefined` keeps today's whole-owner
+ * behavior (un-annotated mutators are wildcards).
+ */
+export function invalidate_borrows_of(status: CheckStatus, owner: string, fields?: string[]) {
 	for (const v of status.values) {
 		if (v.borrowed_from === owner && !v.has_view_borrows) {
-			v.borrow_invalidated = true;
+			if (fields === undefined || declared_fields_cover_path(fields, v.borrowed_via)) {
+				v.borrow_invalidated = true;
+			}
 		}
 	}
 	// A ref-mutation of an owner also invalidates struct view-field borrows.
-	invalidate_view_borrows_of(status, owner);
+	invalidate_view_borrows_of(status, owner, fields);
 }
 
 /**

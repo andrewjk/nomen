@@ -15,6 +15,7 @@ import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_box_type } from "./utils/box.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
+import { display_field_set } from "./utils/field_effects.ts";
 import {
 	is_class_type,
 	is_owning_struct_type_requiring_move,
@@ -520,13 +521,38 @@ function check_trait_conformance(struct: StructNode, status: CheckStatus) {
 			}
 
 			// An override exists — at least one overload must satisfy the
-			// trait signature.
-			const matches = overrides.some((ov) => signature_matches(ov, trait_func, substitution));
-			if (!matches) {
+			// trait signature. The declared field sets (FIELD_EFFECTS.md)
+			// are checked on the matching overload: the trait's declaration
+			// is the contract callers read, so the conformer may narrow it
+			// (a subset) but never widen it.
+			const matching = overrides.find((ov) => signature_matches(ov, trait_func, substitution));
+			if (!matching) {
 				add_error(
 					status,
 					`Type '${struct.name}' does not conform to trait '${trait.name}': method '${trait_func.name}' does not match the trait signature`,
 					overrides[0].start,
+				);
+				continue;
+			}
+			for (let k = 0; k < trait_func.params.length; k++) {
+				const trait_set = trait_func.params[k].field_set;
+				if (trait_set === undefined) continue;
+				const param = matching.params[k];
+				const override_set = param?.field_set;
+				if (override_set === undefined) {
+					add_error(
+						status,
+						`'${matching.name}' overrides a trait method whose '${trait_func.params[k].name ?? "parameter"}' declares ${display_field_set(trait_set)} — the override must declare a subset (add '${trait_set.length ? `{ ${trait_set.join(", ")} }` : "{}"}' to the parameter)`,
+						param?.start ?? overrides[0].start,
+					);
+					continue;
+				}
+				const outside = override_set.filter((f) => !trait_set.includes(f));
+				if (!outside.length) continue;
+				add_error(
+					status,
+					`'${matching.name}' widens the trait's field set: '${trait_func.params[k].name ?? "parameter"}' declares ${display_field_set(trait_set)} on the trait, the override also names ${outside.map((f) => `'${f}'`).join(", ")}`,
+					param?.start ?? overrides[0].start,
 				);
 			}
 		}

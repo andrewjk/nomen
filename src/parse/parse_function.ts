@@ -275,6 +275,11 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		status.i += 2;
 		param.name = "self";
 
+		// Declared field set (FIELD_EFFECTS.md): `ref self { data }`.
+		if (peek_current(status) === "{") {
+			parse_field_set(param, status);
+		}
+
 		// ref self with constraint: ref self: constraint
 		if (accept(":", status)) {
 			param.constraint = parse_expression(status);
@@ -312,6 +317,17 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		// self with optional constraint: self: constraint
 		status.i += 1;
 		param.name = "self";
+
+		// `self { … }` — a field set refines a MUTABLE borrow; bare `self` is
+		// a read-only receiver with nothing to declare.
+		if (peek_current(status) === "{") {
+			add_error(
+				status,
+				`a field set is only allowed on a 'ref' parameter — bare 'self' is a read-only receiver`,
+				get_index(status),
+			);
+			parse_field_set_raw(status);
+		}
 
 		if (accept(":", status)) {
 			param.constraint = parse_expression(status);
@@ -370,6 +386,24 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		}
 	}
 
+	// Declared field set (FIELD_EFFECTS.md): `ref Item item { name }`. The set
+	// refines the MUTABLE borrow the `ref` spelling hands the callee, so it is
+	// only meaningful on a `ref` parameter — anything else is an error (the
+	// braces are still consumed so later errors stay in sync).
+	if (peek_current(status) === "{") {
+		const set_start = get_index(status);
+		if (param.type.is_ref) {
+			parse_field_set(param, status);
+		} else {
+			parse_field_set_raw(status);
+			add_error(
+				status,
+				`a field set is only allowed on a 'ref' parameter — '${param.name}' is not a ref`,
+				set_start,
+			);
+		}
+	}
+
 	// Parse parameter constraint: int x: x > 5
 	if (accept(":", status)) {
 		param.constraint = parse_expression(status);
@@ -387,4 +421,53 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	if (accept(",", status) && peek_current(status) !== ")") {
 		parse_function_parameter(parent, func, status);
 	}
+}
+
+/**
+ * The declared field set of a `ref` parameter (FIELD_EFFECTS.md):
+ * `{ name, cache }`, `{}` (none — scalar writes only), or absent entirely
+ * (wildcard — the parameter may displace anything). The set is stored on the
+ * ParameterNode with the source offsets the editor quick fix needs to extend
+ * it in place. The caller has verified the current token is `{`.
+ */
+function parse_field_set(param: ParameterNode, status: ParseStatus) {
+	if (!accept("{", status)) return;
+	param.field_set = [];
+	const fields: string[] = [];
+	const span_start = get_index(status);
+	let span_end = span_start;
+	if (!accept("}", status)) {
+		for (;;) {
+			const field_start = get_index(status);
+			const field = consume_name(status);
+			span_end = field_start + field.length;
+			if (fields.includes(field)) {
+				add_error(status, `Duplicate field '${field}' in the field set`, field_start);
+			} else {
+				fields.push(field);
+			}
+			if (!accept(",", status)) break;
+			if (peek_current(status) === "}") break;
+		}
+		expect("}", status);
+		param.field_set_span = { start: span_start, end: span_end };
+	} else {
+		// Empty braces: an empty span at the brace itself — the quick fix
+		// inserts the fields inside the braces.
+		param.field_set_span = { start: span_start, end: span_start };
+	}
+	param.field_set = fields;
+}
+
+/**
+ * Error-recovery companion of `parse_field_set`: skip a brace set's tokens
+ * without recording anything, after a set has already been rejected, so the
+ * parameter list keeps parsing.
+ */
+function parse_field_set_raw(status: ParseStatus) {
+	if (!accept("{", status)) return;
+	while (status.i < status.tokens.length && peek_current(status) !== "}") {
+		status.i += 1;
+	}
+	accept("}", status);
 }

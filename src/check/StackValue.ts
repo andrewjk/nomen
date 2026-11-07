@@ -142,6 +142,18 @@ export default interface StackValue {
 	 */
 	borrowed_from?: string;
 	/**
+	 * The field path (excluding the owner root) a child-group borrow was
+	 * taken through (FIELD_EFFECTS.md): `h.data` stamps "data",
+	 * `z.animals.at(i)` stamps "animals", `a.b.c` stamps "b.c". A variable
+	 * that re-borrows another borrow inherits its path. Declared-set
+	 * invalidation matches against this path: a mutator declaring
+	 * `{ data }` poisons exactly the borrows whose path is `data`
+	 * (or a path through it, `data.x`), leaving sibling-field borrows live.
+	 * Unstamped borrows (method-return borrows off a bare receiver — no
+	 * field in the path) are always invalidated conservatively.
+	 */
+	borrowed_via?: string;
+	/**
 	 * True once the owner named by `borrowed_from` has been mutated; reading the
 	 * borrow thereafter is rejected. Cleared when the variable is re-assigned
 	 * (re-borrowed or re-owned).

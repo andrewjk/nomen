@@ -30,6 +30,7 @@ export default function check(
 		warnings: [],
 		buffer_caps: new Map(),
 		mutated_local_names: new Set(),
+		ref_param_writes: new Map(),
 		function_emission_names: new Set(),
 		type_name_counts: count_declared_type_names(root),
 		type_emission_names: new Set(),

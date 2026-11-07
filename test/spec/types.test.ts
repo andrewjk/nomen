@@ -181,6 +181,177 @@ makeFive(ref mutable)
 	});
 });
 
+describe("spec: declared field effects", () => {
+	const PROGRAM = `
+mv struct Stats {
+    var int hits
+}
+
+mv struct Item {
+    var int weight
+    var Box<Stats> stats
+}
+
+func rebalance = (ref Item item { stats }) {
+    item.stats = mv Box<Stats>(mv Stats(0))
+}
+
+func touch = (ref Item item {}, int by) {
+    item.weight = item.weight + by
+}
+
+pub func main = () {
+    var Item item = Item(1, mv Box<Stats>(mv Stats(2)))
+    var Box<Stats> s = item.stats
+    touch(ref item, 1)
+    Console.write("\\{s.hits}")
+}
+`;
+
+	test("the declared set keeps sibling-field borrows alive", () => {
+		const clean = PROGRAM.replace("    rebalance(ref item)\n", "");
+		expect(compile_module(clean)).toEqual([]);
+	});
+
+	test("a declared mutator invalidates exactly its fields", () => {
+		const with_call = PROGRAM.replace(
+			`    touch(ref item, 1)\n`,
+			`    touch(ref item, 1)\n    rebalance(ref item)\n`,
+		);
+		const errors = compile_module(with_call);
+		expect(errors.some((e) => e.message.includes("was invalidated"))).toBe(true);
+	});
+
+	test("writing an undeclared field is an error", () => {
+		const input = `
+mv struct Stats {
+    var int hits
+}
+
+mv struct Item {
+    var Box<Stats> stats
+}
+
+func bad = (ref Item item {}) {
+    item.stats = mv Box<Stats>(mv Stats(0))
+}
+
+pub func main = () {}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) =>
+				e.message.includes("'bad' declares an empty field set, but the body writes item.stats"),
+			),
+		).toBe(true);
+	});
+
+	test("a field set is only allowed on ref parameters", () => {
+		const input = `
+mv struct Stats {
+    var int hits
+}
+
+func bad = (Stats item { hits }) {}
+
+pub func main = () {}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) => e.message.includes("a field set is only allowed on a 'ref' parameter")),
+		).toBe(true);
+	});
+
+	test("a field set on bare self is rejected", () => {
+		const input = `
+mv struct Item {
+    var int weight
+
+    func bad = (self { weight }) {}
+}
+
+pub func main = () {}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("bare 'self' is a read-only receiver"))).toBe(
+			true,
+		);
+	});
+
+	test("an un-annotated ref parameter is a wildcard (whole-owner invalidation)", () => {
+		const input = `
+mv struct Stats {
+    var int hits
+}
+
+mv struct Item {
+    var int weight
+    var Box<Stats> stats
+}
+
+func touch = (ref Item item, int by) {
+    item.weight = item.weight + by
+}
+
+pub func main = () {
+    var Item item = Item(1, mv Box<Stats>(mv Stats(2)))
+    var Box<Stats> s = item.stats
+    touch(ref item, 1)
+    Console.write("\\{s.hits}")
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("was invalidated"))).toBe(true);
+	});
+
+	test("a trait's declared set binds conformers (subset ok, widening rejected)", () => {
+		const ok = `
+mv struct Stats {
+    var int hits
+}
+
+trait Holderish {
+    func rebalance = (ref self { stats })
+}
+
+mv struct H: Holderish {
+    var Box<Stats> stats
+
+    func rebalance = (ref self { stats }) {
+        self.stats = mv Box<Stats>(mv Stats(0))
+    }
+}
+
+pub func main = () {}
+`;
+		expect(compile_module(ok)).toEqual([]);
+
+		const widened = `
+mv struct Stats {
+    var int hits
+}
+
+trait Holderish {
+    func rebalance = (ref self { stats })
+}
+
+mv struct H: Holderish {
+    var Box<Stats> stats
+    var int weight
+
+    func rebalance = (ref self { stats, weight }) {
+        self.stats = mv Box<Stats>(mv Stats(0))
+        self.weight = 0
+    }
+}
+
+pub func main = () {}
+`;
+		const errors = compile_module(widened);
+		expect(errors.some((e) => e.message.includes("widens the trait's field set"))).toBe(true);
+	});
+});
+
 describe("spec: range types", () => {
 	test("range expression", () => {
 		const input = `

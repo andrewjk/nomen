@@ -166,9 +166,14 @@ h.poke()
 var Box<Data> b2 = h.data   // fresh borrow — allowed
 ```
 
-The invalidation is whole-receiver: any `ref self` call on the owner
-invalidates every borrow rooted at it, even one that only writes an int
-field (field-scoped effect precision is a recorded follow-up in FOLLOWUP.md).
+The invalidation is whole-receiver by default: any `ref self`
+call on the owner invalidates every borrow rooted at it, even one that only
+writes an int field. A method can narrow this by declaring the fields it may
+displace — `func poke = (ref self {})` invalidates nothing, and
+`func replace = (ref self { data })` kills only borrows taken through
+`data` (see [FIELD_EFFECTS.md](./FIELD_EFFECTS.md); the same clause applies to
+free-function `ref` parameters). Un-annotated mutators keep the
+whole-receiver behavior.
 
 Two shapes do NOT create invalidatable borrows:
 
