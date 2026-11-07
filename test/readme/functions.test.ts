@@ -11,6 +11,8 @@ func add = (int a, int b, out int) {
 
 pub func double = (int x, out int) => x * 2
 
+Console.write("\\{add(1, 2)}")
+
 func greet = (string name = "world") {
     Console.write("Hello, \\{name}!")
 }

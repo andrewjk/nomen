@@ -246,7 +246,7 @@ pub func main = (Init init) {
 		).toBe(true);
 	});
 
-	test("idle receiver lint: ref self never mutated", () => {
+	test("idle receiver lint: ref self {} never mutated", () => {
 		const r = run(`
 mv struct Counter {
 	var int n
@@ -255,7 +255,7 @@ mv struct Counter {
 mv struct Holder {
 	var Counter c
 
-	func peek = (ref self, out int) {
+	func peek = (ref self {}, out int) {
 		return self.c.n
 	}
 }
@@ -490,7 +490,32 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("idle-ref lint: a ref parameter never written through warns", () => {
+	test("idle-ref lint: a ref parameter with {} that is never written through warns", () => {
+		const r = run(`
+mv struct Inner {
+	var int n = 0
+}
+
+mv struct Item {
+	var Box<Inner> inner
+}
+
+func read = (ref Item item {}, out int) {
+	return item.inner.n
+}
+
+pub func main = (Init init) {
+	var Item item = Item(mv Box<Inner>(mv Inner()))
+	Console.write("\\{read(ref item)}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).toContain(
+			"Ref parameter 'item' declares the empty field set but is never written through — take it by value (or drop 'ref')",
+		);
+	});
+
+	test("an un-annotated ref parameter is never linted as idle", () => {
 		const r = run(`
 mv struct Inner {
 	var int n = 0
@@ -510,9 +535,9 @@ pub func main = (Init init) {
 }
 `);
 		expect(r.errors).toEqual([]);
-		expect(r.warnings).toContain(
-			"Ref parameter 'item' is never written through — take it by value (or drop 'ref')",
-		);
+		expect(
+			r.warnings.some((m) => m.startsWith("Ref parameter") || m.startsWith("Method receiver")),
+		).toBe(false);
 	});
 
 	test("forwarding the parameter as a ref argument counts as use", () => {
@@ -522,19 +547,20 @@ mv struct Inner {
 }
 
 mv struct Item {
+	var int count
 	var Box<Inner> inner
 }
 
-func write = (ref Item item { inner }) {
-	item.inner = mv Box<Inner>(mv Inner())
+func nudge = (ref Item item {}) {
+	item.count = item.count + 1
 }
 
-func forward = (ref Item item) {
-	write(ref item)
+func forward = (ref Item item {}) {
+	nudge(ref item)
 }
 
 pub func main = (Init init) {
-	var Item item = Item(mv Box<Inner>(mv Inner()))
+	var Item item = Item(0, mv Box<Inner>(mv Inner()))
 	forward(ref item)
 }
 `);

@@ -6,7 +6,7 @@ describe("readme: concurrency — nursery", () => {
 	test("named nursery spawns and joins tasks", () => {
 		const input = `
 func fetch = (uint64 id) {
-    Console.write_line("ok")
+    Console.write_line("fetching \\{id}")
 }
 
 pub func main = () {
@@ -30,7 +30,8 @@ pub func main = () {
     async nursery {
         var t = nursery.start(Thread(compute(41)))
         t.wait()
-        var uint64 r = t.result_uint64()
+        const uint64 r = t.result_uint64()
+        Console.write("\\{r}")
     }
 }
 `;
@@ -48,7 +49,8 @@ func compute = (uint64 n, out uint64) {
 pub func main = () {
     async {
         var f = Fiber(compute(41)).start()
-        var uint64 r = f.result()          // parks, not blocks
+        const uint64 r = f.result()
+        Console.write("\\{r}")          // parks, not blocks
     }
 }
 `;

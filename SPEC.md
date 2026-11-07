@@ -163,7 +163,7 @@ Function parameters can have constraints that are checked at every call site whe
 
 ```
 func restricted = (int x: x > 5) {
-    Console.write("\\{x}")
+    Console.write("\{x}")
 }
 
 restricted(10)   // OK, 10 > 5
@@ -393,7 +393,7 @@ struct Counter {
 
 var Counter c = Counter()
 c.bump()
-Console.write("\\{c.count}")   // 1
+Console.write("\{c.count}")   // 1
 ```
 
 Writing a `readonly` field from outside its declaring type is an error:
@@ -540,9 +540,11 @@ Used as a value, an anonymous struct is materialized into a generated struct so 
 
 ```
 const p = [ name = "bob", age = 5 ]
-Console.write("\\{p.name} \\{p.age}")    // bob 5
+Console.write("\{p.name} \{p.age}")    // bob 5
 
-var [name, age] = p                       // destructure by field name
+const box = [ width = 3, height = 4 ]
+var [width, height] = box                 // destructure by field name
+Console.write("\{width * height}")       // 12
 ```
 
 The type is inferred from the literal and has no source-level name, so an anonymous struct can only be used where its type can be inferred — a `const`/`var` initializer, a reassignment, or a return value. It is not implicitly coerced to a named struct; to build a named struct, call its constructor.
@@ -570,6 +572,7 @@ func layout = (int grow, out LayoutParams) {
 
 const LayoutParams DEF = [ .. LayoutParams(), grow = 2, shrink = 3 ]
 const LayoutParams TWO = [ .. DEF, grow = 2 ]
+const LayoutParams THREE = layout(7)
 ```
 
 `[ .. <base>, ... ]` is an ordinary expression and works in declarations, assignments, return values, and call arguments. Overrides may only target fields with a declared default; required fields are set positionally by the constructor call.
@@ -605,7 +608,7 @@ Tuple fields are accessed with underscore-prefixed indices:
 
 ```
 var [int, string] things = [42, "answer"]
-Console.write("\\{things._0} \\{things._1}")  // "42 answer"
+Console.write("\{things._0} \{things._1}")  // "42 answer"
 ```
 
 #### Destructuring
@@ -619,14 +622,14 @@ func get_person = (int id, out [string, int]) {
 }
 
 var [name, age] = get_person(12)
-Console.write("\\{name} \\{age}")  // "Andrew 112"
+Console.write("\{name} \{age}")  // "Andrew 112"
 ```
 
 Destructuring also works with tuple literals:
 
 ```
 var [a, b] = [11, "hello"]
-Console.write("\\{a} \\{b}")  // "11 hello"
+Console.write("\{a} \{b}")  // "11 hello"
 ```
 
 #### Tuple Return Types
@@ -639,7 +642,7 @@ func make_pair = (int a, int b, out [int, int]) {
 }
 
 const p = make_pair(10, 20)
-Console.write("\\{p._0} \\{p._1}")  // "10 20"
+Console.write("\{p._0} \{p._1}")  // "10 20"
 ```
 
 #### Tuples as Struct Fields
@@ -652,7 +655,7 @@ struct Container {
 }
 
 const c = Container([99, "bottles"])
-Console.write("\\{c.payload._0} \\{c.payload._1}")  // "99 bottles"
+Console.write("\{c.payload._0} \{c.payload._1}")  // "99 bottles"
 ```
 
 #### Tuple Concatenation
@@ -663,7 +666,7 @@ elements followed by the right operand's:
 ```
 var [int, string] pair = [1, "a"]
 var triple = pair + [2, true]         // [int, string, int, bool]
-Console.write("\\{triple._2} \\{triple._3}")  // "2 true"
+Console.write("\{triple._2} \{triple._3}")  // "2 true"
 ```
 
 #### Arrays of Tuples
@@ -674,7 +677,7 @@ An array type whose element is a tuple is written `[T1, T2][]`; the
 ```
 var [int, bool][] flags = [[1, true], [2, false]]
 var Array<[int, bool]> same = [[3, true]]
-Console.write("\\{flags.at(1)._0}")  // "2"
+Console.write("\{flags.at(1)._0}")  // "2"
 ```
 
 A bracket-enclosed literal whose elements are same-shaped tuples infers as
@@ -699,8 +702,8 @@ length, so inner rows may differ in length:
 var int[][] grid = [[1, 2], [3, 4]]
 var int[2][] fixed = [[1], [2, 3]]
 var int[][][] cube = [[[1], [2, 3]], [[4]]]
-Console.write("\\{grid.at(1).at(0)} \\{grid.at(0).length}")  // "3 2"
-Console.write("\\{cube.at(0).at(1).at(1)}")                  // "3"
+Console.write("\{grid.at(1).at(0)} \{grid.at(0).length}")  // "3 2"
+Console.write("\{cube.at(0).at(1).at(1)}")                  // "3"
 ```
 
 A bracket-enclosed literal whose elements are array literals infers a
@@ -775,8 +778,8 @@ func parse_age = (string s, out [.ok(int), .error(string)]) {
 
 var [.ok(int), .error(string)] result = .ok(42)
 match result {
-    case .ok(age) -> Console.write("\\{age}")
-    case .error(msg) -> Console.write("error \\{msg}")
+    case .ok(age) -> Console.write("\{age}")
+    case .error(msg) -> Console.write("error \{msg}")
 }
 ```
 
@@ -812,7 +815,7 @@ variable is introduced):
 ```
 const int[] nums = [1, 2, 3]
 var [first, _, last] = nums
-Console.write("\\{first} \\{last}")  // "1 3"
+Console.write("\{first} \{last}")  // "1 3"
 ```
 
 #### Array Destructuring
@@ -823,7 +826,7 @@ position:
 ```
 const int[] arr = [1, 2, 3]
 var [a, b, c] = arr
-Console.write("\\{a} \\{b} \\{c}")  // "1 2 3"
+Console.write("\{a} \{b} \{c}")  // "1 2 3"
 ```
 
 Array destructuring is positional — the first name binds to index 0, the
@@ -849,7 +852,7 @@ A tuple on the right-hand side is bound positionally — the first name binds to
 
 ```
 var [a, b] = [11, "hello"]
-Console.write("\\{a} \\{b}")  // "11 hello"
+Console.write("\{a} \{b}")  // "11 hello"
 ```
 
 Binding more names than the tuple has elements is a compile error:
@@ -871,7 +874,7 @@ struct Point {
 
 const p = Point(3, 4)
 var [x, y] = p
-Console.write("\\{x} \\{y}")  // "3 4"
+Console.write("\{x} \{y}")  // "3 4"
 ```
 
 To bind a field to a differently named variable, use `[ field = name ]`:
@@ -879,7 +882,7 @@ To bind a field to a differently named variable, use `[ field = name ]`:
 ```
 const p = Point(3, 4)
 var [x = px, y = py] = p
-Console.write("\\{px} \\{py}")  // "3 4"
+Console.write("\{px} \{py}")  // "3 4"
 ```
 
 Fields can be destructured partially — only the named fields are bound, in any
@@ -894,7 +897,7 @@ struct Box {
 
 const b = Box(2, 4, 6)
 var [width = w, depth = d] = b
-Console.write("\\{w} \\{d}")  // "2 6"
+Console.write("\{w} \{d}")  // "2 6"
 ```
 
 A mv struct destructures identically — use `mv` to take ownership of a
@@ -909,7 +912,7 @@ mv struct Counter {
 
 var c = Counter(5, 50)
 var [count = mv n, total = mv t] = c
-Console.write("\\{n} \\{t}")  // "5 50"
+Console.write("\{n} \{t}")  // "5 50"
 ```
 
 Referencing a field that does not exist on the struct is a compile
@@ -1106,8 +1109,8 @@ pub enum Result<T, E> {
 
 var Result<int, string> result = .error("not a number")
 match result {
-    case .ok(age) -> Console.write("\\{age}")
-    case .error(msg) -> Console.write("error \\{msg}")
+    case .ok(age) -> Console.write("\{age}")
+    case .error(msg) -> Console.write("error \{msg}")
 }
 ```
 
@@ -1227,7 +1230,7 @@ var view cursor = greeting.slice(0, 3)  // mutable, re-pointable
 
 ```
 pub func greet = (string name) {
-    Console.write("Hello, \\{name}.\\n")
+    Console.write("Hello, \{name}.\n")
 }
 
 pub func add = (int a, int b, out int) {
@@ -1259,7 +1262,7 @@ Parameters can have default values:
 
 ```
 func greet = (string name = "world") {
-    Console.write("Hello, \\{name}!")
+    Console.write("Hello, \{name}!")
 }
 
 greet()        // "Hello, world!"
@@ -1346,7 +1349,7 @@ func apply = (func (int, out int) mapper, int value, out int) {
 
 var func (int, out int) doubler = (x) => x * 2
 var func (out int) three = () => 3
-var func (int) log = func (int x) { Console.write("\\{x}") }
+var func (int) log = func (int x) { Console.write("\{x}") }
 ```
 
 A `func` type may itself appear inside another signature — as a parameter
@@ -1538,7 +1541,7 @@ capture is taken once, when the lambda value is created:
 pub func main = () {
     var int base = 10
     var func (int, out int) add_base = (x, out int) => x + base
-    Console.write("\\{add_base(1)} \\{add_base(2)}")
+    Console.write("\{add_base(1)} \{add_base(2)}")
 }
 ```
 
@@ -1659,7 +1662,7 @@ pub struct Point {
         self.y = self.y + dy
     }
 
-    pub func distance_from_origin = (ref self, out int) {
+    pub func distance_from_origin = (self, out int) {
         return (self.x * self.x + self.y * self.y)
     }
 }
@@ -2036,6 +2039,7 @@ produce its value:
 func build = (int x, out string) {
     return "value is \{x}"
 }
+Console.write(build(7))
 ```
 
 A standalone `let` statement outside of expression position (e.g. at the top
@@ -2401,8 +2405,8 @@ const dashes = "-" * 10              // Repetition: "----------"
 Expressions are embedded in strings with `\{...}`. Each expression has `.to_string()` called automatically:
 
 ```
-Console.write("Hello, \\{name}. You are \\{age} years old.")
-Console.write("\\{arr}")             // Arrays stringify element-by-element
+Console.write("Hello, \{name}. You are \{age} years old.")
+Console.write("\{arr}")             // Arrays stringify element-by-element
 ```
 
 ### Indexing
@@ -2443,18 +2447,20 @@ The element type and `view` modifier are inferred, so you rarely write them:
 const str = "hello world"
 view v = str.slice(0, 5)          // const view, type inferred as `view string`
 Console.write(v.to_string())      // "hello"
-Console.write("\\{v.length}")         // 5
+Console.write("\{v.length}")         // 5
 
 const int[] nums = [10, 20, 30, 40, 50]
 view s = nums.slice(1, 4)         // `view int`
-Console.write("\\{s.length}")          // 3
-Console.write("\\{s.at(0)}")           // 20
-Console.write("\\{s.at(2)}")           // 40
+Console.write("\{s.length}")          // 3
+Console.write("\{s.at(0)}")           // 20
+Console.write("\{s.at(2)}")           // 40
 
 var List<int> list = List<int>()
-list.push(1); list.push(2); list.push(3)
+list.push(1)
+list.push(2)
+list.push(3)
 view t = list.slice(0, 2)         // delegates to the backing Buffer's slice
-Console.write("\\{t.at(1)}")           // 2
+Console.write("\{t.at(1)}")           // 2
 ```
 
 Binding a view without `view` is an error:
@@ -2521,7 +2527,7 @@ func bad = (int[] a: a.length >= 2, out view int) {
 var int[] arr = [1, 2, 3]
 view v = arr.slice(0, 2)
 arr = [9, 9, 9]
-Console.write("\\{v.length}")  // Error: borrow invalidated by source reassignment
+Console.write("\{v.length}")  // Error: borrow invalidated by source reassignment
 ```
 
 #### Views in structs
@@ -3104,8 +3110,8 @@ func compute = (uint64 n, out uint64) {
 
 pub func main = () {
     var f = Fiber(compute(41)).start()
-    var uint64 r = f.result()          // parks, not blocks
-    Console.write_line("\\{r}")
+    const uint64 r = f.result()        // parks, not blocks
+    Console.write_line("\{r}")
 }
 ```
 
@@ -3269,7 +3275,14 @@ func compute = (uint64 n) => n + 1
 
 func spawn_one = (uint64 n, ref Nursery pool) {
     var t = pool.start(Thread(compute(n)))
-    var uint64 r = t.result_uint64()
+    const uint64 r = t.result_uint64()
+    Console.write("\{r}")
+}
+
+pub func main = () {
+    async pool {
+        spawn_one(41, ref pool)
+    }
 }
 ```
 

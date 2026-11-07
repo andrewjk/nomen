@@ -28,6 +28,7 @@ struct Box<T> {
 }
 
 var Box<int> b = Box<int>(42)
+Console.write("\\{b.value}")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

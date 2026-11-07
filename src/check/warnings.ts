@@ -10,7 +10,11 @@ import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import type CompileError from "../types/CompileError.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { field_set_quick_fix, type FieldSetQuickFix } from "./utils/field_effects.ts";
+import {
+	field_set_quick_fix,
+	param_has_displaceable_field,
+	type FieldSetQuickFix,
+} from "./utils/field_effects.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 /**
@@ -49,25 +53,31 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 	for_each_function(root, (func) => analyse_function(func, status));
 
 	// Declared field sets and idle references (FIELD_EFFECTS.md):
-	//  - a `ref` parameter never written through (not even by a forwarded
-	//    mutable borrow) has no reason to be a reference — suggest a plain
-	//    parameter, or bare `self` for a receiver;
+	//  - a `ref` parameter that explicitly declares the empty set `{}` (and is
+	//    never written through, not even by a forwarded mutable borrow) has no
+	//    reason to be a reference — suggest a plain parameter, or bare `self`
+	//    for a receiver. Un-annotated `ref` parameters are NOT linted: `ref`
+	//    is also the borrowing spelling for owning/capability parameters whose
+	//    mutation the checker cannot see (e.g. `ref Nursery`);
 	//  - an un-annotated `ref` parameter whose body mutates a heap-bearing
 	//    field through it stays allowed (wildcard invalidation), but the
 	//    warning carries a structured quick fix so the editor can add the
-	//    narrowing field set.
+	//    narrowing field set. Only offered when the type has a field that can
+	//    actually displace heap state (a scalar-only struct cannot dangle a
+	//    borrow, so there is nothing to narrow).
 	if (status.ref_param_writes?.size) {
 		const entries = [...status.ref_param_writes.values()].sort(
 			(a, b) => a.param.start - b.param.start,
 		);
 		for (const entry of entries) {
 			const param = entry.param;
-			if (!entry.wrote) {
+			if (param.field_set !== undefined && param.field_set.length === 0) {
+				if (entry.wrote) continue;
 				add_warning(
 					status,
 					param.is_self_param
 						? `Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'`
-						: `Ref parameter '${param.name}' is never written through — take it by value (or drop 'ref')`,
+						: `Ref parameter '${param.name}' declares the empty field set but is never written through — take it by value (or drop 'ref')`,
 					param.name_start ?? param.start,
 				);
 				continue;
@@ -76,25 +86,27 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 			// the wildcard hint is for free `ref` parameters only.
 			if (param.field_set !== undefined || param.is_self_param) continue;
 			const fields = [...entry.fields].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-			const whole = entry.whole ? `; calls through the bare parameter may change any field` : "";
-			if (!fields.length) {
+			if (fields.length) {
+				const whole = entry.whole ? `; calls through the bare parameter may change any field` : "";
 				add_warning(
 					status,
-					`Ref parameter '${param.name}' may change any field of the aliased variable — declare a field set ('{ … }') to narrow invalidation for callers${whole}`,
+					`Ref parameter '${param.name}' changes ${fields
+						.map((f) => `'${f}'`)
+						.join(
+							", ",
+						)} through the alias without declaring it — add '{ ${fields.join(", ")} }' to narrow invalidation for callers${whole}`,
 					param.start,
+					field_set_quick_fix(param, fields),
 				);
 				continue;
 			}
-			add_warning(
-				status,
-				`Ref parameter '${param.name}' changes ${fields
-					.map((f) => `'${f}'`)
-					.join(
-						", ",
-					)} through the alias without declaring it — add '{ ${fields.join(", ")} }' to narrow invalidation for callers${whole}`,
-				param.start,
-				field_set_quick_fix(param, fields),
-			);
+			if (entry.whole && param_has_displaceable_field(param, status)) {
+				add_warning(
+					status,
+					`Ref parameter '${param.name}' may change any field of the aliased variable — declare a field set ('{ … }') to narrow invalidation for callers; calls through the bare parameter may change any field`,
+					param.start,
+				);
+			}
 		}
 	}
 
@@ -152,6 +164,13 @@ interface Locals {
 }
 
 function analyse_function(func: FunctionNode, status: CheckStatus): void {
+	// Bodyless declarations have no body-level intent to judge: trait method
+	// signatures, foreign declarations, and the compiler-synthesized `#init`
+	// shapes (whose parameters are consumed by the generated construction,
+	// not by a body — a generic struct's monomorphized init param used to be
+	// reported as "never used"). Synthesized functions may also carry the
+	// defining struct's source offset, so `has_body` is the reliable gate.
+	if (!func.has_body || func.start < 0) return;
 	// Library internals maintain their own invariants and are trusted, so don't
 	// lint them. A method's library-ness may live on its enclosing struct (e.g.
 	// monomorphized clones whose own flag wasn't copied), so check both.

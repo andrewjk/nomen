@@ -212,7 +212,8 @@ func compute = (uint64 n) => n + 1
 
 func spawn_one = (uint64 n, ref Nursery pool) {
 	var t = pool.start(Thread(compute(n)))
-	var uint64 r = t.result_uint64()
+	const uint64 r = t.result_uint64()
+	Console.write("\\{r}")
 }
 
 pub func main = () {
@@ -480,7 +481,7 @@ func compute = (uint64 n, out uint64) {
 
 pub func main = () {
 	var f = Fiber(compute(41)).start()
-	var uint64 r = f.result()
+	const uint64 r = f.result()
 	Console.write_line("\\{r}")
 }
 `;

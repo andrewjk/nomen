@@ -148,6 +148,8 @@ func add = (int a, int b, out int) {
 }
 
 pub func double = (int x) => x * 2
+
+Console.write("\{add(1, 2)}")
 ```
 
 Default parameters are supported:
@@ -465,6 +467,7 @@ struct Box<T> {
 }
 
 var Box<int> b = Box<int>(42)
+Console.write("\{b.value}")
 ```
 
 Type parameters may carry trait bounds (`<T: Named>`, multiple with `+`);
@@ -653,7 +656,7 @@ function signatures.
 
 ```nomen
 func fetch = (uint64 id) {
-    Console.write_line("ok")
+    Console.write_line("fetching \{id}")
 }
 
 pub func main = () {
@@ -677,7 +680,8 @@ pub func main = () {
     async nursery {
         var t = nursery.start(Thread(compute(41)))
         t.wait()
-        var r = t.result_uint64()
+        const uint64 r = t.result_uint64()
+        Console.write("\{r}")
     }
 }
 ```
@@ -693,7 +697,8 @@ func compute = (uint64 n, out uint64) {
 pub func main = () {
     async {
         var f = Fiber(compute(41)).start()
-        var uint64 r = f.result()          // parks, not blocks
+        const uint64 r = f.result()        // parks, not blocks
+        Console.write("\{r}")
     }
 }
 ```

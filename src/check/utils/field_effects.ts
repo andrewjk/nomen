@@ -249,6 +249,13 @@ export function validate_field_set(param: ParameterNode, status: CheckStatus): v
 	}
 }
 
+/** Whether the parameter's type has any field that can displace heap state. */
+export function param_has_displaceable_field(param: ParameterNode, status: CheckStatus): boolean {
+	const struct = resolve_struct_type(param.type, status);
+	if (!struct) return false;
+	return struct.fields.some((f) => field_can_displace(f.type, status));
+}
+
 /** Build the structured edit that adds `fields` to the parameter's set. */
 export function field_set_quick_fix(param: ParameterNode, fields: string[]): FieldSetQuickFix {
 	const title = has_field_set(param)
