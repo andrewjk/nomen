@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
+import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
-import { mono_type_name } from "../build_common/mono_name.ts";
+import { mono_type_name, type StructTable } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import type { NullableTypeTables } from "../build_common/nullable_scalar.ts";
 import { packed_own_fields } from "../build_common/struct_packing.ts";
@@ -2702,6 +2703,25 @@ function substitute_raw_in_node(
 			if (vn.value === `${param}_IS_VALUE_STRUCT`) {
 				const st = structs.find((s) => s.name === type);
 				vn.value = st && !st.is_class && !st.is_simple_type && !st.is_generic ? "true" : "false";
+				vn.type = new Type("bool", true);
+				return;
+			}
+			// T_TAKES_OWNERSHIP: true when a value-struct element owns
+			// reclaimable resources, so the ownership-taking store
+			// (`store_take`, which zeroes the caller's storage) is required.
+			// A NON-owning value struct (a handle pair like ArenaRef) is a
+			// legal bare argument to a `mv T` parameter — no `mv` keyword is
+			// demanded — so taking it would silently zero the caller's copy;
+			// those keep the copying store.
+			if (vn.value === `${param}_TAKES_OWNERSHIP`) {
+				const st = structs.find((s) => s.name === type);
+				const takes =
+					!!st &&
+					!st.is_class &&
+					!st.is_simple_type &&
+					!st.is_generic &&
+					struct_needs_destroy(st, { structs, ...tables } as StructTable);
+				vn.value = takes ? "true" : "false";
 				vn.type = new Type("bool", true);
 				return;
 			}

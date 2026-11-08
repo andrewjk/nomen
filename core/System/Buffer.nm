@@ -278,10 +278,12 @@ pub struct Buffer<T> {
 	) {
 		self.init_view(slab, fill)
 		// `val` arrives owned from the container's `mv T` push parameter: a
-		// value-struct element moves into the chunk slot (store_take — the
-		// caller's storage zeroes, no deep copy); strings keep the
-		// deep-copying store (their pair arrives by value).
-		if T_IS_VALUE_STRUCT {
+		// value-struct element that OWNS resources moves into the chunk slot
+		// (store_take — the caller's storage zeroes, no deep copy). A
+		// non-owning value struct is a legal bare argument, so it keeps the
+		// copying store (taking it would zero the caller's copy); strings
+		// keep the deep-copying store too (their pair arrives by value).
+		if T_TAKES_OWNERSHIP {
 			self.store_take(slot, val)
 		} else {
 			self.store(slot, val)

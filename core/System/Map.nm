@@ -59,15 +59,17 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		if self.used.load_u32(idx) == 0 {
 			self.used.store_u32(idx, 1)
 			// Both arrive owned (`mv TK key, mv TV value`): a value-struct
-			// key/value moves into its fresh slot (the caller's storage
-			// zeroes, no deep copy); strings keep the deep-copying store
-			// (their pair arrives by value).
-			if TK_IS_VALUE_STRUCT {
+			// key/value that OWNS resources moves into its fresh slot
+			// (store_take — the caller's storage zeroes, no deep copy). A
+			// non-owning value struct is a legal bare argument and keeps the
+			// copying store; strings keep the deep-copying store too (their
+			// pair arrives by value).
+			if TK_TAKES_OWNERSHIP {
 				self.keys.store_take(idx, key)
 			} else {
 				self.keys.store(idx, key)
 			}
-			if TV_IS_VALUE_STRUCT {
+			if TV_TAKES_OWNERSHIP {
 				self.values.store_take(idx, value)
 			} else {
 				self.values.store(idx, value)

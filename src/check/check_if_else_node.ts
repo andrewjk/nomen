@@ -317,7 +317,8 @@ function is_unchecked_constant_condition(cond: BaseNode | undefined, status: Che
 		if (
 			value === `${tp}_NEEDS_STRDUP` ||
 			value === `${tp}_FAT` ||
-			value === `${tp}_IS_VALUE_STRUCT`
+			value === `${tp}_IS_VALUE_STRUCT` ||
+			value === `${tp}_TAKES_OWNERSHIP`
 		)
 			return true;
 	}

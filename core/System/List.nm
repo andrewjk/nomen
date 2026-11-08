@@ -8,10 +8,13 @@ pub mv struct List<T>: Viewable {
 	pub func push = (ref self, mv T value) {
 		if self.length < self.items.cap {
 			// The value arrives owned (`mv T value`): a value-struct element
-			// moves into the fresh slot (store_take — the caller's storage
-			// zeroes, no deep copy); strings and scalars keep the
-			// deep-copying store.
-			if T_IS_VALUE_STRUCT {
+			// that OWNS resources moves into the fresh slot (store_take — the
+			// caller's storage zeroes, no deep copy). A non-owning value
+			// struct (a handle pair) is a legal bare argument (the checker
+			// does not demand `mv`), so taking it would silently zero the
+			// caller's copy — it keeps the copying store, like strings and
+			// scalars.
+			if T_TAKES_OWNERSHIP {
 				self.items.store_take(self.length, value)
 			} else {
 				self.items.store(self.length, value)
@@ -20,7 +23,7 @@ pub mv struct List<T>: Viewable {
 			return
 		}
 		self.reserve(1)
-		if T_IS_VALUE_STRUCT {
+		if T_TAKES_OWNERSHIP {
 			self.items.store_take(self.length, value)
 		} else {
 			self.items.store(self.length, value)

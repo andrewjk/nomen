@@ -133,6 +133,23 @@ export function is_owning_struct_type(type: Type, status: CheckStatus): boolean 
  * A struct that owns a List/Buffer/class/… WOULD be destroyed, so copying it
  * by value would double-free — that's the case that must stay a `mv ... swap`.
  */
+/**
+ * Whether the type BEHIND a `ref`/`view` spelling is an owning struct — i.e.
+ * a value of it has no by-value pass (the only alternatives are an `mv`
+ * transfer or a reference). Lints that suggest dropping `ref` use this:
+ * `is_owning_struct_type` itself answers false for the borrow spelling.
+ */
+export function is_owning_struct_value_type(type: Type, status: CheckStatus): boolean {
+	const ref = type.is_ref;
+	const view = type.is_view;
+	type.is_ref = undefined;
+	type.is_view = undefined;
+	const owning = is_owning_struct_type(type, status);
+	type.is_ref = ref;
+	type.is_view = view;
+	return owning;
+}
+
 export function is_owning_struct_type_requiring_move(type: Type, status: CheckStatus): boolean {
 	if (type.is_view || type.is_ref) return false;
 	const s = resolve_struct(type, status);

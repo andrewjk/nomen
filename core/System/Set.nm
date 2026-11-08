@@ -37,10 +37,12 @@ pub mv struct Set<T: Hashable + Equatable> {
 			self.used.store_u32(idx, 1)
 			// The value arrives owned (`mv T value`): a value-struct element
 			// moves into the fresh slot (store_take — the caller's storage is
-			// zeroed, no deep copy); a string's by-value pair keeps the
-			// deep-copying store (the caller still owns its buffer), and a
-			// class/trait handle is a pointer store either way.
-			if T_IS_VALUE_STRUCT {
+			// zeroed, no deep copy) when it OWNS resources; a non-owning value
+			// struct is a legal bare argument and keeps the copying store, a
+			// string's by-value pair keeps the deep-copying store (the caller
+			// still owns its buffer), and a class/trait handle is a pointer
+			// store either way.
+			if T_TAKES_OWNERSHIP {
 				self.slots.store_take(idx, value)
 			} else {
 				self.slots.store(idx, value)

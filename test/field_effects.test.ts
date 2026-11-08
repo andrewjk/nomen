@@ -492,6 +492,27 @@ pub func main = (Init init) {
 
 	test("idle-ref lint: a ref parameter with {} that is never written through warns", () => {
 		const r = run(`
+struct Item {
+	var int n
+}
+
+func read = (ref Item item {}, out int) {
+	return item.n
+}
+
+pub func main = (Init init) {
+	var Item item = Item(7)
+	Console.write("\\{read(ref item)}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).toContain(
+			"Ref parameter 'item' declares the empty field set but is never written through — take it by value (or drop 'ref')",
+		);
+	});
+
+	test("idle-ref lint skips owning (mv) structs — ref is their borrow spelling", () => {
+		const r = run(`
 mv struct Inner {
 	var int n = 0
 }
@@ -510,9 +531,7 @@ pub func main = (Init init) {
 }
 `);
 		expect(r.errors).toEqual([]);
-		expect(r.warnings).toContain(
-			"Ref parameter 'item' declares the empty field set but is never written through — take it by value (or drop 'ref')",
-		);
+		expect(r.warnings.some((m) => m.includes("never written through"))).toBe(false);
 	});
 
 	test("an un-annotated ref parameter is never linted as idle", () => {
@@ -542,13 +561,9 @@ pub func main = (Init init) {
 
 	test("forwarding the parameter as a ref argument counts as use", () => {
 		const r = run(`
-mv struct Inner {
-	var int n = 0
-}
-
-mv struct Item {
+struct Item {
 	var int count
-	var Box<Inner> inner
+	var int total
 }
 
 func nudge = (ref Item item {}) {
@@ -560,7 +575,7 @@ func forward = (ref Item item {}) {
 }
 
 pub func main = (Init init) {
-	var Item item = Item(0, mv Box<Inner>(mv Inner()))
+	var Item item = Item(0, 0)
 	forward(ref item)
 }
 `);

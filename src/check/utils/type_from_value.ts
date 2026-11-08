@@ -13,7 +13,13 @@ export default function type_from_value(value: string, status: CheckStatus): Typ
 	// these expose core representation facts (element layout, string-ness),
 	// so a user generic's `T_SIZE` stays an unknown value.
 	for (const tp of status.type_params) {
-		if (value === `${tp}_SIZE` || value === `${tp}_NEEDS_STRDUP` || value === `${tp}_FAT`) {
+		if (
+			value === `${tp}_SIZE` ||
+			value === `${tp}_NEEDS_STRDUP` ||
+			value === `${tp}_FAT` ||
+			value === `${tp}_IS_VALUE_STRUCT` ||
+			value === `${tp}_TAKES_OWNERSHIP`
+		) {
 			const in_library = status.stack.some(
 				(n) => n.node_type === "func" && (n as { is_library?: boolean }).is_library,
 			);

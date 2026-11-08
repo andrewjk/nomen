@@ -15,6 +15,7 @@ import {
 	param_has_displaceable_field,
 	type FieldSetQuickFix,
 } from "./utils/field_effects.ts";
+import { is_owning_struct_value_type } from "./utils/ownership.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 /**
@@ -73,11 +74,22 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 			const param = entry.param;
 			if (param.field_set !== undefined && param.field_set.length === 0) {
 				if (entry.wrote) continue;
+				if (param.is_self_param) {
+					add_warning(
+						status,
+						`Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'`,
+						param.name_start ?? param.start,
+					);
+					continue;
+				}
+				// "Take it by value" is only possible for copyable types. An
+				// mv/owning struct has no by-value pass (that would transfer
+				// ownership), so `ref` is the borrow spelling, not a mutation
+				// channel — don't advise dropping it.
+				if (is_owning_struct_value_type(param.type, status)) continue;
 				add_warning(
 					status,
-					param.is_self_param
-						? `Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'`
-						: `Ref parameter '${param.name}' declares the empty field set but is never written through — take it by value (or drop 'ref')`,
+					`Ref parameter '${param.name}' declares the empty field set but is never written through — take it by value (or drop 'ref')`,
 					param.name_start ?? param.start,
 				);
 				continue;

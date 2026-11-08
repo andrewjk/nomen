@@ -17,9 +17,11 @@ pub mv struct LinkedList<T>: Enumerable {
 		var int idx = self.count
 		self.values.grow(idx + 1)
 		// The value arrives owned (`mv T value`): move a value-struct element
-		// into the fresh slot (the caller's storage zeroes, no deep copy);
-		// strings keep the deep-copying store (their pair arrives by value).
-		if T_IS_VALUE_STRUCT {
+		// that OWNS resources into the fresh slot (the caller's storage
+		// zeroes, no deep copy). A non-owning value struct is a legal bare
+		// argument, so it keeps the copying store; strings keep the
+		// deep-copying store too (their pair arrives by value).
+		if T_TAKES_OWNERSHIP {
 			self.values.store_take(idx, value)
 		} else {
 			self.values.store(idx, value)
