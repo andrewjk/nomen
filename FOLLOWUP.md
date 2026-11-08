@@ -595,10 +595,19 @@ Rules of thumb:
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
 
-## First check of a struct with a direct string field reports offset-less errors and suppresses the warning pass
+## First check of a struct with a direct string field reports offset-less errors
 
 Recorded 2026-11-07, found while landing FIELD_EFFECTS.md (confirmed on
-pristine main — not introduced by it). A module whose structs have direct
+pristine main — not introduced by it). **Updated 2026-11-08**: the warning
+pass now gates on USER-addressable errors only (`check.ts`), so these
+internal `start: -1` errors no longer suppress lint output; the errors
+themselves are still reported to `status.errors` (and still filtered from
+the user-facing list by `format_errors`). The auto-derived `copy` bodies add
+a second family of the same shape: `cannot copy 'string' out of field …`
+(the synthesized `c.field = self.field` store is exempted via the
+`synthesized_copy_store` stamp), plus `List<string>.copy()` /
+`List<Struct>.copy()` rejections and tuple-element `_0` copy errors from
+copy bodies that are still emitted with hidden errors. A module whose structs have direct
 `string` fields makes the FIRST check pass report, with `start: -1`:
 
 - `cannot copy field 'name' into parameter 'name' by value — it owns heap
@@ -621,3 +630,21 @@ reproducing from `parse_struct.ts`'s synthesized `#init` and checking the
 error's start offset is the param/field, not `-1`. Until then, language tests
 that need the warning pass avoid direct string fields on structs (see
 test/field_effects.test.ts's `run` note).
+
+## System library mutators should declare field sets
+
+Recorded 2026-11-08. The declared-field-set lint accepts an un-annotated
+LIBRARY mutator as a coarse wildcard (there is nothing a caller can declare to
+improve it), so calling e.g. `sb.append_char(...)` on a user `ref StringBuilder`
+param used to poison every borrow of `sb` and could not be narrowed. The fix is
+in the library, not the caller.
+
+Started here: every `StringBuilder` `ref self` method declares `{}` (its only
+state is scalar — the raw data pointer, len, cap), and the Allmark trait
+contracts (`BlockRule`, `InlineRule`, `Renderer`) declare the full set of their
+state type's displaceable fields, with conformers narrowed to subsets (trait
+dispatch is inherently coarse). The rest of `core/System` still leaves `ref
+self` un-annotated — each should declare its actual effects, bottom-up, so
+library calls get precise invalidation. Until then, the lint's silent
+`library_unknown` fallback (warnings.ts / field_effects.ts) keeps that coarseness
+from surfacing at call sites.

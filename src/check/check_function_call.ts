@@ -771,7 +771,7 @@ export default function check_function_call(
 			// clause-bound parameter (or a field path into it) must stay inside
 			// the caller's declared set.
 			if (func_param?.type.is_ref) {
-				verify_field_effects_at_ref_arg(param, func_param, status, param.start);
+				verify_field_effects_at_ref_arg(param, func_param, func, status, param.start);
 			}
 		}
 		// OWNED value-struct parameter: the callee fully owns a normalized

@@ -62,8 +62,13 @@ export default function check(
 	unwrap_unsafe_blocks(root);
 
 	// Only analyse for warnings on a clean check — a partially-checked,
-	// erroring tree would surface misleading or spurious warnings.
-	if (!status.errors.length) emit_warnings(root, status);
+	// erroring tree would surface misleading or spurious warnings. Gate on
+	// USER-ADDRESSABLE errors: synthesized nodes (the auto-derived `copy`,
+	// `#init`, `#destroy` shapes) carry `start: -1`, so their internal
+	// complaints have no source location, are filtered from the report, and
+	// must not suppress the lint pass for a user file that checked cleanly.
+	const has_user_errors = status.errors.some((e) => Number.isFinite(e.start) && e.start >= 0);
+	if (!has_user_errors) emit_warnings(root, status);
 
 	return {
 		ok: !status.errors.length,

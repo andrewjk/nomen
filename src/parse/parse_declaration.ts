@@ -64,6 +64,8 @@ export default function parse_declaration(
 	decl.is_ref_binding = declaration === "ref";
 	status.stack.push(decl);
 
+	decl.keyword_start = get_index(status);
+	decl.keyword_text = keyword;
 	accept(keyword, status);
 	// `var mv T name = ...` — `mv` after `var` is the ownership modifier, not
 	// a type name (`mv` is reserved; no type can be named it). Rewrite the

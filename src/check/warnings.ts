@@ -10,9 +10,10 @@ import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import type CompileError from "../types/CompileError.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { is_box_type } from "./utils/box.ts";
 import {
+	drop_ref_self_quick_fix,
 	field_set_quick_fix,
-	param_has_displaceable_field,
 	type FieldSetQuickFix,
 } from "./utils/field_effects.ts";
 import { is_owning_struct_value_type } from "./utils/ownership.ts";
@@ -54,50 +55,82 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 	for_each_function(root, (func) => analyse_function(func, status));
 
 	// Declared field sets and idle references (FIELD_EFFECTS.md):
-	//  - a `ref` parameter that explicitly declares the empty set `{}` (and is
-	//    never written through, not even by a forwarded mutable borrow) has no
-	//    reason to be a reference — suggest a plain parameter, or bare `self`
-	//    for a receiver. Un-annotated `ref` parameters are NOT linted: `ref`
-	//    is also the borrowing spelling for owning/capability parameters whose
-	//    mutation the checker cannot see (e.g. `ref Nursery`);
-	//  - an un-annotated `ref` parameter whose body mutates a heap-bearing
-	//    field through it stays allowed (wildcard invalidation), but the
-	//    warning carries a structured quick fix so the editor can add the
-	//    narrowing field set. Only offered when the type has a field that can
-	//    actually displace heap state (a scalar-only struct cannot dangle a
-	//    borrow, so there is nothing to narrow).
+	//  - a `ref` parameter that declares no heap field (an explicit `{}`, or an
+	//    un-annotated parameter whose body provably displaces none) can declare
+	//    `{}` so calls stop invalidating callers' borrows of the argument. A
+	//    copyable parameter that is never written through is better taken by
+	//    value; an owning (`mv`) struct has no by-value pass, so `{}` is the
+	//    move there;
+	//  - a `ref self` receiver that never writes through itself should be a bare
+	//    `self` reader (the edit is local, so the warning carries a quick fix);
+	//  - an un-annotated parameter whose body DOES displace heap fields keeps
+	//    the wildcard, but the warning names the fields and carries a quick fix.
+	//    An un-annotated `ref self` mutator stays the accepted norm (zero
+	//    churn) — only its non-displacing cases are linted.
 	if (status.ref_param_writes?.size) {
 		const entries = [...status.ref_param_writes.values()].sort(
 			(a, b) => a.param.start - b.param.start,
 		);
 		for (const entry of entries) {
+			// Library internals maintain their own invariants and are trusted.
+			if (entry.is_library) continue;
 			const param = entry.param;
-			if (param.field_set !== undefined && param.field_set.length === 0) {
+			// The `_`-prefix discard convention marks an intentionally unused
+			// parameter (e.g. an unimplemented trait stub's `_state`).
+			if (param.name.startsWith("_")) continue;
+			const owning = is_owning_struct_value_type(param.type, status);
+			// A `Box<T>` cannot be passed by value (boxing owns its pointee), so
+			// the by-value spelling is not an alternative for it either.
+			const box_param = is_box_type(param.type.name, status.structs);
+			const by_value_possible = !owning && !box_param;
+			const fields = [...entry.fields].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+			// A `whole` event means a wildcard callee may change ANY field — so
+			// `{}` can never be suggested; the caller is silent only when the
+			// unknown comes from coarse library code.
+			const displaces = fields.length > 0 || entry.whole;
+
+			if (param.field_set !== undefined) {
+				// Only the empty set has a lint; a concrete set is doing its job.
+				if (param.field_set.length !== 0) continue;
 				if (entry.wrote) continue;
 				if (param.is_self_param) {
 					add_warning(
 						status,
 						`Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'`,
 						param.name_start ?? param.start,
+						drop_ref_self_quick_fix(param),
 					);
-					continue;
+				} else if (by_value_possible) {
+					add_warning(
+						status,
+						`Ref parameter '${param.name}' declares the empty field set but is never written through — take it by value (or drop 'ref')`,
+						param.name_start ?? param.start,
+					);
 				}
-				// "Take it by value" is only possible for copyable types. An
-				// mv/owning struct has no by-value pass (that would transfer
-				// ownership), so `ref` is the borrow spelling, not a mutation
-				// channel — don't advise dropping it.
-				if (is_owning_struct_value_type(param.type, status)) continue;
-				add_warning(
-					status,
-					`Ref parameter '${param.name}' declares the empty field set but is never written through — take it by value (or drop 'ref')`,
-					param.name_start ?? param.start,
-				);
+				// An owning reader with `{}` is exactly right — silent.
 				continue;
 			}
-			// Un-annotated `ref self` stays the accepted norm (zero churn);
-			// the wildcard hint is for free `ref` parameters only.
-			if (param.field_set !== undefined || param.is_self_param) continue;
-			const fields = [...entry.fields].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+			// Un-annotated parameter.
+			if (param.is_self_param) {
+				if (!entry.wrote) {
+					add_warning(
+						status,
+						`Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'`,
+						param.name_start ?? param.start,
+						drop_ref_self_quick_fix(param),
+					);
+				} else if (!displaces) {
+					add_warning(
+						status,
+						`Method receiver 'self' mutates only value-type storage — declare '{}' so calls keep callers' borrows alive`,
+						param.name_start ?? param.start,
+						field_set_quick_fix(param, []),
+					);
+				}
+				continue;
+			}
+
 			if (fields.length) {
 				const whole = entry.whole ? `; calls through the bare parameter may change any field` : "";
 				add_warning(
@@ -112,11 +145,40 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 				);
 				continue;
 			}
-			if (entry.whole && param_has_displaceable_field(param, status)) {
+			if (displaces) {
+				// Unknown effect: silent when the coarse callee is library code
+				// (the design accepts coarse library mutators — there is
+				// nothing the caller can declare to improve it).
+				if (entry.library_unknown) continue;
 				add_warning(
 					status,
 					`Ref parameter '${param.name}' may change any field of the aliased variable — declare a field set ('{ … }') to narrow invalidation for callers; calls through the bare parameter may change any field`,
 					param.start,
+				);
+				continue;
+			}
+			if (entry.wrote) {
+				// Scalar mutations only: `{}` is exact (they displace nothing).
+				add_warning(
+					status,
+					`Ref parameter '${param.name}' displaces no heap field — declare '{}' so calls keep callers' borrows alive`,
+					param.start,
+					field_set_quick_fix(param, []),
+				);
+			} else if (!by_value_possible) {
+				// A pure reader of an owning struct: `ref` is its borrow spelling.
+				add_warning(
+					status,
+					`Ref parameter '${param.name}' is never written through — declare '{}' so calls keep callers' borrows alive`,
+					param.start,
+					field_set_quick_fix(param, []),
+				);
+			} else {
+				// A copyable pure reader: taking it by value is the better shape.
+				add_warning(
+					status,
+					`Ref parameter '${param.name}' is never written through — take it by value (or drop 'ref')`,
+					param.name_start ?? param.start,
 				);
 			}
 		}
@@ -253,6 +315,15 @@ function warn_var_not_changed(decl: DeclarationNode, locals: Locals, status: Che
 		status,
 		`Variable '${decl.name}' is never changed, consider using const`,
 		decl.name_start ?? decl.start,
+		decl.keyword_text === "var" && decl.keyword_start !== undefined
+			? {
+					title: "Use `const`",
+					param_start: decl.start,
+					replace_start: decl.keyword_start,
+					replace_end: decl.keyword_start + "var".length,
+					replace_text: "const",
+				}
+			: undefined,
 	);
 }
 

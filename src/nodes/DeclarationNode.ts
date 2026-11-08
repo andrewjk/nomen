@@ -6,6 +6,14 @@ export default class DeclarationNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
 	declaration: "const" | "var" | "mv" | "view" | "ref";
 	/**
+	 * Source offset and exact spelling of the declaration keyword (`var`,
+	 * `const`, `mv`, `view`, `ref`, `readonly`), recorded after any visibility
+	 * prefix. Editor quick fixes ("consider using const") replace exactly this
+	 * token.
+	 */
+	keyword_start?: number;
+	keyword_text?: string;
+	/**
 	 * True for a `readonly` field: readable per its visibility, but assignable
 	 * only from within the declaring struct/class's own methods (including its
 	 * `extend`s and monomorphized clones). Stored as `declaration: "var"` so

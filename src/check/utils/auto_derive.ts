@@ -524,6 +524,7 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 			? method_call(field_access("self", field.name), "copy")
 			: field_access("self", field.name);
 		const assign = new AssignmentNode(-1, field_access("c", field.name), right);
+		assign.synthesized_copy_store = true;
 		if (field_copy_call(field.type, status)) {
 			// The shell constructor took this field as a byte-copied borrow
 			// (`Mid(self.inner)` — struct/container ctor params alias their

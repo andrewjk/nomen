@@ -32,6 +32,15 @@ export default class AssignmentNode extends BaseNode {
 	displaced_is_alias?: boolean;
 
 	/**
+	 * Stamped by the synthesized-`copy` builder (auto_derive's build_copy) on
+	 * its `c.<field> = self.<field>` stores: the field-store path strdups
+	 * string values, so the RHS field read is a sanctioned deep-copy source
+	 * (the generic "copy out of an owning field by value" rejection does not
+	 * apply to it).
+	 */
+	synthesized_copy_store?: boolean;
+
+	/**
 	 * Stamped by check_assignment_node when the assignment is a BASE↔CASE
 	 * enum conversion (PERF_PLAN item 13(3)): the value type is the case
 	 * mono and the target is its parent enum (`case_to_base` — a sound

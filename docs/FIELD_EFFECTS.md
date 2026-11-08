@@ -22,6 +22,31 @@ the `mutates nothing` spelling unnecessary: `{}` says "no fields" without a
 verb that contradicts an `int` write. Everything below is the design
 record; read `mutates { … }` as the brace set.
 
+**Lints (implemented).** The declaration is opt-in, so the check pass nudges
+authors toward the precise spelling; every warning carries a quick fix when
+the edit is local:
+
+- an un-annotated ref that provably displaces heap fields names them
+  (`add '{ field }'`) or, when the effect is unknown (a wildcard callee was
+  called/forwarded), says so without a fix. Unknown effects that come from
+  un-annotated LIBRARY mutators are silent: the caller cannot improve them
+  from its side, so the fix belongs in the library (see FOLLOWUP.md). A
+  direct self-recursive call is not an unknown — it has the function's own
+  effects;
+- an un-annotated ref that displaces nothing says `declare '{}'` — so calls
+  stop invalidating callers' borrows — unless the type is copyable and the
+  parameter is never written through, in which case taking it by value is the
+  better shape (no fix: the call sites would change too);
+- an un-annotated `ref self` reader says "use bare `self`" with a local
+  quick fix (`ref self` → `self`); a `{}` receiver that is never written
+  through gets the same. A `ref self` that DOES displace heap fields stays a
+  silent wildcard (zero churn — annotated mutators are the opt-in);
+- `_`-prefixed parameters are exempt (the discard convention).
+
+The warning pass runs whenever the checker reports no USER-addressable
+errors; internal errors on synthesized nodes (`start: -1` — see FOLLOWUP.md)
+no longer suppress it.
+
 Picks up the FOLLOWUP.md entry "Field-scoped borrow
 invalidation (Valen-style effect precision)" (recorded 2026-10-12, out of the
 Valen comparison in [GROUP_BORROWING.md](./GROUP_BORROWING.md)) and replaces

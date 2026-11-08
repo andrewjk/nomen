@@ -270,6 +270,49 @@ pub func main = (Init init) {
 			"Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'",
 		);
 	});
+
+	test("un-annotated ref self reader suggests bare self", () => {
+		const r = run(`
+mv struct Holder {
+	var int n
+
+	func peek = (ref self, out int) {
+		return self.n
+	}
+}
+
+pub func main = (Init init) {
+	var Holder h = Holder(1)
+	Console.write("\\{h.peek()}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).toContain(
+			"Method receiver 'self' is never mutated — use bare 'self' instead of 'ref self'",
+		);
+	});
+
+	test("un-annotated ref self scalar mutator suggests {}", () => {
+		const r = run(`
+mv struct Counter {
+	var int n
+
+	func bump = (ref self) {
+		self.n = self.n + 1
+	}
+}
+
+pub func main = (Init init) {
+	var Counter c = Counter(0)
+	c.bump()
+	Console.write("\\{c.n}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).toContain(
+			"Method receiver 'self' mutates only value-type storage — declare '{}' so calls keep callers' borrows alive",
+		);
+	});
 });
 
 describe("free ref parameters", () => {
@@ -534,7 +577,7 @@ pub func main = (Init init) {
 		expect(r.warnings.some((m) => m.includes("never written through"))).toBe(false);
 	});
 
-	test("an un-annotated ref parameter is never linted as idle", () => {
+	test("un-annotated owning reader suggests {}", () => {
 		const r = run(`
 mv struct Inner {
 	var int n = 0
@@ -554,9 +597,84 @@ pub func main = (Init init) {
 }
 `);
 		expect(r.errors).toEqual([]);
-		expect(
-			r.warnings.some((m) => m.startsWith("Ref parameter") || m.startsWith("Method receiver")),
-		).toBe(false);
+		expect(r.warnings).toContain(
+			"Ref parameter 'item' is never written through — declare '{}' so calls keep callers' borrows alive",
+		);
+	});
+
+	test("un-annotated copyable reader suggests taking it by value", () => {
+		const r = run(`
+struct Item {
+	var int n
+}
+
+func read = (ref Item item, out int) {
+	return item.n
+}
+
+pub func main = (Init init) {
+	var Item item = Item(7)
+	Console.write("\\{read(ref item)}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).toContain(
+			"Ref parameter 'item' is never written through — take it by value (or drop 'ref')",
+		);
+	});
+
+	test("un-annotated scalar mutator suggests {}", () => {
+		const r = run(`
+mv struct Item {
+	var int n
+}
+
+func bump = (ref Item item) {
+	item.n = item.n + 1
+}
+
+pub func main = (Init init) {
+	var Item item = Item(0)
+	bump(ref item)
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).toContain(
+			"Ref parameter 'item' displaces no heap field — declare '{}' so calls keep callers' borrows alive",
+		);
+	});
+
+	test("forwarding to a wildcard callee keeps the param unknown (no {} advice)", () => {
+		const r = run(`
+mv struct Item {
+	var int n
+	var Box<Inner> inner
+}
+
+mv struct Inner {
+	var int x = 0
+}
+
+func reset = (ref Item item) {
+	item.inner = mv Box<Inner>(mv Inner())
+}
+
+func forward = (ref Item item) {
+	reset(ref item)
+}
+
+pub func main = (Init init) {
+	var Item item = Item(0, mv Box<Inner>(mv Inner()))
+	forward(ref item)
+}
+`);
+		expect(r.errors).toEqual([]);
+		const forward_warning = r.warnings.find(
+			(m) =>
+				m.includes("'forward'") || (m.includes("Ref parameter 'item'") && m.includes("any field")),
+		);
+		expect(forward_warning).toBeDefined();
+		expect(r.warnings.some((m) => m.includes("displaces no heap field"))).toBe(false);
 	});
 
 	test("forwarding the parameter as a ref argument counts as use", () => {

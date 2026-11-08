@@ -206,6 +206,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_library = n.is_library;
 			c.is_readonly = n.is_readonly;
 			c.is_view_keyword = n.is_view_keyword;
+			c.keyword_start = n.keyword_start;
+			c.keyword_text = n.keyword_text;
 			return c;
 		}
 		case "assign": {

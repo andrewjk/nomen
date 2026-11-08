@@ -125,4 +125,69 @@ pub func main = (Init init) {
 		// Two undeclared writes accumulate into one set with sorted fields.
 		expect(diag?.quick_fix?.insert_text).toBe(" { inner, spare }");
 	});
+
+	test("un-annotated scalar mutator: declare `{}`", () => {
+		const source = `import System
+
+mv struct Item {
+	var int n
+}
+
+func touch = (ref Item item) {
+	item.n = item.n + 1
+}
+
+pub func main = (Init init) {
+	var Item item = Item(0)
+	touch(ref item)
+}
+`;
+		const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
+		const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+		expect(diag).toBeDefined();
+		const fix = diag!.quick_fix!;
+		expect(fix.insert_text).toBe(" {}");
+		const edited =
+			source.slice(0, fix.insert_offset!) + fix.insert_text + source.slice(fix.insert_offset!);
+		expect(edited.split("\n").find((l) => l.includes("func touch"))).toBe(
+			"func touch = (ref Item item {}) {",
+		);
+		const second = parse(edited, system, "/tmp/probe.nomen", { allow_internal: true });
+		expect(second.errors).toEqual([]);
+		expect(second.warnings.filter((w) => w.message.startsWith("Ref parameter"))).toEqual([]);
+	});
+
+	test("un-annotated ref self reader: quick fix uses bare self", () => {
+		const source = `import System
+
+mv struct Item {
+	var int n
+
+	func peek = (ref self, out int) {
+		return self.n
+	}
+}
+
+pub func main = (Init init) {
+	var Item item = Item(1)
+	Console.write("\\{item.peek()}")
+}
+`;
+		const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
+		const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+		expect(diag).toBeDefined();
+		const fix = diag!.quick_fix!;
+		const edited =
+			source.slice(0, fix.replace_start!) + fix.replace_text! + source.slice(fix.replace_end!);
+		expect(edited.split("\n").find((l) => l.includes("func peek"))).toBe(
+			"	func peek = (self, out int) {",
+		);
+		const second = parse(edited, system, "/tmp/probe.nomen", { allow_internal: true });
+		expect(second.errors).toEqual([]);
+		expect(
+			second.warnings.filter(
+				(w) => w.message.startsWith("Method receiver") || w.message.startsWith("Ref parameter"),
+			),
+		).toEqual([]);
+	});
 });

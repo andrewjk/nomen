@@ -68,10 +68,18 @@ export interface RefParamWrite {
 	func_name: string;
 	/** Concrete heap-bearing fields written (for the wildcard warning). */
 	fields: Set<string>;
-	/** A bare-receiver mutator call with no concrete field to name. */
+	/** An unknown effect: a wildcard callee may change any field. */
 	whole: boolean;
+	/**
+	 * The unknown effect came from an un-annotated LIBRARY method. The design
+	 * accepts coarse library mutators, so no lint is emitted for the caller
+	 * (it also blocks the `{}` suggestion — nothing is proven).
+	 */
+	library_unknown?: boolean;
 	/** ANY write through the alias (scalar writes included) — idle-ref lint. */
 	wrote: boolean;
+	/** The owning function is System-library code — never linted. */
+	is_library: boolean;
 }
 export type RefParamWrites = Map<string, RefParamWrite>;
 
@@ -89,7 +97,14 @@ export function ensure_ref_param_write(
 	const key = param_write_key(param);
 	let entry = status.ref_param_writes.get(key);
 	if (!entry) {
-		entry = { param, func_name, fields: new Set(), whole: false, wrote: false };
+		entry = {
+			param,
+			func_name,
+			fields: new Set(),
+			whole: false,
+			wrote: false,
+			is_library: !!status.current_function?.is_library,
+		};
 		status.ref_param_writes.set(key, entry);
 	}
 	return entry;
@@ -117,14 +132,13 @@ export function record_undeclared_write(
 	param: ParameterNode,
 	func_name: string,
 	field: string | undefined,
+	library_unknown = false,
 ): void {
 	const entry = ensure_ref_param_write(status, param, func_name);
 	entry.wrote = true;
-	// Un-annotated `ref self` stays the accepted norm (FIELD_EFFECTS.md,
-	// "zero churn"): the wildcard warning is for free `ref` parameters only.
-	if (param.is_self_param) return;
 	if (field === undefined) {
 		entry.whole = true;
+		if (library_unknown) entry.library_unknown = true;
 	} else {
 		entry.fields.add(field);
 	}
@@ -258,9 +272,10 @@ export function param_has_displaceable_field(param: ParameterNode, status: Check
 
 /** Build the structured edit that adds `fields` to the parameter's set. */
 export function field_set_quick_fix(param: ParameterNode, fields: string[]): FieldSetQuickFix {
+	const rendered = fields.length ? `{ ${fields.join(", ")} }` : "{}";
 	const title = has_field_set(param)
 		? `Add ${fields.map((f) => `'${f}'`).join(", ")} to the field set`
-		: `Declare \`{ ${fields.join(", ")} }\``;
+		: `Declare \`${rendered}\``;
 	const fix: FieldSetQuickFix = { title, param_start: param.start };
 	if (param.field_set !== undefined && param.field_set_span) {
 		const span = param.field_set_span;
@@ -289,8 +304,22 @@ export function field_set_quick_fix(param: ParameterNode, fields: string[]): Fie
 			? param.start + "ref self".length
 			: (param.name_start ?? param.start) + param.name.length;
 	fix.insert_offset = name_end;
-	fix.insert_text = ` { ${fields.join(", ")} }`;
+	fix.insert_text = fields.length ? ` { ${fields.join(", ")} }` : " {}";
 	return fix;
+}
+
+/**
+ * The edit that turns an un-annotated `ref self` receiver into a bare `self`
+ * (a method that never writes through the receiver is a reader).
+ */
+export function drop_ref_self_quick_fix(param: ParameterNode): FieldSetQuickFix {
+	return {
+		title: "Use bare `self`",
+		param_start: param.start,
+		replace_start: param.start,
+		replace_end: param.start + "ref self".length,
+		replace_text: "self",
+	};
 }
 
 function add_field_effects_error(
@@ -441,11 +470,15 @@ export function verify_field_effects_at_receiver_call(
 	// Bare parameter receiver (`param.m(…)`): the callee mutates within the
 	// parameter itself, so its declared set must be a subset of the caller's.
 	if (declared === undefined) {
-		// Wildcard caller — allowed; recorded only when the callee could
-		// displace something, as a whole-receiver event with no concrete
-		// field to offer.
-		if (callee_set === undefined || callee_set.length > 0) {
-			record_undeclared_write(status, param, func_name, undefined);
+		// Wildcard caller — allowed; record the callee's effect so the lint can
+		// name the fields (a `{}` callee displaces nothing; a wildcard callee
+		// is unknown).
+		if (callee_set === undefined) {
+			record_undeclared_write(status, param, func_name, undefined, !!callee.is_library);
+		} else {
+			for (const field of callee_set) {
+				record_undeclared_write(status, param, func_name, field);
+			}
 		}
 		return;
 	}
@@ -477,6 +510,7 @@ export function verify_field_effects_at_receiver_call(
 export function verify_field_effects_at_ref_arg(
 	argument: BaseNode,
 	callee_param: ParameterNode | undefined,
+	callee_func: FunctionNode | undefined,
 	status: CheckStatus,
 	start: number,
 ): void {
@@ -487,8 +521,28 @@ export function verify_field_effects_at_ref_arg(
 	if (!param) return;
 	const func_name = status.current_function?.name ?? "";
 	mark_param_written(status, param, func_name);
+	// A direct self-recursive call (`f(ref state)` inside f) has exactly the
+	// enclosing function's effects — recording it as an UNKNOWN callee would
+	// deadlock the lint (the function's own unresolved set). Its eventual
+	// declared set trivially covers itself, so skip the effect recording.
+	if (callee_func && callee_func === status.current_function) return;
 	const declared = param.field_set;
-	if (declared === undefined) return;
+	if (declared === undefined) {
+		// Wildcard caller: record the callee's effect so the lint can name it
+		// (a `{}` callee displaces nothing; a wildcard callee is unknown).
+		if (located.path.length) {
+			if (callee_param.field_set === undefined || callee_param.field_set.length > 0) {
+				record_undeclared_write(status, param, func_name, located.path[0]);
+			}
+		} else if (callee_param.field_set === undefined) {
+			record_undeclared_write(status, param, func_name, undefined, !!callee_func?.is_library);
+		} else {
+			for (const field of callee_param.field_set) {
+				record_undeclared_write(status, param, func_name, field);
+			}
+		}
+		return;
+	}
 
 	if (located.path.length) {
 		// `f(ref item.inner)` — the callee mutates within item.X: X must be

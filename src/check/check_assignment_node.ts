@@ -971,7 +971,10 @@ export default function check_assignment_node(
 					assign.right_value.start,
 				);
 			}
-		} else if (is_owning_struct_type_requiring_move(rhs_type, status)) {
+		} else if (
+			!assign.synthesized_copy_store &&
+			is_owning_struct_type_requiring_move(rhs_type, status)
+		) {
 			// A mv struct field cannot be byte-copied out (double-free); mv
 			// it out with a swap that revalidates the field. A string-only mv
 			// struct (e.g. a tuple with a string field) is a sound borrow instead.
