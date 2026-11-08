@@ -1194,11 +1194,19 @@ export default function check_function_call(
 		// temp — is RETIRED: Map's pairs init, its one user, now
 		// mv-destructures each pair into bindings, an explicit chain whose
 		// string bindings lower as the borrow-copy convention.)
+		//
+		// The synthesized `copy` body's shell-ctor call is exempt
+		// (`synthesized_copy_ctor`): it constructs a FRESH instance —
+		// there is no displaced value to double-free and no source field
+		// loses ownership (string ctor params strdup; container/struct
+		// params alias into the fresh seed only until the per-field stores
+		// below overwrite them).
 		if (
 			func_param.is_moved &&
 			!has_mov_keyword &&
 			!node.swap_params?.has(i) &&
 			param_is_owning_struct &&
+			!(node as FunctionCallNode).synthesized_copy_ctor &&
 			param.node_type === "access" &&
 			(param as AccessNode).access.node_type === "access_field"
 		) {

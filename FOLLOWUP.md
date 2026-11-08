@@ -594,39 +594,3 @@ Rules of thumb:
   processes — the gap is not a QoS/E-core placement effect. Exact
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
-
-## First check of a struct with a direct string field reports offset-less errors
-
-Recorded 2026-11-07, found while landing FIELD_EFFECTS.md (confirmed on
-pristine main — not introduced by it). **Updated 2026-11-08**: the warning
-pass now gates on USER-addressable errors only (`check.ts`), so these
-internal `start: -1` errors no longer suppress lint output; the errors
-themselves are still reported to `status.errors` (and still filtered from
-the user-facing list by `format_errors`). The auto-derived `copy` bodies add
-a second family of the same shape: `cannot copy 'string' out of field …`
-(the synthesized `c.field = self.field` store is exempted via the
-`synthesized_copy_store` stamp), plus `List<string>.copy()` /
-`List<Struct>.copy()` rejections and tuple-element `_0` copy errors from
-copy bodies that are still emitted with hidden errors. A module whose structs have direct
-`string` fields makes the FIRST check pass report, with `start: -1`:
-
-- `cannot copy field 'name' into parameter 'name' by value — it owns heap
-resources; use 'mv ... swap <replacement>' or .copy()`
-- `cannot copy 'string' out of field 'name' by value — ...`
-
-`parse.ts`'s `format_errors` filters `start < 0`, so the user sees `ok: false`
-with an EMPTY error list — and since `check()` only runs the warning pass on a
-clean check, all lint warnings (unused values, and now the FIELD_EFFECTS
-wildcard-ref-parameter hint, which powers the editor quick fix) are silently
-dropped for exactly the programs that use string fields. A second `check()` of
-the same root is clean — the state the first pass mutated (auto-init
-`mv`-param stamping / string-field records) suppresses it — so the bug is a
-first-check non-idempotency, not a standing condition.
-
-Suspected shape: the auto-generated `#init` body assigns `self.name = name`
-through the string-field copy rule before the mv-param machinery
-(`mark_owning_auto_init_params`) has marked the synthesized param — worth
-reproducing from `parse_struct.ts`'s synthesized `#init` and checking the
-error's start offset is the param/field, not `-1`. Until then, language tests
-that need the warning pass avoid direct string fields on structs (see
-test/field_effects.test.ts's `run` note).

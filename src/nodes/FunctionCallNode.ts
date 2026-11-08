@@ -122,6 +122,18 @@ export default class FunctionCallNode extends BaseNode {
 	 */
 	resolved_function?: FunctionNode;
 	/**
+	 * The synthesized `copy` body's shell-constructor call (`var c =
+	 * Person(self.name)` — build_copy). The checker exempts it from the
+	 * field-copy rule ("cannot copy field X into parameter Y by value"):
+	 * the ctor seeds the FRESH instance's fields from the arguments (string
+	 * fields strdup, struct/container fields byte-copy an alias the
+	 * per-field stores below immediately overwrite via `displaced_is_alias`)
+	 * — no displaced value is freed and no source field loses ownership, so
+	 * the rule's double-free hazard doesn't apply to this generated shape.
+	 * Mirrors `synthesized_copy_store` on AssignmentNode.
+	 */
+	synthesized_copy_ctor?: boolean;
+	/**
 	 * Set during checking when this is the compiler-special `Thread(fn(args))`
 	 * constructor — the surface form of a spawn (see ASYNC.md). The
 	 * single parameter is the call expression to launch. The construction is

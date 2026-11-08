@@ -514,7 +514,14 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 		}
 		return field_access("self", name);
 	});
+	// The shell constructor's field arguments are raw `self.<field>` borrows
+	// for the shapes ctor_arg_deep_copy doesn't route through `.copy()`
+	// (string fields strdup at the ctor, containers alias until the per-field
+	// stores below overwrite them). The checker's field-copy rule must not
+	// reject this generated shape — stamp it (mirrors the per-field store
+	// stamps below).
 	const ctor = new FunctionCallNode(-1, struct.name, new Type(struct.name), call_args);
+	ctor.synthesized_copy_ctor = true;
 	const statements: BaseNode[] = [
 		new DeclarationNode(-1, "private", "var", "c", new Type(struct.name), ctor),
 	];

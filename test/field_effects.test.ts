@@ -10,10 +10,6 @@ import parse_program from "./parse_with_imports";
  */
 
 function run(source: string): { errors: string[]; warnings: string[] } {
-	// NOTE: these programs deliberately avoid structs with direct string
-	// fields — a pre-existing first-check-only synthesized-#init error (no
-	// source offset, see FOLLOWUP.md) makes parse report ok:false with no
-	// visible errors, which suppresses the warning pass.
 	const parsed = parse_program(source);
 	return {
 		errors: parsed.errors.map((e) => e.message),
