@@ -32,7 +32,7 @@ pub mv struct Form {
 	// Wire the assembly into the caller's grid under `parent`: the box
 	// fills the rect, the rows sit on top of it inset by the padding (which
 	// also clears the box's built-in title strip).
-	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+	pub func add_to = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int parent, int span) {
 		var int zs = grid.add_zstack(parent, span)
 		grid.add_to(zs, self.box.handle, 0, 0, 1, 1)
 		var int blk = grid.add_block_to(zs, 24, 1)
@@ -41,7 +41,7 @@ pub mv struct Form {
 
 	// Append a row: `label` on the left (intrinsic width), the caller's
 	// control filling the rest at `control_h` tall. Up to 4 rows.
-	pub func add_row = (ref self, ref Container grid, string label, uint64 control, int control_h) {
+	pub func add_row = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, string label, uint64 control, int control_h) {
 		var uint64 label_handle = 0
 		if self.rows == 0 {
 			self.l0.set_text(label)

@@ -71,7 +71,7 @@ pub mv struct Fiber<T> : Spawnable<T> {
 	// out of the instance (started; #destroy no-ops), return the handle.
 	// While the fiber waits, it parks and frees its worker instead of
 	// blocking it.
-	pub func start = (ref self, mv out Task<T>) {
+	pub func start = (ref self {}, mv out Task<T>) {
 		```
 		#arch: c
 		struct nomen_future *_f = (struct nomen_future *)self->future;
@@ -122,7 +122,7 @@ pub mv struct Fiber<T> : Spawnable<T> {
 	// The fiber is launched exactly like start, but the handle is dropped
 	// immediately: the future's refs are released as the discarded Task is
 	// reclaimed, and the fiber completes into the void — nothing joins it.
-	pub func detach = (ref self) {
+	pub func detach = (ref self {}) {
 		self.start()
 	}
 

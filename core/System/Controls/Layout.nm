@@ -19,7 +19,7 @@ pub mv struct Layout {
 /**
  * Initializes a Layout tree with capacity for `cap` nodes
  **/
-pub func init_layout = (ref Layout l, int cap) {
+pub func init_layout = (ref Layout l { gaps, hs, kinds, par, rh, rw, rx, ry, ws }, int cap) {
 	l.kinds.grow_int(cap)
 	l.ws.grow_int(cap)
 	l.hs.grow_int(cap)
@@ -34,7 +34,7 @@ pub func init_layout = (ref Layout l, int cap) {
 /**
  * Appends a leaf node (a sized control) under `parent` and returns its index
  **/
-pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
+pub func add_leaf = (ref Layout l { gaps, hs, kinds, par, ws }, int parent, int w, int h, out int) {
 	var idx = 0
 	while l.par.load_int(idx) != 0 || idx == 0; idx += 1 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
@@ -52,7 +52,7 @@ pub func add_leaf = (ref Layout l, int parent, int w, int h, out int) {
 /**
  * Appends a vertical stack container under `parent` and returns its index
  **/
-pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
+pub func add_vstack = (ref Layout l { gaps, hs, kinds, par, ws }, int parent, int spacing, out int) {
 	var idx = 0
 	while true; idx += 1 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
@@ -70,7 +70,7 @@ pub func add_vstack = (ref Layout l, int parent, int spacing, out int) {
 /**
  * Appends a horizontal stack container under `parent` and returns its index
  **/
-pub func add_hstack = (ref Layout l, int parent, int spacing, out int) {
+pub func add_hstack = (ref Layout l { gaps, hs, kinds, par, ws }, int parent, int spacing, out int) {
 	var idx = 0
 	while true; idx += 1 {
 		if l.kinds.load_int(idx) == 0 && l.ws.load_int(idx) == 0 && l.hs.load_int(idx) == 0 && l.par.load_int(idx) == 0 {
@@ -214,7 +214,7 @@ pub func arrange = (Layout l, int count, int idx, int x, int y, int w, int h) {
 /**
  * Runs a full measure-then-arrange pass from `root` within the available space
  **/
-pub func run_layout = (ref Layout l, int count, int root, int avail_w, int avail_h) {
+pub func run_layout = (ref Layout l {}, int count, int root, int avail_w, int avail_h) {
 	var int root_w = measure_w(l, count, root, 0, avail_w, 0, avail_h)
 	var int root_h = l.rh.load_int(root)
 	arrange(l, count, root, 0, 0, root_w, root_h)

@@ -1190,7 +1190,7 @@ pub mv struct Window: Control {
 	// frame where the content rect changed. The grid must outlive the run
 	// (an app field — registration stores its address). Call from
 	// App.start; also arms the resize delegate's target pair.
-	pub func set_content = (ref self, ref Container grid) {
+	pub func set_content = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }) {
 		```
 		#arch: c
 		#platform: macos
@@ -1345,7 +1345,7 @@ pub mv struct Window: Control {
 	// a FrameEvents each frame.
 	// The app is consumed: it is destroyed when the loop exits (controls
 	// release, buffers free).
-	pub func run = (ref self, mv App app) {
+	pub func run = (ref self {}, mv App app) {
 		app.start(ref self)
 		Container.arm_resize_delegate(self)
 		self.arm_mouse_moves()
@@ -1432,7 +1432,7 @@ pub mv struct Window: Control {
 		return s
 	}
 
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		```
 		#arch: c
 		#platform: macos

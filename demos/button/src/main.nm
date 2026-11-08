@@ -38,7 +38,7 @@ mv struct ButtonApp: App {
 	}
 
 	// Add control events in `start`
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.btn.on_click(func() {
 				self.btn.set_title("Thank you")

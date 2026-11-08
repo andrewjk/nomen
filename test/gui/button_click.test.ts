@@ -30,7 +30,7 @@ mv struct ClickApp : App {
 		self.grid = g
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 	}
 
@@ -39,7 +39,7 @@ mv struct ClickApp : App {
 	// click would — verifying arm → record → drain. (Synthesized NSEvents
 	// don't reach target/action on current macOS; that delivery is AppKit's
 	// event pipeline, not ours.)
-	pub func poke = (ref self, ref Window win) {
+	pub func poke = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -64,7 +64,7 @@ mv struct ClickApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke(ref win)

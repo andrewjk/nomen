@@ -42,7 +42,7 @@ mv struct KeyboardApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		// Space (keycode 49), first press only — the auto-repeat filter.
 		self.grid.on_key_down(func () {
@@ -62,7 +62,7 @@ mv struct KeyboardApp : App {
 	// A Space key-down (then key-up), synthesized through CGEvent and
 	// posted into NSApp's queue: the NEXT frame's pump stamps the record,
 	// and that frame's drains run the arms.
-	pub func poke_key = (ref self, ref Window win, bool down) {
+	pub func poke_key = (ref self, ref Window win {}, bool down) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -95,7 +95,7 @@ mv struct KeyboardApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke_key(ref win, true)

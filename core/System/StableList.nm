@@ -40,7 +40,7 @@ pub mv struct StableList<T> {
 	// slab is always null, so its field destroy reclaims nothing.
 	var stage = Buffer<T>()
 
-	pub func push = (ref self, mv T value) {
+	pub func push = (ref self { chunks, items, stage }, mv T value) {
 		if self.items.cap == 0 {
 			self.items.alloc(256)
 		}
@@ -75,7 +75,7 @@ pub mv struct StableList<T> {
 	// and constructs the callee's result directly into the append slot
 	// (the in-place push contract). Byte-identical policy for extra=1: the same
 	// alloc/dir-grow/first-touch sequence push's inline branches performed.
-	internal func reserve = (ref self, int extra: extra >= 0, out int) {
+	internal func reserve = (ref self { chunks, items, stage }, int extra: extra >= 0, out int) {
 		if self.items.cap == 0 {
 			self.items.alloc(256)
 		}
@@ -93,7 +93,7 @@ pub mv struct StableList<T> {
 	// Calloc the directory chunk's slab on first touch (zero words mark
 	// empty chunks) — push's tail store and the in-place append both rely on
 	// the slab existing before a slot address is taken from it.
-	internal func ensure_chunk = (ref self, int dir_index) {
+	internal func ensure_chunk = (ref self { chunks, items, stage }, int dir_index) {
 		```
 		#arch: c
 		if (((unsigned long long*)self->chunks.data)[dir_index] == 0) {
@@ -130,7 +130,7 @@ pub mv struct StableList<T> {
 	// call's result straight through this address (sole ownership transfers
 	// into the slot — the chunk slab is calloc'd on first touch by
 	// `reserve`'s `ensure_chunk` before the slot address is taken).
-	internal func append_slot_ptr = (ref self, out ptr T) {
+	internal func append_slot_ptr = (ref self { chunks, items, stage }, out ptr T) {
 		```
 		#arch: c
 		unsigned long long idx = (unsigned long long)self->length;
@@ -236,7 +236,7 @@ pub mv struct StableList<T> {
 	// invalidation for this type, so the alias stays live and writes through
 	// it land in the list. The length constraint is the caller's proof
 	// obligation, exactly like `.at`.
-	internal func slot_ptr = (ref self, int i: i >= 0 && i < self.length, out ptr T) {
+	internal func slot_ptr = (ref self { items }, int i: i >= 0 && i < self.length, out ptr T) {
 		if i < self.items.cap {
 			return self.items.slot_ptr(i)
 		}
@@ -303,13 +303,13 @@ pub mv struct StableList<T> {
 	// nothing.
 	// (The old `stage` relay field is gone — push's tail path stores into
 	// the chunk through a `Buffer.init_view` view.)
-	func #destroy = (ref self) {
+	func #destroy = (ref self { chunks, items, stage }) {
 		self.destroy_tails()
 	}
 
 	// Raw: destroy directory chunks 1.. — per chunk, `filled` slots + the
 	// slab, via `T_buffer_destroy` on a cap=filled view.
-	internal func destroy_tails = (ref self) {
+	internal func destroy_tails = (ref self { chunks, items, stage }) {
 		```
 		#arch: c
 		long n_dir = (self->length - 1L) / 256L;

@@ -5,7 +5,7 @@ import build_and_check_output from "../build_and_check_output";
 // Registered click handlers — the `.on_click` desugar (docs/HANDLERS.md,
 // Stage 1): `self.btn.on_click(func () { ... })` is checker-interpreted —
 // the closure body is hoisted into a hidden method on the app (`#on_click_1
-// = (ref self, ref Window win)`), the registration site emits no code, and
+// = (ref self, ref Window win {})`), the registration site emits no code, and
 // the app's synthesized `handle_clicks` drains the control's native click
 // record each frame (before `frame`) by re-evaluating the remembered field
 // path. The handler captures NOTHING: `self` inside the body is the hidden
@@ -41,14 +41,14 @@ mv struct ClickApp : App {
 	// Wire the handler once the app is in final storage: the arm
 	// re-evaluates self.btn's handle at dispatch, so registration needs no
 	// captures and nothing can go stale.
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.btn.on_click(func () { self.label.set_text("clicked") })
 	}
 
 	// Synthesize the click at the AppKit seam: performClick: fires the
 	// button's armed target/action (the ring recorder) synchronously — the
 	// NEXT frame's handle_clicks drain runs the arm.
-	pub func poke = (ref self, ref Window win) {
+	pub func poke = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -73,7 +73,7 @@ mv struct ClickApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke(ref win)

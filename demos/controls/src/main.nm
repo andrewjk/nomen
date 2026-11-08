@@ -582,7 +582,7 @@ mv struct GalleryApp: App {
 	// scroll_to_top on the first post-show pass). The registrations go
 	// grid-side with scalar handles — one borrow of self per call (two
 	// `ref` borrows under one owner would trip the aliasing rule).
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.outer)
 		self.page_grid.set_document(self.page.handle, self.page.doc_handle())
 		self.scroll_grid.set_document(self.scroll.handle, self.scroll.doc_handle())
@@ -678,7 +678,7 @@ mv struct GalleryApp: App {
 	// the framework: the pane grids re-flow with the run loop's relayout
 	// (registered pane roots), and the menu/toolbar picks and the
 	// pagination's page changes arrive as registered handlers.
-	pub func frame = (ref self, ref Window _win, FrameEvents _ev) {
+	pub func frame = (ref self, ref Window _win {}, FrameEvents _ev) {
 		// Progress mirrors the slider; the status line reports the polled
 		// values (slider / stepper / color / date).
 		self.bar.set_value(self.slide.value() / 100.0)

@@ -101,7 +101,7 @@ mv struct TodoApp: App {
 	// into hidden methods on TodoApp and dispatched with `ref self` by the
 	// run loop (docs/HANDLERS.md), so they reach app state — the input, the
 	// list, the scroll — with no captures.
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.todos.set_document(self.scroll.handle, self.scroll.doc_handle())
 		self.add_btn.on_click(func() {
@@ -140,7 +140,7 @@ mv struct TodoApp: App {
 	// Re-run the document dance: the framework dances on RESIZE only; an
 	// add or delete changes the stack height right now. One `ref` borrow
 	// (the todos grid) + scalar handles, so no aliasing.
-	func redance = (ref self, ref Window win) {
+	func redance = (ref self, ref Window win {}) {
 		nomen_scroll_thunk(ref self.todos, self.scroll.handle, self.scroll.doc_handle(), ref win, 0)
 	}
 

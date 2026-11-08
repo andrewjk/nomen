@@ -92,7 +92,7 @@ pub mv struct Spinner: Control {
 		```
 	}
 
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		```
 		#arch: c
 		#platform: macos
@@ -123,7 +123,7 @@ pub mv struct Spinner: Control {
 		```
 	}
 
-	pub func start = (ref self) {
+	pub func start = (ref self {}) {
 		```
 		#arch: c
 		#platform: macos
@@ -154,7 +154,7 @@ pub mv struct Spinner: Control {
 		```
 	}
 
-	pub func stop = (ref self) {
+	pub func stop = (ref self {}) {
 		```
 		#arch: c
 		#platform: macos

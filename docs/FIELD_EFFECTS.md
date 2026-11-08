@@ -30,9 +30,11 @@ the edit is local:
   (`add '{ field }'`) or, when the effect is unknown (a wildcard callee was
   called/forwarded), says so without a fix. Unknown effects that come from
   un-annotated LIBRARY mutators are silent: the caller cannot improve them
-  from its side, so the fix belongs in the library (see FOLLOWUP.md). A
-  direct self-recursive call is not an unknown — it has the function's own
-  effects;
+  from its side, so the fix belongs in the library. The System library now
+  declares sets on every concrete `ref` parameter (see "Library
+  annotations"), so the silent fallback only covers third-party code and
+  trait-dispatched receivers. A direct self-recursive call is not an
+  unknown — it has the function's own effects;
 - an un-annotated ref that displaces nothing says `declare '{}'` — so calls
   stop invalidating callers' borrows — unless the type is copyable and the
   parameter is never written through, in which case taking it by value is the
@@ -175,7 +177,9 @@ Defaults and scope:
 
 - **Un-annotated `ref self` = wildcard** — today's whole-owner invalidation.
   Zero churn: existing code and tests are untouched; precision is opt-in per
-  method. The corollary (accepted): un-annotated library methods stay coarse.
+  method. The System library opts in everywhere it can (see "Library
+  annotations"); un-annotated user/third-party methods stay coarse until
+  their authors opt in.
 - **bare `self` unchanged** — reader, invalidates nothing. The immutability
   exemption is structural, as today.
 - **`var self` unchanged** — takes the whole receiver; every borrow rooted
@@ -337,9 +341,37 @@ mv List<T> other`): rejected — needs an LL(k) rule and formatter/LSP
   sets up the call chain — the Java-checked-exceptions feeling. This is the
   irreducible price of "the signature is the whole truth": someone maintains
   the truth. Valen pays it; Rust avoids it by being coarse.
-- **Wildcard default coarseness.** Un-annotated mutators (including library
-  code you don't control) keep whole-owner invalidation — practically the
-  same outcome as the scan design's opaque-body fallback.
+- **Wildcard default coarseness.** Un-annotated mutators (third-party
+  library code you don't control) keep whole-owner invalidation —
+  practically the same outcome as the scan design's opaque-body fallback.
+  The bundled System library is annotated, so using it does not pay this.
+
+## Library annotations
+
+`core/System/**` declares a field set on every concrete `ref` parameter
+(including `ref self`), inferred bottom-up from the effects of the bodies and
+then reviewed: heap fields are named, a receiver that only touches value-type
+storage is `{}`, and an opaque raw (`#arch`) body conservatively declares
+every displaceable field of the type. Consequently borrowing a library container and then calling a
+mutator invalidates only the fields that mutator can displace, instead of the
+whole variable.
+
+Two deliberate exceptions remain wildcards:
+
+- **Trait `ref self` receivers.** A trait method's receiver state belongs to
+  whichever conformer is dispatched; the trait cannot name fields it does not
+  declare, and a fixed contract would wrongly constrain user implementations
+  (e.g. `App`). Concrete conformers still declare their own sets, and
+  trait-declared _state parameters_ (`ref SomeState state { … }`) narrow
+  normally.
+- **Primitive receivers** (`ref self` on `string`/`int`/…) cannot carry a
+  field set — the grammar requires a struct-typed parameter. These mutators
+  displace only the primitive value itself, which has no named field.
+
+Generic struct methods are checked as templates, so their sets are declared
+on the template and copied to every monomorphization. Field lookup resolves
+the template's own fields, which keeps the value-type exemption working for
+generic state (`self.started = true` in `Fiber<T>.start` needs no clause).
 
 ## Forward compatibility
 

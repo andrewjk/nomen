@@ -24,7 +24,7 @@ pub mv struct OtpInput {
 
 	// Wire the five fields into the caller's grid under `parent`: an hstack
 	// of fixed-width boxes.
-	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+	pub func add_to = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int parent, int span) {
 		var int hs = grid.add_hstack(parent, 8, span)
 		grid.add_to(hs, self.f0.handle, 36, 28, 0, 1)
 		grid.add_to(hs, self.f1.handle, 36, 28, 0, 1)
@@ -40,7 +40,7 @@ pub mv struct OtpInput {
 	}
 
 	// Empty every field.
-	pub func clear = (ref self) {
+	pub func clear = (ref self {}) {
 		self.f0.set_text("")
 		self.f1.set_text("")
 		self.f2.set_text("")

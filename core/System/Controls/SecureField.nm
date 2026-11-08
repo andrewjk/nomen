@@ -105,7 +105,7 @@ pub mv struct SecureField: Control {
 		```
 	}
 
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		```
 		#arch: c
 		#platform: macos

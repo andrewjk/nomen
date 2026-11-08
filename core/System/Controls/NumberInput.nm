@@ -24,7 +24,7 @@ pub mv struct NumberInput {
 	}
 
 	// The stepper's range and nudge size.
-	pub func set_range = (ref self, float min, float max, float increment) {
+	pub func set_range = (ref self {}, float min, float max, float increment) {
 		self.step.set_min(min)
 		self.step.set_max(max)
 		self.step.set_increment(increment)
@@ -32,7 +32,7 @@ pub mv struct NumberInput {
 
 	// Drive BOTH controls: the stepper holds the value, the text mirrors it
 	// (the float's %f rendering).
-	pub func set_value = (ref self, float v) {
+	pub func set_value = (ref self {}, float v) {
 		self.step.set_value(v)
 		var text = v.to_string()
 		self.box.set_text(text)
@@ -48,7 +48,7 @@ pub mv struct NumberInput {
 	// the box filling the row and the stepper at its intrinsic width.
 	// Hit-testing works through the usual grid.contains on the fields'
 	// handles.
-	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+	pub func add_to = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int parent, int span) {
 		var int hs = grid.add_hstack(parent, 6, span)
 		grid.add_to(hs, self.box.handle, 0, 24, 1, 1)
 		grid.add_to_intrinsic(hs, self.step.handle, 1)

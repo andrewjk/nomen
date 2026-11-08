@@ -44,7 +44,7 @@ mv struct LifecycleApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.grid.on_resize(func () {
 			self.label.set_text("resized \\{win.resize_width()}x\\{win.resize_height()}")
@@ -53,7 +53,7 @@ mv struct LifecycleApp : App {
 
 	// The unsaved-changes pattern: decline the first request, allow the
 	// rest. run consults this on the frame after the red button.
-	func close_requested = (ref self, ref Window win, out bool) {
+	func close_requested = (ref self, ref Window win {}, out bool) {
 		if self.allow_close {
 			return true
 		}
@@ -64,7 +64,7 @@ mv struct LifecycleApp : App {
 
 	// Red-button simulation: performClose: WITHOUT the forced flag — the
 	// delegate refuses it and sets the pending flag for run to consult.
-	pub func poke_close = (ref self, ref Window win) {
+	pub func poke_close = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -90,7 +90,7 @@ mv struct LifecycleApp : App {
 	// A window resize: setFrame:display: changes the content rect — the
 	// delegate relayouts the registered roots synchronously, and the next
 	// frame's resize detection stamps the record for the drain.
-	pub func poke_resize = (ref self, ref Window win) {
+	pub func poke_resize = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -117,7 +117,7 @@ mv struct LifecycleApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke_resize(ref win)

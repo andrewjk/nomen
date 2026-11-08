@@ -50,7 +50,7 @@ mv struct SubmitApp : App {
 		self.stack = stack
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.stack)
 		self.name.on_submit(func () {
 			self.hits = self.hits + 1
@@ -119,7 +119,7 @@ mv struct SubmitApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke()
@@ -164,7 +164,7 @@ mv struct SearchApp : App {
 		self.status = status
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.search.on_submit(func () {
 			self.status.set_text("search: \\{self.search.get_text()}")
 		})

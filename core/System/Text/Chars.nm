@@ -21,7 +21,7 @@ pub struct Chars {
 
 	// The code point at the cursor, advancing past it. Malformed sequences
 	// yield U+FFFD. Panics when exhausted — check has_next first.
-	pub func next = (ref self, out int) {
+	pub func next = (ref self {}, out int) {
 		if self.byte_pos >= self.source.length {
 			panic("Chars exhausted; check has_next first")
 		}

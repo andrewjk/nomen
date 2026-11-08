@@ -6,10 +6,10 @@ pub mv struct BigInt {
 	var len = 0
 	var digits = Buffer<int>()
 
-	pub func #init = (ref self) {
+	pub func #init = (ref self {}) {
 	}
 
-	pub func #init = (ref self, int val) {
+	pub func #init = (ref self { digits }, int val) {
 		self.sign = 1
 		var int v = val
 		if v < 0 {
@@ -36,7 +36,7 @@ pub mv struct BigInt {
 		}
 	}
 
-	inline func set = (ref self, int i, uint64 val) {
+	inline func set = (ref self {}, int i, uint64 val) {
 		unsafe {
 			var ptr uint64 limbs = self.digits.data as ptr uint64
 			limbs[i] = val
@@ -65,22 +65,22 @@ pub mv struct BigInt {
 		}
 	}
 
-	inline func set_at = (ref self, uint64 ptr, int i, uint64 val) {
+	inline func set_at = (ref self {}, uint64 ptr, int i, uint64 val) {
 		unsafe {
 			var ptr uint64 limbs = ptr as ptr uint64
 			limbs[i] = val
 		}
 	}
 
-	func ensure = (ref self, int needed) {
+	func ensure = (ref self { digits }, int needed) {
 		self.digits.grow_int(needed)
 	}
 
-	func clear = (ref self, int len) {
+	func clear = (ref self { digits }, int len) {
 		self.digits.zero_int(len)
 	}
 
-	func copy_range_from = (ref self, BigInt src, int start, int count) {
+	func copy_range_from = (ref self { digits }, BigInt src, int start, int count) {
 		self.ensure(count)
 		var i = 0
 		while i < count; i += 1 {
@@ -95,7 +95,7 @@ pub mv struct BigInt {
 		}
 	}
 
-	func add_at = (ref self, BigInt other, int shift) {
+	func add_at = (ref self { digits }, BigInt other, int shift) {
 		self.ensure(other.len + shift + 1)
 		var carry = 0
 		var i = 0
@@ -126,7 +126,7 @@ pub mv struct BigInt {
 		}
 	}
 
-	func sub_at = (ref self, BigInt other, int shift) {
+	func sub_at = (ref self {}, BigInt other, int shift) {
 		var borrow = 0
 		var i = 0
 		while i < other.len; i += 1 {
@@ -235,7 +235,7 @@ pub mv struct BigInt {
 		return 0
 	}
 
-	pub func add_to = (ref self, BigInt a, BigInt b) {
+	pub func add_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			var uint64 a_val = a.get(0)
 			var uint64 b_val = b.get(0)
@@ -297,7 +297,7 @@ pub mv struct BigInt {
 		}
 	}
 
-	pub func sub_to = (ref self, BigInt a, BigInt b) {
+	pub func sub_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			self.ensure(1)
 			self.set(0, a.get(0) - b.get(0))
@@ -342,7 +342,7 @@ pub mv struct BigInt {
 		}
 	}
 
-	pub func mul_to = (ref self, BigInt a, BigInt b, ref BigInt scratch) {
+	pub func mul_to = (ref self { digits }, BigInt a, BigInt b, ref BigInt scratch { digits }) {
 		if a.len == 1 || b.len == 1 {
 			var uint64 sv
 			var int other_len
@@ -534,7 +534,7 @@ pub mv struct BigInt {
 
 	// self = quotient, a = dividend, b = divisor, remainder = remainder
 	// Uses remainder's internal buffer as working space
-	pub func div_to = (ref self, BigInt a, BigInt b, ref BigInt remainder) {
+	pub func div_to = (ref self { digits }, BigInt a, BigInt b, ref BigInt remainder { digits }) {
 		if b.len == 1 {
 			const uint64 divisor = b.get(0)
 			self.ensure(a.len)
@@ -835,7 +835,7 @@ pub mv struct BigInt {
 		return -1
 	}
 
-	pub func copy_from = (ref self, BigInt other) {
+	pub func copy_from = (ref self { digits }, BigInt other) {
 		self.ensure(other.len)
 		self.len = other.len
 		self.sign = other.sign
@@ -845,7 +845,7 @@ pub mv struct BigInt {
 		}
 	}
 
-	pub func set_int = (ref self, int val) {
+	pub func set_int = (ref self { digits }, int val) {
 		self.sign = 1
 		var int v = val
 		if v < 0 {
@@ -857,7 +857,7 @@ pub mv struct BigInt {
 		self.len = 1
 	}
 
-	pub func set_u64 = (ref self, uint64 val) {
+	pub func set_u64 = (ref self { digits }, uint64 val) {
 		self.sign = 1
 		self.ensure(1)
 		self.set(0, val)

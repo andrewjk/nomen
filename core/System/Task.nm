@@ -73,7 +73,7 @@ pub mv struct Task<T> : Awaitable {
 	// `mv out T` marks the caller as the owner. Call it once; a second call
 	// returns the zero value. For tasks with no return value (void
 	// functions), returns the zero value.
-	pub func result = (ref self, mv out T) {
+	pub func result = (ref self {}, mv out T) {
 		```
 		#arch: c
 		if (self->future) {
@@ -121,7 +121,7 @@ pub mv struct Task<T> : Awaitable {
 
 	// Block until the task finishes, then return its result as a uint64.
 	// Convenience for the common case; same as result() for uint64 tasks.
-	pub func result_uint64 = (ref self, out uint64) {
+	pub func result_uint64 = (ref self {}, out uint64) {
 		```
 		#arch: c
 		if (self->future) {
@@ -165,7 +165,7 @@ pub mv struct Task<T> : Awaitable {
 	// handle whose machinery was already consumed). The missing peek
 	// between wait (blocking) and cancel (cooperative): event loops use it
 	// to notice a finished task without parking the UI thread.
-	pub func is_done = (ref self, out bool) {
+	pub func is_done = (ref self {}, out bool) {
 		```
 		#arch: c
 		return __nomen_future_is_done((struct nomen_future *)self->future);
@@ -180,7 +180,7 @@ pub mv struct Task<T> : Awaitable {
 
 	// Request that the task stop. Cooperative — the task observes this via
 	// `Task.current_cancelled()` at its own checkpoints. No preemption.
-	pub func cancel = (ref self) {
+	pub func cancel = (ref self {}) {
 		```
 		#arch: c
 		// Sets the flag and wakes any fiber parked on this task's future, so

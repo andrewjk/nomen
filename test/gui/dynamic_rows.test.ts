@@ -88,7 +88,7 @@ mv struct RowsApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 	}
 
@@ -105,7 +105,7 @@ mv struct RowsApp : App {
 		}
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke(0)

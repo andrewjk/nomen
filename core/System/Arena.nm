@@ -51,7 +51,7 @@ pub mv struct Arena<T> {
 	/**
 	 * A fresh arena with no slots.
 	 **/
-	pub func #init = (ref self) {
+	pub func #init = (ref self { free_indices, generations, values }) {
 		self.values = Buffer<T>()
 		self.generations = Buffer<int>()
 		self.free_indices = Buffer<int>()
@@ -63,7 +63,7 @@ pub mv struct Arena<T> {
 	 * Store `value` in a slot (reusing a freed slot when one is available) and
 	 * return a handle to it.
 	 **/
-	pub func alloc = (ref self, mv T value, out ArenaRef<T>) {
+	pub func alloc = (ref self { generations, values }, mv T value, out ArenaRef<T>) {
 		var int index = -1
 		if self.free_count > 0 {
 			// Reuse a freed slot. Its generation was already bumped by `free`,
@@ -97,7 +97,7 @@ pub mv struct Arena<T> {
 	 * Relinquish the slot `handle` points at (its value is reclaimed), bumping the
 	 * generation so every outstanding handle to that slot becomes stale.
 	 **/
-	pub func free = (ref self, ArenaRef<T> handle) {
+	pub func free = (ref self { free_indices, generations, values }, ArenaRef<T> handle) {
 		if !self.is_valid(handle) {
 			panic("arena: free of a stale handle")
 		}
@@ -149,7 +149,7 @@ pub mv struct Arena<T> {
 	/**
 	 * Replace the value `handle` names (same slot, same handle).
 	 **/
-	pub func set = (ref self, ArenaRef<T> handle, mv T value) {
+	pub func set = (ref self { values }, ArenaRef<T> handle, mv T value) {
 		if !self.is_valid(handle) {
 			panic("arena: set through a stale handle")
 		}

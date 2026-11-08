@@ -59,7 +59,7 @@ pub mv struct Tcp {
 		```
 	}
 
-	pub func close = (ref self) {
+	pub func close = (ref self {}) {
 		Tcp.close_fd(self.fd)
 		self.fd = -1
 	}
@@ -81,7 +81,7 @@ pub mv struct Tcp {
 	// Accept the next connection, parking the fiber while the backlog is
 	// empty. The returned socket is -1 if the listener was cancelled or
 	// failed.
-	pub func accept = (ref self, mv out Tcp) {
+	pub func accept = (ref self {}, mv out Tcp) {
 		var int handle = Tcp.accept_fd(self.fd)
 		var t = Tcp(handle)
 		if handle < 0 {
@@ -114,18 +114,18 @@ pub mv struct Tcp {
 
 	// Send every byte of `data`. Parks the fiber while the send buffer is
 	// full. Returns false on error or cancellation.
-	pub func send = (ref self, string data, out bool) {
+	pub func send = (ref self {}, string data, out bool) {
 		return Tcp.send_all(self.fd, data)
 	}
 
 	// Receive up to `max` bytes. Parks the fiber until data arrives; returns
 	// the empty string at end-of-stream, on error, or when cancelled.
-	pub func recv = (ref self, int max, mv out string) {
+	pub func recv = (ref self {}, int max, mv out string) {
 		return Tcp.recv_some(self.fd, max)
 	}
 
 	// Receive until the peer closes (how Connection: close HTTP works).
-	pub func recv_all = (ref self, mv out string) {
+	pub func recv_all = (ref self {}, mv out string) {
 		return Tcp.recv_until_close(self.fd)
 	}
 

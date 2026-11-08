@@ -51,11 +51,11 @@
 pub trait App {
 	// Called once before the window is shown, after the app is in its
 	// final storage. Register layout roots here.
-	func start = (ref self, ref Window win) {
+	func start = (ref self, ref Window win {}) {
 	}
 
 	// Called every frame until the window closes.
-	func frame = (ref self, ref Window win, FrameEvents ev) {
+	func frame = (ref self, ref Window win {}, FrameEvents ev) {
 	}
 
 	// The per-frame event pump: drains every registered control event —
@@ -67,7 +67,7 @@ pub trait App {
 	// in this one slot — the App contract never grows with the event
 	// catalog. Conformers without registrations inherit this empty default
 	// (trait defaults have precedent: `Enumerable.length`).
-	func handle_events = (ref self, ref Window win) {
+	func handle_events = (ref self, ref Window win {}) {
 	}
 
 	// The up-call protocol (docs/HANDLERS.md Stage 3): a composite the app
@@ -76,7 +76,7 @@ pub trait App {
 	// synthesized override, whose arms dispatch the id to the app's handler.
 	// The borrow flows down per call; nothing outlives it. Default-empty,
 	// like `handle_events`.
-	func run_handler = (ref self, int id, ref Window win) {
+	func run_handler = (ref self, int id, ref Window win {}) {
 	}
 
 	// Close interception (the unsaved-changes pattern): run consults this
@@ -86,7 +86,7 @@ pub trait App {
 	// close request consults again. Programmatic `win.close()` is FORCED
 	// and bypasses this — handlers closing their own window never trip the
 	// interception. Default: allow.
-	func close_requested = (ref self, ref Window win, out bool) {
+	func close_requested = (ref self, ref Window win {}, out bool) {
 		return true
 	}
 }

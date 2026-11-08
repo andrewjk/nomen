@@ -14,7 +14,7 @@ pub mv struct Graph<T>: Enumerable {
 	var node_count = 0
 	var edge_count = 0
 
-	pub func add_node = (ref self, mv T value) {
+	pub func add_node = (ref self { head_edge, values }, mv T value) {
 		var int idx = self.node_count
 		self.values.grow(idx + 1)
 		self.values.store(idx, value)
@@ -23,7 +23,7 @@ pub mv struct Graph<T>: Enumerable {
 		self.node_count = self.node_count + 1
 	}
 
-	pub func add_edge = (ref self, int from, int to) {
+	pub func add_edge = (ref self { edge_next, edge_target, head_edge }, int from, int to) {
 		var int e = self.edge_count
 		self.edge_target.grow_int(e + 1)
 		self.edge_target.store_int(e, to)

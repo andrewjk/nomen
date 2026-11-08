@@ -28,7 +28,7 @@ mv struct CountApp : App {
 		self.label.set_text("0")
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		var string s = self.frames.to_string()
 		self.label.set_text(s)
@@ -71,7 +71,7 @@ mv struct ResizeApp : App {
 		self.label.set_text("0")
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			win.set_size(300, 200)
@@ -125,11 +125,11 @@ mv struct ProbeApp : App {
 		self.grid = g
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			win.set_size(300, 200)

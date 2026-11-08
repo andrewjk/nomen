@@ -58,7 +58,7 @@ mv struct SelectApp : App {
 		self.stack = stack
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.stack)
 		self.tabs.on_select(func () {
 			self.hits = self.hits + 1
@@ -108,7 +108,7 @@ mv struct SelectApp : App {
 		self.poke_seg()
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke()
@@ -156,7 +156,7 @@ mv struct PickApp : App {
 		self.combo = combo
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.pick.on_select(func () {
 			self.pick.selected_index()
 		})

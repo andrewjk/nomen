@@ -334,7 +334,7 @@ pub mv struct SplitView: Control {
 
 	// Move divider `index`. For a vertical split the position is the left
 	// edge of the pane after the divider, in points from the left.
-	pub func set_position = (ref self, float position, int divider) {
+	pub func set_position = (ref self {}, float position, int divider) {
 		```
 		#arch: c
 		#platform: macos
@@ -424,7 +424,7 @@ pub mv struct SplitView: Control {
 	}
 
 	// ── Control trait conformance ──
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		```
 		#arch: c
 		#platform: macos

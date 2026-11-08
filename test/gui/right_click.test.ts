@@ -49,7 +49,7 @@ mv struct RightClickApp : App {
 		self.handles = handles
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.todos)
 		self.todos.on_right_click(func () {
 			var int found = -1
@@ -77,7 +77,7 @@ mv struct RightClickApp : App {
 	// spans y 0..24 in top-left content coordinates; locationInWindow is
 	// bottom-left origin, so flip y against the content height). The NEXT
 	// frame's pump stamps the kind, and that frame's drain runs the arm.
-	pub func poke = (ref self, ref Window win) {
+	pub func poke = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -122,7 +122,7 @@ mv struct RightClickApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke(ref win)

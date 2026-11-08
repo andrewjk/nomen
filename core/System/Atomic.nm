@@ -41,7 +41,7 @@ pub struct Atomic<T> {
 		```
 	}
 
-	pub func store = (ref self, T v) {
+	pub func store = (ref self {}, T v) {
 	```
 		#arch: c
 		__atomic_store_n(&self->word, v, __ATOMIC_SEQ_CST);
@@ -54,7 +54,7 @@ pub struct Atomic<T> {
 	}
 
 	// Adds v and returns the PREVIOUS value (fetch-and-add).
-	pub func fetch_add = (ref self, T v, out T) {
+	pub func fetch_add = (ref self {}, T v, out T) {
 		```
 		#arch: c
 		return __atomic_fetch_add(&self->word, v, __ATOMIC_SEQ_CST);
@@ -67,7 +67,7 @@ pub struct Atomic<T> {
 	}
 
 	// Replaces the value and returns the PREVIOUS one.
-	pub func swap = (ref self, T v, out T) {
+	pub func swap = (ref self {}, T v, out T) {
 		```
 		#arch: c
 		return __atomic_exchange_n(&self->word, v, __ATOMIC_SEQ_CST);

@@ -456,7 +456,7 @@ pub mv struct Toolbar: Control {
 	// ── Control trait conformance ──
 	// A toolbar is window chrome: the layout engine never frames it (AppKit
 	// owns the layout rect and shrinks the contentView itself).
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		// No-op: the NSWindow carries the toolbar's geometry.
 	}
 

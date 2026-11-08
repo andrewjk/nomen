@@ -206,22 +206,46 @@ export function field_can_displace(type: Type | undefined, status: CheckStatus):
 }
 
 /** The type of a named field of a (possibly monomorphized) struct type. */
+function resolve_effects_struct(
+	type: Type | undefined,
+	status: CheckStatus,
+): { fields: { name: string; type: Type }[] } | undefined {
+	if (!type?.name) return undefined;
+	const direct = resolve_struct_type(type, status);
+	if (direct) return direct;
+	// Generic structs are checked as TEMPLATES (no monomorphization exists for
+	// the bare `List<T>`), and `resolve_struct_type` deliberately skips them.
+	// Fall back to the declared template so field lookups inside generic
+	// methods see real field types (a `bool` field must stay scalar-exempt).
+	const scope = status.current_function?.scope as
+		| { node_type?: string; name?: string; fields?: { name: string; type: Type }[] }
+		| undefined;
+	if (scope?.node_type === "struct" && scope.name === type.name && scope.fields) {
+		return { fields: scope.fields };
+	}
+	const template = status.structs.find((s) => s.name === type.name);
+	if (template) return template;
+	// A trait-typed receiver has no static field list of its own (the set
+	// describes whichever conformer is dispatched), so it stays unresolved:
+	// field lookups are conservative and `validate_field_set` skips the name
+	// check for it.
+	return undefined;
+}
+
 function field_type_of(
 	owner: Type | undefined,
 	field: string,
 	status: CheckStatus,
 ): Type | undefined {
-	if (!owner?.name) return undefined;
-	const struct = resolve_struct_type(owner, status);
+	const struct = resolve_effects_struct(owner, status);
 	if (!struct) return undefined;
 	return struct.fields.find((f) => f.name === field)?.type;
 }
 
 /** Whether the parameter's type is a field-bearing struct (not a scalar). */
 function is_struct_type(type: Type | undefined, status: CheckStatus): boolean {
-	if (!type?.name) return false;
-	const struct = resolve_struct_type(type, status);
-	return !!struct && !struct.is_simple_type;
+	const struct = resolve_effects_struct(type, status);
+	return !!struct && !(struct as { is_simple_type?: boolean }).is_simple_type;
 }
 
 /**
@@ -249,10 +273,10 @@ export function validate_field_set(param: ParameterNode, status: CheckStatus): v
 		);
 		return;
 	}
-	const struct = resolve_struct_type(type, status);
+	const struct = resolve_effects_struct(type, status);
 	if (!struct) return;
 	const known = new Set(struct.fields.map((f) => f.name));
-	for (const trait_name of struct.traits ?? []) {
+	for (const trait_name of (struct as { traits?: string[] }).traits ?? []) {
 		const trait = status.traits.find((t) => t.name === trait_name);
 		for (const field of trait?.fields ?? []) known.add(field.name);
 	}
@@ -265,7 +289,7 @@ export function validate_field_set(param: ParameterNode, status: CheckStatus): v
 
 /** Whether the parameter's type has any field that can displace heap state. */
 export function param_has_displaceable_field(param: ParameterNode, status: CheckStatus): boolean {
-	const struct = resolve_struct_type(param.type, status);
+	const struct = resolve_effects_struct(param.type, status);
 	if (!struct) return false;
 	return struct.fields.some((f) => field_can_displace(f.type, status));
 }

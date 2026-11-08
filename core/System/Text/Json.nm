@@ -102,7 +102,7 @@ pub struct Json {
 
 	// Parse a JSON document into tree. The caller provides a JsonTree pool
 	// which is reset and filled. Returns the index of the root node.
-	pub func parse = (string s, ref JsonTree tree, out int) {
+	pub func parse = (string s, ref JsonTree tree { nodes }, out int) {
 		tree.reset()
 		var pos = Buffer<int>()
 		pos.alloc_int(1)
@@ -112,14 +112,14 @@ pub struct Json {
 	}
 
 	// Serialize a node in the tree back to a JSON string.
-	pub func stringify = (ref JsonTree tree, int root, out string) {
+	pub func stringify = (ref JsonTree tree { nodes }, int root, out string) {
 		var sb = StringBuilder()
 		json_ser_value(ref tree, root, ref sb)
 		return sb.to_string()
 	}
 }
 
-func json_skip_ws = (string s, ref Buffer<int> pos, int len) {
+func json_skip_ws = (string s, ref Buffer<int> pos {}, int len) {
 	while pos.load_int(0) < len {
 		var int i = pos.load_int(0)
 		var int code = s.at(i) as int
@@ -131,7 +131,7 @@ func json_skip_ws = (string s, ref Buffer<int> pos, int len) {
 	}
 }
 
-func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
+func json_parse_string = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
 	var int i = pos.load_int(0)
 	i += 1
 	var sb = StringBuilder()
@@ -193,7 +193,7 @@ func json_parse_string = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	return n
 }
 
-func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
+func json_parse_number = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
 	var int i = pos.load_int(0)
 	var int start = i
 	while i < len {
@@ -215,7 +215,7 @@ func json_parse_number = (string s, ref Buffer<int> pos, int len, ref JsonTree t
 	return n
 }
 
-func json_parse_literal = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
+func json_parse_literal = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
 	var int i = pos.load_int(0)
 	var int code = s.at(i) as int
 	var int n = tree.alloc_node()
@@ -237,7 +237,7 @@ func json_parse_literal = (string s, ref Buffer<int> pos, int len, ref JsonTree 
 	return n
 }
 
-func json_parse_value = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
+func json_parse_value = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
 	json_skip_ws(s, ref pos, len)
 	var int i = pos.load_int(0)
 	if i >= len {
@@ -267,7 +267,7 @@ func json_parse_value = (string s, ref Buffer<int> pos, int len, ref JsonTree tr
 	return json_parse_number(s, ref pos, len, ref tree)
 }
 
-func json_parse_elements = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
+func json_parse_elements = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
 	json_skip_ws(s, ref pos, len)
 	var int i = pos.load_int(0)
 	if i >= len {
@@ -289,7 +289,7 @@ func json_parse_elements = (string s, ref Buffer<int> pos, int len, ref JsonTree
 	return elem
 }
 
-func json_parse_pairs = (string s, ref Buffer<int> pos, int len, ref JsonTree tree, out int) {
+func json_parse_pairs = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
 	json_skip_ws(s, ref pos, len)
 	var int i = pos.load_int(0)
 	if i >= len {
@@ -321,7 +321,7 @@ func json_parse_pairs = (string s, ref Buffer<int> pos, int len, ref JsonTree tr
 	return key
 }
 
-func json_ser_list = (ref JsonTree tree, int first, ref StringBuilder sb) {
+func json_ser_list = (ref JsonTree tree { nodes }, int first, ref StringBuilder sb {}) {
 	json_ser_value(ref tree, first, ref sb)
 	var int next = tree.get_next(first)
 	if next >= 0 {
@@ -330,7 +330,7 @@ func json_ser_list = (ref JsonTree tree, int first, ref StringBuilder sb) {
 	}
 }
 
-func json_ser_pairs = (ref JsonTree tree, int first, ref StringBuilder sb) {
+func json_ser_pairs = (ref JsonTree tree { nodes }, int first, ref StringBuilder sb {}) {
 	sb.append_char('"')
 	sb.append_string_view(tree.get_text_view(first))
 	sb.append_string("\":")
@@ -347,7 +347,7 @@ func json_ser_pairs = (ref JsonTree tree, int first, ref StringBuilder sb) {
 	}
 }
 
-func json_ser_value = (ref JsonTree tree, int n, ref StringBuilder sb) {
+func json_ser_value = (ref JsonTree tree { nodes }, int n, ref StringBuilder sb {}) {
 	var int k = tree.get_kind(n)
 	if k == 0 {
 		sb.append_string("null")

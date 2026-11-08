@@ -274,7 +274,7 @@ pub mv struct Sheet: Control {
 	// ── Control trait conformance ──
 	// A sheet is window-coordinated like Alert: the layout engine never
 	// frames it (its own NSWindow carries the geometry).
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		// No-op: the sheet's NSWindow carries the geometry.
 	}
 

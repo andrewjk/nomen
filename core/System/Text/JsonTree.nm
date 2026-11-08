@@ -37,7 +37,7 @@ pub mv struct JsonTree {
 	var nodes = StableList<JsonNode>()
 
 	// Append a fresh node and return its index.
-	func alloc_node = (ref self, out int) {
+	func alloc_node = (ref self { nodes }, out int) {
 		self.nodes.push(JsonNode())
 		return self.nodes.length - 1
 	}
@@ -45,7 +45,7 @@ pub mv struct JsonTree {
 	// Drop the current document: the fresh StableList displaces the old one,
 	// whose destroy frees every node (texts included) and its slabs. The
 	// next parse starts from a clean pool.
-	func reset = (ref self) {
+	func reset = (ref self { nodes }) {
 		self.nodes = StableList<JsonNode>()
 	}
 
@@ -58,7 +58,7 @@ pub mv struct JsonTree {
 	// once, by the list's destroy or the next text store. For strings
 	// produced by a StringBuilder, `take_text` installs the builder's
 	// buffer with no copy at all.
-	func set_text = (ref self, int idx, mv string text) {
+	func set_text = (ref self {}, int idx, mv string text) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
@@ -75,7 +75,7 @@ pub mv struct JsonTree {
 	// temp free. (A `mv string` parameter cannot do this: the string-arg
 	// ownership convention makes mv string arguments caller-owned
 	// borrows, forcing the callee-side copy this method exists to skip.)
-	func take_text = (ref self, int idx, ref StringBuilder sb) {
+	func take_text = (ref self {}, int idx, ref StringBuilder sb {}) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
@@ -83,7 +83,7 @@ pub mv struct JsonTree {
 		n.text = sb.to_string()
 	}
 
-	func set_kind = (ref self, int idx, int val) {
+	func set_kind = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
@@ -91,7 +91,7 @@ pub mv struct JsonTree {
 		n.kind = val
 	}
 
-	func set_child = (ref self, int idx, int val) {
+	func set_child = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
@@ -99,7 +99,7 @@ pub mv struct JsonTree {
 		n.child = val
 	}
 
-	func set_next = (ref self, int idx, int val) {
+	func set_next = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}
@@ -107,7 +107,7 @@ pub mv struct JsonTree {
 		n.next = val
 	}
 
-	func set_val = (ref self, int idx, int val) {
+	func set_val = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
 		}

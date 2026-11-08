@@ -38,7 +38,7 @@ mv struct FocusApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.field_a.on_focus(func () { self.focus_a = self.focus_a + 1 })
 		self.field_a.on_blur(func () { self.blur_a = self.blur_a + 1 })
@@ -49,7 +49,7 @@ mv struct FocusApp : App {
 	// Drive real focus changes at the AppKit seam: makeFirstResponder:
 	// begins editing the field (its field editor becomes first responder —
 	// the focus snapshot maps the editor back to the control).
-	pub func focus_a_now = (ref self, ref Window win) {
+	pub func focus_a_now = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -66,7 +66,7 @@ mv struct FocusApp : App {
 		\`\`\`
 	}
 
-	pub func focus_b_now = (ref self, ref Window win) {
+	pub func focus_b_now = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -83,7 +83,7 @@ mv struct FocusApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.focus_a_now(ref win)
@@ -131,12 +131,12 @@ mv struct InputApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.field.on_input(func () { self.changes = self.changes + 1 })
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			// One text change → one edge on the next drain.

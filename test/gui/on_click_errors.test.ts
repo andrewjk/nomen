@@ -23,7 +23,7 @@ mv struct ClickApp : App {
 		self.btn = Button(window, "Go")
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		${"REGISTRATION"}
 	}
 }
@@ -58,7 +58,7 @@ mv struct ClickApp : App {
 		self.btn = Button(window, "Go")
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		var Button local = Button(win, "Local")
 		local.on_click(func () { })
 	}
@@ -93,7 +93,7 @@ mv struct ClickApp : App {
 		self.btn = Button(window, "Go")
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		var int clicks = 0
 		self.btn.on_click(func () {
 			clicks = clicks + 1
@@ -124,7 +124,7 @@ mv struct NotAnApp {
 		self.btn = Button(window, "Go")
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.btn.on_click(func () { })
 	}
 }
@@ -241,7 +241,7 @@ mv struct MyPager {
 		self.page_change_id = id
 	}
 
-	pub func tick = (ref self, ref App owner, ref Window win) {
+	pub func tick = (ref self, ref App owner, ref Window win {}) {
 		if self.page_change_pending && self.page_change_id >= 0 {
 			owner.run_handler(self.page_change_id, ref win)
 		}
@@ -256,13 +256,13 @@ mv struct PagerApp : App {
 		self.pager = MyPager(window)
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.pager.on_page_change(func () { })
 	}
 
 	// No manual tick: the desugar appends the per-frame owner forward
 	// (\`pager.tick\`) to the app's synthesized dispatch pump at finalize.
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 	}
 }
 
@@ -297,7 +297,7 @@ mv struct BoxApp : App {
 		self.box = MyBox(window)
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.box.on_frobnicate(func () { })
 	}
 }
@@ -339,7 +339,7 @@ mv struct Wrapper {
 		self.leaf = Leaf(window)
 	}
 
-	pub func arm = (ref self, ref Window win) {
+	pub func arm = (ref self, ref Window win {}) {
 		self.leaf.on_page_change(func () { })
 	}
 }
@@ -388,10 +388,10 @@ mv struct PagerApp : App {
 		self.pager = MyPager(window)
 	}
 
-	pub func run_handler = (ref self, int id, ref Window win) {
+	pub func run_handler = (ref self, int id, ref Window win {}) {
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.pager.on_page_change(func () { })
 	}
 }
@@ -425,10 +425,10 @@ mv struct ClickApp : App {
 		self.btn = Button(window, "Go")
 	}
 
-	pub func handle_events = (ref self, ref Window win) {
+	pub func handle_events = (ref self, ref Window win {}) {
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.btn.on_click(func () { })
 	}
 }
@@ -503,7 +503,7 @@ mv struct MyPager : Control {
 		self.page_change_id = id
 	}
 
-	pub func tick = (ref self, ref App owner, ref Window win) {
+	pub func tick = (ref self, ref App owner, ref Window win {}) {
 		if self.page_change_pending && self.page_change_id >= 0 {
 			owner.run_handler(self.page_change_id, ref win)
 		}
@@ -518,7 +518,7 @@ mv struct PagerApp : App {
 		self.pager = MyPager(window)
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.pager.on_page_change(func () { })
 	}
 }
@@ -549,7 +549,7 @@ mv struct VoiceButton {
 		self.press_id = id
 	}
 
-	pub func tick = (ref self, ref App owner, ref Window win) {
+	pub func tick = (ref self, ref App owner, ref Window win {}) {
 		if self.press_pending && self.press_id >= 0 {
 			owner.run_handler(self.press_id, ref win)
 		}
@@ -576,12 +576,12 @@ mv struct VoiceApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.mic.on_click(func () { self.heard = self.heard + 1 })
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.mic.heard()

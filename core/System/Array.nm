@@ -50,7 +50,7 @@ pub struct Array<T>: Viewable {
 	// to express: T_NEEDS_STRDUP is a per-instantiation constant the
 	// monomorphizer substitutes (true for string, false otherwise) and folds,
 	// so each mono body keeps only its arm.
-	pub func set = (ref self, int index: index >= 0 && index < self.length, T value) {
+	pub func set = (ref self {}, int index: index >= 0 && index < self.length, T value) {
 		unsafe {
 			if T_NEEDS_STRDUP {
 				// T is string: a fat value whose backing bytes must be

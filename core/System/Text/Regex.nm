@@ -69,7 +69,7 @@ pub struct Regex {
 	pub func captures = (
 		string pattern,
 		string input,
-		ref List<string> dst,
+		ref List<string> dst { items },
 		out bool
 	) { var int pat_len = pattern.length
 		var int len = input.length
@@ -117,7 +117,7 @@ pub struct Regex {
 	// first, so a reused RegexMatch carries nothing over. Scans every
 	// position: the first-byte prefilter would skip nullable patterns'
 	// empty matches at skipped positions, reporting a wrong .start.
-	pub func find = (string pattern, string input, ref RegexMatch dst) {
+	pub func find = (string pattern, string input, ref RegexMatch dst { text }) {
 		dst.found = false
 		dst.start = 0
 		dst.end = 0
@@ -232,13 +232,13 @@ pub struct Regex {
 	}
 
 	// find, ignoring ASCII case.
-	pub func find_ci = (string pattern, string input, ref RegexMatch dst) {
+	pub func find_ci = (string pattern, string input, ref RegexMatch dst { text }) {
 		var string folded = fold_pattern(pattern)
 		Regex.find(folded, input, ref dst)
 	}
 
 	// captures, ignoring ASCII case.
-	pub func captures_ci = (string pattern, string input, ref List<string> dst, out bool) {
+	pub func captures_ci = (string pattern, string input, ref List<string> dst { items }, out bool) {
 		var string folded = fold_pattern(pattern)
 		return Regex.captures(folded, input, ref dst)
 	}
@@ -308,7 +308,7 @@ func fold_pattern = (string pattern, mv out string) {
 
 // fold a character class [cs..ce): copy its contents, adding the case
 // counterpart of every letter member and mirroring letter ranges.
-func fold_class = (string pattern, int cs, int ce, ref StringBuilder dst) {
+func fold_class = (string pattern, int cs, int ce, ref StringBuilder dst {}) {
 	dst.append_char('[')
 	var int i = cs + 1
 	if i < ce - 1 {
@@ -435,7 +435,7 @@ func collect_first_bytes = (
 	string pattern,
 	int pat_pos,
 	int pat_end,
-	ref StringBuilder sb,
+	ref StringBuilder sb {},
 	out int
 ) {
 	var depth = 0
@@ -482,7 +482,7 @@ func collect_first_bytes = (
 // atom — literal, escaped, class, or group — quantified with '?'/'*' is
 // nullable: what FOLLOWS it can also be first, so the scan continues past it.
 // A wildcard '.' or an empty alternative makes the set indeterminable.
-func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb, out int) {
+func alt_first_bytes = (string pattern, int start, int end, ref StringBuilder sb {}, out int) {
 	var int i = start
 	while i < end {
 		var char c = pattern.at(i)
@@ -722,7 +722,7 @@ func add_class_chars = (
 	string pattern,
 	int start,
 	int end,
-	ref StringBuilder sb
+	ref StringBuilder sb {}
 ) { var int cs = start
 	if cs < end {
 		if pattern.at(cs) == '^' {
@@ -777,7 +777,7 @@ func match_here = (
 	string input,
 	int in_pos,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int: out <= in_len
 ) {
 	// Handle top-level alternation: a '|' at bracket/paren depth 0 splits the
@@ -1036,7 +1036,7 @@ func match_group_then_rest = (
 	string input,
 	int in_pos,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	var int g = group_index_at(pattern, atom_start)
@@ -1127,7 +1127,7 @@ func match_single_atom = (
 	string input,
 	int in_pos,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	var char pc = pattern.at(atom_start)
@@ -1309,7 +1309,7 @@ func match_counted = (
 	int lazy,
 	int count,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	var can_stop = count >= min_count
@@ -1407,7 +1407,7 @@ func match_star = (
 	int min_count,
 	int lazy,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	var char pc = pattern.at(atom_start)
@@ -1490,7 +1490,7 @@ func match_star_group = (
 	int min_count,
 	int lazy,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	if lazy > 0 {
@@ -1559,7 +1559,7 @@ func match_group_iteration = (
 	int min_count,
 	int lazy,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	var int g = group_index_at(pattern, atom_start)
@@ -1626,7 +1626,7 @@ func match_optional = (
 	int in_pos,
 	int lazy,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	if lazy > 0 {
@@ -1899,7 +1899,7 @@ func group_index_at = (string pattern, int open_pos, out int) {
 // group_pos. A later span for the same group supersedes the earlier one, so
 // a repeated group reports its last iteration; a failed group records
 // (-1, -1) so stale spans from an abandoned attempt never surface.
-func record_capture = (ref List<int> caps, int group, int start, int end) {
+func record_capture = (ref List<int> caps { items }, int group, int start, int end) {
 	if group <= 0 {
 		return
 	}
@@ -1958,7 +1958,7 @@ func match_backref = (
 	int group,
 	int in_pos,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps {},
 	out int
 ) {
 	var int at = last_capture_index(caps, group)
@@ -1994,7 +1994,7 @@ func match_star_backref = (
 	int min_count,
 	int lazy,
 	int in_len,
-	ref List<int> caps,
+	ref List<int> caps { items },
 	out int
 ) {
 	var int group = backref_group(pattern.at(atom_start + 1))
@@ -2116,7 +2116,7 @@ func matches_shorthand = (char c, char b, out bool) {
 // first-byte charset. Complement shorthands (S/D/W) match "anything else" —
 // not expressible as an inclusion set — so they return -1, which disables
 // the caller's prefilter.
-func shorthand_members = (char c, ref StringBuilder sb, out int) {
+func shorthand_members = (char c, ref StringBuilder sb {}, out int) {
 	var int kind = c as int
 	if kind == 83 || kind == 68 || kind == 87 {
 		return -1

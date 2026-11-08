@@ -702,6 +702,49 @@ pub func main = (Init init) {
 	});
 });
 
+describe("generic structs", () => {
+	test("scalar field writes in a generic template need no declaration", () => {
+		// Regression: the checker used to fail to resolve a generic template's
+		// field types, so `self.started = true` looked heap-displacing and an
+		// exact `{}` set was rejected.
+		const r = run(`
+pub struct Launcher<T> {
+	var T job
+	var bool started = false
+
+	func mark = (ref self {}) {
+		self.started = true
+	}
+}
+
+pub func main = (Init init) {
+}
+`);
+		expect(r.errors).toEqual([]);
+	});
+
+	test("generic template field sets are validated against the template's fields", () => {
+		const r = run(`
+pub struct Wrapper<T> {
+	var T value
+	var int hits = 0
+
+	func take = (ref self { value }) {
+		self.hits = self.hits + 1
+	}
+
+	func typo = (ref self { nope }) {
+		self.hits = self.hits + 1
+	}
+}
+
+pub func main = (Init init) {
+}
+`);
+		expect(r.errors.some((m) => m.includes("'Wrapper' has no field 'nope'"))).toBe(true);
+	});
+});
+
 describe("traits", () => {
 	const TRAIT = `
 mv struct Data {

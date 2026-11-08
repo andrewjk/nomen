@@ -20,7 +20,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 	var used = Buffer<int>()
 	var hashes = Buffer<int>()
 
-	pub func add = (ref self, mv T value) {
+	pub func add = (ref self { hashes, slots, used }, mv T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
 			cap = self.slots.alloc(8)
@@ -100,7 +100,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return self.slots.load(idx)
 	}
 
-	pub func remove = (ref self, T value) {
+	pub func remove = (ref self { hashes, slots, used }, T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
 			return
@@ -224,7 +224,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 	// compares (values arrive unique — they came from a valid set). The old
 	// form re-inserted via `self.add(mv v)`, re-hashing every value and
 	// re-comparing values on every probed slot.
-	func rehash = (ref self, int new_cap) {
+	func rehash = (ref self { hashes, slots, used }, int new_cap) {
 		var Buffer<T> old_slots = mv self.slots swap Buffer<T>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()
 		var Buffer<int> old_hashes = mv self.hashes swap Buffer<int>()

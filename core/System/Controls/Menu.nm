@@ -383,7 +383,7 @@ pub mv struct Menu: Control {
 	// ── Control trait conformance ──
 	// A menu is not laid out: it has no frame of its own (it presents at the
 	// cursor under the attached control's right-click).
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		// No-op: the menu presents at the cursor.
 	}
 

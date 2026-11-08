@@ -66,7 +66,7 @@ pub mv struct Pagination {
 	}
 
 	// Wire the row into the caller's grid under `parent`.
-	pub func add_to = (ref self, ref Container grid, int parent, int span) {
+	pub func add_to = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int parent, int span) {
 		var int hs = grid.add_hstack(parent, 6, span)
 		grid.add_to_intrinsic(hs, self.prev.handle, 1)
 		grid.add_to_intrinsic(hs, self.b0.handle, 1)
@@ -100,7 +100,7 @@ pub mv struct Pagination {
 		return self.current
 	}
 
-	pub func select = (ref self, int index) {
+	pub func select = (ref self {}, int index) {
 		var int i = index
 		if i < 0 { i = 0 }
 		if i > self.pages - 1 { i = self.pages - 1 }
@@ -108,14 +108,14 @@ pub mv struct Pagination {
 		self.page_change_pending = true
 	}
 
-	pub func next = (ref self) {
+	pub func next = (ref self {}) {
 		if self.current < self.pages - 1 {
 			self.current += 1
 			self.page_change_pending = true
 		}
 	}
 
-	pub func prev = (ref self) {
+	pub func prev = (ref self {}) {
 		if self.current > 0 {
 			self.current -= 1
 			self.page_change_pending = true
@@ -124,7 +124,7 @@ pub mv struct Pagination {
 
 	// The declared event API (docs/HANDLERS.md Stage 3): the desugar's
 	// enrollment rewrite calls this with the app handler's dispatch id.
-	pub func on_page_change = (ref self, int id) {
+	pub func on_page_change = (ref self {}, int id) {
 		self.page_change_id = id
 	}
 
@@ -133,7 +133,7 @@ pub mv struct Pagination {
 	// change calls back into the app's `run_handler` (one vtable hop into
 	// the concrete override). The borrow flows down per call; nothing is
 	// stored and nothing outlives the tick.
-	pub func tick = (ref self, ref App owner, ref Window win) {
+	pub func tick = (ref self {}, ref App owner, ref Window win {}) {
 		if self.page_change_pending && self.page_change_id >= 0 {
 			owner.run_handler(self.page_change_id, ref win)
 		}

@@ -46,12 +46,12 @@ mv struct PaneApp : App {
 		self.stack = stack
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.stack)
 		self.pane_grid.set_pane(self.pane_win.handle)
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			// The label (child 1) was framed by the framework's pane pass

@@ -96,7 +96,7 @@ pub mv struct Tester {
 
 	// (harness) Start timing `name` and clear the per-test state. Called by
 	// the `main` that `nomen test` generates — not by test code.
-	pub func begin_test = (ref self, string name) {
+	pub func begin_test = (ref self { current }, string name) {
 		self.has_failed = false
 		self.passed = 0
 		self.failed = 0
@@ -106,7 +106,7 @@ pub mv struct Tester {
 	}
 
 	// (harness) Close the current test and emit its `done` record.
-	pub func end_test = (ref self) {
+	pub func end_test = (ref self {}) {
 		const uint64 elapsed = Time.now_ns() - self.started
 		Console.write_line(
 			"\\nomen|done|" + self.current + "|\{self.passed}|\{self.failed}|\{elapsed}",
@@ -124,7 +124,7 @@ pub mv struct Tester {
 	 *
 	 *	t.expect(result == 2, "add(1, 1) should be 2")
 	 **/
-	pub func expect = (ref self, bool condition, string message) {
+	pub func expect = (ref self {}, bool condition, string message) {
 		if self.has_failed {
 			return
 		}
@@ -143,7 +143,7 @@ pub mv struct Tester {
 	 *		t.fail("expected to find the key")
 	 *	}
 	 **/
-	pub func fail = (ref self, string message) {
+	pub func fail = (ref self {}, string message) {
 		if self.has_failed {
 			return
 		}
@@ -154,43 +154,43 @@ pub mv struct Tester {
 	//
 	// Nomen has no generic methods, so there is one overload per nullable
 	// type the compiler can compare against `null`.
-	pub func assert = (ref self, int? value, string message) {
+	pub func assert = (ref self {}, int? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, uint? value, string message) {
+	pub func assert = (ref self {}, uint? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, int64? value, string message) {
+	pub func assert = (ref self {}, int64? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, uint64? value, string message) {
+	pub func assert = (ref self {}, uint64? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, int8? value, string message) {
+	pub func assert = (ref self {}, int8? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, uint8? value, string message) {
+	pub func assert = (ref self {}, uint8? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, float? value, string message) {
+	pub func assert = (ref self {}, float? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, bool? value, string message) {
+	pub func assert = (ref self {}, bool? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, char? value, string message) {
+	pub func assert = (ref self {}, char? value, string message) {
 		self.expect(value != null, message)
 	}
 
-	pub func assert = (ref self, string? value, string message) {
+	pub func assert = (ref self {}, string? value, string message) {
 		self.expect(value != null, message)
 	}
 
@@ -212,7 +212,7 @@ pub mv struct Tester {
 	 * (default 1000, override with `bench_n`) and computes min / median /
 	 * mean / max / stddev over the per-iteration durations.
 	 **/
-	pub func bench = (ref self, string label, func() body) {
+	pub func bench = (ref self { bench_label }, string label, func() body) {
 		if self.has_failed {
 			return
 		}
@@ -226,7 +226,7 @@ pub mv struct Tester {
 	 * for slow functions (where the default 1000 would dominate the suite) or
 	 * for reproducible sample counts.
 	 **/
-	pub func bench_n = (ref self, string label, func() body, int samples) {
+	pub func bench_n = (ref self { bench_label }, string label, func() body, int samples) {
 		if self.has_failed {
 			return
 		}
@@ -244,7 +244,7 @@ pub mv struct Tester {
 	 * this is a no-op.
 	 **/
 	pub func record_bench = (
-		ref self,
+		ref self {},
 		string label,
 		int n,
 		int min,
@@ -263,7 +263,7 @@ pub mv struct Tester {
 		)
 	}
 
-	func record_failure = (ref self, string message) {
+	func record_failure = (ref self {}, string message) {
 		self.failed += 1
 		self.total_failed += 1
 		self.has_failed = true

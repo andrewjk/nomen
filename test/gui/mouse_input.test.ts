@@ -57,7 +57,7 @@ mv struct MouseInputApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.rows.set_document(self.scroll.handle, self.scroll.doc_handle())
 		// The raw tier: one registration covers every button, the click
@@ -88,7 +88,7 @@ mv struct MouseInputApp : App {
 	// and the CGEvent carries the button field that NSEvent.buttonNumber
 	// maps. The pump reports it through the raw button record (button 3),
 	// NOT through FrameEvents.click (which stays 0/1/2).
-	pub func poke_mouse = (ref self, ref Window win) {
+	pub func poke_mouse = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -134,7 +134,7 @@ mv struct MouseInputApp : App {
 	// A 5-line scroll-wheel event, wrapped from a CGEvent so it rides
 	// NSApp's queue like the mouse events (deterministic next-pump
 	// delivery).
-	pub func poke_scroll = (ref self, ref Window win) {
+	pub func poke_scroll = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -167,7 +167,7 @@ mv struct MouseInputApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke_mouse(ref win)

@@ -43,7 +43,7 @@ mv struct OpenApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.grid.on_double_click(func () {
 			// The sugar: the double-click edge, position through the
@@ -56,7 +56,7 @@ mv struct OpenApp : App {
 		})
 	}
 
-	pub func poke_double_click = (ref self, ref Window win) {
+	pub func poke_double_click = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -97,7 +97,7 @@ mv struct OpenApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke_double_click(ref win)
@@ -162,7 +162,7 @@ mv struct RowsApp : App {
 		self.status = status
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		self.rows.on_double_click(func () {
 			var i = 0
 			while i < self.handles.length; i += 1 {

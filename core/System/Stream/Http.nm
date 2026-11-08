@@ -58,7 +58,7 @@ pub struct Http {
 	// (sends `body` and the Content-* headers). Sets self->status (0 on
 	// failure) and self->error, and returns the response body (empty string
 	// on failure).
-	func raw_exchange = (ref self, string method, string url, string body, mv out string) {
+	func raw_exchange = (ref self {}, string method, string url, string body, mv out string) {
 		// Parse the URL: [http://]host[:port][/path]
 		var host_start = 0
 		if url.starts_with("http://") {
@@ -145,7 +145,7 @@ pub struct Http {
 	// Issue a GET request to `url`. `.ok(body)` with the response body and
 	// `self.status` set to the response's status code, or
 	// `.error(HttpError)` (`status` is 0).
-	pub func get = (ref self, string url, out Result<string, HttpError>) {
+	pub func get = (ref self {}, string url, out Result<string, HttpError>) {
 		const string response = self.raw_exchange("GET", url, "")
 		if self.error == 0 {
 			return Result.ok(response)
@@ -156,7 +156,7 @@ pub struct Http {
 	// Issue a POST request to `url` with `body` as the payload.
 	// `.ok(body)` with the response body and `self.status` set to the
 	// response's status code, or `.error(HttpError)` (`status` is 0).
-	pub func post = (ref self, string url, string body, out Result<string, HttpError>) {
+	pub func post = (ref self {}, string url, string body, out Result<string, HttpError>) {
 		const string response = self.raw_exchange("POST", url, body)
 		if self.error == 0 {
 			return Result.ok(response)

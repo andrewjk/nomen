@@ -281,7 +281,7 @@ pub mv struct Alert: Control {
 	// An alert is a modal, not an in-window view: it measures to nothing and
 	// the layout engine never frames it. The conformance exists so an Alert
 	// can sit in a Control-typed slot without special-casing.
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		// No-op: modals are positioned by the window server.
 	}
 

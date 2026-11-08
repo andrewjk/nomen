@@ -37,7 +37,7 @@ mv struct MoveApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.grid.on_mouse_move(func () {
 			if win.mouse_x() == 50 {
@@ -48,7 +48,7 @@ mv struct MoveApp : App {
 		})
 	}
 
-	pub func poke = (ref self, ref Window win) {
+	pub func poke = (ref self, ref Window win {}) {
 		\`\`\`
 		#arch: c
 		#platform: macos
@@ -93,7 +93,7 @@ mv struct MoveApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke(ref win)

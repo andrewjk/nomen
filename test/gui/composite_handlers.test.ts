@@ -64,7 +64,7 @@ mv struct PagerApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 	}
 
@@ -97,7 +97,7 @@ mv struct PagerApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke_next()
@@ -177,7 +177,7 @@ mv struct MyPager {
 		self.page_change_id = id
 	}
 
-	pub func tick = (ref self, ref App owner, ref Window win) {
+	pub func tick = (ref self, ref App owner, ref Window win {}) {
 		if self.page_change_pending && self.page_change_id >= 0 {
 			owner.run_handler(self.page_change_id, ref win)
 		}
@@ -208,7 +208,7 @@ mv struct PagerApp : App {
 		self.grid = grid
 	}
 
-	pub func start = (ref self, ref Window win) {
+	pub func start = (ref self, ref Window win {}) {
 		win.set_content(ref self.grid)
 		self.pager.on_page_change(func () {
 			self.label.set_text("page \\{self.pager.page}")
@@ -240,7 +240,7 @@ mv struct PagerApp : App {
 		\`\`\`
 	}
 
-	pub func frame = (ref self, ref Window win, FrameEvents ev) {
+	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {
 		self.frames = self.frames + 1
 		if self.frames == 2 {
 			self.poke_next()

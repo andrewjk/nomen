@@ -44,7 +44,7 @@ pub mv struct Random {
 	// operators, and hex literals all lower directly; the aarch64 64-bit
 	// arithmetic folds (PERF_PLAN item 15) keep the emission within a few
 	// instructions of a hand-written `#arch` body.
-	pub func next = (ref self, out uint64) {
+	pub func next = (ref self {}, out uint64) {
 		self.state = self.state + 0x9E3779B97F4A7C15
 		var uint64 z = self.state
 		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
@@ -54,7 +54,7 @@ pub mv struct Random {
 
 	// The next value in [0, bound). A bound of 0 returns 0. Slight modulo
 	// bias for very large bounds — irrelevant at demo scale.
-	pub func below = (ref self, uint64 bound, out uint64) {
+	pub func below = (ref self {}, uint64 bound, out uint64) {
 		if bound == 0 {
 			return 0
 		}
@@ -63,7 +63,7 @@ pub mv struct Random {
 
 	// The next value in [lo, hi], both ends inclusive. A hi <= lo
 	// returns lo.
-	pub func range = (ref self, uint64 lo, uint64 hi, out uint64) {
+	pub func range = (ref self {}, uint64 lo, uint64 hi, out uint64) {
 		if hi <= lo {
 			return lo
 		}

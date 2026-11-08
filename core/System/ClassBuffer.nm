@@ -12,7 +12,7 @@ pub struct ClassBuffer<T> {
 	// Publicly readable; grown only by ClassBuffer's own methods (`readonly`).
 	readonly cap = 0
 
-	internal func alloc_int = (ref self, int size, out int: out >= size) {
+	internal func alloc_int = (ref self {}, int size, out int: out >= size) {
 		self.cap = size
 		self.data = calloc(size, 8)
 		return self.cap
@@ -25,11 +25,11 @@ pub struct ClassBuffer<T> {
 	// element types to Buffer and class/trait elements to ClassBuffer
 	// (monomorphize's field rewrite), so a call arriving HERE is always
 	// pointer-sized: delegate to alloc_int.
-	func alloc = (ref self, int size, out int: out >= size) {
+	func alloc = (ref self {}, int size, out int: out >= size) {
 		return self.alloc_int(size)
 	}
 
-	internal func grow_int = (ref self, int needed, out int: out >= needed) {
+	internal func grow_int = (ref self {}, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -65,7 +65,7 @@ pub struct ClassBuffer<T> {
 	// handles, so the slot's CONTENT is the instance pointer: return the
 	// stored word, not the slot's address. Library-internal: bounds are the
 	// caller's obligation (the List wrapper constrains them).
-	internal func slot_ptr = (ref self, int i, out ptr T) {
+	internal func slot_ptr = (ref self {}, int i, out ptr T) {
 		```
 		#arch: c
 		// The slot's address: through the alias, reads and writes hit the
@@ -89,7 +89,7 @@ pub struct ClassBuffer<T> {
 	// (Buffer) or a class (ClassBuffer, after the Buffer<T> field is
 	// rewritten). Bodies use 8-byte slots, matching _int.
 
-	func grow = (ref self, int needed, out int: out >= needed) {
+	func grow = (ref self {}, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
 		}
@@ -136,7 +136,7 @@ pub struct ClassBuffer<T> {
 	// slot's previous occupant, so a second `store` at an occupied index
 	// leaks that instance. Use replace (or replace_int) to overwrite a live
 	// slot.
-	internal inline func store = (ref self, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
+	internal inline func store = (ref self {}, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = (long)val;
@@ -155,14 +155,14 @@ pub struct ClassBuffer<T> {
 	// `fill`, and the buffer owns NOTHING — the slab keeps its real owner
 	// (never grown, never freed by the view). Mirror of Buffer.init_view;
 	// class slots are pointer words.
-	internal func init_view = (ref self, uint64 slab, int fill: fill >= 0) {
+	internal func init_view = (ref self {}, uint64 slab, int fill: fill >= 0) {
 		self.data = slab
 		self.cap = fill
 	}
 
 	// Clear a view initialized by init_view (see Buffer.clear_view): the
 	// holder's own field destroy then reclaims nothing.
-	internal func clear_view = (ref self) {
+	internal func clear_view = (ref self {}) {
 		self.data = 0
 		self.cap = 0
 	}
@@ -175,7 +175,7 @@ pub struct ClassBuffer<T> {
 	// holder passes a ClassBuffer FIELD, never a local (a local owning buffer
 	// is auto-destroyed at scope exit and would free the borrowed slab).
 	internal func store_in_slab = (
-		ref self,
+		ref self {},
 		uint64 slab,
 		int fill: fill >= 0,
 		int slot: slot >= 0,
@@ -194,7 +194,7 @@ pub struct ClassBuffer<T> {
 	// out of a ClassBuffer slot, or moving a value into a fresh mv
 	// container — load returns a BORROW (the slot is unchanged) and storing
 	// it elsewhere would create shared ownership (double-free at destroy).
-	inline func move = (ref self, int i: i >= 0 && i < self.cap, mv out T) {
+	inline func move = (ref self {}, int i: i >= 0 && i < self.cap, mv out T) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -225,7 +225,7 @@ pub struct ClassBuffer<T> {
 	// free). Storing the returned instance raw is sound: the slot takes
 	// sole ownership and `f`'s return is not retained elsewhere. NOT
 	// `inline`: the body calls through the fn pointer.
-	func modify = (ref self, int i: i >= 0 && i < self.cap, func(T, out T) f) {
+	func modify = (ref self {}, int i: i >= 0 && i < self.cap, func(T, out T) f) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -258,7 +258,7 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	internal inline func store_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
+	internal inline func store_int = (ref self {}, int i: i >= 0 && i < self.cap, int val: val != 0) {
 		```
 		#arch: c
 		((long*)(unsigned long long)self->data)[i] = val;
@@ -272,7 +272,7 @@ pub struct ClassBuffer<T> {
 		```
 	}
 
-	internal inline func move_int = (ref self, int i: i >= 0 && i < self.cap, out int) {
+	internal inline func move_int = (ref self {}, int i: i >= 0 && i < self.cap, out int) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -292,7 +292,7 @@ pub struct ClassBuffer<T> {
 
 	// Store into a slot, freeing the previous value (it is an owned class
 	// pointer): run its destroy then free it before overwriting.
-	internal func replace_int = (ref self, int i: i >= 0 && i < self.cap, int val: val != 0) {
+	internal func replace_int = (ref self {}, int i: i >= 0 && i < self.cap, int val: val != 0) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -329,7 +329,7 @@ pub struct ClassBuffer<T> {
 	// replace path — the value-side sibling of `values.replace`) overwrites
 	// the slot immediately afterwards. Contract: the slot must be
 	// overwritten before it is read or destroyed again.
-	internal func destroy_at = (ref self, int i: i >= 0 && i < self.cap) {
+	internal func destroy_at = (ref self {}, int i: i >= 0 && i < self.cap) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -362,7 +362,7 @@ pub struct ClassBuffer<T> {
 	// preserves ownership for class elements.
 	// Overwrite a live slot: destroy + free the displaced instance, then take
 	// OWNERSHIP of `val` (`mv`) — same transfer rule as store.
-	func replace = (ref self, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
+	func replace = (ref self {}, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
 		```
 		#arch: c
 		long *slots = (long*)(unsigned long long)self->data;
@@ -399,7 +399,7 @@ pub struct ClassBuffer<T> {
 	// used by Map/Set.remove's backward-shift so shifting entries neither
 	// duplicates nor orphans owned instances.
 	func shift = (
-		ref self,
+		ref self {},
 		int dst: dst >= 0 && dst < self.cap,
 		int src: src >= 0 && src < self.cap
 	) {
@@ -451,7 +451,7 @@ pub struct ClassBuffer<T> {
 	// source slots the destination never covers — List.remove_at_or_panic's
 	// whole-tail shift instead of per-element `shift` calls.
 	internal inline func move_range = (
-		ref self,
+		ref self {},
 		int dst: dst >= 0,
 		int src: src >= dst,
 		int count: count >= 0 && src + count <= self.cap

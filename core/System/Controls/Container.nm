@@ -420,7 +420,7 @@ pub mv struct Container: Control {
 	var int last_w = -1
 	var int last_h = -1
 
-	func init_buffers = (ref self, int cap) {
+	func init_buffers = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int cap) {
 		self.kinds.grow_int(cap)
 		self.w_kinds.grow_int(cap)
 		self.w_vals.grow_int(cap)
@@ -450,7 +450,7 @@ pub mv struct Container: Control {
 		self.dirty_idx.grow_int(cap)
 	}
 
-	func make_root = (ref self, int kind, int gap, int col_count) {
+	func make_root = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int kind, int gap, int col_count) {
 		self.init_buffers(32)
 		self.kinds.store_int(0, kind)
 		self.w_kinds.store_int(0, LEN_AUTO)
@@ -507,7 +507,7 @@ pub mv struct Container: Control {
 	// (The aarch64 backend now spills args past the 8-register ABI limit, so
 	// this signature no longer has to stay within 8 register params.)
 	func append_node = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int kind,
 		int handle,
@@ -574,7 +574,7 @@ pub mv struct Container: Control {
 	// shrink, the original behavior). For `.percent` / `.fill` / mixed sizing,
 	// use `add_len`.
 	pub func add = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
 		int w,
 		int h,
@@ -600,7 +600,7 @@ pub mv struct Container: Control {
 	// Add a leaf child under an explicit `parent` (a node index returned by an
 	// add_vstack/add_hstack/add_grid/add_zstack call).
 	pub func add_to = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		uint64 handle,
 		int w,
@@ -634,7 +634,7 @@ pub mv struct Container: Control {
 	// asks for 50% of the cross axis and a fixed 30px on the main axis.
 	// `span`/`grow`/`align`/`shrink` match `add`.
 	pub func add_kind = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
 		int w_kind,
 		int w_val,
@@ -662,7 +662,7 @@ pub mv struct Container: Control {
 	// Add a leaf child with explicit per-axis size kinds under an explicit
 	// `parent` (a node index returned by an add_* container helper).
 	pub func add_to_kind = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		uint64 handle,
 		int w_kind,
@@ -694,7 +694,7 @@ pub mv struct Container: Control {
 	// to the internal (kind, value) pair. `span`/`grow`/`align`/`shrink`
 	// match `add`.
 	pub func add_len = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
 		LayoutLength w,
 		LayoutLength h,
@@ -720,7 +720,7 @@ pub mv struct Container: Control {
 	// Add a leaf child with `LayoutLength` sizes under an explicit `parent`
 	// (a node index returned by an add_* container helper).
 	pub func add_to_len = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		uint64 handle,
 		LayoutLength w,
@@ -750,7 +750,7 @@ pub mv struct Container: Control {
 	// per-axis intrinsic (e.g. fill the cross axis, intrinsic height) use
 	// `add_kind` directly. `span`/`grow`/`align`/`shrink` match `add`.
 	pub func add_intrinsic = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
 		int span,
 		int grow = 0,
@@ -774,7 +774,7 @@ pub mv struct Container: Control {
 	// `add_intrinsic` under an explicit `parent` (a node index returned by an
 	// add_* container helper).
 	pub func add_to_intrinsic = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		uint64 handle,
 		int span,
@@ -805,7 +805,7 @@ pub mv struct Container: Control {
 	// re-framed. The whole tree is marked dirty afterwards so the next
 	// layout reflows the rows the removed child leaves behind. Returns true
 	// if a matching leaf was found and removed.
-	pub func remove_leaf = (ref self, uint64 handle, out bool) {
+	pub func remove_leaf = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, uint64 handle, out bool) {
 		var int needle = handle as int
 		var removed = false
 		var idx = 1
@@ -877,7 +877,7 @@ pub mv struct Container: Control {
 	// Translate the legacy int (w, h) into a (kind, value) pair: 0 → auto
 	// (no intrinsic; fills a bounded axis, stays 0 on an unbounded axis so
 	// `grow` decides), non-zero → fixed.
-	func set_leaf_size = (ref self, int idx, int w, int h) {
+	func set_leaf_size = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w, int h) {
 		if w == 0 {
 			self.w_kinds.store_int(idx, LEN_AUTO)
 			self.w_vals.store_int(idx, 0)
@@ -895,7 +895,7 @@ pub mv struct Container: Control {
 	}
 
 	// Store the per-axis (kind, value) pair directly.
-	func set_leaf_kind = (ref self, int idx, int w_kind, int w_val, int h_kind, int h_val) {
+	func set_leaf_kind = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w_kind, int w_val, int h_kind, int h_val) {
 		self.w_kinds.store_int(idx, w_kind)
 		self.w_vals.store_int(idx, w_val)
 		self.h_kinds.store_int(idx, h_kind)
@@ -905,7 +905,7 @@ pub mv struct Container: Control {
 	// Add a nested container under `parent`; returns the new node's index so
 	// children can be added to it via add_to (or another nested container).
 	pub func add_vstack = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int spacing,
 		int span,
@@ -918,7 +918,7 @@ pub mv struct Container: Control {
 	}
 
 	pub func add_hstack = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int spacing,
 		int span,
@@ -937,12 +937,12 @@ pub mv struct Container: Control {
 	// to 0 on an unbounded axis (so it has no intrinsic opinion) and fills the
 	// cross axis by default. Because it carries no handle, `apply` never calls
 	// `setFrame:` for it and `hit_test` reports it as "no control" (handle 0).
-	pub func add_spacer = (ref self, int span, int grow = 0, int shrink = 0, int align = 3) {
+	pub func add_spacer = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int span, int grow = 0, int shrink = 0, int align = 3) {
 		self.append_node(self.root, KIND_LEAF, 0, 0, 0, span, grow, shrink, align)
 	}
 
 	pub func add_spacer_to = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int span,
 		int grow = 0,
@@ -953,7 +953,7 @@ pub mv struct Container: Control {
 	}
 
 	pub func add_grid = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int cols: cols > 0,
 		int spacing,
@@ -967,7 +967,7 @@ pub mv struct Container: Control {
 	}
 
 	pub func add_zstack = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int span,
 		int grow = 0,
@@ -986,7 +986,7 @@ pub mv struct Container: Control {
 	// is a node in the SoA tree, so it needs no trait model — it recurses
 	// through `first_child`/`next_sibling` like everything else.
 	pub func add_block = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int padding,
 		int span,
 		int grow = 0,
@@ -1000,7 +1000,7 @@ pub mv struct Container: Control {
 	}
 
 	pub func add_block_to = (
-		ref self,
+		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int padding,
 		int span,
@@ -1466,7 +1466,7 @@ pub mv struct Container: Control {
 	// order) and its baseline is advanced. Hidden leaves keep a stable
 	// (0,0,0,0) frame, so toggling visibility and re-laying-out marks them
 	// dirty exactly once, like any other frame change.
-	func collect_dirty = (ref self) {
+	func collect_dirty = (ref self { dirty_idx, prh, prw, prx, pry }) {
 		self.dirty_n = 0
 		var i = 0
 		while i < self.count; i += 1 {
@@ -1513,7 +1513,7 @@ pub mv struct Container: Control {
 	// down from this node) are all re-measured on the next `compute`/`layout`.
 	// A node left clean is known to have unchanged constraints, so its cached
 	// size is reused.
-	pub func mark_dirty = (ref self, int idx) {
+	pub func mark_dirty = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int idx) {
 		self.dirty.store_int(idx, 1)
 		var int ci = self.first_child(idx)
 		while ci != -1 {
@@ -1598,7 +1598,7 @@ pub mv struct Container: Control {
 		return s
 	}
 
-	pub func set_frame = (ref self, int x, int y, int width, int height) {
+	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		self.arrange_node(self.root, x, y, width, height)
 	}
 
@@ -1616,7 +1616,7 @@ pub mv struct Container: Control {
 	// children with `grow > 0` have surplus to absorb; the cross axis stays at
 	// the measured content size, preserving child alignment. Grid/ZStack roots
 	// keep both axes at content.
-	pub func compute = (ref self, int avail_w, int avail_h) {
+	pub func compute = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int avail_w, int avail_h) {
 		// External constraint changed → the whole tree must re-measure.
 		if self.last_w != avail_w || self.last_h != avail_h {
 			self.mark_dirty(self.root)
@@ -1641,7 +1641,7 @@ pub mv struct Container: Control {
 	// Measure + arrange against the window's content rect (minus padding) and
 	// apply frames to every leaf, flipping y against the content height. The
 	// root fills its main axis (see `compute`).
-	pub func layout = (ref self, Window win) {
+	pub func layout = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, Window win) {
 		var int cw = win.content_width()
 		var int ch = win.content_height()
 		var int avail_w = cw - self.padding * 2
@@ -1678,7 +1678,7 @@ pub mv struct Container: Control {
 	// The callback calls nomen_layout_thunk (a free function) rather than the
 	// layout method directly: free functions are exported for C linkage on
 	// both backends, methods are not.
-	pub func set_resize_callback = (ref self, Window win) {
+	pub func set_resize_callback = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, Window win) {
 		```
 		#arch: c
 		#platform: macos
@@ -1870,7 +1870,7 @@ pub mv struct Container: Control {
 	// Window_relayout must also emit the registry + thunk they call —
 	// putting them in Scrollable.nm broke aarch64 split links (undefined
 	// symbols).
-	pub func set_document = (ref self, uint64 sv, uint64 doc) {
+	pub func set_document = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, uint64 sv, uint64 doc) {
 		```
 		#arch: c
 		#platform: macos
@@ -1968,7 +1968,7 @@ pub mv struct Container: Control {
 	// outlive the run — app fields. Call once, from App.start. The file-scope
 	// registry lives HERE (same file as the layout thunk the walker calls),
 	// for the same split-link reason set_document records.
-	pub func set_pane = (ref self, uint64 pane_handle) {
+	pub func set_pane = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, uint64 pane_handle) {
 		```
 		#arch: c
 		#platform: macos
@@ -2369,7 +2369,7 @@ pub mv struct Container: Control {
 /**
  * Entry point the layout engine calls to lay out a Container's tree
  **/
-pub func nomen_layout_thunk = (ref Container grid, Window win) {
+pub func nomen_layout_thunk = (ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, Window win) {
 	grid.layout(win)
 }
 
@@ -2377,7 +2377,7 @@ pub func nomen_layout_thunk = (ref Container grid, Window win) {
 // function (pure Nomen — asm-emitted on aarch64) so the thunk's raw bodies
 // can call it: constraints are the window's content width minus the grid's
 // own padding (the `layout_page` formula), height unbounded.
-pub func nomen_scroll_measure = (ref Container grid, int max_w, out [int, int]) {
+pub func nomen_scroll_measure = (ref Container grid {}, int max_w, out [int, int]) {
 	var bc = BoxConstraints()
 	bc.max_width = max_w
 	const Size cs = grid.measure(bc)
@@ -2395,10 +2395,10 @@ pub func nomen_scroll_measure = (ref Container grid, int max_w, out [int, int]) 
 // blocks, so any Nomen statement here would be silently dropped
 // (FOLLOWUP.md) — the measure goes through nomen_scroll_measure instead.
 pub func nomen_scroll_thunk = (
-	ref Container grid,
+	ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 	uint64 sv,
 	uint64 doc,
-	ref Window win,
+	ref Window win {},
 	int first
 ) {
 	```

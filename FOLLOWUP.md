@@ -630,21 +630,3 @@ reproducing from `parse_struct.ts`'s synthesized `#init` and checking the
 error's start offset is the param/field, not `-1`. Until then, language tests
 that need the warning pass avoid direct string fields on structs (see
 test/field_effects.test.ts's `run` note).
-
-## System library mutators should declare field sets
-
-Recorded 2026-11-08. The declared-field-set lint accepts an un-annotated
-LIBRARY mutator as a coarse wildcard (there is nothing a caller can declare to
-improve it), so calling e.g. `sb.append_char(...)` on a user `ref StringBuilder`
-param used to poison every borrow of `sb` and could not be narrowed. The fix is
-in the library, not the caller.
-
-Started here: every `StringBuilder` `ref self` method declares `{}` (its only
-state is scalar — the raw data pointer, len, cap), and the Allmark trait
-contracts (`BlockRule`, `InlineRule`, `Renderer`) declare the full set of their
-state type's displaceable fields, with conformers narrowed to subsets (trait
-dispatch is inherently coarse). The rest of `core/System` still leaves `ref
-self` un-annotated — each should declare its actual effects, bottom-up, so
-library calls get precise invalidation. Until then, the lint's silent
-`library_unknown` fallback (warnings.ts / field_effects.ts) keeps that coarseness
-from surfacing at call sites.
