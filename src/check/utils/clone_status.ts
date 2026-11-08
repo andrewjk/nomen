@@ -84,10 +84,11 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Unsafe context: block clones (if/else/while bodies) stay inside the
 		// same unsafe function, so inherit the flag.
 		in_unsafe: status.in_unsafe,
-		// View-field invalidations: share the same set so an invalidation
+		// View-field invalidations: share the same map/set so an invalidation
 		// inside a branch (which may fall through) stays visible afterwards —
 		// a conservative union, mirroring mutated_local_names.
 		invalidated_view_structs: status.invalidated_view_structs,
+		invalidated_view_fields: status.invalidated_view_fields,
 		// Hoisted element-borrow receiver temps: shared by reference so a
 		// mutation inside a branch or nested lambda body reverts the alias
 		// the enclosing statement hoisted (see CheckStatus).

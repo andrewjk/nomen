@@ -54,8 +54,11 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
 	ctor_call_view_borrow,
+	ctor_call_view_field_sources,
 	merge_view_borrows_into_var,
 	propagate_view_borrows,
+	propagate_view_field_poison,
+	refresh_view_field,
 	root_var_of,
 	struct_has_view_fields,
 	type_can_carry_view_borrow,
@@ -645,15 +648,21 @@ export default function check_assignment_node(
 			let infos: Map<string, import("./utils/view_fields.ts").BorrowInfo> | undefined;
 			if (rhs.node_type === "func_call") {
 				infos = ctor_call_view_borrow(rhs as FunctionCallNode, status);
-				if (infos?.size) merge_view_borrows_into_var(root, infos, status);
+				if (infos?.size)
+					merge_view_borrows_into_var(root, infos, status, {
+						field: lhs_field.name,
+						fresh: true,
+					});
 			}
 			const info = view_source_borrow_info(rhs, status);
 			if (info) {
-				merge_view_borrows_into_var(root, new Map([[info.owner ?? "", info]]), status);
-			} else if (!infos?.size && root && view_fields_invalidated(root, status)) {
+				merge_view_borrows_into_var(root, new Map([[info.owner ?? "", info]]), status, {
+					field: lhs_field.name,
+				});
+			} else if (!infos?.size && root && view_fields_invalidated(root, status, lhs_field.name)) {
 				// Re-pointing from an unconditional source (a literal / const)
-				// also refreshes the instance.
-				status.invalidated_view_structs?.delete(root);
+				// re-points exactly this field — sibling staleness survives.
+				refresh_view_field(root, lhs_field.name, status);
 			}
 		} else if (lhs_field.type?.name && struct_has_view_fields(lhs_field.type.name, status)) {
 			// An EMBEDDED view-carrying struct store (`o.inner = inner`, where
@@ -1031,6 +1040,10 @@ export default function check_assignment_node(
 					: undefined;
 			if (src_sv?.has_view_borrows) {
 				propagate_view_borrows(left_value, src_sv);
+				// The copy aliases the same sources — mirror the source's
+				// staleness onto the receiving name (a copy of a poisoned
+				// struct must not read as fresh).
+				propagate_view_field_poison(src_sv.name, left_value.name, status);
 			}
 		} else if (
 			assign.right_value.node_type === "func_call" &&
@@ -1055,7 +1068,10 @@ export default function check_assignment_node(
 						break;
 					}
 				}
-				merge_view_borrows_into_var(left_value.name, infos, status);
+				merge_view_borrows_into_var(left_value.name, infos, status, {
+					fresh: true,
+					sources: ctor_call_view_field_sources(assign.right_value as FunctionCallNode, status),
+				});
 			}
 		} else {
 			left_value.borrow_depth = undefined;

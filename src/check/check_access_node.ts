@@ -617,10 +617,12 @@ function check_access_field_node(
 			// A `view T` field read whose struct's source was mutated since the
 			// field was stored (`doc = …` after `line.text = doc.slice(…)`) is
 			// a dangling borrow — reject the read. Writing over the field (the
-			// assignment target path) is exempt: that re-points it.
+			// assignment target path) is exempt: that re-points it. The field
+			// name narrows to the precise poison tier: a sibling field sourced
+			// from an untouched variable stays readable.
 			if (field.type.is_view && target.node_type === "value" && !status.is_assignment_target) {
 				const root = (target as ValueNode).value;
-				if (view_fields_invalidated(root, status)) {
+				if (view_fields_invalidated(root, status, node.name)) {
 					add_error(
 						status,
 						`view field '${node.name}' was invalidated by a mutation of its source; re-fetch it after the mutation`,

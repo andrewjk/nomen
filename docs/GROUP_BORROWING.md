@@ -127,6 +127,11 @@ pub func main = () {
 // re-fetch it after the mutation
 ```
 
+(Still the behavior for an un-annotated `ref self` — wildcards keep
+whole-owner invalidation. The fix that landed since: a declared field set,
+`func poke = (ref self {})`, after which the `data` borrow survives —
+[FIELD_EFFECTS.md](./FIELD_EFFECTS.md).)
+
 Valen's paths would make `poke` invalidate only references pointing inside
 `h.scratch`; the `data` borrow survives. (A `mv h.data swap …` transfer of a
 user mv struct revalidates instead — the swap result is owned, so `poke`
@@ -204,8 +209,10 @@ restructure), where Valen's `mut(world.entities[])` effect names exactly
 what the callee may touch — and Rust's shared-xor-mutable forces the same
 re-fetching, plus a panic check per fetch.
 
-And view fields have their own coarseness: one mutated source poisons every
-view field of a struct, not just the one that dangled:
+And view fields used to have their own coarseness: one mutated source
+poisoned every view field of a struct. Since 2026-11-09 the poison is
+per-field — mutating `a` rejects reads of the `a`-sourced field only, so the
+`b`-sourced sibling survives:
 
 ```nomen
 import System
@@ -225,9 +232,31 @@ pub func main = () {
 
 	a = "XXXX"   // mutates only `first`'s source
 
-	Console.write_line(h.second.to_string())
+	Console.write_line(h.second.to_string())   // ACCEPTED — `b` was untouched
 }
-// Error: view field 'second' was invalidated by a mutation of its
+```
+
+while the genuinely stale field is still rejected:
+
+```nomen
+import System
+
+struct Holder {
+	var view string first
+	var view string second
+}
+
+pub func main = () {
+	var a = "aaaa"
+	var b = "bbbb"
+
+	var h = Holder(a.slice(0, 2), b.slice(0, 2))
+
+	a = "XXXX"   // mutates `first`'s source
+
+	Console.write_line(h.first.to_string())
+}
+// Error: view field 'first' was invalidated by a mutation of its
 // source; re-fetch it after the mutation
 ```
 
@@ -506,10 +535,10 @@ pub func main = () {
 ```
 
 The boundary of "for free" is the view-field case: a `ref self` method is
-only as innocent as the sources of the views a caller still holds, and
-today one mutated source poisons every view field of the struct (probe
-above). Field-scoped invalidation (item 1 below) is what would narrow
-exactly that.
+only as innocent as the sources of the views a caller still holds. Since
+2026-11-09 the checker names those sources per field (field-scoped
+invalidation, item 1 below): a mutated source rejects reads of the fields it
+sourced, and a `b`-sourced sibling stays readable (probe above).
 
 **9. The RC blend preview** (`class World` — references without paths).
 Nomen's spelling of that shape is deterministic: `WeakHandle<T>` for
@@ -579,9 +608,9 @@ compile-time bounds contracts could extend to index-disjointness proofs
    of callees' effects), and invalidate only borrows rooted at those
    fields. Value-type fields drop out entirely — writing an `int` can't free
    anything — which is the Nomen-shaped version of Valen's type-stability
-   exception. Full sketch in FOLLOWUP.md ("Field-scoped borrow
-   invalidation"). No path algebra needed; sound fallback to today's
-   behavior keeps it incremental.
+   exception. Implemented 2026-11-07 as declared effect sets — see
+   [FIELD_EFFECTS.md](./FIELD_EFFECTS.md). No path algebra needed; sound
+   fallback to today's behavior keeps it incremental.
    _Design constraint:_ effect- or path-shaped signatures leak
    representation — a field-path depends on the concrete implementation, so
    hiding fields behind accessors breaks "the paths a function modifies",
@@ -648,15 +677,23 @@ compile-time bounds contracts could extend to index-disjointness proofs
   handles the read-only callee case cleanly but re-fetches under mutual
   mutation. Field-scoped invalidation (item 1 above) narrows this; full
   Mutable-in-Immutable would close it.
-- **View-field poisoning.** One mutated source poisons every view field of
-  a struct (probe above) — the remaining coarseness behind item 1.
+- **View-field poisoning** — one mutated source poisoned every view field
+  of a struct (probe above). **Narrowed 2026-11-09** on the field-effects
+  machinery (see [FIELD_EFFECTS.md](./FIELD_EFFECTS.md)): direct field
+  stores and constructor arguments record which field borrows from which
+  source, so mutating `a` now rejects only the `a`-sourced field — the
+  `b`-sourced sibling stays readable. Unattributable dependencies (embedded
+  merges) keep the whole-struct poison as the conservative fallback.
 - **Many structs referencing a common subsystem** (the `File` →
   `FileSystem` shape, zero-cost in group borrowing): Nomen rejects `ref`
   fields outright (a non-mv borrow field could outlive its target), so the
   shape costs a `WeakHandle` slot lookup at runtime or a restructure.
-- **Containers of view-carrying structs** are not lifetime-checked against
-  their borrow sources (documented limitation, MEMORY.md "Struct Layout");
-  Valen's paths would cover this uniformly.
+- **Containers of view-carrying structs**: the "not lifetime-checked"
+  limitation is gone — closed by construction. View-carrying structs are
+  now rejected across call boundaries (as arguments — a container store IS
+  an argument — as returns, and to outer scopes; MEMORY.md "Borrow
+  Lifetimes"), so no container can ever hold one. Valen's paths would have
+  covered the shape uniformly; Nomen made it unspellable instead.
 - **Exclusivity is only expressible via `mv`.** Valen keeps
   shared-xor-mutable _sayable_ (unique = the only reference into a group
   carrying a `mut` effect; shared = references with no `mut` effects;
@@ -761,8 +798,9 @@ abstraction hole.
 - Concurrency: SPEC.md, "Concurrency" (`Sendable`, the freeze, `Mutex`,
   `Atomic`, `Channel`, `WeakHandle`); [ASYNC.md](./ASYNC.md), "Sharing data
   between tasks".
-- Follow-up sketch: FOLLOWUP.md, "Field-scoped borrow invalidation
-  (Valen-style effect precision)".
+- Follow-up: [FIELD_EFFECTS.md](./FIELD_EFFECTS.md) — the declared effect-set
+  design (implemented 2026-11-07); its "Why declared effects, not body scans"
+  section records why the original body-scan sketch lost.
 - The Ante follow-up in this lineage (places, `!` stability, `Rc 'p t`):
   [Borrow Checking Zero-Cost Cyclic Mutability](https://antelang.org/blog/safe_cyclic_mutability/)
   — see the addendum above.

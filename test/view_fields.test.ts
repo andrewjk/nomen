@@ -312,6 +312,172 @@ pub func main = (int n) {
 		).toBe(false);
 	});
 
+	test("a sibling field sourced from another variable survives a mutation", () => {
+		// GROUP_BORROWING.md shortfall 2, narrowed: mutating `a` poisons only
+		// the field recorded with `a`; the `b`-sourced sibling stays readable.
+		expect(
+			errors(`
+import System
+struct Pair {
+	var view string first
+	var view string second
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string b = "bbbb"
+	var Pair p = Pair(a.slice(0, 2), b.slice(0, 2))
+	if n > 0 {
+		a = "XXXX"
+		Console.write(p.second.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(false);
+	});
+
+	test("the mutated source's own field is still rejected", () => {
+		expect(
+			errors(`
+import System
+struct Pair {
+	var view string first
+	var view string second
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string b = "bbbb"
+	var Pair p = Pair(a.slice(0, 2), b.slice(0, 2))
+	if n > 0 {
+		a = "XXXX"
+		Console.write(p.first.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(true);
+	});
+
+	test("re-pointing one field does not revive a sibling's staleness", () => {
+		// The old whole-instance refresh cleared every field's staleness on
+		// ANY store, so this shape (read `first` after re-pointing `second`)
+		// was accepted while `first` dangled. Now rejected.
+		expect(
+			errors(`
+import System
+struct Pair {
+	var view string first
+	var view string second
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string b = "bbbb"
+	var Pair p = Pair(a.slice(0, 2), b.slice(0, 2))
+	if n > 0 {
+		a = "XXXX"
+		p.second = b.slice(0, 1)
+		Console.write(p.first.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(true);
+	});
+
+	test("a copy carries the per-field sources and the staleness", () => {
+		// The sibling survives on the copy; the stale field stays rejected —
+		// and a copy made AFTER the mutation inherits the poison (it must
+		// not read as fresh).
+		expect(
+			errors(`
+import System
+struct Pair {
+	var view string first
+	var view string second
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string b = "bbbb"
+	var Pair p = Pair(a.slice(0, 2), b.slice(0, 2))
+	if n > 0 {
+		a = "XXXX"
+		var Pair q = p
+		Console.write(q.second.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(false);
+
+		expect(
+			errors(`
+import System
+struct Pair {
+	var view string first
+	var view string second
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string b = "bbbb"
+	var Pair p = Pair(a.slice(0, 2), b.slice(0, 2))
+	if n > 0 {
+		a = "XXXX"
+		var Pair q = p
+		Console.write(q.first.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(true);
+	});
+
+	test("rebuilding the value clears the fields' staleness", () => {
+		expect(
+			errors(`
+import System
+struct Pair {
+	var view string first
+	var view string second
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string b = "bbbb"
+	var Pair p = Pair(a.slice(0, 2), b.slice(0, 2))
+	if n > 0 {
+		a = "XXXX"
+		p = Pair(a.slice(0, 1), b.slice(0, 2))
+		Console.write(p.first.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(false);
+	});
+
+	test("an unattributable embedded merge keeps the wholesale poison", () => {
+		// `o.inner = inner` folds `inner`'s owners into `o` without field
+		// attribution: mutating `inner`'s source poisons `o` wholesale —
+		// even `o`'s direct view fields (today's behavior, kept as the
+		// conservative fallback).
+		expect(
+			errors(`
+import System
+struct Inner {
+	var view string text
+}
+struct Outer {
+	var view string first
+	var Inner inner
+}
+pub func main = (int n) {
+	var string a = "aaaa"
+	var string doc = "dddd"
+	var Inner inner = Inner(doc.slice(0, 2))
+	var Outer o = Outer(a.slice(0, 2), Inner(""))
+	if n > 0 {
+		o.inner = inner
+		doc = "XXXX"
+		Console.write(o.first.to_string())
+	}
+	Console.write("x")
+}`).some((m) => m.includes("invalidated")),
+		).toBe(true);
+	});
+
 	test("escaping a view-carrying struct to an outer scope is rejected", () => {
 		expect(
 			errors(`

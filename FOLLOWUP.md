@@ -74,81 +74,6 @@ Also still open from the same area: `for ref x of list` is rejected with
 a dedicated error (List `set` takes `mv T`, so the array writeback
 shape doesn't transfer — needs its own design).
 
-## Field-scoped borrow invalidation (Valen-style effect precision)
-
-Recorded 2026-10-12, out of the Valen group-borrowing comparison
-([docs/GROUP_BORROWING.md](./docs/GROUP_BORROWING.md)). **Superseded design
-(2026-10-23)**: the body-scan mechanism sketched below was rejected
-(reasoning burden, scan/fixpoint cost) in favor of signature-declared effect
-sets. **Implemented 2026-11-07** as designed in
-[`docs/FIELD_EFFECTS.md`](./docs/FIELD_EFFECTS.md), with these deviations the
-implementation settled: the set is a bare brace group after the parameter
-name (`ref item { name }`, `{}` for the empty set) — the `mutates` keyword was
-dropped as misleading (the set is about displacement, not writes), and with it
-the `mutates nothing` spelling; the set is allowed on EVERY `ref` parameter
-(free functions included), not only `ref self` — free `ref` params had gained
-their own whole-owner invalidation site (check_function_call) before this
-landed, so the set narrowed them the same way. Un-annotated `ref` parameters
-stay wildcards; a lint warning (with the editor quick fix that adds the set)
-fires when a free `ref` parameter's body actually mutates a heap-bearing field
-through it. A second lint flags the idle reference: a `ref`/`ref self`
-parameter never written through (not even by a forwarded mutable borrow) is
-suggested to become a plain parameter (or bare `self`). The plumbing half of
-the sketch (`borrowed_via`, field-scoped `invalidate_borrows_of`) landed as
-sketched. Tests: test/field_effects.test.ts,
-test/field_effects_quickfix.test.ts, test/spec/types.test.ts ("spec: declared
-field effects").
-
-Today ANY `ref self`
-method call invalidates ALL live child-group borrows rooted at the receiver's
-owner — `invalidate_borrows_of(status, owner)` at
-src/check/check_access_node.ts:907, where borrows root only at the ultimate
-owner variable name (`borrow_owner_of`, src/check/utils/borrow.ts). A method
-that writes only `self.scratch` (an int) still kills a borrow rooted at
-`self.data`. Sketch:
-
-1. **Record the owner field each borrow came through.** `borrowed_via?: string`
-   on StackValue, stamped alongside `borrowed_from`: field-access borrows get
-   the accessed field name; method-return borrows get the terminal field of the
-   receiver path (`z.animals.at(i)` → `animals`).
-2. **Per-method field effect sets.** A syntactic scan of each method body (no
-   checked status needed — mirrors `scan_heap_return_functions`), collecting
-   fields the method may displace or free: writes `self.X = …`, mv transfers
-   into `self.X`, and MUTATOR CALLS on `self.X` receivers (`self.items.push(…)`
-   threatens `items` even though no direct write names it), plus the union of
-   effect sets of any `ref self` methods it calls (memoized fixpoint,
-   cycle-safe). Value-type fields (ints, fixed arrays) drop out of the set —
-   writing an int can't free anything (the Nomen-shaped version of Valen's
-   "type-stability exception").
-3. **Field-scoped invalidation.** `invalidate_borrows_of(status, owner,
-fields?)`: with a set, poison only borrows whose `borrowed_via` is in the
-   set (unstamped/unknown → invalidate, conservative). Without a set, current
-   behavior. Object-level aliases (no `borrowed_via`) are never touched by
-   field effects — they point at the instance itself, which only owner
-   reassignment/destroy can displace, and that path is deferred.
-4. **Sound fallback keeps it incremental.** Bodies opaque to the scan (calls
-   through func values, recursion, spawn captures) get an "all fields" effect
-   set — identical to today's behavior.
-5. **Wiring.** The effect set is computed per callee at the single call site
-   (check_access_node.ts:907). Audit whether the mv-field-assignment
-   invalidation paths need the same field-scoping; view borrows' eager
-   invalidation on reassignment stays as-is (the buffer actually frees).
-
-Data-structure note (2026-10-22, from Ante's places-over-lifetimes post —
-see the GROUP_BORROWING.md addendum): key borrows as place-sets — (owner
-root, field path) pairs — rather than bare field-name strings. The match at
-invalidation time should compare paths (Ante's unstable-place checker works
-this way), so a future place-carrying container (`at_ref` returning
-`(p!, container!)` element references — the unstable-place fix for the
-`step` shortfall) extends this structure instead of reworking it.
-`borrowed_via` can stay the serialized string; the path comparison is what
-matters.
-
-Tests: `poke`-writes-`scratch` keeps a `data`-rooted borrow; `push`
-invalidates `items`-rooted element borrows but not sibling-field borrows;
-transitive effects (a `ref self` method calling another); opaque-body
-fallback; all existing invalidation tests unchanged.
-
 ## Buffer `modify_T` displaced containers/closures leak
 
 The mv `modify_T` specialization identity-frees displaced STRING leaves
@@ -516,27 +441,41 @@ controls at runtime) wants generation-checked views: reuse the
 view whose owner is gone is detected at use instead of pointing at freed
 state. Split out of the on_click work (2026-10-20).
 
-## Guard/index contract discharge residuals
+## Bounds-contract discharge residuals (indexed reads and element borrows)
 
 `List.at`'s parameter contract (`i >= 0 && i < self.length`) is verified at
-every call site; exact List lengths (`known_length`), guards, inclusive
-bounds, singleton-range indices, negated guards, and length-snapshot
-aliases discharge it. The machinery is `evaluate_const_condition`
+every call site — including the element-borrow rewrite
+`ref T x = container.<read>(i)`, which verifies `at`'s bounds contract at
+the rewrite site like any call (`element_slot_load`,
+src/check/check_declaration_node.ts, recognizes `List.at` and
+`Map.get_or_panic` on the slot-container monos — `slot_ptr`/`get_ptr` — so
+`ref int v = map.get_or_panic(k)` needs nothing, no parameter contract). The
+machinery is `evaluate_const_condition`
 (src/check/utils/evaluate_const_condition.ts) and
-`apply_list_length_effect` (src/check/utils/flow_bounds.ts). What still
-needs a guard:
+`apply_list_length_effect` (src/check/utils/flow_bounds.ts). Exact List
+lengths (`known_length`), guards, inclusive bounds, singleton-range indices,
+negated guards, and length-snapshot aliases discharge it. What still needs a
+guard (or a contract-free spelling — `at_or_panic`, `get_or_panic`, `pop`):
 
 - **Unknown provenance**: a list from a function return or a parameter has
-  no length facts — guard, `at_or_panic`, or `pop`.
-- **Globals**: exact tracking is locals-only — a global's length can
-  change behind the caller's back through any opaque callee.
-- **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on
-  a receiver survive `ref self` calls the model doesn't know (only the
-  exact fact dies), and non-List containers have no effect model at all.
-  Closing that means a mutation-precision pass (refine-vs-invalidate per
-  callee effect) — worth doing only with concrete blocked shapes.
-- **Field-path receivers** (`h.items.at(0)`): guards only, no exact
-  tracking on field paths.
+  no length facts — `known_length` is stamped by guards and the modeled List
+  mutators only, never at function entry or on returns.
+- **Globals**: exact tracking is locals-only (`flow_bounds` bails on
+  `decl.is_global`) — a global's length can change behind the caller's back
+  through any opaque callee.
+- **Field-path receivers** (`h.items.at(0)`, `ref int v = h.items.at(0)`):
+  guards only — `extract_equality_length` records exact facts on bare
+  variable names, so `h.items.length == 3` establishes nothing.
+- **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on a
+  receiver survive `ref self` calls the model doesn't know (only the exact
+  fact dies); the length-effect model covers List's
+  push/pop/remove_at_or_panic only. Closing that means a mutation-precision
+  pass (refine-vs-invalidate per callee effect) — worth doing only with
+  concrete blocked shapes.
+- **Containers other than List/Map**: `Tree` has no contract-free read;
+  `LinkedList` has `at_or`/`at_or_panic`, but its elements are heap nodes —
+  no slot primitive, so its reads never rewrite to element borrows — and
+  neither container is in the length-effect model.
 
 ## Orphaned `???`/`!!!` tokenizer symbols
 
@@ -550,22 +489,6 @@ compiler change (the tokenizer compound list plus the formatter set) with no
 functional payoff beyond tidiness, so it was recorded rather than done —
 worth folding into the next tokenizer-touching change. Nothing else in the
 repo uses `???` as a placeholder.
-
-## Scalar element borrows via `List.at` (provenance residuals)
-
-The element-borrow rewrite `ref T x = container.<read>(i)` verifies `at`'s
-bounds contract at the rewrite site like any call. It discharges for bare
-local receivers (length facts or a guard); `ref int v =
-map.get_or_panic(k)` needs nothing (no parameter contract). What remains:
-
-- **Unknown-provenance lists still need a guard at the rewrite** (a list
-  from a function return or a parameter has no length facts). The
-  sanctioned spellings: a guard, or Map's contract-free `get_or_panic`.
-- **Field-path receivers** (`ref int v = h.items.at(0)`) rely on guards —
-  no exact-length tracking on field paths (same scope as the
-  guarded-index section).
-- **Containers other than List/Map** (`LinkedList`, `Tree`) have no
-  contract-free read and no effect model — guards only.
 
 ## Context measurement hazard: agent/background shells are not the interactive baseline
 

@@ -306,9 +306,18 @@ export function invalidate_element_borrows_of(status: CheckStatus, owner: string
  * bare variable is reassigned: a `view string`/`view T[]` slice points into
  * the old buffer, which is freed at the reassignment, so the view dangles.
  * Struct variables whose `view T` fields borrow from `owner` (see
- * StackValue.view_field_owners) are recorded in invalidated_view_structs so
- * reading one of those fields afterwards is rejected — without poisoning the
- * whole struct value (its non-view fields stay usable).
+ * StackValue.view_field_owners) are poisoned so reading one of those fields
+ * afterwards is rejected — without poisoning the whole struct value (its
+ * non-view fields stay usable).
+ *
+ * Per-field precision (the declared-effect plumbing applied to view fields):
+ * when the struct's field→owner attribution is known
+ * (`view_field_source_of`), only the fields recorded with THIS owner are
+ * poisoned (CheckStatus.invalidated_view_fields) — sibling fields sourced
+ * from other variables stay readable. An owner with unattributed
+ * dependencies (`view_field_unattributed_owners`) or no attribution at all
+ * keeps the whole-struct poison (invalidated_view_structs) — today's
+ * behavior, conservative default.
  *
  * This is intentionally NARROWER than `invalidate_borrows_of`: class
  * child-group borrows are kept valid across owner reassignment by deferred
@@ -328,8 +337,25 @@ export function invalidate_view_borrows_of(status: CheckStatus, owner: string, f
 				v.borrow_invalidated = true;
 			}
 		} else if (field_borrows) {
-			if (!status.invalidated_view_structs) status.invalidated_view_structs = new Set();
-			status.invalidated_view_structs.add(v.name);
+			const attributed = v.view_field_source_of
+				? [...v.view_field_source_of.entries()].filter(([, src]) => src === owner)
+				: [];
+			const unattributed = v.view_field_unattributed_owners?.has(owner) ?? false;
+			if (attributed.length > 0 && !unattributed) {
+				// Precise: only the fields sourced from this owner die.
+				if (!status.invalidated_view_fields) status.invalidated_view_fields = new Map();
+				let fields_set = status.invalidated_view_fields.get(v.name);
+				if (!fields_set) {
+					fields_set = new Set();
+					status.invalidated_view_fields.set(v.name, fields_set);
+				}
+				for (const [field] of attributed) fields_set.add(field);
+			} else {
+				// Unattributable dependency on this owner: wholesale (today's
+				// behavior — every view field of the instance is rejected).
+				if (!status.invalidated_view_structs) status.invalidated_view_structs = new Set();
+				status.invalidated_view_structs.add(v.name);
+			}
 		}
 	}
 }

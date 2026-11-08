@@ -228,8 +228,22 @@ export default interface CheckStatus {
 	 * (reassignment or ref-mutation) of a source they borrow from. Reading a
 	 * view field of one is rejected until the field is re-pointed. Shared by
 	 * block clones so branch-local invalidations propagate to the parent.
+	 *
+	 * The WHOLESALE tier: a struct lands here when the mutated owner's
+	 * dependency could not be attributed to a field (unattributed merges —
+	 * see `view_field_unattributed_owners`). The precise tier lives in
+	 * `invalidated_view_fields`.
 	 */
 	invalidated_view_structs?: Set<string>;
+
+	/**
+	 * Per-field companion of `invalidated_view_structs`: root variable → the
+	 * view field names whose recorded SOURCE was mutated. Only fields in the
+	 * set are rejected on read; sibling fields sourced from untouched
+	 * variables stay readable (view_fields.ts `view_field_source_of`). Shared
+	 * by reference through clones, mirroring `invalidated_view_structs`.
+	 */
+	invalidated_view_fields?: Map<string, Set<string>>;
 
 	/**
 	 * Live hoisted ELEMENT-BORROW receiver temps (`_recv_N` hoisted as a slot

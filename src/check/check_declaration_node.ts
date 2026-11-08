@@ -52,7 +52,9 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
 	ctor_call_view_borrow,
+	ctor_call_view_field_sources,
 	propagate_view_borrows,
+	propagate_view_field_poison,
 	type BorrowInfo,
 	type_can_carry_view_borrow,
 } from "./utils/view_fields.ts";
@@ -977,8 +979,15 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		// result type cannot carry a borrow (owned `string`, primitives)
 		// are skipped: their results own their storage outright.
 		let view_borrows: Map<string, BorrowInfo> | undefined;
+		// Per-field owner attribution for a fresh constructor value
+		// (`view_field_source_of`), and the owners that could not be
+		// attributed (they keep the wholesale poison). The copy path takes
+		// both directly from the copied value.
+		let view_field_sources: Map<string, string> | undefined;
+		let view_field_unattributed: Set<string> | undefined;
 		if (decl.value?.node_type === "func_call" && type_can_carry_view_borrow(decl.type, status)) {
 			view_borrows = ctor_call_view_borrow(decl.value as FunctionCallNode, status);
+			view_field_sources = ctor_call_view_field_sources(decl.value as FunctionCallNode, status);
 			if (view_borrows?.size) {
 				for (const [, info] of view_borrows) {
 					const depth = info.depth ?? status.scope_depth;
@@ -989,6 +998,18 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 							decl.value.start,
 						);
 						break;
+					}
+				}
+				// A fresh construction re-points every view field: any
+				// staleness recorded under this name (a loop redeclaration)
+				// clears. Owners the per-field pass could not attribute keep
+				// the wholesale tier.
+				status.invalidated_view_structs?.delete(decl.name);
+				status.invalidated_view_fields?.delete(decl.name);
+				const covered = new Set(view_field_sources?.values() ?? []);
+				for (const owner of view_borrows.keys()) {
+					if (owner && !covered.has(owner)) {
+						(view_field_unattributed ??= new Set()).add(owner);
 					}
 				}
 			}
@@ -1008,6 +1029,12 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				if (!view_borrows.size && staged.has_view_borrows) {
 					view_borrows.set("", { depth: staged.borrow_depth, owner: "" });
 				}
+				// The copy's fields alias the copy source's fields — take the
+				// per-field attribution (and unattributed marks) verbatim,
+				// and mirror the source's staleness under the new name.
+				view_field_sources = src_sv.view_field_source_of;
+				view_field_unattributed = src_sv.view_field_unattributed_owners;
+				propagate_view_field_poison(src_sv.name, decl.name, status);
 			}
 		}
 		// Fold the view-field borrows' tightest depth into the pushed
@@ -1039,6 +1066,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			has_view_borrows: !!view_borrows?.size || undefined,
 			view_field_owners:
 				view_borrows && view_borrows.size ? new Set(view_borrows.keys()) : undefined,
+			view_field_source_of: view_borrows && view_borrows.size ? view_field_sources : undefined,
+			view_field_unattributed_owners:
+				view_borrows && view_borrows.size ? view_field_unattributed : undefined,
 			class_alias_of: class_alias_src,
 			is_ref_binding: is_ref_keyword || undefined,
 			ref_source: is_ref_keyword ? ref_src : undefined,

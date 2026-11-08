@@ -1,7 +1,6 @@
 # Field-Scoped Borrow Invalidation by Declared Effect Sets
 
-Written 2026-10-23. **Implemented 2026-11-07** — see FOLLOWUP.md's
-"Field-scoped borrow invalidation" entry for the settled deviations. Tests:
+Written 2026-10-23. **Implemented 2026-11-07.** Tests:
 `test/field_effects.test.ts`, `test/field_effects_quickfix.test.ts`,
 `test/spec/types.test.ts` ("spec: declared field effects").
 
@@ -46,16 +45,15 @@ the edit is local:
 - `_`-prefixed parameters are exempt (the discard convention).
 
 The warning pass runs whenever the checker reports no USER-addressable
-errors; internal errors on synthesized nodes (`start: -1` — see FOLLOWUP.md)
-no longer suppress it.
+errors; internal errors on synthesized nodes (`start: -1`) no longer
+suppress it.
 
-Picks up the FOLLOWUP.md entry "Field-scoped borrow
-invalidation (Valen-style effect precision)" (recorded 2026-10-12, out of the
-Valen comparison in [GROUP_BORROWING.md](./GROUP_BORROWING.md)) and replaces
-that entry's proposed mechanism: instead of scanning method bodies for the
-fields they touch, each mutator **declares** the fields it may displace, and
-the checker verifies the declaration against the body. The declaration is the
-whole truth; nothing is inferred.
+Picks up the field-scoped invalidation shortfall recorded 2026-10-12 out of
+the Valen comparison in [GROUP_BORROWING.md](./GROUP_BORROWING.md) and
+replaces the originally proposed mechanism (a body scan): instead of scanning
+method bodies for the fields they touch, each mutator **declares** the fields
+it may displace, and the checker verifies the declaration against the body.
+The declaration is the whole truth; nothing is inferred.
 
 This document is self-contained — it can be implemented from scratch without
 the conversation that produced it.
@@ -105,7 +103,7 @@ same coarseness at larger shapes.
 
 ## Why declared effects, not body scans
 
-The original FOLLOWUP sketch derived effect sets by syntactically scanning
+The original 2026-10-12 sketch derived effect sets by syntactically scanning
 each method body (mirroring the whole-program scans like
 `src/build_common/scan_borrow_returns.ts`), unioning callees' sets in a
 memoized fixpoint. That design was rejected on 2026-10-23 for two reasons:
@@ -257,10 +255,16 @@ definition sites of conformers' callers.
   buffer actually frees at reassignment, so there is nothing to narrow.
 - **`var self` / owner reassignment / destroy**: whole-receiver by nature
   (deferred reclamation keeps same-scope borrows alive, as today).
-- Out of scope here, enabled later by the same machinery: narrowing the
-  view-field struct poisoning (one mutated view source currently poisons
-  every view field of a struct — GROUP_BORROWING.md shortfall 2). The
-  plumbing's place-set keys are the extension point.
+- **View-field struct poisoning** (GROUP_BORROWING.md shortfall 2) —
+  **landed 2026-11-09** on the same machinery: direct field stores and
+  constructor arguments record the field→owner attribution
+  (`view_field_source_of`), so a mutated source poisons only the fields it
+  sourced (`CheckStatus.invalidated_view_fields`); sibling fields sourced
+  from untouched variables stay readable. Unattributable dependencies
+  (embedded merges like `o.inner = inner`, unresolvable ctor shapes) keep
+  the wholesale poison as the conservative fallback, and a copy inherits the
+  source's staleness field-for-field. The full place-path key
+  (`animals[i]`-style) remains the forward-compatibility extension above.
 
 ## Recorded syntax decisions
 
@@ -282,13 +286,14 @@ Decisions made 2026-10-23, with the alternatives and why they lost:
   2. Precedent: parameter constraints (`entity_id: …`) already live in the
      param list, next to the thing they constrain. Effects constrain the
      receiver borrow; same home.
-  3. It generalizes for free: if free-function `ref` params ever start
-     invalidating (the `step(ref World world, …)` shape gets effect precision
-     someday), the syntax extends with no new grammar —
-     `func step = (ref World world mutates entities, int id: …)`.
-     (Verified 2026-10-23: the checker has exactly two invalidation sites —
-     the `ref self` arm and view-source reassignment — so free `ref` params
-     don't invalidate today, and self-only attachment loses nothing.)
+  3. It generalizes for free: when free-function `ref` params invalidate
+     (the `step(ref World world, …)` shape), the syntax extends with no new
+     grammar — `func step = (ref World world mutates entities, int id: …)`.
+     (Verified 2026-10-23: the checker then had exactly two invalidation
+     sites — the `ref self` arm and view-source reassignment. Free `ref`
+     params gained their own whole-owner invalidation site in
+     `check_function_call` before the feature landed, so the implemented set
+     applies to EVERY `ref` parameter, not only `ref self`.)
 - **Keyword — none (final, 2026-11-07).** The keyword was dropped entirely;
   the set is written as bare braces (`ref Item item { name }`). Earlier
   candidates and why each lost:
@@ -375,11 +380,11 @@ generic state (`self.started = true` in `Fiber<T>.start` needs no clause).
 
 ## Forward compatibility
 
-The declared set is a serialized field path today (`data`). The Ante note in
-FOLLOWUP.md (and the GROUP_BORROWING.md addendum) applies unchanged: grow the
-key to place-paths (`animals[i]`) later — same clause, same data, no grammar
-change. The trait-narrowing rule and the subset rule are already phrased over
-sets, not names.
+The declared set is a serialized field path today (`data`). The Ante note
+(the GROUP_BORROWING.md addendum) applies unchanged: grow the key to
+place-paths (`animals[i]`) later — same clause, same data, no grammar change.
+The trait-narrowing rule and the subset rule are already phrased over sets,
+not names.
 
 ## Implementation plan (staged)
 
@@ -425,8 +430,9 @@ sets, not names.
 
 ## Pointers
 
-- Origin entry: FOLLOWUP.md, "Field-scoped borrow invalidation (Valen-style
-  effect precision)" — kept as the record of the original body-scan proposal
+- Origin: the field-scoped invalidation shortfall recorded 2026-10-12 out of
+  the Valen comparison in [GROUP_BORROWING.md](./GROUP_BORROWING.md) — this
+  document is the surviving record of both the original body-scan proposal
   and the place-set data-structure note.
 - Valen comparison: [GROUP_BORROWING.md](./GROUP_BORROWING.md) — Valen's
   `mut` effect ("mutability as a function effect, not a type") is the

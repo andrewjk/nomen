@@ -184,6 +184,25 @@ export default interface StackValue {
 	 */
 	view_field_owners?: Set<string>;
 	/**
+	 * Precise companion of `view_field_owners`: the owner variable each
+	 * INDIVIDUAL view field currently borrows from (`first` → "a"). Recorded
+	 * only when every dependency is attributable to a field — direct
+	 * `root.field = …` stores and constructor arguments whose struct could be
+	 * resolved (view_fields.ts). Embedded merges and unresolvable shapes mark
+	 * `view_field_unattributed_owners` instead. Drives per-field invalidation:
+	 * mutating source `a` poisons only the fields recorded with `a`
+	 * (CheckStatus.invalidated_view_fields); sibling fields sourced from other
+	 * variables stay readable.
+	 */
+	view_field_source_of?: Map<string, string>;
+	/**
+	 * Owners folded into `view_field_owners` WITHOUT field attribution
+	 * (embedded struct stores, constructor shapes that could not be resolved
+	 * per field). A mutation of any of these keeps today's wholesale struct
+	 * poisoning — every view field of the instance is rejected.
+	 */
+	view_field_unattributed_owners?: Set<string>;
+	/**
 	 * For Buffer variables: the minimum guaranteed capacity, established by
 	 * calls to grow_int(N)/alloc_int(N)/alloc(N). Used to verify compile-time
 	 * `i < buf.cap` constraints after a known-size allocation.
