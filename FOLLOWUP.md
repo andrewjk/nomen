@@ -464,16 +464,25 @@ guard (or a contract-free spelling — `at_or_panic`, `get_or_panic`, `pop`):
   `decl.is_global`) — a global's length can change behind the caller's back
   through any opaque callee.
 - **Field-path receivers** (`h.items.at(0)`, `ref int v = h.items.at(0)`):
-  guards only — `extract_equality_length` records exact facts on bare
-  variable names, so `h.items.length == 3` establishes nothing. Empirical
-  note (2026-11-09): even a length guard does not discharge `at`'s
-  contract on a path — the guard records `path_bounds` on the base
-  variable, but the contract normalizes to `0 < h.items.length`
-  (literal left, path right) and the evaluator never consults the path's
-  lower bounds in that direction. Closing it soundly needs the shrink
-  narrowing (`apply_list_length_effect`'s sweep) extended to path facts —
-  bundle with the mutation-precision pass below rather than flipping the
-  consultation alone. `at_or_panic` is the sanctioned spelling meanwhile.
+  **guards now discharge (landed 2026-11-09)** — the evaluator consults
+  the path's own `path_bounds` lower entries (flipped-literal and
+  exact-name forms), both synthetic-self sites (method-call and
+  operation contract checks) rename those facts to `self.*` keys for the
+  substituted constraint, and `apply_list_length_effect` narrows
+  dotted-receiver path facts on `pop`/`remove_at_or_panic`. Still bare-only:
+  EXACT length facts (`extract_equality_length` rejects non-bare targets,
+  so `h.items.length == 3` establishes nothing) — an UNGUARDED field-path
+  read needs a guard or `at_or_panic`.
+  - **Soundness audit (recorded 2026-11-09)**: `if f.ships.length > 1 {
+f.ships.pop(); f.ships.at(1) }` is currently ACCEPTED even though the
+    length can be 1 after the pop — at(1) is OOB. The discharge runs
+    through the expr-chain's upper-bound match on a synthetic index (`i`)
+    fact whose provenance interleaves with library-internal evaluations
+    (a constraint-args synthetic can carry a `self.length` upper bound in
+    some evaluation orders). Audit the constraint_args fact flow and the
+    mono/library value hygiene before relying on this corner; the
+    guard-only cases (at(0), literal vs literal) are sound and tested in
+    test/field_path_contracts.test.ts.
 - **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on a
   receiver survive `ref self` calls the model doesn't know (only the exact
   fact dies); the length-effect model covers List's

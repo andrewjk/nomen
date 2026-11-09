@@ -549,12 +549,30 @@ function verify_operator_param_constraint(
 	// Push self so the constraint can reference self fields.
 	const self_path = expr_to_string(op.left_value, status);
 	if (self_path) {
+		// A field-path receiver (`f.ships`): the base's path facts are keyed
+		// by the caller-side path (`f.ships.length`); the substituted
+		// constraint asks for `self.length`, so the synthetic self must see
+		// them under its OWN path — same rename as check_function_call's
+		// synthetic self. Without it, `f.ships.at(0)` can never discharge
+		// its contract against the guard facts.
+		const self_base = status.values.findLast((v) => v.name === self_path.split(".")[0]);
+		let synthetic_path_bounds = self_base?.path_bounds;
+		if (synthetic_path_bounds && self_path.includes(".")) {
+			const prefix = `${self_path}.`;
+			const renamed = new Map<string, import("./StackValue.ts").PathBounds>();
+			for (const [key, entry] of synthetic_path_bounds) {
+				if (key === self_path) renamed.set("self", entry);
+				else if (key.startsWith(prefix)) renamed.set(`self.${key.slice(prefix.length)}`, entry);
+			}
+			synthetic_path_bounds = renamed.size > 0 ? renamed : undefined;
+		}
 		status.values.push({
 			declaration: "const",
 			name: "self",
 			type: left_type,
 			is_set: true,
 			alias_of: self_path,
+			path_bounds: synthetic_path_bounds,
 		});
 	}
 	const satisfied = evaluate_const_condition(other_param.constraint, status);

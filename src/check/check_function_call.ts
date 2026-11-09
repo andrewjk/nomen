@@ -1690,7 +1690,8 @@ export default function check_function_call(
 				});
 			}
 			// Push self so constraints can reference self.length
-			if (self_value && self_value !== "?") {
+			const self_id = self_path ?? self_value;
+			if (self_id && self_id !== "?") {
 				const self_type = target_type || func.params[0]?.type;
 				// self_path is the full access path (e.g. "self.items" for
 				// `self.items.load_int(...)`), so self.cap resolves correctly
@@ -1700,7 +1701,7 @@ export default function check_function_call(
 				// entry first), hiding guard facts recorded on it — e.g. a
 				// method-body `if self.text.length >= 2` fact consulted as
 				// `self.length` at a `self.text.slice(0, 2)` call site.
-				const self_path_or_value = self_path ?? self_value;
+				const self_path_or_value = self_id;
 				const self_base = status.values.findLast(
 					(v) => v.name === self_path_or_value.split(".")[0],
 				);
@@ -1710,6 +1711,22 @@ export default function check_function_call(
 				const literal_known_length = self_path_or_value.startsWith('"')
 					? string_literal_length(self_path_or_value)
 					: undefined;
+				// A field-path receiver (`f.ships`): the base's path facts are
+				// keyed by the caller-side path (`f.ships.length` — recorded by
+				// `if f.ships.length > 1` guards and narrowed by the modeled
+				// mutators). The substituted constraint asks for `self.length`,
+				// so the synthetic self must see those facts under its OWN path
+				// — otherwise `f.ships.at(0)` can never discharge its contract.
+				let synthetic_path_bounds = self_base?.path_bounds;
+				if (synthetic_path_bounds && self_path_or_value.includes(".")) {
+					const prefix = `${self_path_or_value}.`;
+					const renamed = new Map<string, import("./StackValue.ts").PathBounds>();
+					for (const [key, entry] of synthetic_path_bounds) {
+						if (key === self_path_or_value) renamed.set("self", entry);
+						else if (key.startsWith(prefix)) renamed.set(`self.${key.slice(prefix.length)}`, entry);
+					}
+					synthetic_path_bounds = renamed.size > 0 ? renamed : undefined;
+				}
 				status.values.push({
 					declaration: "const",
 					name: "self",
@@ -1726,7 +1743,7 @@ export default function check_function_call(
 					lower_bound_inclusive_exprs: self_base?.lower_bound_inclusive_exprs?.slice(),
 					upper_bound_expr: self_base?.upper_bound_expr,
 					lower_bound_expr: self_base?.lower_bound_expr,
-					path_bounds: self_base?.path_bounds,
+					path_bounds: synthetic_path_bounds,
 				});
 			}
 

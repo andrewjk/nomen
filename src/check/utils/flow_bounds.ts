@@ -342,7 +342,15 @@ export function extract_bound(
 	}
 
 	// Try var/access OP expr (e.g. j < list.length, self.length < self.items.cap)
-	if (op.left_value.node_type === "value" || op.left_value.node_type === "access") {
+	// A pure-int-literal left (`0 < f.ships.length`) is NOT a fact about "0"
+	// — it bounds the PATH: fall through to the flipped form so the guard
+	// records on the access side.
+	const left_is_int_literal =
+		op.left_value.node_type === "value" && /^[+-]?\d+$/.test((op.left_value as ValueNode).value);
+	if (
+		!left_is_int_literal &&
+		(op.left_value.node_type === "value" || op.left_value.node_type === "access")
+	) {
 		const var_name =
 			op.left_value.node_type === "value"
 				? (op.left_value as ValueNode).value
@@ -357,6 +365,17 @@ export function extract_bound(
 		const expr = expr_to_string(op.left_value, status);
 		if (expr) {
 			// Flip the operator
+			const flipped = op.op === "<" ? ">" : op.op === "<=" ? ">=" : op.op === ">" ? "<" : "<=";
+			return { var_name, op: flipped, expr };
+		}
+	}
+
+	// Literal OP access (`0 < f.ships.length`): the access is the bounded
+	// path — flip onto it (`f.ships.length > 0`), same as the var case above.
+	if (left_is_int_literal && op.right_value.node_type === "access") {
+		const var_name = expr_to_string(op.right_value, status);
+		const expr = expr_to_string(op.left_value, status);
+		if (var_name && expr) {
 			const flipped = op.op === "<" ? ">" : op.op === "<=" ? ">=" : op.op === ">" ? "<" : "<=";
 			return { var_name, op: flipped, expr };
 		}
@@ -1571,6 +1590,24 @@ export function record_fresh_list_length(
 }
 
 /**
+ * Drop every non-literal entry and decrement the literals by one (dropping
+ * the trivial < 1 floor): one modeled shrink (pop / remove_at_or_panic)
+ * erodes each guard-derived lower bound by one. Symbolic entries cannot
+ * shift — dropped (sound: the fact dies).
+ */
+function narrow_lower_bounds(arr?: string[]): string[] | undefined {
+	if (!arr) return arr;
+	const out: string[] = [];
+	for (const e of arr) {
+		if (/^-?\d+$/.test(e)) {
+			const v = parseInt(e, 10) - 1;
+			if (v >= 0) out.push(String(v));
+		}
+	}
+	return out.length > 0 ? out : undefined;
+}
+
+/**
  * Model the checked List method's effect on the receiver's exact length
  * (`known_length`) and, for the shrinking mutators, on every length fact
  * derived from the pre-call state.
@@ -1582,9 +1619,13 @@ export function record_fresh_list_length(
  * (it stays sound), though guard-derived lower bounds keep today's
  * behavior (they already survived calls — see the FOLLOWUP note).
  *
- * Bare-variable receivers only: a field-path receiver (`h.items`) keeps
- * today's behavior — its facts live in path_bounds keyed by owner, and
- * exact tracking would need per-path lengths.
+ * Bare-variable receivers get the exact fact (`known_length`). FIELD-PATH
+ * receivers (`f.ships`) keep path-keyed GUARD facts (path_bounds under
+ * `f.ships.length` on the base variable): the modeled shrinking mutators
+ * narrow those entries exactly like the bare branch (a pop erodes each
+ * lower bound by one, and length-snapshot aliases of the path follow), so
+ * `if f.ships.length > 1 { f.ships.at(0) }` discharges and stays sound
+ * across pops — while the exact fact itself stays bare-locals-only.
  */
 export function apply_list_length_effect(
 	self_path: string | undefined,
@@ -1592,16 +1633,49 @@ export function apply_list_length_effect(
 	func: { name: string; params: { is_self_param?: boolean; type: { is_ref?: boolean } }[] },
 	status: CheckStatus,
 ) {
-	if (!self_path || self_path === "?" || self_path.includes(".")) return;
+	if (!self_path || self_path === "?") return;
 	if (!is_list_type_name(target_type_name)) return;
 	const self_param = func.params[0];
 	if (!self_param?.is_self_param) return;
-	const decl = status.values.findLast((v) => v.name === self_path);
+	const dotted = self_path.includes(".");
+	const decl = status.values.findLast(
+		(v) => v.name === (dotted ? self_path.split(".")[0] : self_path),
+	);
 	if (!decl) return;
 	// Exact tracking is LOCALS-only (see record_fresh_list_length): a
 	// global's length can change behind the caller's back through any
 	// opaque callee, so its facts stay guard-derived.
 	if (decl.is_global) return;
+
+	if (dotted) {
+		// Path-keyed guard facts: only the shrinking mutators need modeling
+		// (a shrink erodes every lower bound by one); push keeps lower
+		// bounds sound (growth), set/reserve change nothing, and unmodeled
+		// mutators keep the documented today-posture (bounds survive).
+		if (func.name === "pop" || func.name === "remove_at_or_panic") {
+			const len_path = `${self_path}.length`;
+			const pb = decl.path_bounds?.get(len_path);
+			if (pb) {
+				pb.lower = narrow_lower_bounds(pb.lower);
+				pb.lower_inclusive = narrow_lower_bounds(pb.lower_inclusive);
+				if (pb.range_lower !== undefined) {
+					pb.range_lower = pb.range_lower > 1 ? pb.range_lower - 1 : undefined;
+				}
+			}
+			invalidate_token_facts(len_path, status);
+			for (const v of status.values) {
+				if (v.alias_of && v.alias_of.startsWith(`${self_path}.`)) {
+					v.lower_bound_exprs = narrow_lower_bounds(v.lower_bound_exprs);
+					v.lower_bound_inclusive_exprs = narrow_lower_bounds(v.lower_bound_inclusive_exprs);
+					v.lower_bound_expr = undefined;
+					if (v.range_lower !== undefined) {
+						v.range_lower = v.range_lower > 1 ? v.range_lower - 1 : undefined;
+					}
+				}
+			}
+		}
+		return;
+	}
 
 	if (func.name === "push") {
 		if (decl.known_length !== undefined) decl.known_length += 1;
@@ -1618,20 +1692,8 @@ export function apply_list_length_effect(
 		// values (e.g. a `var n = x.length` alias). Without this, a
 		// `if x.length > 1 { x.pop(); x.at(1) }` shape verifies against a
 		// stale fact and reads out of bounds at runtime.
-		const narrow = (arr?: string[]): string[] | undefined => {
-			if (!arr) return arr;
-			const out: string[] = [];
-			for (const e of arr) {
-				if (/^-?\d+$/.test(e)) {
-					const v = parseInt(e, 10) - 1;
-					if (v >= 0) out.push(String(v));
-				}
-				// non-literal: cannot shift symbolically — dropped
-			}
-			return out.length > 0 ? out : undefined;
-		};
-		decl.lower_bound_exprs = narrow(decl.lower_bound_exprs);
-		decl.lower_bound_inclusive_exprs = narrow(decl.lower_bound_inclusive_exprs);
+		decl.lower_bound_exprs = narrow_lower_bounds(decl.lower_bound_exprs);
+		decl.lower_bound_inclusive_exprs = narrow_lower_bounds(decl.lower_bound_inclusive_exprs);
 		decl.lower_bound_expr = undefined;
 		if (decl.range_lower !== undefined) {
 			decl.range_lower = decl.range_lower > 1 ? decl.range_lower - 1 : undefined;
@@ -1639,8 +1701,8 @@ export function apply_list_length_effect(
 		const len_path = `${self_path}.length`;
 		const pb = decl.path_bounds?.get(len_path);
 		if (pb) {
-			pb.lower = narrow(pb.lower);
-			pb.lower_inclusive = narrow(pb.lower_inclusive);
+			pb.lower = narrow_lower_bounds(pb.lower);
+			pb.lower_inclusive = narrow_lower_bounds(pb.lower_inclusive);
 			if (pb.range_lower !== undefined) {
 				pb.range_lower = pb.range_lower > 1 ? pb.range_lower - 1 : undefined;
 			}
@@ -1648,8 +1710,8 @@ export function apply_list_length_effect(
 		invalidate_token_facts(len_path, status);
 		for (const v of status.values) {
 			if (v.alias_of && v.alias_of.startsWith(`${self_path}.`)) {
-				v.lower_bound_exprs = narrow(v.lower_bound_exprs);
-				v.lower_bound_inclusive_exprs = narrow(v.lower_bound_inclusive_exprs);
+				v.lower_bound_exprs = narrow_lower_bounds(v.lower_bound_exprs);
+				v.lower_bound_inclusive_exprs = narrow_lower_bounds(v.lower_bound_inclusive_exprs);
 				v.lower_bound_expr = undefined;
 				if (v.range_lower !== undefined) {
 					v.range_lower = v.range_lower > 1 ? v.range_lower - 1 : undefined;

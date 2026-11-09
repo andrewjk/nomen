@@ -216,10 +216,22 @@ function evaluate_operation(
 
 				if (op.op === "<" || op.op === "<=") {
 					if (left_decl?.upper_bound_exprs?.length && target_str) {
-						if (left_decl.upper_bound_exprs.includes(target_str)) return true;
+						if (left_decl.upper_bound_exprs.includes(target_str)) {
+							// Facts on LEAKED scope values (a library body's synthetic
+							// entries that outlived their check — no decl_depth, not a
+							// param) must not discharge user constraints: the names
+							// collide across contexts ("i < self.length" binds a
+							// different receiver in each). Real locals carry
+							// decl_depth; real params carry is_param.
+							if (left_decl.decl_depth !== undefined || left_decl.is_param === true) {
+								return true;
+							}
+						}
 						// Symbolic: a tighter stored bound (e.g. `len - 5`) implies a
 						// looser target (e.g. `len - 1`).
-						if (left_decl.upper_bound_exprs.some((u) => upper_implies(u, target_str!))) return true;
+						if (left_decl.upper_bound_exprs.some((u) => upper_implies(u, target_str!))) {
+							return true;
+						}
 						// Transitive: a bound `x < V` plus `V < target` (where V is a
 						// variable with its own upper bound) implies `x < target`.
 						// E.g. `for i of 0 .. n` (i < n) inside `if n < arr.length`
@@ -269,7 +281,9 @@ function evaluate_operation(
 					// `x <= V` plus `V </<= target` implies `x <= target`
 					// (both `x <= V <= T` and `x <= V < T` give `x <= T`).
 					if (op.op === "<=" && left_decl?.upper_bound_inclusive_exprs?.length && target_str) {
-						if (left_decl.upper_bound_inclusive_exprs.includes(target_str)) return true;
+						if (left_decl.upper_bound_inclusive_exprs.includes(target_str)) {
+							return true;
+						}
 						if (left_decl.upper_bound_inclusive_exprs.some((u) => upper_implies(u, target_str!))) {
 							return true;
 						}
@@ -389,12 +403,15 @@ function evaluate_operation(
 						// Exact-length fact (`x.push(2)` tracking): the container's
 						// length is known precisely, so the comparison is numeric.
 						const left_num = Number(left_const);
+						const left_num_is_int = Number.isInteger(left_num) ? left_num : undefined;
 						if (
 							rdecl.known_length !== undefined &&
 							Number.isInteger(left_num) &&
 							(right_var.endsWith(".length") || right_var === "self.length")
 						) {
-							if (flipped === ">") return left_num < rdecl.known_length;
+							if (flipped === ">") {
+								return left_num < rdecl.known_length;
+							}
 							if (flipped === ">=") return left_num <= rdecl.known_length;
 						}
 						// Reverse-alias: a guard on a length SNAPSHOT (`var n =
@@ -445,6 +462,64 @@ function evaluate_operation(
 							}
 							if (rdecl.lower_bound_expr === left_const) return true;
 						}
+						// The path's OWN guard facts (`if f.ships.length > 1`
+						// records into the base variable's path_bounds under the
+						// full path key — apply_bounds' dotted-path precision).
+						// Consulted here so `f.ships.at(0)`'s contract
+						// (`0 < f.ships.length`) discharges against them, and a
+						// symbolic guard (`f.ships.length > idx` + `at(idx)`)
+						// matches by name. Sound because the modeled shrinking
+						// mutators narrow these entries (apply_list_length_effect).
+						if (right_var.includes(".")) {
+							const pb = rdecl.path_bounds?.get(right_var);
+							if (pb && flipped === ">") {
+								let path_hit = false;
+								if (left_num_is_int !== undefined) {
+									if (
+										pb.lower?.some((e) => /^-?\d+$/.test(e) && parseInt(e, 10) >= left_num_is_int)
+									)
+										path_hit = true;
+									else if (
+										pb.lower_inclusive?.some((e) => inclusive_lower_implies_strict(e, left_const))
+									)
+										path_hit = true;
+								}
+								if (!path_hit && pb.lower?.includes(left_const)) path_hit = true;
+								if (!path_hit && pb.lower?.some((e) => lower_implies(e, left_const)))
+									path_hit = true;
+								if (path_hit) return true;
+							} else if (pb && flipped === ">=") {
+								if (pb.lower_inclusive?.includes(left_const)) return true;
+								if (left_num_is_int !== undefined) {
+									// exclusive `length > E` with E >= k - 1 proves `k <= length`
+									if (
+										pb.lower?.some(
+											(e) => /^-?\d+$/.test(e) && parseInt(e, 10) >= left_num_is_int - 1,
+										)
+									)
+										return true;
+									if (
+										pb.lower_inclusive?.some(
+											(e) => /^-?\d+$/.test(e) && parseInt(e, 10) >= left_num_is_int,
+										)
+									)
+										return true;
+								}
+							}
+						}
+					}
+					// A plain-name LEFT (`idx < f.ships.length`) whose only fact is
+					// the path's own guard (`f.ships.length > idx` — extract_bound
+					// hands that bound to the PATH entry, not to idx): an exact
+					// lower entry matching the name proves the comparison. Also
+					// covers a literal left whose guard recorded the same literal
+					// (sound redundancy with the numeric branches above).
+					if (op.left_value.node_type === "value" && right_var?.includes(".")) {
+						const left_name = (op.left_value as ValueNode).value;
+						const path_pb = status.values
+							.findLast((v) => v.name === right_var.split(".")[0])
+							?.path_bounds?.get(right_var);
+						if (path_pb?.lower?.includes(left_name)) return true;
 					}
 				}
 			}
