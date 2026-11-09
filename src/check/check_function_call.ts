@@ -32,6 +32,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import {
 	borrow_depth_of,
+	downgrade_place_stamps,
 	invalidate_borrows_of,
 	receiver_owner_of,
 	revert_hoisted_element_borrows,
@@ -766,6 +767,9 @@ export default function check_function_call(
 				// borrows taken through those fields of the argument; an
 				// un-annotated parameter is a wildcard (whole owner).
 				invalidate_borrows_of(status, ref_owner, func_param?.field_set);
+				// The callee may also WRITE a scalar ref argument (`ref int i`);
+				// a place stamp naming it (`items[i]`) and its `!=` facts die.
+				if (param_value) downgrade_place_stamps(param_value, status);
 			}
 			// Declared field effects rule 3: forwarding the current function's
 			// clause-bound parameter (or a field path into it) must stay inside

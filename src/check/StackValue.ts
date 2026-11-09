@@ -74,6 +74,18 @@ export default interface StackValue {
 	 */
 	nonzero_exprs?: string[];
 	/**
+	 * Pairwise disjointness facts: plain variable names this variable is
+	 * provably NOT equal to, established by `!=` guards between two names
+	 * (`if i != j { ... }` records `j` on `i` and `i` on `j` for the guarded
+	 * scope). Queried by place-scoped element-borrow invalidation (borrow.ts
+	 * `place_index_disjoint`): a `list.set(j, …)` may write slot `j` while an
+	 * element borrow of slot `i` stays live only when `i != j` is provable.
+	 * Scoped like the bounds (branch clones + the snapshot machinery) — the
+	 * fact dies with the guard's scope, and a reassignment of either name
+	 * drops the entries mentioning it (`downgrade_place_stamps`).
+	 */
+	disjoint_with?: Set<string>;
+	/**
 	 * @deprecated use upper_bound_exprs / lower_bound_exprs
 	 */
 	upper_bound_expr?: string;

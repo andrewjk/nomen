@@ -26,6 +26,7 @@ export type BoundsSnapshot = {
 	upper_bound_inclusive_exprs?: string[];
 	lower_bound_inclusive_exprs?: string[];
 	nonzero_exprs?: string[];
+	disjoint_with?: Set<string>;
 };
 
 /**
@@ -45,6 +46,7 @@ export function snapshot_bounds(name: string, status: CheckStatus): BoundsSnapsh
 		upper_bound_inclusive_exprs: decl.upper_bound_inclusive_exprs?.slice(),
 		lower_bound_inclusive_exprs: decl.lower_bound_inclusive_exprs?.slice(),
 		nonzero_exprs: decl.nonzero_exprs?.slice(),
+		disjoint_with: decl.disjoint_with ? new Set(decl.disjoint_with) : undefined,
 	};
 }
 
@@ -75,6 +77,7 @@ export function snapshot_all_bounds(status: CheckStatus): Map<object, FullBounds
 			upper_bound_inclusive_exprs: v.upper_bound_inclusive_exprs?.slice(),
 			lower_bound_inclusive_exprs: v.lower_bound_inclusive_exprs?.slice(),
 			nonzero_exprs: v.nonzero_exprs?.slice(),
+			disjoint_with: v.disjoint_with ? new Set(v.disjoint_with) : undefined,
 			upper_bound_expr: v.upper_bound_expr,
 			lower_bound_expr: v.lower_bound_expr,
 			alias_of: v.alias_of,
@@ -96,6 +99,7 @@ export function restore_all_bounds(status: CheckStatus, snap: Map<object, FullBo
 		v.upper_bound_inclusive_exprs = s.upper_bound_inclusive_exprs;
 		v.lower_bound_inclusive_exprs = s.lower_bound_inclusive_exprs;
 		v.nonzero_exprs = s.nonzero_exprs;
+		v.disjoint_with = s.disjoint_with;
 		v.upper_bound_expr = s.upper_bound_expr;
 		v.lower_bound_expr = s.lower_bound_expr;
 		v.alias_of = s.alias_of;
@@ -484,6 +488,28 @@ export function apply_bounds(condition: BaseNode, status: CheckStatus, is_loop =
 				if (decl) {
 					if (!decl.nonzero_exprs) decl.nonzero_exprs = [];
 					if (!decl.nonzero_exprs.includes(path)) decl.nonzero_exprs.push(path);
+					return;
+				}
+			}
+			// `i != j` (two PLAIN names, no zero literal involved): a pairwise
+			// disjointness fact for place-scoped element-borrow invalidation.
+			// Recorded on both sides' StackValues; scoped like the bounds
+			// (branch clones + snapshot_all_bounds), dropped on reassignment.
+			const plain_name = (x: BaseNode): string | undefined => {
+				if (x.node_type !== "value") return undefined;
+				const v = (x as ValueNode).value;
+				return /^[A-Za-z_][A-Za-z0-9_]*$/.test(v) ? v : undefined;
+			};
+			const left_name = plain_name(nz.left_value);
+			const right_name = plain_name(nz.right_value);
+			if (left_name && right_name && left_name !== right_name) {
+				const left_decl = status.values.findLast((v) => v.name === left_name);
+				const right_decl = status.values.findLast((v) => v.name === right_name);
+				if (left_decl && right_decl) {
+					if (!left_decl.disjoint_with) left_decl.disjoint_with = new Set();
+					left_decl.disjoint_with.add(right_name);
+					if (!right_decl.disjoint_with) right_decl.disjoint_with = new Set();
+					right_decl.disjoint_with.add(left_name);
 					return;
 				}
 			}

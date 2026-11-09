@@ -18,6 +18,8 @@ import {
 	borrow_depth_of,
 	borrow_owner_of,
 	borrowed_via_of,
+	downgrade_place_stamps,
+	element_borrow_place_via,
 	invalidate_element_borrows_of,
 	invalidate_view_borrows_of,
 	is_element_borrow_value,
@@ -451,6 +453,10 @@ export default function check_assignment_node(
 		// referencing this name as an offset operand (`j < n - d`) is stale
 		// once `d` is reassigned — sweep it before re-tracking.
 		invalidate_token_facts(left_value.name, status);
+		// The name was reassigned: place stamps naming it (`items[i]` — the
+		// stamped index no longer describes the slot the borrow points into)
+		// and `!=` disjointness facts on it die.
+		downgrade_place_stamps(left_value.name, status);
 		// Clear flow-sensitive bounds: assignment invalidates bounds from if/while
 		left_value.upper_bound_expr = undefined;
 		left_value.lower_bound_expr = undefined;
@@ -1023,7 +1029,9 @@ export default function check_assignment_node(
 			} else {
 				left_value.borrow_depth = rhs_borrow_depth;
 				left_value.borrowed_from = borrow_owner_of(assign.right_value, status);
-				left_value.borrowed_via = borrowed_via_of(assign.right_value, status);
+				left_value.borrowed_via =
+					element_borrow_place_via(assign.right_value, status) ??
+					borrowed_via_of(assign.right_value, status);
 				left_value.is_element_borrow =
 					is_element_borrow_value(assign.right_value, status) || undefined;
 				// Re-assigning a (possibly invalidated) borrow refreshes it: the

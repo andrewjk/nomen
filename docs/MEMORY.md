@@ -400,6 +400,23 @@ an element would invalidate its borrows. The checker exempts
 (`push_keeps_element_borrows` in src/check/check_access_node.ts); every
 other `ref self` call invalidates as usual. See test/stable-list.test.ts.
 
+**`List<T>` slot writes are place-scoped (2026-11-09).** The slot-borrow
+rewrite stamps the place an element borrow points into — `ref Ship s =
+ships.at(0)` records `[0]`, `f.ships.at(2)` records `ships[2]`
+(`element_borrow_place_via` in src/check/utils/borrow.ts; indexes are int
+literals or plain variable names, anything else stamps unindexed). List's
+`set`/`set_or_panic` are modeled as single-slot displacements (the sibling
+of the exact-length model in flow_bounds): the call invalidates only
+element borrows whose stamped place is NOT provably disjoint from the
+call's index — literals compare numerically, two names discharge through
+`!=` guard facts (`disjoint_with`, recorded by the bounds machinery, scoped
+like bounds, dropped when either name is reassigned or passed by `ref`).
+Everything else keeps the declared-set wholesale rule: `push` (realloc),
+`pop`/`remove_at_or_panic` (shift), reassignment (slab free), and any
+unprovable stamp — a whole-container mutator covers `[…]` stamps via the
+`f[` path-prefix rule in `declared_fields_cover_path`. See
+test/place_borrows.test.ts.
+
 ## Known Soundness Gaps
 
 These are memory-safety holes that are **not** currently caught at compile time.

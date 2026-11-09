@@ -6,6 +6,7 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { is_list_type_name } from "./flow_bounds.ts";
 import { is_owning_ref_type } from "./ownership.ts";
 import type_from_value_node from "./type_from_value_node.ts";
 import value_from_value_node from "./value_from_value_node.ts";
@@ -220,7 +221,108 @@ export function declared_fields_cover_path(
 ): boolean {
 	if (!path) return true;
 	if (!fields?.length) return false;
-	return fields.some((f) => path === f || path.startsWith(`${f}.`));
+	// `[` continues a path too: a declared field `items` covers borrows taken
+	// through `items[0]` (displacing the container displaces every slot).
+	return fields.some((f) => path === f || path.startsWith(`${f}.`) || path.startsWith(`${f}[`));
+}
+
+/** Serialize a borrow's place suffix: `[3]` for an int literal, `[i]` for a plain tracked name, nothing otherwise. */
+function place_index_suffix(index: BaseNode | undefined, status: CheckStatus): string {
+	if (!index || index.node_type !== "value") return "";
+	const v = (index as ValueNode).value;
+	if (/^[+-]?\d+$/.test(v)) return `[${parseInt(v, 10)}]`;
+	if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(v) && status.values.findLast((d) => d.name === v)) {
+		return `[${v}]`;
+	}
+	return "";
+}
+
+/**
+ * The via for an ELEMENT BORROW of a List slot, qualified with its PLACE:
+ * `ref Ship s = list.at(0)` stamps `[0]`, `h.items.at(2)` stamps
+ * `items[2]` — the (field path, index) place key the place-scoped
+ * invalidation matches against (borrow.ts `invalidate_borrows_of`'s `place`).
+ * Returns undefined (→ the caller keeps the unqualified via) for every other
+ * shape: non-element initializers, non-List containers (a Map's `get_ptr`
+ * slot is keyed, not indexed), and indexes that are not literals or plain
+ * tracked names — those stay whole-field (conservative).
+ */
+export function element_borrow_place_via(
+	value: BaseNode | undefined,
+	status: CheckStatus,
+): string | undefined {
+	if (!value || !is_element_borrow_value(value, status)) return undefined;
+	const access = value as AccessNode;
+	if (access.access.node_type !== "access_func") return undefined;
+	const call = access.access as AccessFunctionCallNode;
+	const container = type_from_value_node(access.target, status);
+	if (!is_list_type_name(container?.name)) return undefined;
+	const suffix = place_index_suffix(call.params[0], status);
+	if (!suffix) return undefined;
+	return `${borrowed_via_of(value, status) ?? ""}${suffix}`;
+}
+
+/** Split a stamped via into its field path and place index (`items[0]` → `items` + `0`; `items` → `items` + undefined). */
+function split_place_via(via: string | undefined): { path: string; index?: string } {
+	if (!via) return { path: "" };
+	const m = /^(.*?)(?:\[([^\]]+)\])?$/.exec(via)!;
+	return { path: m[1], index: m[2] };
+}
+
+/** Whether an element borrow's stamped via lives under the mutated receiver path (bare receiver → `""` matches pure-index stamps). */
+function via_under_prefix(via: string | undefined, prefix: string): boolean {
+	const { path, index } = split_place_via(via);
+	if (index === undefined) return false; // unindexed element borrow — not place-matched
+	return path === prefix;
+}
+
+/**
+ * Whether a `list.set(i, …)` call's index is PROVABLY disjoint from the
+ * place an element borrow stamped: literals compare numerically; two plain
+ * names discharge through recorded `!=` guard facts
+ * (`StackValue.disjoint_with`). Unprovable → false → the borrow is poisoned
+ * (the conservative default, identical to today's behavior).
+ */
+function place_index_disjoint(
+	via: string | undefined,
+	index: BaseNode | undefined,
+	status: CheckStatus,
+): boolean {
+	const stamped = split_place_via(via).index;
+	if (stamped === undefined || !index) return false;
+	if (/^-?\d+$/.test(stamped)) {
+		if (index.node_type === "value") {
+			const v = (index as ValueNode).value;
+			return /^[+-]?\d+$/.test(v) ? parseInt(v, 10) !== parseInt(stamped, 10) : false;
+		}
+		return false;
+	}
+	if (index.node_type !== "value") return false;
+	const call_name = (index as ValueNode).value;
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(call_name)) return false;
+	if (call_name === stamped) return false; // same name → same slot (unless proven otherwise)
+	// Different names: a recorded `!=` guard fact between them is the proof.
+	const decl = status.values.findLast((v) => v.name === stamped);
+	return !!decl?.disjoint_with?.has(call_name);
+}
+
+/**
+ * Strip the place index from every borrow stamp naming `name` (and drop
+ * `name` from every disjointness fact): the variable was reassigned (or
+ * passed as a mutable ref argument), so a stamped `items[i]` no longer
+ * describes which slot the borrow points into. The stamp downgrades to the
+ * unqualified via — whole-field, today's conservative behavior.
+ */
+export function downgrade_place_stamps(name: string, status: CheckStatus) {
+	for (const v of status.values) {
+		if (v.borrowed_via) {
+			const { path, index } = split_place_via(v.borrowed_via);
+			if (index === name) v.borrowed_via = path || undefined;
+		}
+		if (v.disjoint_with?.delete(name) && v.disjoint_with.size === 0) {
+			v.disjoint_with = undefined;
+		}
+	}
 }
 
 /**
@@ -383,11 +485,44 @@ export function invalidate_view_borrows_of(status: CheckStatus, owner: string, f
  * die; sibling-field borrows stay live. Borrows with no stamped path are
  * still poisoned conservatively. `undefined` keeps today's whole-owner
  * behavior (un-annotated mutators are wildcards).
+ *
+ * `place` refines ELEMENT borrows for the modeled single-slot mutators
+ * (List's `set` family — the length-effect model's sibling): the callee
+ * displaces exactly the slot `items[i]`, so an element borrow whose stamped
+ * place (`element_borrow_place_via`) is PROVABLY disjoint from the call's
+ * index survives — literals compare numerically, plain names discharge
+ * through recorded `!=` guard facts. Unprovable (or unindexed) → poisoned,
+ * identical to today. Non-element borrows ignore `place` and keep the
+ * declared-set rule (writing one slot doesn't move the container, but the
+ * conservative default stands for this tranche).
  */
-export function invalidate_borrows_of(status: CheckStatus, owner: string, fields?: string[]) {
+export function invalidate_borrows_of(
+	status: CheckStatus,
+	owner: string,
+	fields?: string[],
+	place?: { via_prefix: string; index?: BaseNode },
+) {
 	for (const v of status.values) {
 		if (v.borrowed_from === owner && !v.has_view_borrows) {
-			if (fields === undefined || declared_fields_cover_path(fields, v.borrowed_via)) {
+			if (place && v.is_element_borrow && via_under_prefix(v.borrowed_via, place.via_prefix)) {
+				// Place-scoped: survive only when the slot written is provably
+				// a different one.
+				if (!place_index_disjoint(v.borrowed_via, place.index, status)) {
+					v.borrow_invalidated = true;
+				}
+			} else if (
+				fields !== undefined &&
+				fields.length > 0 &&
+				v.is_element_borrow &&
+				split_place_via(v.borrowed_via).index !== undefined &&
+				split_place_via(v.borrowed_via).path === ""
+			) {
+				// A pure-index stamp (`[0]` — bare-receiver slot borrow) under a
+				// NON-modeled mutator: the stamp carries no field, and the
+				// borrow aliases the receiver's own storage, which any declared
+				// set of that receiver's methods names → poisoned.
+				v.borrow_invalidated = true;
+			} else if (fields === undefined || declared_fields_cover_path(fields, v.borrowed_via)) {
 				v.borrow_invalidated = true;
 			}
 		}

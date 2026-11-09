@@ -465,7 +465,15 @@ guard (or a contract-free spelling — `at_or_panic`, `get_or_panic`, `pop`):
   through any opaque callee.
 - **Field-path receivers** (`h.items.at(0)`, `ref int v = h.items.at(0)`):
   guards only — `extract_equality_length` records exact facts on bare
-  variable names, so `h.items.length == 3` establishes nothing.
+  variable names, so `h.items.length == 3` establishes nothing. Empirical
+  note (2026-11-09): even a length guard does not discharge `at`'s
+  contract on a path — the guard records `path_bounds` on the base
+  variable, but the contract normalizes to `0 < h.items.length`
+  (literal left, path right) and the evaluator never consults the path's
+  lower bounds in that direction. Closing it soundly needs the shrink
+  narrowing (`apply_list_length_effect`'s sweep) extended to path facts —
+  bundle with the mutation-precision pass below rather than flipping the
+  consultation alone. `at_or_panic` is the sanctioned spelling meanwhile.
 - **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on a
   receiver survive `ref self` calls the model doesn't know (only the exact
   fact dies); the length-effect model covers List's

@@ -380,9 +380,13 @@ generic state (`self.started = true` in `Fiber<T>.start` needs no clause).
 
 ## Forward compatibility
 
-The declared set is a serialized field path today (`data`). The Ante note
-(the GROUP_BORROWING.md addendum) applies unchanged: grow the key to
-place-paths (`animals[i]`) later — same clause, same data, no grammar change.
+The declared set is a serialized field path today (`data`), with the
+place-path half already landed for List slots (2026-11-09): element borrows
+stamp `items[i]`-style places and the modeled `set` family invalidates at
+place granularity — same clause, same data, no grammar change (see
+MEMORY.md, "List<T> slot writes are place-scoped"). The Ante note (the
+GROUP_BORROWING.md addendum) applies to what remains: general place-paths
+(`animals[i].hp`, nested containers) when place-carrying containers arrive.
 The trait-narrowing rule and the subset rule are already phrased over sets,
 not names.
 

@@ -36,7 +36,7 @@ import {
 	stamp_in_place_enum_payloads,
 } from "./utils/enum_mono.ts";
 import { root_and_path_of, verify_field_effects_at_receiver_call } from "./utils/field_effects.ts";
-import { expr_to_string } from "./utils/flow_bounds.ts";
+import { expr_to_string, is_list_type_name } from "./utils/flow_bounds.ts";
 import {
 	find_function_by_params,
 	is_overloaded,
@@ -1141,7 +1141,23 @@ export function check_access_function_node(
 				receiver_path && receiver_path.path.length
 					? [receiver_path.path[0]]
 					: func.params[0]?.field_set;
-			invalidate_borrows_of(status, owner, fields);
+			// Modeled place effect (the exact-length model's sibling): List's
+			// `set` family displaces exactly the slot `items[i]` — no realloc,
+			// no shift — so an element borrow whose stamped place is provably
+			// disjoint from the call's index survives the call. Everything
+			// else (unindexed stamps, non-element borrows) keeps the
+			// declared-set behavior.
+			if (
+				is_list_type_name(target_type.name) &&
+				(func.name === "set" || func.name === "set_or_panic")
+			) {
+				invalidate_borrows_of(status, owner, fields, {
+					via_prefix: receiver_path ? receiver_path.path.join(".") : "",
+					index: place_index_arg(node),
+				});
+			} else {
+				invalidate_borrows_of(status, owner, fields);
+			}
 		}
 	}
 
@@ -1262,6 +1278,26 @@ function push_keeps_element_borrows(target_type: Type, func: FunctionNode): bool
 	if (func.name !== "push") return false;
 	const name = target_type.name;
 	return name === "StableList" || (!!name && name.startsWith("StableList_"));
+}
+
+/**
+ * The index argument of a modeled single-slot mutator call (`set(i, …)` —
+ * an access call's params exclude the receiver, so params[0] IS the index),
+ * resolved through the hoisted-argument temps the call may have introduced
+ * (an `allocations` record's initializer is the original expression).
+ * Returns the node as written when no hoist applies.
+ */
+function place_index_arg(node: AccessFunctionCallNode): BaseNode | undefined {
+	let arg = node.params[0];
+	if (!arg) return undefined;
+	if (arg.node_type === "value") {
+		const name = (arg as ValueNode).value;
+		const hoisted = ((node.allocations ?? []) as { name?: string; value?: BaseNode }[]).findLast(
+			(d) => d.name === name,
+		);
+		if (hoisted?.value) arg = hoisted.value;
+	}
+	return arg;
 }
 
 // Infer a function's return type by scanning its body for return statements

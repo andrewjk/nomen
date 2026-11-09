@@ -17,6 +17,7 @@ import {
 	borrow_depth_of,
 	borrow_owner_of,
 	borrowed_via_of,
+	element_borrow_place_via,
 	is_element_borrow_value,
 } from "./utils/borrow.ts";
 import { is_box_type } from "./utils/box.ts";
@@ -1061,7 +1062,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			decl_depth: status.scope_depth,
 			borrow_depth: pushed_borrow_depth,
 			borrowed_from: decl.value ? borrow_owner_of(decl.value, status) : undefined,
-			borrowed_via: decl.value ? borrowed_via_of(decl.value, status) : undefined,
+			borrowed_via: decl.value
+				? (element_borrow_place_via(decl.value, status) ?? borrowed_via_of(decl.value, status))
+				: undefined,
 			is_element_borrow: is_element_borrow_value(decl.value, status) || undefined,
 			has_view_borrows: !!view_borrows?.size || undefined,
 			view_field_owners:

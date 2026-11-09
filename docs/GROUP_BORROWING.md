@@ -675,8 +675,11 @@ compile-time bounds contracts could extend to index-disjointness proofs
 
 - **Mutate-one-part-while-borrowing-another** (the `step` case): Nomen
   handles the read-only callee case cleanly but re-fetches under mutual
-  mutation. Field-scoped invalidation (item 1 above) narrows this; full
-  Mutable-in-Immutable would close it.
+  mutation. Field-scoped invalidation (item 1 above) narrows this, and
+  since 2026-11-09 List slot writes are place-scoped: `list.set(j, …)`
+  spares an `at(i)` slot borrow under a proven `i != j` (the element-level
+  slice of the precision Valen's paths give). Full Mutable-in-Immutable
+  would close the rest.
 - **View-field poisoning** — one mutated source poisoned every view field
   of a struct (probe above). **Narrowed 2026-11-09** on the field-effects
   machinery (see [FIELD_EFFECTS.md](./FIELD_EFFECTS.md)): direct field
@@ -752,8 +755,10 @@ Mapped onto the lists above:
   the storage shape lets them displace_, not by "is it `ref self`".
   Same idea, better stated. Concrete process note: key borrows as
   place-sets (owner root + field path) so the container case above
-  extends the structure instead of reworking it (noted in the FOLLOWUP
-  sketch).
+  extends the structure instead of reworking it — **landed for List slots
+  (2026-11-09)**: element borrows stamp `items[i]` places and the modeled
+  `set` family invalidates at place granularity under proven index
+  disjointness (MEMORY.md, "List<T> slot writes are place-scoped").
 - **Shortfall 3 (`File` → `FileSystem`):** `Rc 'p t` covers this shape
   statically. A Nomen analog _without_ refcounting: place-threaded
   handles into an **owned arena** — every handle into one arena shares
