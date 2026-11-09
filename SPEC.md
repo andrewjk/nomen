@@ -2425,6 +2425,13 @@ optional:
 - `x` / `X` / `b` / `o` — render an integer as hexadecimal (lower/upper),
   binary, or octal. A base on a non-integer is a compile error. A negative
   value renders its magnitude with a leading `-` in every base.
+- `n` (or `N`) — render with thousands separators every three digits
+  (integers and floats). A float without a precision takes two decimals;
+  `.N` sets them. Width and alignment compose; zero-padding does not
+  combine with grouping. A grouped 64-bit integer is rendered exactly.
+- `e` / `E` — render a float in exponential notation (lower/upper `e`).
+  Floats only; a float without a precision takes six decimals, and `.N`
+  and width compose as usual.
 
 ```
 var float price = 9.5
@@ -2432,9 +2439,14 @@ var int count = 3
 var int flags = 255
 var string label = "Go"
 var float total = price * (count as float)
+var int audience = 1234567
+var float speed = 0.00025
 Console.write("total \{total:.2}")
 Console.write("[\{label:>8}] [\{count:03}] [\{flags:x}]")
 Console.write("[\{label:<8}] [\{flags:08X}] [\{flags:b}]")
+Console.write("\{audience:n} viewers")
+Console.write("\{total:.2n} owed")
+Console.write("speed \{speed:.2e} m/s")
 ```
 
 Anything else in a spec is a compile error — an unknown character, an empty

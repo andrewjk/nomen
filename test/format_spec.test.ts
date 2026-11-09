@@ -25,6 +25,10 @@ var float f = 1.5
 var string name = "Gojo"
 var bool flag = true
 var char grade = 'A'
+var int big = 1234567
+var int neg_big = -9876543
+var float total = 1234567.891
+var float speed = 0.00025
 Console.write("fixed \\{f:.2}\\n")
 Console.write("width \\{f:>10.3}\\n")
 Console.write("zero \\{f:08.2}\\n")
@@ -41,6 +45,13 @@ Console.write("flag \\{flag:>4}| \\{grade:>2}|\\n")
 Console.write("expr \\{i * 2:04}\\n")
 Console.write("mix \\{name}: \\{i:04} (\\{f:.2})\\n")
 Console.write("plain \\{i} stays \\{name}\\n")
+Console.write("group \\{big:n} \\{neg_big:n}\\n")
+Console.write("u64g \\{u:n}\\n")
+Console.write("gf \\{total:.2n} \\{f:n}\\n")
+Console.write("gw [\\{big:>12n}] [\\{big:<12n}]\\n")
+Console.write("exp \\{f:e} \\{f:.2E}\\n")
+Console.write("expb \\{speed:e} \\{speed:.1e}\\n")
+Console.write("expw [\\{f:12.2e}] [\\{f:<12.2e}]\\n")
 `;
 
 describe("format specs", () => {
@@ -66,7 +77,14 @@ describe("format specs", () => {
 					"flag true|  A|\n" +
 					"expr 0084\n" +
 					"mix Gojo: 0042 (1.50)\n" +
-					"plain 42 stays Gojo\n",
+					"plain 42 stays Gojo\n" +
+					"group 1,234,567 -9,876,543\n" +
+					"u64g 18,446,744,073,709,551,615\n" +
+					"gf 1,234,567.89 1.50\n" +
+					"gw [   1,234,567] [1,234,567   ]\n" +
+					"exp 1.500000e+00 1.50E+00\n" +
+					"expb 2.500000e-04 2.5e-04\n" +
+					"expw [    1.50e+00] [1.50e+00    ]\n",
 			);
 		},
 	);
@@ -154,6 +172,33 @@ Console.write("\\{s:03}")
 `);
 		expect(errors.length).toBe(1);
 		expect(errors[0].message).toContain("zero-padding requires an integer or float");
+	});
+
+	test("grouping requires an integer or float", () => {
+		const errors = compile_main(`
+var string s = "x"
+Console.write("\\{s:n}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("grouping requires an integer or float");
+	});
+
+	test("exponential requires a float", () => {
+		const errors = compile_main(`
+var int i = 5
+Console.write("\\{i:e}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("exponential requires a float");
+	});
+
+	test("zero-padding cannot combine with grouping", () => {
+		const errors = compile_main(`
+var int i = 5
+Console.write("\\{i:08n}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("zero-padding cannot combine with grouping");
 	});
 
 	test("syntax: empty alignment", () => {

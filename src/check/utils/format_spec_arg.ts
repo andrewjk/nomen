@@ -71,10 +71,26 @@ export default function check_format_spec_arg(
 		);
 		return undefined;
 	}
-	if (spec.base && !is_int) {
+	if (spec.base && "xXbo".includes(spec.base) && !is_int) {
 		add_error(
 			status,
 			`format spec ':${spec.text}': base requires an integer, but the value is ${t.name || "value"}`,
+			spec.start,
+		);
+		return undefined;
+	}
+	if (spec.base && "nN".includes(spec.base) && !is_int && !is_float) {
+		add_error(
+			status,
+			`format spec ':${spec.text}': grouping requires an integer or float, but the value is ${t.name || "value"}`,
+			spec.start,
+		);
+		return undefined;
+	}
+	if (spec.base && "eE".includes(spec.base) && !is_float) {
+		add_error(
+			status,
+			`format spec ':${spec.text}': exponential requires a float, but the value is ${t.name || "value"}`,
 			spec.start,
 		);
 		return undefined;
@@ -92,18 +108,38 @@ export default function check_format_spec_arg(
 	// with spaces on the right), positive = right-align, 0 = no padding.
 	const signed_width = (spec.align === "left" ? -1 : 1) * (spec.width ?? 0);
 
-	if (is_float && spec.precision !== undefined) {
+	const is_exponential = spec.base === "e" || spec.base === "E";
+	const is_grouped = spec.base === "n" || spec.base === "N";
+
+	if (is_grouped && is_float) {
+		// Grouped fixed-point: render, then comma the integer part. Width
+		// composes through `pad` — zero-padding never reaches the grouping
+		// (the parse layer rejects `0` + `n`).
+		const places = spec.precision ?? 2;
+		const grouped = format_call(spec.start, "float_grouped", [
+			new CastNode(target.start, target, new Type("float")),
+			new ValueNode(target.start, String(places), new Type("int", true)),
+		]);
+		if (signed_width === 0) return grouped;
+		return format_call(spec.start, "pad", [
+			grouped,
+			new ValueNode(target.start, String(signed_width), new Type("int", true)),
+		]);
+	}
+	if (is_float && (spec.precision !== undefined || is_exponential)) {
 		let directive = "%";
 		if (spec.zero && signed_width > 0) directive += "0";
 		if (spec.align === "left") directive += "-";
 		if (signed_width !== 0) directive += String(signed_width);
-		directive += `.${spec.precision}f`;
+		directive += `.${spec.precision ?? 6}`;
+		directive += is_exponential ? spec.base! : "f";
 		return format_call(spec.start, "float_fixed", [
 			new CastNode(target.start, target, new Type("float")),
 			new ValueNode(target.start, `"${directive}"`, new Type("string", true)),
 		]);
 	}
 	if (is_int && (spec.base || spec.zero)) {
+		const grouped = is_grouped;
 		const base =
 			spec.base === "x" || spec.base === "X"
 				? 16
@@ -113,13 +149,25 @@ export default function check_format_spec_arg(
 						? 8
 						: 10;
 		const fname = info?.signed ? "int_base" : "uint_base";
-		return format_call(spec.start, fname, [
+		// Grouped digits pad through `pad` so commas never land inside the
+		// field padding; plain rendering keeps its own width (zero-pad needs
+		// to hug the digits).
+		const render_width = grouped ? 0 : signed_width;
+		const rendered = format_call(spec.start, fname, [
 			new CastNode(target.start, target, new Type(info?.signed ? "int64" : "uint64")),
 			new ValueNode(target.start, String(base), new Type("int", true)),
 			new ValueNode(target.start, spec.base === "X" ? "true" : "false", new Type("bool", true)),
-			new ValueNode(target.start, String(signed_width), new Type("int", true)),
-			new ValueNode(target.start, spec.zero ? "true" : "false", new Type("bool", true)),
+			new ValueNode(target.start, String(render_width), new Type("int", true)),
+			new ValueNode(target.start, spec.zero && !grouped ? "true" : "false", new Type("bool", true)),
+			new ValueNode(target.start, grouped ? "true" : "false", new Type("bool", true)),
 		]);
+		if (grouped && signed_width !== 0) {
+			return format_call(spec.start, "pad", [
+				rendered,
+				new ValueNode(target.start, String(signed_width), new Type("int", true)),
+			]);
+		}
+		return rendered;
 	}
 	// Width/alignment only (or a numeric with neither base nor zero-pad):
 	// render through the existing `.to_string()` wrap, then align the text.

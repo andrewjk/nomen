@@ -7,17 +7,21 @@
  *
  * Grammar (after the `:`, all parts optional, at most one of each):
  *
- *   spec      := fill? width? precision? base?
+ *   spec      := fill? width? precision? mode?
  *   fill      := '<' (left-align) | '>' (right-align) | '0' (zero-pad)
  *   width     := digit+
  *   precision := '.' digit+
- *   base      := 'x' | 'X' | 'b' | 'o'
+ *   mode      := 'x' | 'X' | 'b' | 'o' | 'n' | 'e' | 'E'
  *
  * - `<` / `>` pad the rendering with spaces to `width`; `0` zero-pads
  *   (integers/floats only, right-align only).
  * - `.N` renders a float with N decimal places (fixed notation).
  * - `x` / `X` render an integer as hexadecimal (lower/upper), `b` binary,
- *   `o` octal.
+ *   `o` octal — integers only.
+ * - `n` (or `N`) renders with thousands separators — integers and floats,
+ *   composes with `.N` (the C# "N" standard format). Zero-padding does not
+ *   combine with grouping.
+ * - `e` / `E` render a float in exponential notation — floats only.
  */
 export default interface FormatSpec {
 	/** Left- or right-align the rendering in `width` spaces. Absent = right
@@ -29,9 +33,10 @@ export default interface FormatSpec {
 	width?: number;
 	/** Decimal places for floats (fixed notation). Floats only — checked. */
 	precision?: number;
-	/** Integer base: `x`/`X` hex (lower/upper), `b` binary, `o` octal.
-	 *  Integers only — checked. */
-	base?: "x" | "X" | "b" | "o";
+	/** Rendering mode letter: `x`/`X`/`b`/`o` integer bases, `n`/`N`
+	 *  thousands grouping (integers and floats), `e`/`E` exponential
+	 *  (floats only). Type rules are checked. */
+	base?: "x" | "X" | "b" | "o" | "n" | "N" | "e" | "E";
 	/** The raw spec text (without the leading `:`), for error messages. */
 	text: string;
 	/** Source offset of the `:` — error positions point here. */

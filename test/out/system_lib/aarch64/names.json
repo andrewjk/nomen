@@ -177,6 +177,8 @@
 	"BigInt_destroy",
 	"Format_init",
 	"Format_float_fixed",
+	"Format_float_grouped",
+	"Format_group_int_part",
 	"Format_int_base",
 	"Format_uint_base",
 	"Format_pad",

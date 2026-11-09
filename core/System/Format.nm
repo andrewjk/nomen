@@ -59,9 +59,64 @@ pub struct Format {
 		```
 	}
 
+	// Grouped fixed-point rendering — the `\{value:.2n}` / `\{value:n}` spec
+	// (C#'s "N" standard format): render with %.Nf (2 decimals when the spec
+	// omits a precision, the C# default), then comma the integer part every
+	// three digits. Width and alignment compose at the call site through
+	// `Format.pad`; zero-padding and grouping never combine (checked).
+	pub func float_grouped = (float value, int places: places >= 0, mv out string) {
+		var sb = StringBuilder()
+		sb.append_char('%')
+		sb.append_char('.')
+		sb.append_int(places)
+		sb.append_char('f')
+		var string rendered = Format.float_fixed(value, sb.to_string())
+		return Format.group_int_part(rendered)
+	}
+
+	// Insert ',' every three digits of the integer part of an already
+	// rendered number ("1234.50" → "1,234.50", "-987654" → "-987,654").
+	// A sign and any fractional part pass through untouched.
+	internal func group_int_part = (string text, mv out string) {
+		var int len = text.length
+		var int dot = len
+		var int i = 0
+		while i < len; i += 1 {
+			if text.at(i) == '.' {
+				dot = i
+			}
+		}
+		var int digits = 0
+		i = 0
+		while i < dot; i += 1 {
+			var char c = text.at(i)
+			if c != '-' && c != '+' {
+				digits += 1
+			}
+		}
+		var sb = StringBuilder()
+		var int seen = 0
+		i = 0
+		while i < len; i += 1 {
+			var char c = text.at(i)
+			sb.append_char(c)
+			if i < dot && c != '-' && c != '+' {
+				seen += 1
+				var int remaining = digits - seen
+				if remaining > 0 && remaining % 3 == 0 {
+					sb.append_char(',')
+				}
+			}
+		}
+		return sb.to_string()
+	}
+
 	// Render a signed integer in base 2/8/10/16. A negative value renders
 	// its magnitude with a leading '-' in every base (not two's complement).
-	pub func int_base = (int64 value, int base: base >= 2 && base <= 16, bool upper, int width, bool zero, mv out string) {
+	// `group` inserts thousands separators every three digits — intended for
+	// base 10 (the `\{value:n}` spec); a grouped other base is the caller's
+	// choice and commas every three digits regardless.
+	pub func int_base = (int64 value, int base: base >= 2 && base <= 16, bool upper, int width, bool zero, bool group, mv out string) {
 		const string digits = "0123456789abcdef"
 		const string upper_digits = "0123456789ABCDEF"
 		var int w = width
@@ -120,6 +175,9 @@ pub struct Format {
 			}
 			while i < count; i += 1 {
 				sb.append_char(chars.at(count - 1 - i))
+				if group && base == 10 && count - 1 - i > 0 && (count - 1 - i) % 3 == 0 {
+					sb.append_char(',')
+				}
 			}
 			i = 0
 			while i < padding; i += 1 {
@@ -146,6 +204,9 @@ pub struct Format {
 			i = 0
 			while i < count; i += 1 {
 				sb.append_char(chars.at(count - 1 - i))
+				if group && base == 10 && count - 1 - i > 0 && (count - 1 - i) % 3 == 0 {
+					sb.append_char(',')
+				}
 			}
 		}
 		return sb.to_string()
@@ -153,7 +214,7 @@ pub struct Format {
 
 	// Unsigned twin of int_base — the value argument keeps the uint64 family
 	// (uint8..uint64) so no value is reinterpreted through a signed width.
-	pub func uint_base = (uint64 value, int base: base >= 2 && base <= 16, bool upper, int width, bool zero, mv out string) {
+	pub func uint_base = (uint64 value, int base: base >= 2 && base <= 16, bool upper, int width, bool zero, bool group, mv out string) {
 		const string digits = "0123456789abcdef"
 		const string upper_digits = "0123456789ABCDEF"
 		var int w = width
@@ -195,6 +256,9 @@ pub struct Format {
 		if left {
 			while i < count; i += 1 {
 				sb.append_char(chars.at(count - 1 - i))
+				if group && base == 10 && count - 1 - i > 0 && (count - 1 - i) % 3 == 0 {
+					sb.append_char(',')
+				}
 			}
 			i = 0
 			while i < padding; i += 1 {
@@ -211,6 +275,9 @@ pub struct Format {
 			i = 0
 			while i < count; i += 1 {
 				sb.append_char(chars.at(count - 1 - i))
+				if group && base == 10 && count - 1 - i > 0 && (count - 1 - i) % 3 == 0 {
+					sb.append_char(',')
+				}
 			}
 		}
 		return sb.to_string()

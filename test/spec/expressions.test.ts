@@ -248,18 +248,43 @@ Console.write("Hello, \\{name}. You are \\{age} years old.")
 		expect(compile_main(input)).toEqual([]);
 	});
 
-	test("format specs: precision, width, zero-pad, base", () => {
+	test("format specs: precision, width, zero-pad, base, grouping, exponential", () => {
 		const input = `
 var float price = 9.5
 var int count = 3
 var int flags = 255
 var string label = "Go"
 var float total = price * (count as float)
+var int audience = 1234567
+var float speed = 0.00025
 Console.write("total \\{total:.2}")
 Console.write("[\\{label:>8}] [\\{count:03}] [\\{flags:x}]")
 Console.write("[\\{label:<8}] [\\{flags:08X}] [\\{flags:b}]")
+Console.write("\\{audience:n} viewers")
+Console.write("\\{total:.2n} owed")
+Console.write("speed \\{speed:.2e} m/s")
 `;
 		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("format specs: grouping on a string is an error", () => {
+		const input = `
+var string s = "x"
+Console.write("\\{s:n}")
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("grouping requires an integer or float");
+	});
+
+	test("format specs: exponential on an integer is an error", () => {
+		const input = `
+var int n = 5
+Console.write("\\{n:e}")
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("exponential requires a float");
 	});
 
 	test("format specs: precision on a non-float is an error", () => {

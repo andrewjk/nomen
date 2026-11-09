@@ -82,7 +82,11 @@ function parse_format_spec(
 		spec.precision = precision;
 		filled = true;
 	}
-	if (text[i] === "x" || text[i] === "X" || text[i] === "b" || text[i] === "o") {
+	const BASE_LETTERS = "xXbo";
+	const MODE_LETTERS = "xXbonNeE";
+	if (i < text.length && MODE_LETTERS.includes(text[i]) && text.length - i === 1) {
+		// A integer-base letter never takes a precision; grouping and
+		// exponential do (`:.2n`, `:.3e`).
 		spec.base = text[i] as FormatSpec["base"];
 		i += 1;
 		filled = true;
@@ -95,8 +99,16 @@ function parse_format_spec(
 		add_error(status, "empty format spec", start);
 		return undefined;
 	}
-	if (spec.precision !== undefined && spec.base) {
+	if (spec.precision !== undefined && spec.base && BASE_LETTERS.includes(spec.base)) {
 		add_error(status, `invalid format spec ':${text}': precision and base cannot combine`, start);
+		return undefined;
+	}
+	if (spec.zero && spec.base && (spec.base === "n" || spec.base === "N")) {
+		add_error(
+			status,
+			`invalid format spec ':${text}': zero-padding cannot combine with grouping`,
+			start,
+		);
 		return undefined;
 	}
 	if (spec.width === 0) {
