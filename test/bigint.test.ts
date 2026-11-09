@@ -1,4 +1,4 @@
-import { expect, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import build_and_check_output from "./build_and_check_output";
@@ -17,7 +17,8 @@ Console.write(" digit=")
 Console.write((a.get(0) as int).to_string())
 Console.write("\\n")
 `;
-	await build_and_check_output(input, "bigint_new_zero", "sign=1 len=1 digit=0");
+	// Zero is canonical: sign 0, not 1.
+	await build_and_check_output(input, "bigint_new_zero", "sign=0 len=1 digit=0");
 });
 
 test("new: positive", async () => {
@@ -765,4 +766,147 @@ Console.write("\\n")
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");
+});
+
+// ==================== signed arithmetic ====================
+// The sign machine (docs/STATE_MACHINES.md #8): canonical zero/positive/
+// negative maintained by every producer, consumed by cmp. Limbs hold the
+// absolute value. These tests pin the doc's motivating failure —
+// BigInt(-99).cmp(BigInt(1)) used to return 1 because arithmetic never
+// maintained sign and cmp ignored it.
+
+describe("BigInt signed arithmetic", () => {
+	test("cmp: the doc's negative-comparison failure", async () => {
+		const input = `
+var BigInt neg = BigInt(-99)
+var BigInt pos = BigInt(1)
+Console.write_line(neg.cmp(pos).to_string())
+Console.write_line(pos.cmp(neg).to_string())
+Console.write_line(neg.cmp(BigInt(-5)).to_string())
+Console.write_line(BigInt(-5).cmp(neg).to_string())
+Console.write_line(BigInt(-5).cmp(BigInt(-5)).to_string())
+Console.write_line(BigInt(0).cmp(BigInt(-5)).to_string())
+Console.write_line(BigInt(-5).cmp(BigInt(0)).to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_cmp", "-1\n1\n-1\n1\n0\n1\n-1\n");
+	});
+
+	test("add_to: same and opposite signs", async () => {
+		const input = `
+var BigInt s = BigInt(0)
+s.add_to(BigInt(-7), BigInt(3))
+Console.write_line(s.cmp(BigInt(-4)).to_string())
+Console.write_line(s.sign.to_string())
+var BigInt s2 = BigInt(0)
+s2.add_to(BigInt(-7), BigInt(-3))
+Console.write_line(s2.cmp(BigInt(-10)).to_string())
+Console.write_line(s2.sign.to_string())
+var BigInt s3 = BigInt(0)
+s3.add_to(BigInt(7), BigInt(-3))
+Console.write_line(s3.cmp(BigInt(4)).to_string())
+Console.write_line(s3.sign.to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_add", "0\n-1\n0\n-1\n0\n1\n");
+	});
+
+	test("sub_to: the flip path and mixed signs", async () => {
+		const input = `
+var BigInt d = BigInt(0)
+d.sub_to(BigInt(3), BigInt(5))
+Console.write_line(d.cmp(BigInt(-2)).to_string())
+Console.write_line(d.sign.to_string())
+var BigInt d2 = BigInt(0)
+d2.sub_to(BigInt(-3), BigInt(4))
+Console.write_line(d2.cmp(BigInt(-7)).to_string())
+Console.write_line(d2.sign.to_string())
+var BigInt d3 = BigInt(0)
+d3.sub_to(BigInt(3), BigInt(-4))
+Console.write_line(d3.cmp(BigInt(7)).to_string())
+Console.write_line(d3.sign.to_string())
+var BigInt d4 = BigInt(0)
+d4.sub_to(BigInt(0), BigInt(5))
+Console.write_line(d4.cmp(BigInt(-5)).to_string())
+Console.write_line(d4.sign.to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_sub", "0\n-1\n0\n-1\n0\n1\n0\n-1\n");
+	});
+
+	test("equal-magnitude opposite signs produce the canonical zero", async () => {
+		const input = `
+var BigInt z = BigInt(0)
+z.add_to(BigInt(5), BigInt(-5))
+Console.write_line(z.cmp(BigInt(0)).to_string())
+Console.write_line(z.sign.to_string())
+var BigInt z2 = BigInt(0)
+z2.sub_to(BigInt(5), BigInt(5))
+Console.write_line(z2.cmp(BigInt(0)).to_string())
+Console.write_line(z2.sign.to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_zero", "0\n0\n0\n0\n");
+	});
+
+	test("mul_to: signs multiply, zero stays canonical", async () => {
+		const input = `
+var BigInt scratch = BigInt(0)
+var BigInt p = BigInt(0)
+p.mul_to(BigInt(-6), BigInt(7), ref scratch)
+Console.write_line(p.cmp(BigInt(-42)).to_string())
+Console.write_line(p.sign.to_string())
+var BigInt p2 = BigInt(0)
+p2.mul_to(BigInt(-6), BigInt(-7), ref scratch)
+Console.write_line(p2.cmp(BigInt(42)).to_string())
+Console.write_line(p2.sign.to_string())
+var BigInt p3 = BigInt(0)
+p3.mul_to(BigInt(0), BigInt(-7), ref scratch)
+Console.write_line(p3.cmp(BigInt(0)).to_string())
+Console.write_line(p3.sign.to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_mul", "0\n-1\n0\n1\n0\n0\n");
+	});
+
+	test("div_to: truncating signs for quotient and remainder", async () => {
+		const input = `
+var BigInt rem = BigInt(0)
+var BigInt q = BigInt(0)
+q.div_to(BigInt(-7), BigInt(2), ref rem)
+Console.write_line(q.cmp(BigInt(-3)).to_string())
+Console.write_line(q.sign.to_string())
+Console.write_line(rem.cmp(BigInt(-1)).to_string())
+Console.write_line(rem.sign.to_string())
+var BigInt q2 = BigInt(0)
+var BigInt rem2 = BigInt(0)
+q2.div_to(BigInt(7), BigInt(-2), ref rem2)
+Console.write_line(q2.cmp(BigInt(-3)).to_string())
+Console.write_line(rem2.cmp(BigInt(1)).to_string())
+var BigInt q3 = BigInt(0)
+var BigInt rem3 = BigInt(0)
+q3.div_to(BigInt(-7), BigInt(-2), ref rem3)
+Console.write_line(q3.cmp(BigInt(3)).to_string())
+Console.write_line(rem3.cmp(BigInt(-1)).to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_div", "0\n-1\n0\n-1\n0\n0\n0\n0\n");
+	});
+
+	test("multi-limb round trip: q*b + rem == a with negatives", async () => {
+		const input = `
+var BigInt big = BigInt(0)
+big.set_u64(18446744073709551615)
+var BigInt neg = BigInt(0)
+neg.sub_to(BigInt(0), big)
+Console.write_line(neg.sign.to_string())
+var BigInt sum = BigInt(0)
+sum.add_to(neg, big)
+Console.write_line(sum.cmp(BigInt(0)).to_string())
+Console.write_line(sum.sign.to_string())
+var BigInt q = BigInt(0)
+var BigInt rem = BigInt(0)
+q.div_to(neg, BigInt(3), ref rem)
+var BigInt scratch = BigInt(0)
+var BigInt prod = BigInt(0)
+prod.mul_to(q, BigInt(3), ref scratch)
+prod.add_to(prod, rem)
+Console.write_line(prod.cmp(neg).to_string())
+`;
+		await build_and_check_output(input, "bigint_signed_roundtrip", "-1\n0\n0\n0\n");
+	});
 });

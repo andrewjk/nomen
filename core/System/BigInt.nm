@@ -1,5 +1,10 @@
 /**
- * An arbitrary-precision integer
+ * An arbitrary-precision integer (sign-magnitude)
+ *
+ * The sign is a real three-state machine — `zero / positive / negative`,
+ * canonical: `sign == 0` exactly when the magnitude is zero. Every producer
+ * that writes limbs (the constructors, add/sub/mul/div, copy) maintains it;
+ * `cmp` consumes it. Limbs always hold the absolute value.
  **/
 pub mv struct BigInt {
 	var sign = 0
@@ -10,16 +15,55 @@ pub mv struct BigInt {
 	}
 
 	pub func #init = (ref self { digits }, int val) {
-		self.sign = 1
 		var int v = val
 		if v < 0 {
-			self.sign = -1
 			v = 0 - v
 		}
 		self.digits.grow_int(4)
 		self.digits.zero_int(self.digits.cap)
 		self.digits.store_int(0, v)
 		self.len = 1
+		if val == 0 {
+			self.sign = 0
+		} else {
+			if val < 0 {
+				self.sign = -1
+			} else {
+				self.sign = 1
+			}
+		}
+	}
+
+	// The canonical sign: 0 for a zero magnitude, ±1 otherwise — derived
+	// from the magnitude so a stale stored sign can never leak into a
+	// comparison or a producer.
+	func eff_sign = (self, out int) {
+		if self.len == 1 && self.get(0) == 0 {
+			return 0
+		}
+		if self.sign < 0 {
+			return -1
+		}
+		return 1
+	}
+
+	// Reset to the canonical zero (len 1, limb 0, sign 0).
+	func set_zero = (ref self { digits }) {
+		self.ensure(1)
+		self.set(0, 0)
+		self.len = 1
+		self.sign = 0
+	}
+
+	// Store a producer's computed sign, canonicalized against the final
+	// magnitude: a zero result is sign 0 no matter what the sign arithmetic
+	// produced (0 * -1 == 0, an equal-magnitude subtraction, a zero quotient).
+	func finish_sign = (ref self {}, int s) {
+		if self.len == 1 && self.get(0) == 0 {
+			self.sign = 0
+			return
+		}
+		self.sign = s
 	}
 
 	// Per-limb get/set stay raw: they are `inline` and splice into the limb
@@ -212,7 +256,31 @@ pub mv struct BigInt {
 		```
 	}
 
+	// Sign-aware compare: the signs decide first (canonical zero sorts
+	// before every nonzero), and same-sign operands compare by magnitude
+	// with the result flipped for negatives.
 	pub func cmp = (self, BigInt other, out int) {
+		const int sself = self.eff_sign()
+		const int sother = other.eff_sign()
+		if sself != sother {
+			if sself > sother {
+				return 1
+			}
+			return -1
+		}
+		if sself == 0 {
+			return 0
+		}
+		var int mag = self.mag_cmp(other)
+		if sself < 0 {
+			mag = 0 - mag
+		}
+		return mag
+	}
+
+	// Magnitude compare (ignores sign): 1 when |self| > |other|, -1 when
+	// less, 0 when the limbs are equal.
+	func mag_cmp = (self, BigInt other, out int) {
 		if self.len != other.len {
 			if self.len > other.len {
 				return 1
@@ -235,7 +303,65 @@ pub mv struct BigInt {
 		return 0
 	}
 
+	// The signed sum (and, with flip_b, difference): self = a + b, or
+	// a - b when flip_b. Same-sign operands magnitude-add; opposite-sign
+	// operands subtract the smaller magnitude from the larger and take the
+	// larger's sign; a zero operand degenerates to a copy. This is the one
+	// place the sign machine meets the limb machines — every rule is here,
+	// not duplicated at call sites.
+	func signed_add = (ref self { digits }, BigInt a, BigInt b, bool flip_b) {
+		var int sa = a.eff_sign()
+		var int sb = b.eff_sign()
+		if flip_b {
+			sb = 0 - sb
+		}
+		// A zero operand: the result is the other operand (flipped for a
+		// subtracted zero is still zero — -0 is canonical 0).
+		if sb == 0 {
+			if sa == 0 {
+				self.set_zero()
+				return
+			}
+			self.copy_from(a)
+			self.sign = sa
+			return
+		}
+		if sa == 0 {
+			self.copy_from(b)
+			self.sign = sb
+			return
+		}
+		if sa == sb {
+			self.mag_add_to(a, b)
+			self.sign = sa
+			return
+		}
+		var int mag = a.mag_cmp(b)
+		if mag == 0 {
+			self.set_zero()
+			return
+		}
+		if mag > 0 {
+			self.mag_sub_to(a, b)
+			self.sign = sa
+			return
+		}
+		self.mag_sub_to(b, a)
+		self.sign = sb
+	}
+
+	// self = a + b (signed).
 	pub func add_to = (ref self { digits }, BigInt a, BigInt b) {
+		self.signed_add(a, b, false)
+	}
+
+	// self = a - b (signed; truncating like the limb primitive it wraps).
+	pub func sub_to = (ref self { digits }, BigInt a, BigInt b) {
+		self.signed_add(a, b, true)
+	}
+
+	// Magnitude add: |self| = |a| + |b| (sign untouched — signed_add owns it).
+	func mag_add_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			var uint64 a_val = a.get(0)
 			var uint64 b_val = b.get(0)
@@ -297,7 +423,9 @@ pub mv struct BigInt {
 		}
 	}
 
-	pub func sub_to = (ref self { digits }, BigInt a, BigInt b) {
+	// Magnitude subtract: |self| = |a| - |b|; callers guarantee |a| >= |b|
+	// (signed_add orders the operands). Sign untouched.
+	func mag_sub_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			self.ensure(1)
 			self.set(0, a.get(0) - b.get(0))
@@ -343,6 +471,9 @@ pub mv struct BigInt {
 	}
 
 	pub func mul_to = (ref self { digits }, BigInt a, BigInt b, ref BigInt scratch { digits }) {
+		// The product's sign, computed before anything can alias-mutate the
+		// operands (self may alias a or b).
+		const int mul_sign = a.eff_sign() * b.eff_sign()
 		if a.len == 1 || b.len == 1 {
 			var uint64 sv
 			var int other_len
@@ -406,6 +537,7 @@ pub mv struct BigInt {
 			if self.len == 0 {
 				self.len = 1
 			}
+			self.finish_sign(mul_sign)
 			return
 		}
 
@@ -458,6 +590,7 @@ pub mv struct BigInt {
 				}
 			}
 			self.len = last_nonzero
+			self.finish_sign(mul_sign)
 			return
 		}
 
@@ -530,11 +663,18 @@ pub mv struct BigInt {
 			}
 			self.len = self.len - 1
 		}
+		self.finish_sign(mul_sign)
 	}
 
 	// self = quotient, a = dividend, b = divisor, remainder = remainder
 	// Uses remainder's internal buffer as working space
+	//
+	// Truncating division (C semantics): the quotient takes the product of
+	// the operands' signs, the remainder takes the dividend's, and both are
+	// canonicalized (a zero quotient/remainder is sign 0).
 	pub func div_to = (ref self { digits }, BigInt a, BigInt b, ref BigInt remainder { digits }) {
+		const int q_sign = a.eff_sign() * b.eff_sign()
+		const int r_sign = a.eff_sign()
 		if b.len == 1 {
 			const uint64 divisor = b.get(0)
 			self.ensure(a.len)
@@ -580,9 +720,11 @@ pub mv struct BigInt {
 			if self.len == 0 {
 				self.len = 1
 			}
+			self.finish_sign(q_sign)
 			remainder.len = 1
 			remainder.ensure(1)
 			remainder.set(0, rem)
+			remainder.finish_sign(r_sign)
 			return
 		}
 
@@ -596,6 +738,7 @@ pub mv struct BigInt {
 			self.ensure(1)
 			self.set(0, 0)
 			self.len = 1
+			self.sign = 0
 			remainder.ensure(a.len)
 			remainder.clear(remainder.digits.cap)
 			var ci = 0
@@ -603,6 +746,7 @@ pub mv struct BigInt {
 				remainder.set(ci, a.get(ci))
 			}
 			remainder.len = a.len
+			remainder.finish_sign(r_sign)
 			return
 		}
 
@@ -800,6 +944,7 @@ pub mv struct BigInt {
 			}
 			self.len -= 1
 		}
+		self.finish_sign(q_sign)
 
 		// Extract remainder from working dividend (normalized at wd_off..wd_off+n-1)
 		// Shift right by 'shift' to un-normalize
@@ -826,6 +971,7 @@ pub mv struct BigInt {
 			}
 			remainder.len = remainder.len - 1
 		}
+		remainder.finish_sign(r_sign)
 	}
 
 	pub func to_digit = (self, out int) {
@@ -838,29 +984,42 @@ pub mv struct BigInt {
 	pub func copy_from = (ref self { digits }, BigInt other) {
 		self.ensure(other.len)
 		self.len = other.len
-		self.sign = other.sign
 		var i = 0
 		while i < other.len; i += 1 {
 			self.set(i, other.get(i))
 		}
+		// The copied value's canonical sign — 0 for a copied zero, ±1 from
+		// the source otherwise (never the raw stored field).
+		self.sign = other.eff_sign()
 	}
 
 	pub func set_int = (ref self { digits }, int val) {
-		self.sign = 1
 		var int v = val
 		if v < 0 {
-			self.sign = -1
 			v = 0 - v
 		}
 		self.ensure(1)
 		self.digits.store_int(0, v)
 		self.len = 1
+		if val == 0 {
+			self.sign = 0
+		} else {
+			if val < 0 {
+				self.sign = -1
+			} else {
+				self.sign = 1
+			}
+		}
 	}
 
 	pub func set_u64 = (ref self { digits }, uint64 val) {
-		self.sign = 1
 		self.ensure(1)
 		self.set(0, val)
 		self.len = 1
+		if val == 0 {
+			self.sign = 0
+		} else {
+			self.sign = 1
+		}
 	}
 }

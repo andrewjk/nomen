@@ -3,8 +3,8 @@ import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
 import { get_library } from "../src/lib";
-import clone_node from "../src/nodes/clone_node";
 import type AccessFunctionCallNode from "../src/nodes/AccessFunctionCallNode";
+import clone_node from "../src/nodes/clone_node";
 import type FunctionNode from "../src/nodes/FunctionNode";
 import type RootNode from "../src/nodes/RootNode";
 import type StructNode from "../src/nodes/StructNode";
@@ -108,9 +108,9 @@ mv struct Rec {
 
 	// The element-borrow rewrite renamed the call to the slot primitive and
 	// stamped it.
-	const slot_call = nodes.find(
-		(n) => n.node_type === "access_func" && n.is_element_slot_load,
-	) as AccessFunctionCallNode | undefined;
+	const slot_call = nodes.find((n) => n.node_type === "access_func" && n.is_element_slot_load) as
+		| AccessFunctionCallNode
+		| undefined;
 	expect(slot_call).toBeDefined();
 	const cloned_call = clone_node(slot_call!) as AccessFunctionCallNode;
 	expect(cloned_call.is_element_slot_load).toBe(true);
