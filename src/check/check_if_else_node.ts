@@ -6,6 +6,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import block_always_returns from "./utils/always_returns.ts";
 import clone_status from "./utils/clone_status.ts";
 import evaluate_const_condition from "./utils/evaluate_const_condition.ts";
 import {
@@ -16,21 +17,9 @@ import {
 	union_min,
 } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
+import { intersect_moved_variables, outer_scope_moved } from "./utils/moved_variables.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name, { is_bool_condition } from "./utils/type_name.ts";
-
-/** Check if a block always exits (e.g. contains a top-level return/break/continue) */
-function block_always_returns(node: { statements: BaseNode[] }): boolean {
-	return node.statements.some(
-		(s) =>
-			s.node_type === "return" ||
-			s.node_type === "break" ||
-			s.node_type === "continue" ||
-			// A bare nested block is sequential: a return at its (top) level
-			// always executes.
-			(s.node_type === "block" && block_always_returns(s as never)),
-	);
-}
 
 export default function check_if_else_node(if_else: IfElseNode, status: CheckStatus) {
 	// A per-instantiation representation constant guards this if
@@ -55,6 +44,10 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	const null_check = get_null_check_var(if_else.condition, status);
 
 	status.stack.push(if_else);
+	// The enclosing scope's values length when the arm clones were taken:
+	// moved names whose innermost declaration sits at or beyond this index
+	// are arm-local (a shadow or a fresh local) and must not merge.
+	const arms_base = status.values.length;
 	let if_status = clone_status(status);
 	let else_status = clone_status(status);
 
@@ -265,6 +258,24 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 			merged = status.null_paths;
 		}
 		status.null_paths = merged;
+	}
+
+	// Moved-variable reconciliation (the dual of the null_paths merge): the
+	// arm clones start from the parent's moved set — parent facts stay
+	// visible inside each arm (a use-after-mv in a branch is caught), and at
+	// merge a name stays moved only when EVERY fall-through arm ends with it
+	// moved (both-moved ⇒ moved). A move on one path only stays branch-local,
+	// and a re-initialization on every path un-moves in the parent (the
+	// assignment deleted the name from each arm's set). Guard clauses fall
+	// out naturally: for `if c { mv t = s; return }`, only the implicit-else
+	// path reaches the code after, and its set is the parent's.
+	{
+		const contributors: Array<Set<string> | undefined> = [];
+		if (if_falls_through) contributors.push(outer_scope_moved(if_status, arms_base));
+		if (else_falls_through) contributors.push(outer_scope_moved(else_status, arms_base));
+		if (contributors.length > 0) {
+			status.moved_variables = intersect_moved_variables(contributors);
+		}
 	}
 
 	// Guard-clause: an `if cond { ...always exits... }` with no else

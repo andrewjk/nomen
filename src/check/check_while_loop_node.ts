@@ -7,10 +7,15 @@ import { persist_invalidated } from "./utils/borrow.ts";
 import clone_status from "./utils/clone_status.ts";
 import { apply_bounds, apply_negated_bounds } from "./utils/flow_bounds.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
+import { outer_scope_moved, persist_moved_variables } from "./utils/moved_variables.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name, { is_bool_condition } from "./utils/type_name.ts";
 
 export default function check_while_loop_node(while_loop: WhileLoopNode, status: CheckStatus) {
+	// The enclosing scope's values length when the body clone is taken:
+	// moved names whose innermost declaration sits at or beyond this index
+	// are body-local (a fresh local or a shadow) and must not persist.
+	const body_base = status.values.length;
 	let while_status = clone_status(status);
 
 	check_node(while_loop.condition, while_status);
@@ -46,6 +51,16 @@ export default function check_while_loop_node(while_loop: WhileLoopNode, status:
 	// The body may have executed before the post-loop code, so invalidations
 	// performed in it persist into the enclosing scope.
 	persist_invalidated(status, while_status);
+
+	// Moved-variable reconciliation: a move inside the body survives the
+	// loop — the body may run before the post-loop code, so a name still
+	// moved at the body's end joins the enclosing scope's moved set (a use
+	// after the loop is rejected unless the body re-initializes it on the
+	// iterations that run). A body-local re-initialization cannot un-move a
+	// name the parent had moved (zero iterations leave it moved), so this is
+	// a one-way union, never a copy-back — and body-local declarations
+	// (shadows or fresh locals) never persist their moves.
+	persist_moved_variables(status, outer_scope_moved(while_status, body_base));
 
 	// After the loop exits, the negation of the condition is true
 	// (e.g. `while idx >= cap` → after: idx < cap). Apply to parent scope.

@@ -18,6 +18,7 @@ import { persist_invalidated } from "./utils/borrow.ts";
 import clone_status from "./utils/clone_status.ts";
 import { evaluate_numeric_or_bool } from "./utils/evaluate_const_condition.ts";
 import { expr_to_string } from "./utils/flow_bounds.ts";
+import { outer_scope_moved, persist_moved_variables } from "./utils/moved_variables.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -135,6 +136,11 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		}
 	}
 
+	// The enclosing scope's values length when the body clone is taken:
+	// moved names whose innermost declaration sits at or beyond this index —
+	// including the loop item binding itself — are body-local and must not
+	// persist.
+	const body_base = status.values.length;
 	let for_status = clone_status(status);
 
 	if (for_loop.list) {
@@ -260,6 +266,14 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 	// The body may have executed before the post-loop code, so invalidations
 	// performed in it persist into the enclosing scope.
 	persist_invalidated(status, for_status);
+
+	// Moved-variable reconciliation: same one-way union as while — a move
+	// inside the body (or update) survives the loop, since the body may run
+	// before the post-loop code; a body-local re-initialization cannot
+	// un-move a name the parent had moved (zero iterations leave it moved),
+	// and body-local declarations (shadows, fresh locals, the loop item)
+	// never persist their moves.
+	persist_moved_variables(status, outer_scope_moved(for_status, body_base));
 }
 
 /**

@@ -8,7 +8,9 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import block_always_returns from "./utils/always_returns.ts";
 import clone_status from "./utils/clone_status.ts";
+import { intersect_moved_variables, outer_scope_moved } from "./utils/moved_variables.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
 
@@ -18,6 +20,11 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 	match_node.value_type = match_type.name;
 
 	status.stack.push(match_node);
+
+	// The enclosing scope's values length when the arm clones are taken:
+	// moved names whose innermost declaration sits at or beyond this index
+	// are arm-local (a case binding or a fresh local) and must not merge.
+	const arms_base = status.values.length;
 
 	let branch_statuses: CheckStatus[] = [];
 
@@ -103,9 +110,72 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 		}
 	}
 
+	// Moved-variable reconciliation across the arms (same merge as if/else):
+	// the arm clones start from the parent's moved set, and a name stays
+	// moved after the match only when every arm that can fall through ends
+	// with it moved (both-moved ⇒ moved). An arm that always exits (a guard
+	// case with return) contributes nothing — its path dies — and a possible
+	// no-arm path (non-exhaustive match without else) joins the parent's own
+	// facts, since that path leaves the match with the parent's state.
+	{
+		const contributors: Array<Set<string> | undefined> = [];
+		branch_statuses.forEach((bs, i) => {
+			const branch =
+				i < match_node.cases.length ? match_node.cases[i].branch : match_node.else_branch;
+			if (branch && !block_always_returns(branch)) {
+				contributors.push(outer_scope_moved(bs, arms_base));
+			}
+		});
+		if (!match_is_exhaustive(match_node, match_type, status)) {
+			contributors.push(status.moved_variables);
+		}
+		if (contributors.length > 0) {
+			status.moved_variables = intersect_moved_variables(contributors);
+		}
+	}
+
 	if (!match_node.else_branch) {
 		check_exhaustiveness(match_node, match_type, status);
 	}
+}
+
+/**
+ * Whether every path through the match enters an arm — an else branch, or a
+ * case set covering the whole matched enum/bool. The error-free counterpart
+ * of check_exhaustiveness, used by the moved-variable reconciliation to
+ * detect the fall-through-with-no-arm path (whose post-match state is the
+ * parent's).
+ */
+function match_is_exhaustive(
+	match_node: MatchNode,
+	match_type: ReturnType<typeof type_from_value_node>,
+	status: CheckStatus,
+): boolean {
+	if (match_node.else_branch) return true;
+	if (!match_type.name) return false;
+
+	const enum_node = status.enums.find((e) => e.name === match_type.name);
+	if (enum_node) {
+		const covered = new Set<string>();
+		for (const match_case of match_node.cases) {
+			const case_name = extract_enum_case_name(match_case.match_value, match_type.name);
+			if (case_name) covered.add(case_name);
+		}
+		return enum_node.cases.every((c) => covered.has(c.name));
+	}
+
+	if (match_type.name === "bool") {
+		const covered = new Set<string>();
+		for (const match_case of match_node.cases) {
+			if (match_case.match_value.node_type === "value") {
+				const val = (match_case.match_value as ValueNode).value;
+				if (val === "true" || val === "false") covered.add(val);
+			}
+		}
+		return covered.has("true") && covered.has("false");
+	}
+
+	return false;
 }
 
 function check_exhaustiveness(

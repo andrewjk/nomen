@@ -549,21 +549,3 @@ Rules of thumb:
   processes — the gap is not a QoS/E-core placement effect. Exact
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
-
-## Branch-local moves are not reconciled into the enclosing scope
-
-Recorded 2026-11-09 (surfaced by the clone-status moved-variables fix). Block
-clones (if/else/match/switch/while/for bodies) now inherit the enclosing
-function's `moved_variables` as a deep copy — a use-after-mv inside a branch
-is caught. The deep copy also means a move made INSIDE a branch never reaches
-the parent: when both arms of an if/else move the same variable (or a loop
-body moves it each iteration), the parent still considers it live and allows
-uses after the construct. That is the pre-existing conservative behavior and
-is sound-but-imprecise in the direction that matters (no false accepts were
-introduced; the unsound direction is false REJECTS of programs that re-init
-on every path). The full fix is reconciliation in
-`check_if_else_node`/`check_match_node`/`check_switch_node`/loop checks:
-intersect the arm clones' moved sets on merge (both-moved ⇒ moved) the same
-way `null_paths` and the bound arrays are reconciled. Function clones reset
-`moved_variables` entirely (fresh name space; captures record their own
-moves) — see `check_function_node`.

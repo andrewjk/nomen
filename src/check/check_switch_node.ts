@@ -3,13 +3,20 @@ import SwitchNode from "../nodes/SwitchNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import block_always_returns from "./utils/always_returns.ts";
 import clone_status from "./utils/clone_status.ts";
 import { apply_bounds, intersect_strs, union_max, union_min } from "./utils/flow_bounds.ts";
+import { intersect_moved_variables, outer_scope_moved } from "./utils/moved_variables.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name, { is_bool_condition } from "./utils/type_name.ts";
 
 export default function check_switch_node(switch_node: SwitchNode, status: CheckStatus) {
 	status.stack.push(switch_node);
+
+	// The enclosing scope's values length when the arm clones are taken:
+	// moved names whose innermost declaration sits at or beyond this index
+	// are arm-local and must not merge.
+	const arms_base = status.values.length;
 
 	let branch_statuses: CheckStatus[] = [];
 
@@ -113,6 +120,32 @@ export default function check_switch_node(switch_node: SwitchNode, status: Check
 				(acc, bs) => intersect_strs(acc, bs.values[i]?.nonzero_exprs),
 				first?.nonzero_exprs?.slice(),
 			);
+		}
+	}
+
+	// Moved-variable reconciliation across the arms (same merge as if/else):
+	// a name stays moved after the switch only when every arm that can fall
+	// through ends with it moved (both-moved ⇒ moved); an arm that always
+	// exits contributes nothing. A switch without else can skip every arm
+	// (all conditions false) — that path leaves with the parent's state, so
+	// the parent's own facts join the intersection.
+	{
+		const contributors: Array<Set<string> | undefined> = [];
+		switch_node.cases.forEach((switch_case, i) => {
+			if (!block_always_returns(switch_case.branch)) {
+				contributors.push(outer_scope_moved(branch_statuses[i], arms_base));
+			}
+		});
+		if (switch_node.else_branch) {
+			const else_bs = branch_statuses[switch_node.cases.length];
+			if (else_bs && !block_always_returns(switch_node.else_branch)) {
+				contributors.push(outer_scope_moved(else_bs, arms_base));
+			}
+		} else {
+			contributors.push(status.moved_variables);
+		}
+		if (contributors.length > 0) {
+			status.moved_variables = intersect_moved_variables(contributors);
 		}
 	}
 
