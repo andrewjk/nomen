@@ -61,6 +61,7 @@ import {
 	apply_list_length_effect,
 	is_list_type_name,
 } from "./utils/flow_bounds.ts";
+import check_format_spec_arg from "./utils/format_spec_arg.ts";
 import {
 	build_interp_name,
 	interp_arg_rewrite,
@@ -639,6 +640,29 @@ export default function check_function_call(
 		status.expected_type = old_expected_type;
 		status.allow_null_value = old_allow_null;
 		status.checking_variadic_arg = old_variadic_arg;
+
+		// Format specs (`\{expr:spec}`): validate the spec against the
+		// argument's checked type and rewrite the argument into its
+		// `Format.*` rendering call. Runs BEFORE the writer-form rewrite —
+		// the replacement is an ordinary call-produced string, so the
+		// classification below (and the all-string helper) is untouched.
+		// Index 0 is the pattern literal — never spec'd.
+		const spec =
+			i > 0 && is_interp_name(node.name) && node.node_type === "func_call"
+				? (node as FunctionCallNode).format_specs?.[i - 1]
+				: undefined;
+		if (spec) {
+			const lowered = check_format_spec_arg(param, spec, status);
+			if (lowered) {
+				node.params[i] = lowered;
+				param = lowered;
+				// The synthesized `Format.*` call is NEW AST — check it here so
+				// its type stamps (and the arg stamps the outer call needs:
+				// view/borrow marking on the `.to_string()` wrap passed to
+				// `Format.pad`) are in place before the kinds pass below.
+				check_node(lowered, status);
+			}
+		}
 
 		// Writer-form interpolation (PERF_PLAN items 10/8 remainder): an
 		// interpolation argument the parse layer wrapped in `.to_string()`

@@ -247,6 +247,40 @@ Console.write("Hello, \\{name}. You are \\{age} years old.")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("format specs: precision, width, zero-pad, base", () => {
+		const input = `
+var float price = 9.5
+var int count = 3
+var int flags = 255
+var string label = "Go"
+var float total = price * (count as float)
+Console.write("total \\{total:.2}")
+Console.write("[\\{label:>8}] [\\{count:03}] [\\{flags:x}]")
+Console.write("[\\{label:<8}] [\\{flags:08X}] [\\{flags:b}]")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("format specs: precision on a non-float is an error", () => {
+		const input = `
+var int n = 5
+Console.write("\\{n:.2}")
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("precision requires a float");
+	});
+
+	test("format specs: base on a non-integer is an error", () => {
+		const input = `
+var string s = "x"
+Console.write("\\{s:x}")
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("base requires an integer");
+	});
 });
 
 describe("spec: indexing", () => {

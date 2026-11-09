@@ -107,6 +107,15 @@ export default class FunctionCallNode extends BaseNode {
 	 */
 	in_place_payload_indices?: number[];
 	/**
+	 * Per-argument format specs for a `_string_interpolate_N` call
+	 * (`\{expr:spec}`): entry `i - 1` corresponds to param `i` (index 0 is
+	 * the pattern literal). Null entry = no spec for that argument. Set by
+	 * the parser; the checker validates each spec against the argument's
+	 * type and rewrites the argument into a `Format.*` rendering call (see
+	 * check/utils/format_spec_arg.ts).
+	 */
+	format_specs?: (import("../types/FormatSpec.ts").default | null)[];
+	/**
 	 * The checker-stamped mangled label for a call resolved to an overloaded
 	 * callee (`Struct_method_int`). For struct constructor calls resolved to
 	 * an overloaded `#init`, the backends emit/bl the call through this label

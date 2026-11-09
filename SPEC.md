@@ -2409,6 +2409,43 @@ Console.write("Hello, \{name}. You are \{age} years old.")
 Console.write("\{arr}")             // Arrays stringify element-by-element
 ```
 
+A format spec after the expression — `\{expr:spec}` — pads, aligns, or
+re-bases the rendering. The spec is checked at compile time: each part is
+validated against the expression's type, and an invalid spec or a type
+mismatch is an error, never a runtime surprise. The grammar is a fill, a
+width, a float precision, and an integer base, in that order, each part
+optional:
+
+- `<N` / `>N` — left- or right-align the rendering in a field of N
+  characters, padded with spaces. A bare width pads on the left (right-align).
+- `0N` — zero-pad to width N, between the sign and the digits. Integers and
+  floats only. `0` and `<`/`>` are alternative fills and do not combine.
+- `.N` — render a float with N decimal places (fixed notation). A precision
+  on a non-float is a compile error.
+- `x` / `X` / `b` / `o` — render an integer as hexadecimal (lower/upper),
+  binary, or octal. A base on a non-integer is a compile error. A negative
+  value renders its magnitude with a leading `-` in every base.
+
+```
+var float price = 9.5
+var int count = 3
+var int flags = 255
+var string label = "Go"
+var float total = price * (count as float)
+Console.write("total \{total:.2}")
+Console.write("[\{label:>8}] [\{count:03}] [\{flags:x}]")
+Console.write("[\{label:<8}] [\{flags:08X}] [\{flags:b}]")
+```
+
+Anything else in a spec is a compile error — an unknown character, an empty
+width after a fill, a precision combined with a base:
+
+```
+var int n = 5
+Console.write("\{n:.2}")
+// Error: format spec ':.2': precision requires a float, but the value is int
+```
+
 ### Indexing
 
 Arrays and strings are accessed via `.at()` and modified via `.set()`:

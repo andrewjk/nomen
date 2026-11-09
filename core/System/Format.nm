@@ -1,0 +1,250 @@
+/**
+ * Compile-time-checked rendering helpers behind interpolation format specs
+ * (`\{expr:spec}` — SPEC, String Interpolation). The checker validates each
+ * spec against the argument's type and lowers the argument into one of these
+ * calls, so the interpolation helper keeps receiving an ordinary owned
+ * string. Every function is also usable directly.
+ *
+ * Widths are signed: positive right-aligns, negative left-aligns, 0 means
+ * "no padding". `zero` pads with '0' between the sign and the digits (the
+ * printf `0` flag); alignment and zero-padding never combine (`<`/`>` and
+ * `0` are alternative fills in the spec grammar).
+ **/
+pub struct Format {
+	// Render a float with a fixed number of decimal places. `spec` is the
+	// full printf directive the checker built from the format spec (e.g.
+	// "%.2f", "%08.2f", "%-10.3f") — the body formats nothing itself, it
+	// only hands the directive to snprintf (twice: size, then render, so
+	// any width is safe).
+	pub func float_fixed = (float value, string spec, mv out string) {
+		```
+		#arch: c
+		int need = snprintf(NULL, 0, spec.ptr, value);
+		char* str = (char*)malloc((size_t)need + 1);
+		snprintf(str, (size_t)need + 1, spec.ptr, value);
+		str[need] = 0;
+		return (nomen_string){ str, need };
+		```
+		```
+		#arch: aarch64
+		// x0 = value (double bits — GP param), x1/x2 = the spec's (ptr, len)
+		// pair. The spec IS the directive. The variadic double rides the
+		// stack (Darwin AAPCS64 varargs); [sp] is re-armed before each call.
+		stp x19, x20, [sp, #-16]!
+		stp x21, x22, [sp, #-16]!
+		mov x19, x0                // value bits
+		mov x20, x1                // spec ptr
+		sub sp, sp, #16
+		fmov d0, x19
+		str d0, [sp]               // variadic double slot
+		mov x0, #0                 // NULL — sizing pass
+		mov x1, #0
+		mov x2, x20
+		bl _snprintf
+		mov x21, x0                // need
+		add x0, x21, #1
+		bl _malloc
+		mov x22, x0                // str
+		fmov d0, x19
+		str d0, [sp]               // re-arm the slot
+		mov x0, x22
+		add x1, x21, #1
+		mov x2, x20
+		bl _snprintf               // writes need bytes + NUL at str[need]
+		mov x0, x22
+		mov x1, x21
+		add sp, sp, #16
+		ldp x21, x22, [sp], #16
+		ldp x19, x20, [sp], #16
+		```
+	}
+
+	// Render a signed integer in base 2/8/10/16. A negative value renders
+	// its magnitude with a leading '-' in every base (not two's complement).
+	pub func int_base = (int64 value, int base: base >= 2 && base <= 16, bool upper, int width, bool zero, mv out string) {
+		const string digits = "0123456789abcdef"
+		const string upper_digits = "0123456789ABCDEF"
+		var int w = width
+		var bool left = false
+		if w < 0 {
+			left = true
+			w = 0 - w
+		}
+		var bool neg = value < 0
+		var uint64 mag = value as uint64
+		if neg {
+			// Two's-complement negate on the UNSIGNED magnitude (wraps
+			// correctly for INT64_MIN — no signed-overflow UB).
+			var uint64 zero = 0
+			mag = zero - mag
+		}
+		var uint64 b = base as uint64
+		// Digits arrive least-significant first; the emit walks the scratch
+		// backwards. 72 slots covers binary's 64 digits plus the sign.
+		var Array<char> chars = Array<char>.with('0', 72)
+		var int count = 0
+		if mag == 0 {
+			chars.set(0, '0')
+			count = 1
+		} else {
+			while mag > 0 {
+				var uint64 d = mag % b
+				mag = mag / b
+				var int di = d as int
+				if di < 10 {
+					chars.set(count, digits.at(di))
+				}
+				if di >= 10 && upper {
+					chars.set(count, upper_digits.at(di))
+				}
+				if di >= 10 && !upper {
+					chars.set(count, digits.at(di))
+				}
+				count += 1
+			}
+		}
+		var int total = count
+		if neg {
+			total += 1
+		}
+		var int padding = 0
+		if w > total {
+			padding = w - total
+		}
+		var sb = StringBuilder()
+		var int i = 0
+		if left {
+			// sign, digits, spaces
+			if neg {
+				sb.append_char('-')
+			}
+			while i < count; i += 1 {
+				sb.append_char(chars.at(count - 1 - i))
+			}
+			i = 0
+			while i < padding; i += 1 {
+				sb.append_char(' ')
+			}
+		} else {
+			if zero {
+				// sign, zeros, digits (printf's `0` flag)
+				if neg {
+					sb.append_char('-')
+				}
+				while i < padding; i += 1 {
+					sb.append_char('0')
+				}
+			} else {
+				// spaces, sign, digits
+				while i < padding; i += 1 {
+					sb.append_char(' ')
+				}
+				if neg {
+					sb.append_char('-')
+				}
+			}
+			i = 0
+			while i < count; i += 1 {
+				sb.append_char(chars.at(count - 1 - i))
+			}
+		}
+		return sb.to_string()
+	}
+
+	// Unsigned twin of int_base — the value argument keeps the uint64 family
+	// (uint8..uint64) so no value is reinterpreted through a signed width.
+	pub func uint_base = (uint64 value, int base: base >= 2 && base <= 16, bool upper, int width, bool zero, mv out string) {
+		const string digits = "0123456789abcdef"
+		const string upper_digits = "0123456789ABCDEF"
+		var int w = width
+		var bool left = false
+		if w < 0 {
+			left = true
+			w = 0 - w
+		}
+		var uint64 mag = value
+		var uint64 b = base as uint64
+		var Array<char> chars = Array<char>.with('0', 72)
+		var int count = 0
+		if mag == 0 {
+			chars.set(0, '0')
+			count = 1
+		} else {
+			while mag > 0 {
+				var uint64 d = mag % b
+				mag = mag / b
+				var int di = d as int
+				if di < 10 {
+					chars.set(count, digits.at(di))
+				}
+				if di >= 10 && upper {
+					chars.set(count, upper_digits.at(di))
+				}
+				if di >= 10 && !upper {
+					chars.set(count, digits.at(di))
+				}
+				count += 1
+			}
+		}
+		var int padding = 0
+		if w > count {
+			padding = w - count
+		}
+		var sb = StringBuilder()
+		var int i = 0
+		if left {
+			while i < count; i += 1 {
+				sb.append_char(chars.at(count - 1 - i))
+			}
+			i = 0
+			while i < padding; i += 1 {
+				sb.append_char(' ')
+			}
+		} else {
+			while i < padding; i += 1 {
+				if zero {
+					sb.append_char('0')
+				} else {
+					sb.append_char(' ')
+				}
+			}
+			i = 0
+			while i < count; i += 1 {
+				sb.append_char(chars.at(count - 1 - i))
+			}
+		}
+		return sb.to_string()
+	}
+
+	// Align an already-rendered text in a field of `|width|` spaces. The
+	// text is borrowed; the result is always a fresh owned string.
+	pub func pad = (string text, int width, mv out string) {
+		var int w = width
+		var bool left = false
+		if w < 0 {
+			left = true
+			w = 0 - w
+		}
+		if w <= text.length {
+			return text.copy()
+		}
+		var int padding = w - text.length
+		var sb = StringBuilder()
+		if left {
+			// text, then spaces
+			sb.append(text)
+			var int i = 0
+			while i < padding; i += 1 {
+				sb.append_char(' ')
+			}
+		} else {
+			// spaces, then text
+			var int i = 0
+			while i < padding; i += 1 {
+				sb.append_char(' ')
+			}
+			sb.append(text)
+		}
+		return sb.to_string()
+	}
+}

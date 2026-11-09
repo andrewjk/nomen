@@ -286,6 +286,17 @@ export function resolve_linked_types(source: string, library: Library, file_path
 			needed.add(token.value);
 		} else if (library.functions.has(token.value) && !user_declared_funcs.has(token.value)) {
 			needed.add(token.value);
+		} else if (
+			token.value.length > 1 &&
+			token.value.startsWith(":") &&
+			!token.value.startsWith("::")
+		) {
+			// An interpolation format spec token (`\{expr:.2}` — tokenize.ts
+			// emits the `:` + spec text as one token). The checker lowers a
+			// spec'd argument into a `Format.*` call, so the Format module
+			// must be linked even though the user source never names it.
+			// (`::` is the namespace compound; a bare `:` is a constraint.)
+			needed.add("Format");
 		}
 	}
 

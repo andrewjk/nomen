@@ -1,0 +1,16 @@
+fixed 1.50
+width      1.500
+zero 00001.50
+left 1.5     |
+pad     Gojo|
+padl Gojo    |
+hex 2a 2A
+bin 101010 oct 52
+zint 042 -07
+neghex -7
+u64 ffffffffffffffff
+small -03 250
+flag true|  A|
+expr 0084
+mix Gojo: 0042 (1.50)
+plain 42 stays Gojo

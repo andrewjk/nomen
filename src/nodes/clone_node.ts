@@ -109,6 +109,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 				: undefined;
 			c.variadic_param_name = n.variadic_param_name;
 			c.variadic_param_index = n.variadic_param_index;
+			// Format specs are plain data (no child nodes) — share the entries.
+			c.format_specs = n.format_specs?.slice();
 			c.is_enum_shorthand = n.is_enum_shorthand;
 			c.is_thread_ctor = n.is_thread_ctor;
 			c.is_fiber_ctor = n.is_fiber_ctor;

@@ -291,10 +291,26 @@ function consume_string(input: string, status: TokenizeStatus) {
 			status.tokens.push({ value: "\\{", i: status.i });
 			let end = consume_interpolated_expression(input, status.i);
 			let fragment = input.substring(status.i + 2, end);
+			// A format spec (`\{expr:.2}`, `\{x:08x}`) rides after the
+			// expression's top-level `:`. Emit it as ONE raw token so the
+			// expression tokenizer never sees it (a bare `:` has no meaning in
+			// an expression, and `03`/`>8`/`.2` would mis-lex as literals or
+			// operators). The suffix must match the spec charset and run to
+			// the end of the fragment; anything else stays part of the
+			// expression (e.g. a lambda constraint's `:`).
+			const spec_at = find_format_spec_split(fragment);
+			let spec_token: Token | undefined;
+			if (spec_at !== -1) {
+				spec_token = { value: fragment.substring(spec_at), i: status.i + 2 + spec_at };
+				fragment = fragment.substring(0, spec_at);
+			}
 			status.i = status.i + 2;
 			for (let subtoken of tokenize(fragment)) {
 				subtoken.i += status.i;
 				status.tokens.push(subtoken);
+			}
+			if (spec_token) {
+				status.tokens.push(spec_token);
 			}
 			status.i = end;
 			status.tokens.push({ value: "}", i: status.i });
@@ -334,6 +350,47 @@ function consume_interpolated_expression(input: string, i: number) {
 		}
 	}
 	return input.length - 1;
+}
+
+/** Index of the `:` starting a format spec in an interpolation body, or -1.
+ *  The spec (if any) always runs to the end of the fragment, so the
+ *  RIGHTMOST top-level `:` wins; colons inside string/char literals and
+ *  parentheses/brackets are skipped. The parse layer validates the spec
+ *  grammar — a top-level `:` has no other meaning in an expression, so any
+ *  one found here is treated as a spec attempt and reported there. */
+function find_format_spec_split(fragment: string): number {
+	let depth = 0;
+	let candidate = -1;
+	let in_string = false;
+	let in_char = false;
+	for (let j = 0; j < fragment.length; j++) {
+		const c = fragment[j];
+		if (in_string || in_char) {
+			if (c === "\\") {
+				j += 1;
+			} else if (in_string && c === '"') {
+				in_string = false;
+			} else if (in_char && c === "'") {
+				in_char = false;
+			}
+			continue;
+		}
+		if (c === '"') {
+			in_string = true;
+		} else if (c === "'") {
+			in_char = true;
+		} else if (c === "(" || c === "[") {
+			depth += 1;
+		} else if (c === ")" || c === "]") {
+			depth -= 1;
+		} else if (c === ":" && depth === 0) {
+			// A `::` namespace separator (`Text::Regex.test(x)`), not a spec.
+			if (fragment[j + 1] !== ":" && fragment[j - 1] !== ":") {
+				candidate = j;
+			}
+		}
+	}
+	return candidate;
 }
 
 function consume_comment(input: string, status: TokenizeStatus) {
