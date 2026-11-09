@@ -601,3 +601,22 @@ export function verify_field_effects_at_ref_arg(
 		field_set_quick_fix(param, outside),
 	);
 }
+
+/**
+ * Whether two declared field sets expose PROVABLY DISJOINT storage of an
+ * aliased object — the gate for the aliasing relaxation: `attack(ref x, ref
+ * x)` is allowed when both `ref` parameters declare sets and no field of one
+ * set covers a field of the other (displacing `items` cannot dangle a borrow
+ * taken through `other`). Either side missing a set is a wildcard — it may
+ * displace anything, so it intersects everything and the aliasing rejection
+ * stands (today's behavior). An empty set displaces nothing, so it is
+ * disjoint with everything. Ownership parameters (`var`/`mv`) never
+ * participate: they own the shared object, and no field precision makes
+ * freeing it twice-aliased safe.
+ */
+export function declared_sets_disjoint(a?: string[], b?: string[]): boolean {
+	if (a === undefined || b === undefined) return false; // wildcard displaces anything
+	return !a.some((fa) =>
+		b.some((fb) => fa === fb || fa.startsWith(`${fb}.`) || fb.startsWith(`${fa}.`)),
+	);
+}

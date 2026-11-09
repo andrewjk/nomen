@@ -46,7 +46,7 @@ import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
 	NON_NEGATIVE_FIELDS,
 } from "./utils/evaluate_const_condition.ts";
-import { verify_field_effects_at_ref_arg } from "./utils/field_effects.ts";
+import { declared_sets_disjoint, verify_field_effects_at_ref_arg } from "./utils/field_effects.ts";
 import {
 	apply_bounds,
 	collect_return_bounds,
@@ -2181,7 +2181,10 @@ export default function check_function_call(
 	const self_is_mutable =
 		self_is_struct && (self_param.type?.is_ref || self_param.declaration === "var");
 
-	const struct_param_seen: Map<string, string> = new Map();
+	const struct_param_seen: Map<
+		string,
+		{ name: string; field_set?: string[]; is_borrow: boolean }[]
+	> = new Map();
 
 	// Track self separately — we check it against mutable params,
 	// but don't add it to the general map (avoids false positives on
@@ -2208,24 +2211,51 @@ export default function check_function_call(
 			func_param.declaration === "var" || func_param.is_moved || func_param.type?.is_ref;
 
 		if (is_mutable) {
-			// Check self aliasing first
-			if (self_tracked_value === val) {
+			// Aliasing relaxation (the precision piece of GROUP_BORROWING.md
+			// shortfall 5): two pure `ref` borrows of one object are allowed
+			// when both declare field sets and the sets are PROVABLY
+			// DISJOINT — displacing `items` cannot dangle anything borrowed
+			// through `other`, so the use-after-free shape is unspellable.
+			// Everything else keeps the rejection: a wildcard set may
+			// displace anything; an ownership param (`var`/`mv`) frees the
+			// shared object, which no field precision makes safe; a const
+			// param reads the whole object, so any mutation can tear it.
+			const cur = {
+				name: func_param.name,
+				field_set: func_param.field_set,
+				is_borrow: !!(func_param.is_ref || func_param.type?.is_ref),
+			};
+			const seen: { name: string; field_set?: string[]; is_borrow: boolean }[] = [];
+			if (self_tracked_value === val && self_param) {
+				seen.push({
+					name: "self",
+					field_set: self_param.field_set,
+					// `ref self` carries its ref-ness on the PARAM (parse sets
+					// `is_ref`, the Type is the struct name).
+					is_borrow: !!(self_param.is_ref || self_param.type?.is_ref),
+				});
+			}
+			seen.push(...(struct_param_seen.get(val) ?? []));
+			const blocking = seen.find(
+				(p) =>
+					!(p.is_borrow && cur.is_borrow && declared_sets_disjoint(p.field_set, cur.field_set)),
+			);
+			if (blocking) {
 				add_error(
 					status,
-					`Aliasing: '${val}' passed as both 'self' and '${func_param.name}' — mutable parameter aliasing can cause use-after-free`,
-					param.start,
-				);
-			} else if (struct_param_seen.has(val)) {
-				const prev = struct_param_seen.get(val)!;
-				add_error(
-					status,
-					`Aliasing: '${val}' passed as both '${prev}' and '${func_param.name}' — mutable parameter aliasing can cause use-after-free`,
+					`Aliasing: '${val}' passed as both '${blocking.name}' and '${func_param.name}' — mutable parameter aliasing can cause use-after-free`,
 					param.start,
 				);
 			}
 		}
 
-		struct_param_seen.set(val, func_param.name);
+		const seen_list = struct_param_seen.get(val) ?? [];
+		seen_list.push({
+			name: func_param.name,
+			field_set: func_param.field_set,
+			is_borrow: !!(func_param.is_ref || func_param.type?.is_ref),
+		});
+		struct_param_seen.set(val, seen_list);
 	}
 
 	// Record known minimum capacity for Buffer after grow/alloc calls.

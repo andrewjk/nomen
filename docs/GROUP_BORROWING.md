@@ -74,8 +74,14 @@ paths:
   invalidate each other. One boundary: the same object may not arrive as
   two `ref` parameters of one call — `attack(ref list, ref list)` is
   rejected ("Aliasing: 'list' passed as both 'a' and 'b' — mutable
-  parameter aliasing can cause use-after-free"), so aliasing freedom is a
-  local-alias affair, not a signature affair.
+  parameter aliasing can cause use-after-free") — UNLESS both parameters
+  declare field sets and the sets are provably disjoint (2026-11-09, the
+  declared-effects machinery: displacing `items` cannot dangle anything
+  borrowed through `other`). A wildcard parameter keeps the rejection; an
+  ownership (`var`/`mv`) parameter always rejects — it frees the shared
+  object, which no field precision makes safe. Aliasing freedom is a
+  local-alias affair, and now a declared-effect affair, not a signature
+  affair.
 - **Box-field reads are borrows** rooted at the owner variable
   (`borrow_owner_of`); any `ref self` call on the owner invalidates them
   (`invalidate_borrows_of`, `src/check/utils/borrow.ts`, called at
@@ -302,7 +308,8 @@ pub func main = () {
 ```
 
 (The parameter-spelled version — `attack(ref list, ref list)` — is
-rejected; see the aliasing note above.)
+rejected for un-annotated params; with disjoint declared field sets on
+both parameters it is accepted — see the aliasing note above.)
 
 **2. Use-after-free caught at compile time** (`world.entities = new Vec;
 first_ref.hp`). Both halves, because Nomen's answer differs by shape. The
@@ -771,7 +778,10 @@ Mapped onto the lists above:
 - **Shortfall 5 (exclusivity):** Ante's `Mutate 'p` call-site
   distinctness is a place-precise refinement of Nomen's
   two-`ref`-param rejection — the gap over what Nomen has is precision,
-  not a missing guard.
+  not a missing guard. The precision piece landed 2026-11-09 for the
+  declared-shape: two aliased `ref` params with disjoint declared field
+  sets are accepted (`declared_sets_disjoint`); wildcards and ownership
+  params keep the rejection.
 
 Not worth stealing, same as before plus: `imm`/`uniq` reference kinds
 (exclusivity via `mv` plus the async freeze covers Nomen; the want is
