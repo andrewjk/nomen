@@ -1307,6 +1307,12 @@ pub mv struct Window: Control {
 	// FORCED: it bypasses the close_requested interception (the delegate's
 	// windowShouldClose: sees nomen_close_forced and allows). Only the red
 	// button routes through `close_requested`.
+	//
+	// The forced latch is one-shot: it is armed immediately before
+	// performClose: (which dispatches windowShouldClose: synchronously) and
+	// disarmed right after. Left armed it is process-global — every LATER
+	// red-button close (another window, a later run loop) would silently
+	// bypass App.close_requested forever.
 	pub func close = (self) {
 		```
 		#arch: c
@@ -1314,6 +1320,7 @@ pub mv struct Window: Control {
 		extern int nomen_close_forced;
 		nomen_close_forced = 1;
 		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
+		nomen_close_forced = 0;
 		```
 		```
 		#arch: aarch64_use_c
@@ -1321,6 +1328,7 @@ pub mv struct Window: Control {
 		extern int nomen_close_forced;
 		nomen_close_forced = 1;
 		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
+		nomen_close_forced = 0;
 		```
 		```
 		#arch: c
