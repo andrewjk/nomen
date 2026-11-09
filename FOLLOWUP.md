@@ -485,6 +485,34 @@ guard (or a contract-free spelling — `at_or_panic`, `get_or_panic`, `pop`):
   no slot primitive, so its reads never rewrite to element borrows — and
   neither container is in the length-effect model.
 
+## Mutable-in-Immutable residuals (the syntax-gated remainder)
+
+The contract half of Valen's Mutable-in-Immutable shipped piecemeal as the
+declared-effects machinery: `{ entities }` on a ref param IS "may displace
+`entities` and nothing else", body-verified; the aliasing relaxation
+(disjoint declared sets) is the call-site distinctness; place-scoped List
+slot writes are element-level mutation-without-displacement for modeled
+calls. What remains is gated, recorded so the next request lands here:
+
+- **Element-place declared effects** (`{ entities[i] }`-style): letting a
+  signature promise in-place element writes without displacing the field,
+  so wrapper methods over `set` pass place precision through to callers.
+  The sound floor today is rule 2 as-is — any mutator call on a `self.X`
+  receiver requires `X` in the set — because a wrapper declaring less would
+  let callers' element borrows survive its internal slot displacement
+  (unsound for mv-element lists). Needs signature surface (new syntax).
+- **Scalar-element `set` exemption from rule 2**: a modeled `set` on a
+  scalar-element list (`List<int>`) writes a slot that cannot dangle
+  anything (the type-stability exception, type-derived from the
+  signature's element type), so rule 2 could exempt it and shave annotation
+  churn for scalar-state methods. Sound but type-dependent set semantics;
+  do it with the first concrete churn complaint.
+- **The noalias harvest**: disjoint-set aliased params prove may-write
+  disjointness an optimizer could exploit — but the C backend's `restrict`
+  is per-pointer (all-or-nothing), not per-field-disjoint, and aarch64 has
+  no per-instruction aliasing hints. Parked until a backend that can
+  express it exists.
+
 ## Orphaned `???`/`!!!` tokenizer symbols
 
 The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files

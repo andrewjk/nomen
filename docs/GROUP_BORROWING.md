@@ -630,12 +630,16 @@ compile-time bounds contracts could extend to index-disjointness proofs
    nothing). Nomen's root-name model is abstraction-proof — nothing
    path-shaped appears in any signature — and preserving that property is
    the constraint on how effect sets get exposed.
-2. **Mutable-in-Immutable** (bigger lift, maybe later). A way to say "this
-   function may mutate inside `world.entities[]` and nothing else" — a
-   stronger API contract (nothing in the body can touch the rest of the
-   world) and an optimizer hint (fine-grained may-write information). Valen
-   gets it from path-typed parameters; a Nomen version would likely be a
-   declared effect on the method, not a parameter type.
+2. **Mutable-in-Immutable** — the contract half shipped piecemeal (see the
+   residuals note in FOLLOWUP.md). `world.entities[]`-and-nothing-else is
+   spelled as a declared field set (`ref self { entities }` — body-verified,
+   signature-is-the-whole-truth), the call-site distinctness as the aliasing
+   relaxation for disjoint sets, and element-level mutation-without-
+   displacement as place-scoped List slot writes (2026-11-09). What remains
+   is syntax-gated: declaration-level place effects (`{ entities[i] }`) so
+   wrapper methods pass place precision through to callers, and the
+   optimizer (noalias) half, which the C backend's per-pointer `restrict`
+   cannot express.
 3. Not worth stealing: **wildcard descendant paths** (Nomen's re-root-at-
    `self` return convention for method borrows already approximates "points
    somewhere inside the receiver" — the same reasoning covers **path
