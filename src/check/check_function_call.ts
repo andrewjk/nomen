@@ -514,6 +514,7 @@ export default function check_function_call(
 		name: string;
 		type: Type;
 		value: number | boolean | undefined;
+		known_length?: number;
 		range_lower?: number;
 		range_upper?: number;
 		upper_bound_exprs?: string[];
@@ -1653,6 +1654,10 @@ export default function check_function_call(
 			name: func_param.name,
 			type: param_type,
 			value: arg_value,
+			known_length:
+				param.node_type === "value"
+					? status.values.findLast((v) => v.name === (param as ValueNode).value)?.known_length
+					: undefined,
 			range_lower,
 			range_upper,
 			upper_bound_exprs,
@@ -1677,6 +1682,7 @@ export default function check_function_call(
 					type: ca.type,
 					is_set: true,
 					const_value: ca.value,
+					known_length: ca.known_length,
 					range_lower: ca.range_lower,
 					range_upper: ca.range_upper,
 					upper_bound_exprs: ca.upper_bound_exprs,

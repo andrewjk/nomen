@@ -405,7 +405,8 @@ function extract_equality_length(
 		if (left.node_type !== "access") continue;
 		const access = left as AccessNode;
 		if (access.access.node_type !== "access_field") continue;
-		if ((access.access as AccessFieldNode).name !== "length") continue;
+		const length_field = (access.access as AccessFieldNode).name;
+		if (length_field !== "length" && length_field !== "count") continue;
 		if (access.target.node_type !== "value") continue;
 		const target = (access.target as ValueNode).value;
 		if (right.node_type !== "value") continue;
@@ -1130,7 +1131,8 @@ export function collect_return_length(node: BaseNode): string | undefined {
 			if (len_side.node_type !== "access") continue;
 			const access = len_side as AccessNode;
 			if (access.access.node_type !== "access_field") continue;
-			if ((access.access as AccessFieldNode).name !== "length") continue;
+			const length_field = (access.access as AccessFieldNode).name;
+			if (length_field !== "length" && length_field !== "count") continue;
 			if (val_side.node_type !== "value") continue;
 			if (!/^[+-]?\d+$/.test((val_side as ValueNode).value)) continue;
 			result = (val_side as ValueNode).value;
@@ -1359,7 +1361,7 @@ export function numeric_interval(
 		const access = node as AccessNode;
 		if (access.access.node_type === "access_field") {
 			const field = access.access as AccessFieldNode;
-			if (field.name === "length") {
+			if (field.name === "length" || field.name === "count") {
 				if (access.target.node_type === "value") {
 					const vn = access.target as ValueNode;
 					let decl = status.values.findLast((v) => v.name === vn.value);
@@ -1562,6 +1564,23 @@ export function is_list_type_name(name: string | undefined): boolean {
 }
 
 /**
+ * Length-tracked container whose element count is the `count` FIELD (not a
+ * `length` accessor): LinkedList and Tree. Their `at` contracts are phrased
+ * `idx < self.count`, the `add` mutator appends exactly one element, and a
+ * fresh constructor starts at 0 — the same exact-length model as List, keyed
+ * to `.count` in the evaluator.
+ */
+export function is_count_container_name(name: string | undefined): boolean {
+	return (
+		!!name &&
+		(name === "LinkedList" ||
+			name.startsWith("LinkedList_") ||
+			name === "Tree" ||
+			name.startsWith("Tree_"))
+	);
+}
+
+/**
  * Record an EXACT length of 0 for a List declared from its no-argument
  * constructor (`var List<int> x = List<int>()` — a fresh list is empty).
  * The fact is then maintained exactly by the modeled mutators
@@ -1577,7 +1596,8 @@ export function record_fresh_list_length(
 	const call = value as FunctionCallNode;
 	if ((call.params?.length ?? 0) !== 0) return;
 	const decl = status.values.findLast((v) => v.name === name);
-	if (!decl || !is_list_type_name(decl.type?.name)) return;
+	if (!decl || !(is_list_type_name(decl.type?.name) || is_count_container_name(decl.type?.name)))
+		return;
 	// Locals only: a GLOBAL's exact length is not maintained across opaque
 	// callee boundaries (any function may pop it without the caller's flow
 	// knowing) — globals keep today's guard-derived facts.
@@ -1634,7 +1654,8 @@ export function apply_list_length_effect(
 	status: CheckStatus,
 ) {
 	if (!self_path || self_path === "?") return;
-	if (!is_list_type_name(target_type_name)) return;
+	const count_container = is_count_container_name(target_type_name);
+	if (!is_list_type_name(target_type_name) && !count_container) return;
 	const self_param = func.params[0];
 	if (!self_param?.is_self_param) return;
 	const dotted = self_path.includes(".");
@@ -1677,7 +1698,7 @@ export function apply_list_length_effect(
 		return;
 	}
 
-	if (func.name === "push") {
+	if (func.name === "push" || (count_container && func.name === "add")) {
 		if (decl.known_length !== undefined) decl.known_length += 1;
 		return;
 	}
@@ -1723,6 +1744,15 @@ export function apply_list_length_effect(
 
 	if (func.name === "set" || func.name === "set_or_panic" || func.name === "reserve") {
 		return; // length unchanged
+	}
+	if (
+		count_container &&
+		(func.name === "set_next" ||
+			func.name === "set_previous" ||
+			func.name === "set_left" ||
+			func.name === "set_right")
+	) {
+		return; // link rewires never change the node count
 	}
 
 	// Any other `ref self` method is an unmodeled mutator.

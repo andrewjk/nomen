@@ -500,6 +500,8 @@
 	"Tree_int_parent_of",
 	"Tree_int_first",
 	"Tree_int_at",
+	"Tree_int_at_or",
+	"Tree_int_at_or_panic",
 	"Tree_int_count_nodes",
 	"Tree_int_length",
 	"Tree_int_copy",

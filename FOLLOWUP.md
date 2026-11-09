@@ -64,10 +64,11 @@ cases.
 - `Graph<T>` has no `length` at all (the `Enumerable` default returns 0),
   so desugaring via `0..length` would silently produce empty loops.
 - `LinkedList<T>`/`Tree<T>` have `length()` methods, but their `.at`
-  contracts are phrased against `count` (`idx < self.count`), and a
-  `0..length()` range does not discharge that today (verified failing on
-  0.2.2) — needs either field-based lengths or return-contract linkage
-  from `length()` to the count field.
+  contracts are phrased against `count` (`idx < self.count`). Count
+  tracking itself landed 2026-11-09 (fresh = 0, `add` = +1, link setters
+  preserve; `.count` facts discharge `at`), but a `0..length()` RANGE still
+  does not link to the count field (verified failing on 0.2.2) — needs
+  return-contract linkage from `length()` to the count field.
 - `Map`/`Set`/`Buffer` have no `.at(i)` element semantics to desugar to.
 
 Also still open from the same area: `for ref x of list` is rejected with
@@ -452,53 +453,33 @@ src/check/check_declaration_node.ts, recognizes `List.at` and
 `ref int v = map.get_or_panic(k)` needs nothing, no parameter contract). The
 machinery is `evaluate_const_condition`
 (src/check/utils/evaluate_const_condition.ts) and
-`apply_list_length_effect` (src/check/utils/flow_bounds.ts). Exact List
-lengths (`known_length`), guards, inclusive bounds, singleton-range indices,
-negated guards, and length-snapshot aliases discharge it. What still needs a
-guard (or a contract-free spelling — `at_or_panic`, `get_or_panic`, `pop`):
+`apply_list_length_effect` (src/check/utils/flow_bounds.ts). Exact lengths
+(`known_length` — for `List` keyed to `.length`; for `LinkedList`/`Tree`
+keyed to their `count` field through the same model: a fresh constructor is
+0, `add` appends one, the link setters preserve it), guards (including
+field-path guards, landed 2026-11-09), inclusive bounds, singleton-range
+indices, negated guards, and length-snapshot aliases discharge it. What
+still needs a guard (or a contract-free spelling — `at_or_panic`/`at_or`,
+`get_or_panic`, `pop`):
 
-- **Unknown provenance**: a list from a function return or a parameter has
-  no length facts — `known_length` is stamped by guards and the modeled List
-  mutators only, never at function entry or on returns.
+- **Unknown provenance**: a container from a function return or a parameter
+  has no facts UNLESS the signature carries a contract — `ships: ships.length
+  > 0` on a parameter (verified at the call site, assumed in the body; the
+caller's exact length forwards through the call-site check) or a return
+constraint (`out List<T>: out.length > 0`). That is the spelled fact
+  > source; without one, guard or use the contract-free read.
 - **Globals**: exact tracking is locals-only (`flow_bounds` bails on
   `decl.is_global`) — a global's length can change behind the caller's back
-  through any opaque callee.
-- **Field-path receivers** (`h.items.at(0)`, `ref int v = h.items.at(0)`):
-  **guards now discharge (landed 2026-11-09)** — the evaluator consults
-  the path's own `path_bounds` lower entries (flipped-literal and
-  exact-name forms), both synthetic-self sites (method-call and
-  operation contract checks) rename those facts to `self.*` keys for the
-  substituted constraint, and `apply_list_length_effect` narrows
-  dotted-receiver path facts on `pop`/`remove_at_or_panic`. Still bare-only:
-  EXACT length facts (`extract_equality_length` rejects non-bare targets,
-  so `h.items.length == 3` establishes nothing) — an UNGUARDED field-path
-  read needs a guard or `at_or_panic`.
-  - **Soundness corner FIXED (2026-11-09)**: `if f.ships.length > 1 {
-f.ships.pop(); f.ships.at(1) }` was ACCEPTED (length can be 1 after the
-    pop -- at(1) is OOB). Root cause: `apply_bounds` records a dotted
-    guard's fact BOTH in the path entry AND in the base variable's shared
-    bound arrays, which cannot distinguish WHICH field they constrain --
-    and the comparison evaluator's flip block consulted the shared arrays
-    for a DOTTED right side, so the `f.ships.length` fact matched as if it
-    bounded `f` itself (and by name collision, any sibling path, or even a
-    different receiver's `self.length` via library-internal synthetic
-    values). Fix: the flip block consults the base's shared arrays only for
-    BARE right sides; dotted right sides use the path entry (with a dual
-    key lookup covering the alias-resolved and self-relative spellings).
-    The nested_generic_mono StableList-v2 test was silently relying on the
-    leak (a `length > 0` fact proving `0 < cap`) -- it now guards the cap
-    directly. Field-path at(1)-after-pop is rejected; covered by
-    test/field_path_contracts.test.ts.
+  through any opaque callee. By design: no exact tracking is sound here, so
+  a guard before the read is the spelling (the same posture as any storage
+  an opaque callee can reach).
 - **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on a
   receiver survive `ref self` calls the model doesn't know (only the exact
   fact dies); the length-effect model covers List's
-  push/pop/remove_at_or_panic only. Closing that means a mutation-precision
-  pass (refine-vs-invalidate per callee effect) — worth doing only with
-  concrete blocked shapes.
-- **Containers other than List/Map**: `Tree` has no contract-free read;
-  `LinkedList` has `at_or`/`at_or_panic`, but its elements are heap nodes —
-  no slot primitive, so its reads never rewrite to element borrows — and
-  neither container is in the length-effect model.
+  push/pop/remove_at_or_panic and the count containers' `add` + link
+  setters. Closing that means a mutation-precision pass
+  (refine-vs-invalidate per callee effect) — worth doing only with concrete
+  blocked shapes.
 
 ## Mutable-in-Immutable residuals (the syntax-gated remainder)
 

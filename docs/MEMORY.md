@@ -310,6 +310,8 @@ The arena containers (`LinkedList`, `Tree`, `Graph`) store values and child/edge
 
 `Array`/`Buffer`/`List` accessors carry parameter constraints (e.g. `at(index: index >= 0 && index < self.length)`, `Buffer.store_int(i: i >= 0 && i < self.cap)`). These are checked at every call site at compile time via flow-sensitive bounds analysis (loop ranges, `while`/`if` conditions, and return-contract propagation), so most out-of-bounds index access is rejected before running. Indices that the analyser cannot prove in bounds still error ("Parameter constraint cannot be verified") rather than silently compiling.
 
+The fact sources, in order of spelling: **exact lengths** (`known_length`, maintained through the modeled mutators — `List` keyed to `.length`, `LinkedList`/`Tree` keyed to their `count` field: a fresh constructor is 0, `add` appends one, link setters preserve it), **guards** on a length/count (bare receivers and field paths alike), and **contracts** — a parameter constraint (`ships: ships.length > 0`) or a return constraint (`out List<T>: out.length > 0`) is verified at the call site and assumed inside the callee, so it is the spelled fact source for container-shaped parameters/results. Contract-free reads (`at_or`, `at_or_panic`, `get_or_panic`, `pop`) need no facts at all. Globals stay guard-only by design (an opaque callee can change them behind the caller's back).
+
 ### Loops
 
 Variables declared inside loop bodies are cleaned up at each iteration. `break` and `continue` clean up all intermediate scopes between the current position and the loop boundary.

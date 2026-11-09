@@ -417,7 +417,10 @@ function evaluate_operation(
 							!right_is_path &&
 							rdecl.known_length !== undefined &&
 							Number.isInteger(left_num) &&
-							(right_var.endsWith(".length") || right_var === "self.length")
+							(right_var.endsWith(".length") ||
+								right_var.endsWith(".count") ||
+								right_var === "self.length" ||
+								right_var === "self.count")
 						) {
 							if (flipped === ">") {
 								return left_num < rdecl.known_length;
@@ -776,7 +779,15 @@ function evaluate_operation(
 			var_name = expr_to_string(left, status);
 		}
 		if (!var_name) return undefined;
-		const vdecl = status.values.findLast((v) => v.name === var_name);
+		let vdecl = status.values.findLast((v) => v.name === var_name);
+		// Dotted left (`ships.length > 0`): the interval machinery resolves the
+		// PATH (numeric_interval consults the base's known_length), so fall
+		// back to the base declaration — this is what lets a param contract
+		// like `ships.length > 0` verify at the call site against the caller's
+		// exact length.
+		if (!vdecl && var_name.includes(".")) {
+			vdecl = status.values.findLast((v) => v.name === var_name.split(".")[0]);
+		}
 		if (!vdecl) return undefined;
 
 		// Resolve the variable's interval, allowing PARTIAL (half-open) ranges:
