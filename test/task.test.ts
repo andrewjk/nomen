@@ -1002,6 +1002,51 @@ pub func main = () {
 	});
 });
 
+describe("Task empty and consumed handles", () => {
+	test("an empty handle's result reads as the zero value", async () => {
+		// A never-launched Task (or one whose machinery #destroy already
+		// released) owns no result cell. result()/result_uint64() used to
+		// read through the null slot — they must return the zero value.
+		// is_done stays false for an empty handle (its documented contract).
+		const input = `
+var Task<uint64> t = Task<uint64>()
+if !t.is_done() {
+	Console.write_line("empty handle not done")
+}
+var uint64 empty = t.result_uint64()
+if empty == 0 {
+	Console.write_line("empty uint64 result")
+}
+var string es = Task<string>().result()
+if es.length == 0 {
+	Console.write_line("empty string result")
+}
+Console.write_line("done")
+`;
+		await build_and_check_output(
+			input,
+			"task_empty_result",
+			"empty handle not done\nempty uint64 result\nempty string result\ndone\n",
+		);
+	});
+
+	test("a consumed handle's second result() observes the zero", async () => {
+		const input = `
+func compute = (uint64 n, out uint64) {
+	return n + 1
+}
+
+var h = Thread(compute(41)).start()
+var uint64 first = h.result()
+var uint64 second = h.result()
+if first == 42 && second == 0 {
+	Console.write_line("consumed once")
+}
+`;
+		await build_and_check_output(input, "task_result_consumed_twice", "consumed once\n");
+	});
+});
+
 describe("Task.is_done", () => {
 	test("is_done flips to true once a running task completes", async () => {
 		const input = `

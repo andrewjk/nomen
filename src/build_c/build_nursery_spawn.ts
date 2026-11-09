@@ -76,8 +76,6 @@ export default function build_nursery_spawn(
 		// vtable; trait dispatch rides boxed handles).
 		status.code += `\tstruct ${mono_task_name} _task;\n`;
 		status.code += `\tmemset(&_task, 0, sizeof(struct ${mono_task_name}));\n`;
-		status.code += `\t_task.handle = 0;\n`;
-		status.code += `\t_task.done = 0;\n`;
 		status.code += `\t_task.result_slot = (unsigned long long)_result_ptr;\n`;
 		status.code += `\t_task.cancel_flag = (unsigned long long)_cancel_ptr;\n`;
 		status.code += `\t_task.future = (unsigned long long)_future;\n`;

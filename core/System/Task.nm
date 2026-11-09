@@ -23,8 +23,6 @@
  * Conforms to `Awaitable`: `.wait()` may park the current execution context.
  **/
 pub mv struct Task<T> : Awaitable {
-	pub var uint64 handle = 0
-	pub var done = false
 	pub var uint64 result_slot = 0
 	pub var uint64 cancel_flag = 0
 	pub var uint64 future = 0
@@ -46,8 +44,6 @@ pub mv struct Task<T> : Awaitable {
 	// names. Struct receivers travel by address regardless (the raw body
 	// reads `self->future`), so the ABI is unchanged; the bare spelling is
 	// what lets the read-only `Awaitable` dispatch form typecheck.
-	// The legacy `pthread_join` fallback is gone — `handle` has been
-	// permanently zero since the pool migration.
 	pub func wait = (self) {
 		```
 		#arch: c
@@ -58,7 +54,7 @@ pub mv struct Task<T> : Awaitable {
 		```
 		#arch: aarch64
 		// if (self->future) __nomen_future_wait(self->future)
-		ldr x0, [x19, #40]
+		ldr x0, [x19, #24]
 		cbz x0, .Lwait_done
 		bl ___nomen_future_wait
 		.Lwait_done:
@@ -71,18 +67,22 @@ pub mv struct Task<T> : Awaitable {
 	// trampoline writes the function's return value there before exiting.
 	// The result is MOVED OUT: the slot is zeroed as the value leaves, and
 	// `mv out T` marks the caller as the owner. Call it once; a second call
-	// returns the zero value. For tasks with no return value (void
-	// functions), returns the zero value.
+	// returns the zero value. An empty handle (never launched, machinery
+	// already destroyed) owns no slot — it also returns the zero value
+	// rather than reading through a null pointer. For tasks with no return
+	// value (void functions), returns the zero value.
 	pub func result = (ref self {}, mv out T) {
 		```
 		#arch: c
 		if (self->future) {
 			__nomen_future_wait((struct nomen_future *)self->future);
-		} else if (self->handle && !self->done) {
-			void *ret;
-			pthread_join((pthread_t)self->handle, &ret);
-			self->handle = 0;
-			self->done = 1;
+		}
+		// An empty or already-consumed handle owns no result cell — return
+		// the zero value instead of reading through a null slot.
+		if (!self->result_slot) {
+			T _z;
+			memset(&_z, 0, sizeof(T));
+			return _z;
 		}
 		T _r = *(T *)self->result_slot;
 		memset((void *)self->result_slot, 0, sizeof(T));
@@ -91,72 +91,64 @@ pub mv struct Task<T> : Awaitable {
 		```
 		#arch: aarch64
 		// Wait for completion (same as wait method)
-		ldr x0, [x19, #40]
-		cbz x0, .Lresult_handle
-		bl ___nomen_future_wait
-		b .Lresult_read
-		.Lresult_handle:
-		ldr x0, [x19, #8]
+		ldr x0, [x19, #24]
 		cbz x0, .Lresult_read
-		ldrb w1, [x19, #16]
-		cbnz w1, .Lresult_read
-		sub sp, sp, #16
-		mov x1, sp
-		bl _pthread_join
-		add sp, sp, #16
-		str xzr, [x19, #8]
-		mov w0, #1
-		strb w0, [x19, #16]
+		bl ___nomen_future_wait
 		.Lresult_read:
+		// An empty or already-consumed handle owns no result cell: return
+		// the zero T instead of reading through a null slot.
+		ldr x8, [x19, #8]
+		cbz x8, .Lresult_zero
 		// The result cell is always 16 bytes (see the spawn build phase):
 		// load the full pair — a fat string returns (ptr, len) in x0/x1, a
 		// scalar returns its word in x0 — then zero the cell (the value is
 		// moved out; a second call observes the zero).
-		ldr x8, [x19, #24]
 		ldr x0, [x8]
 		ldr x1, [x8, #8]
 		stp xzr, xzr, [x8]
+		b .Lresult_end
+		.Lresult_zero:
+		mov x0, #0
+		mov x1, #0
+		.Lresult_end:
 		```
 	}
 
 	// Block until the task finishes, then return its result as a uint64.
 	// Convenience for the common case; same as result() for uint64 tasks.
+	// Like result(), it zeroes the cell as the value leaves (one end state
+	// for a consumed handle), and an empty handle returns zero.
 	pub func result_uint64 = (ref self {}, out uint64) {
 		```
 		#arch: c
 		if (self->future) {
 			__nomen_future_wait((struct nomen_future *)self->future);
-		} else if (self->handle && !self->done) {
-			void *ret;
-			pthread_join((pthread_t)self->handle, &ret);
-			self->handle = 0;
-			self->done = 1;
 		}
-		return *(unsigned long long *)self->result_slot;
+		if (!self->result_slot) {
+			return 0;
+		}
+		unsigned long long _r = *(unsigned long long *)self->result_slot;
+		*(unsigned long long *)self->result_slot = 0;
+		return _r;
 		```
 		```
 		#arch: aarch64
 		// Wait for completion
-		ldr x0, [x19, #40]
-		cbz x0, .Lru64_handle
-		bl ___nomen_future_wait
-		b .Lru64_read
-		.Lru64_handle:
-		ldr x0, [x19, #8]
-		cbz x0, .Lru64_read
-		ldrb w1, [x19, #16]
-		cbnz w1, .Lru64_read
-		sub sp, sp, #16
-		mov x1, sp
-		bl _pthread_join
-		add sp, sp, #16
-		str xzr, [x19, #8]
-		mov w0, #1
-		strb w0, [x19, #16]
-		.Lru64_read:
-		// return *(unsigned long long *)self->result_slot
 		ldr x0, [x19, #24]
-		ldr x0, [x0]
+		cbz x0, .Lru64_read
+		bl ___nomen_future_wait
+		.Lru64_read:
+		// An empty or already-consumed handle owns no result cell: return
+		// zero instead of reading through a null slot. Otherwise zero the
+		// cell as the value leaves (matching result()'s end state).
+		ldr x8, [x19, #8]
+		cbz x8, .Lru64_zero
+		ldr x0, [x8]
+		str xzr, [x8]
+		b .Lru64_end
+		.Lru64_zero:
+		mov x0, #0
+		.Lru64_end:
 		```
 	}
 
@@ -173,7 +165,7 @@ pub mv struct Task<T> : Awaitable {
 		```
 		#arch: aarch64
 		// x0 = self->future; result in x0.
-		ldr x0, [x19, #40]
+		ldr x0, [x19, #24]
 		bl ___nomen_future_is_done
 		```
 	}
@@ -195,12 +187,12 @@ pub mv struct Task<T> : Awaitable {
 		#arch: aarch64
 		// if (self->future) __nomen_future_cancel(self->future);
 		// else if (self->cancel_flag) *(self->cancel_flag) = 1
-		ldr x0, [x19, #40]
+		ldr x0, [x19, #24]
 		cbz x0, .Lcancel_flag_path
 		bl ___nomen_future_cancel
 		b .Lcancel_done
 		.Lcancel_flag_path:
-		ldr x0, [x19, #32]
+		ldr x0, [x19, #16]
 		cbz x0, .Lcancel_done
 		mov x1, #1
 		str x1, [x0]
@@ -393,12 +385,12 @@ pub mv struct Task<T> : Awaitable {
 		```
 		#arch: aarch64
 		// if (self->future) { free an unconsumed string result; release; zero fields }
-		ldr x0, [x19, #40]
+		ldr x0, [x19, #24]
 		cbz x0, .Ldestroy_done
 		// An unconsumed string result: the cell still holds (ptr, len) —
 		// result() zeroes it when it moves the value out. The T_FAT dispatch
 		// folds to a constant branch after monomorphization.
-		ldr x8, [x19, #24]
+		ldr x8, [x19, #8]
 		mov x0, #T_FAT
 		cmp x0, #0
 		b.eq .Ldestroy_nofree
@@ -411,11 +403,11 @@ pub mv struct Task<T> : Awaitable {
 		stp xzr, xzr, [x8]
 		bl _free
 		.Ldestroy_nofree:
-		ldr x0, [x19, #40]
+		ldr x0, [x19, #24]
 		bl ___nomen_future_release
-		str xzr, [x19, #40]
 		str xzr, [x19, #24]
-		str xzr, [x19, #32]
+		str xzr, [x19, #8]
+		str xzr, [x19, #16]
 		.Ldestroy_done:
 		```
 	}
