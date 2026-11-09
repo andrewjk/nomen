@@ -134,7 +134,10 @@ mv struct Outer<T> {
 var Outer<int> o = Outer<int>()
 o.add(11)
 if o.items.length > 0 {
-	Console.write("\\{o.items.length} \\{o.items.at(0).load(0)}")
+	var Box<Buffer<int>> b = o.items.at(0)
+	if b.cap > 0 {
+		Console.write("\\{o.items.length} \\{b.load(0)}")
+	}
 }
 `;
 	await build_and_check_output(input, "nested_mono_list_box_buffer", "1 11");

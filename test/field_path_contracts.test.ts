@@ -92,9 +92,10 @@ describe("field-path bounds-contract discharge", () => {
 	});
 
 	test("a pop narrows the guard facts (soundness of the erosion)", () => {
-		// length > 1 (>= 2) then pop -> length >= 1: at(0) stays provable.
-		// (The at(1)-after-pop corner where the checker currently accepts is
-		// recorded in FOLLOWUP.md -- a synthetic-index fact-provenance audit.)
+		// length > 1 (>= 2) then pop -> length >= 1: at(0) stays provable;
+		// at(1) is rejected -- the eroded path bound no longer proves
+		// 1 < length, and the base variable's shared bound arrays must NOT
+		// leak the path fact back in (2026-11-09 fix).
 		const reject = (body: string) =>
 			errs(body).some((m) => m.includes("cannot be verified") || m.includes("not satisfied"));
 
@@ -105,5 +106,13 @@ describe("field-path bounds-contract discharge", () => {
 			Console.write("\\{s.fuel}")
 		}`),
 		).toBe(false);
+
+		expect(
+			reject(`if f.ships.length > 1 {
+			f.ships.pop()
+			var Ship s = f.ships.at(1)
+			Console.write("\\{s.fuel}")
+		}`),
+		).toBe(true);
 	});
 });

@@ -473,15 +473,21 @@ guard (or a contract-free spelling — `at_or_panic`, `get_or_panic`, `pop`):
   EXACT length facts (`extract_equality_length` rejects non-bare targets,
   so `h.items.length == 3` establishes nothing) — an UNGUARDED field-path
   read needs a guard or `at_or_panic`.
-  - **Soundness audit (recorded 2026-11-09)**: `if f.ships.length > 1 {
-f.ships.pop(); f.ships.at(1) }` is currently ACCEPTED even though the
-    length can be 1 after the pop — at(1) is OOB. The discharge runs
-    through the expr-chain's upper-bound match on a synthetic index (`i`)
-    fact whose provenance interleaves with library-internal evaluations
-    (a constraint-args synthetic can carry a `self.length` upper bound in
-    some evaluation orders). Audit the constraint_args fact flow and the
-    mono/library value hygiene before relying on this corner; the
-    guard-only cases (at(0), literal vs literal) are sound and tested in
+  - **Soundness corner FIXED (2026-11-09)**: `if f.ships.length > 1 {
+f.ships.pop(); f.ships.at(1) }` was ACCEPTED (length can be 1 after the
+    pop -- at(1) is OOB). Root cause: `apply_bounds` records a dotted
+    guard's fact BOTH in the path entry AND in the base variable's shared
+    bound arrays, which cannot distinguish WHICH field they constrain --
+    and the comparison evaluator's flip block consulted the shared arrays
+    for a DOTTED right side, so the `f.ships.length` fact matched as if it
+    bounded `f` itself (and by name collision, any sibling path, or even a
+    different receiver's `self.length` via library-internal synthetic
+    values). Fix: the flip block consults the base's shared arrays only for
+    BARE right sides; dotted right sides use the path entry (with a dual
+    key lookup covering the alias-resolved and self-relative spellings).
+    The nested_generic_mono StableList-v2 test was silently relying on the
+    leak (a `length > 0` fact proving `0 < cap`) -- it now guards the cap
+    directly. Field-path at(1)-after-pop is rejected; covered by
     test/field_path_contracts.test.ts.
 - **Guard-fact staleness on unmodeled mutators**: guard-derived bounds on a
   receiver survive `ref self` calls the model doesn't know (only the exact

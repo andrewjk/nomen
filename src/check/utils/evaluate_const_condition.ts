@@ -404,7 +404,17 @@ function evaluate_operation(
 						// length is known precisely, so the comparison is numeric.
 						const left_num = Number(left_const);
 						const left_num_is_int = Number.isInteger(left_num) ? left_num : undefined;
+						// A DOTTED right side (`f.ships.length`) is a PATH fact: the
+						// base variable's shared bound arrays cannot distinguish
+						// WHICH field a bound constrains (apply_bounds stores both
+						// the path entry and the base's arrays), so consulting them
+						// for a path comparison leaks a sibling path's fact (e.g.
+						// `if f.ships.length > 1` would bound `f` itself and prove
+						// ANY `k < f.<field>.length`). Only the path's own entry
+						// (below) and snapshot aliases of that path are consulted.
+						const right_is_path = right_var.includes(".");
 						if (
+							!right_is_path &&
 							rdecl.known_length !== undefined &&
 							Number.isInteger(left_num) &&
 							(right_var.endsWith(".length") || right_var === "self.length")
@@ -434,21 +444,27 @@ function evaluate_operation(
 							}
 						}
 						if (flipped === "<" || flipped === "<=") {
-							if (rdecl.upper_bound_exprs?.includes(left_const)) return true;
-							if (flipped === "<=" && rdecl.upper_bound_inclusive_exprs?.includes(left_const)) {
+							if (!right_is_path && rdecl.upper_bound_exprs?.includes(left_const)) return true;
+							if (
+								!right_is_path &&
+								flipped === "<=" &&
+								rdecl.upper_bound_inclusive_exprs?.includes(left_const)
+							) {
 								return true;
 							}
-							if (rdecl.upper_bound_expr === left_const) return true;
+							if (!right_is_path && rdecl.upper_bound_expr === left_const) return true;
 						} else {
-							if (rdecl.lower_bound_exprs?.includes(left_const)) return true;
+							if (!right_is_path && rdecl.lower_bound_exprs?.includes(left_const)) return true;
 							if (rdecl.lower_bound_exprs && alias_lower?.includes(left_const)) return true;
 							if (flipped === ">=") {
-								if (rdecl.lower_bound_inclusive_exprs?.includes(left_const)) return true;
+								if (!right_is_path && rdecl.lower_bound_inclusive_exprs?.includes(left_const))
+									return true;
 								if (alias_lower_inclusive?.includes(left_const)) return true;
 							} else {
 								// strict `>`: an inclusive `>= E` with `E >= T + 1`
 								// implies it; the alias's inclusive bounds likewise.
 								if (
+									!right_is_path &&
 									rdecl.lower_bound_inclusive_exprs?.some((e) =>
 										inclusive_lower_implies_strict(e, left_const),
 									)
@@ -460,7 +476,7 @@ function evaluate_operation(
 									return true;
 								if (alias_lower?.includes(left_const)) return true;
 							}
-							if (rdecl.lower_bound_expr === left_const) return true;
+							if (!right_is_path && rdecl.lower_bound_expr === left_const) return true;
 						}
 						// The path's OWN guard facts (`if f.ships.length > 1`
 						// records into the base variable's path_bounds under the
@@ -471,7 +487,14 @@ function evaluate_operation(
 						// matches by name. Sound because the modeled shrinking
 						// mutators narrow these entries (apply_list_length_effect).
 						if (right_var.includes(".")) {
-							const pb = rdecl.path_bounds?.get(right_var);
+							// `right_var` may be the ALIAS-RESOLVED path (expr_to_string
+							// follows the synthetic self's alias: `self.length` →
+							// "self.text.length"), while the synthetic self's map is
+							// keyed self-relative ("self.length"). Try both spellings.
+							let pb = rdecl.path_bounds?.get(right_var);
+							if (!pb && rdecl.alias_of && right_var.startsWith(`${rdecl.alias_of}.`)) {
+								pb = rdecl.path_bounds?.get(`self.${right_var.slice(rdecl.alias_of.length + 1)}`);
+							}
 							if (pb && flipped === ">") {
 								let path_hit = false;
 								if (left_num_is_int !== undefined) {
@@ -516,9 +539,13 @@ function evaluate_operation(
 					// (sound redundancy with the numeric branches above).
 					if (op.left_value.node_type === "value" && right_var?.includes(".")) {
 						const left_name = (op.left_value as ValueNode).value;
-						const path_pb = status.values
-							.findLast((v) => v.name === right_var.split(".")[0])
-							?.path_bounds?.get(right_var);
+						const path_decl = status.values.findLast((v) => v.name === right_var.split(".")[0]);
+						let path_pb = path_decl?.path_bounds?.get(right_var);
+						if (!path_pb && path_decl?.alias_of && right_var.startsWith(`${path_decl.alias_of}.`)) {
+							path_pb = path_decl.path_bounds?.get(
+								`self.${right_var.slice(path_decl.alias_of.length + 1)}`,
+							);
+						}
 						if (path_pb?.lower?.includes(left_name)) return true;
 					}
 				}
