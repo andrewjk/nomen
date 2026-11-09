@@ -267,6 +267,31 @@ Console.write("speed \\{speed:.2e} m/s")
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("format specs: custom patterns", () => {
+		const input = `
+var int audience = 1234567
+var float total = 1234567.5
+var float share = 0.125
+var int debt = -9876
+Console.write("\\{audience:#,##0} viewers")
+Console.write("\\{total:#,##0.00} owed")
+Console.write("\\{share:0.0%} share")
+Console.write("\\{debt:#,##0.00;(#,##0.00)}")
+Console.write("[\\{total:>14#,##0.00}]")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("format specs: patterns require a number", () => {
+		const input = `
+var string s = "x"
+Console.write("\\{s:#,##0}")
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("pattern requires an integer or float");
+	});
+
 	test("format specs: grouping on a string is an error", () => {
 		const input = `
 var string s = "x"

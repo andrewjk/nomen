@@ -77,8 +77,7 @@ pub struct Format {
 	// Insert ',' every three digits of the integer part of an already
 	// rendered number ("1234.50" → "1,234.50", "-987654" → "-987,654").
 	// A sign and any fractional part pass through untouched.
-	internal func group_int_part = (string text, mv out string) {
-		var int len = text.length
+	internal func group_int_part = (string text, mv out string) {		var int len = text.length
 		var int dot = len
 		var int i = 0
 		while i < len; i += 1 {
@@ -313,5 +312,434 @@ pub struct Format {
 			sb.append(text)
 		}
 		return sb.to_string()
+	}
+
+	// --- Custom patterns (the `\{value:#,##0.00}` mini-language) ------------
+	//
+	// Subset, validated at compile time (SPEC, String Interpolation):
+	//   0        digit slot, always renders (zero-pads)
+	//   #        digit slot, renders only when a digit exists
+	//   .        decimal point; trailing '#' fraction slots trim zeros
+	//   ,        group separator between digit slots; the rightmost comma
+	//            sets the group size for all groups
+	//   %        value scaled x100; '%' emitted at its position
+	//   '...'    quoted literal; any other character passes through
+	//   ;        at most two sections (positive;negative) — the negative
+	//            section renders the absolute value, sign and all
+	// Not in the language: exponential patterns (use the `:e` spec), the
+	// per-mille sign, trailing-comma scaling, three-section forms.
+	//
+	// The scanners below share one shape: snapshot `was_quoted`, toggle the
+	// quote state on a quote character, then run each structural check as
+	// its own top-level `if` gated on "this character is structural" —
+	// Nomen has no `else if`.
+
+	// The section of `pattern` that applies to `negative` values.
+	internal func pat_section = (string pattern, bool negative, mv out string) {
+		var int split = -1
+		var bool quoted = false
+		var int i = 0
+		while i < pattern.length; i += 1 {
+			var char c = pattern.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			if !was_quoted && !quoted && c == ';' {
+				split = i
+			}
+		}
+		var sb = StringBuilder()
+		if split == -1 {
+			return pattern.copy()
+		}
+		var int from = 0
+		if negative {
+			from = split + 1
+		}
+		i = from
+		while i < pattern.length; i += 1 {
+			sb.append_char(pattern.at(i))
+		}
+		return sb.to_string()
+	}
+
+	// True when the pattern carries two ';'-separated sections.
+	internal func pat_has2 = (string pattern, out bool) {
+		var bool quoted = false
+		var bool found = false
+		var int i = 0
+		while i < pattern.length; i += 1 {
+			var char c = pattern.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			if !was_quoted && !quoted && c == ';' {
+				found = true
+			}
+		}
+		return found
+	}
+
+	// True when the pattern carries a '%' anywhere (unquoted).
+	internal func pat_has_percent = (string pattern, out bool) {
+		var bool quoted = false
+		var bool found = false
+		var int i = 0
+		while i < pattern.length; i += 1 {
+			var char c = pattern.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			if !was_quoted && !quoted && c == '%' {
+				found = true
+			}
+		}
+		return found
+	}
+
+	// The widest fraction-slot count across both sections — the snprintf
+	// pass renders at least this many digits; shaping trims to the applied
+	// section's own slots.
+	internal func pat_max_frac = (string pattern, out int) {
+		var bool quoted = false
+		var bool in_frac = false
+		var int count = 0
+		var int best = 0
+		var int i = 0
+		while i < pattern.length; i += 1 {
+			var char c = pattern.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			var bool structural = !was_quoted && !quoted
+			if structural && c == '.' {
+				in_frac = true
+			}
+			if structural && (c == '0' || c == '#') {
+				if in_frac {
+					count += 1
+					if count > best {
+						best = count
+					}
+				}
+			}
+			if structural && c == ';' {
+				in_frac = false
+				count = 0
+			}
+			if structural && c != '.' && c != '0' && c != '#' {
+				// any other literal ends the fraction run
+				in_frac = false
+				count = 0
+			}
+		}
+		return best
+	}
+
+	// Decimal digits of a magnitude, most-significant first, no sign.
+	internal func pat_digits10 = (uint64 mag, mv out string) {
+		var sb = StringBuilder()
+		if mag == 0 {
+			sb.append_char('0')
+			return sb.to_string()
+		}
+		var Array<char> chars = Array<char>.with('0', 20)
+		var int count = 0
+		var uint64 m = mag
+		var string dig = "0123456789"
+		while m > 0 {
+			var uint64 d = m % 10
+			m = m / 10
+			chars.set(count, dig.at(d as int))
+			count += 1
+		}
+		var int j = count - 1
+		while j >= 0; j -= 1 {
+			sb.append_char(chars.at(j))
+		}
+		return sb.to_string()
+	}
+
+	// Shape digit strings against one pattern section. `int_digits` is the
+	// unsigned integer part; `frac_raw` the rendered fraction digits at the
+	// section's full precision ("" for integers — zeros fill up to the
+	// section's minimum). Emits prefix literals, the grouped integer part,
+	// the trimmed fraction, and the suffix. Every helper call result lands
+	// in a single-binding local: no owned string is ever reassigned (the
+	// displaced-free pass does not cover every conditional reassignment
+	// shape — FOLLOWUP.md).
+	internal func pat_render = (string section, string int_digits, string frac_raw, bool negative, mv out string) {
+		// Pass 1 — locate the regions: prefix (before the first integer
+		// slot), the integer slot run, the fraction slots, and the suffix
+		// (after the last slot).
+		var bool quoted = false
+		var int first_slot = -1
+		var int last_slot = -1
+		var int dot = -1
+		var int pad_slots = 0
+		var int frac_slots = 0
+		var int frac_min = 0
+		var bool has_comma = false
+		var int slots_after_comma = 0
+		var int i = 0
+		while i < section.length; i += 1 {
+			var char c = section.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			var bool structural = !was_quoted && !quoted
+			if structural && c == '.' {
+				if dot == -1 {
+					dot = i
+				}
+			}
+			if structural && (c == '0' || c == '#') {
+				last_slot = i
+				if dot == -1 {
+					// an integer slot — never counted before the dot
+					if first_slot == -1 {
+						first_slot = i
+					}
+					slots_after_comma += 1
+					if c == '0' {
+						// only '0' slots force zero-padding ('#' drops out)
+						pad_slots += 1
+					}
+				} else {
+					frac_slots += 1
+					if c == '0' {
+						frac_min = frac_slots
+					}
+				}
+			}
+			if structural && c == ',' && dot == -1 {
+				has_comma = true
+				slots_after_comma = 0
+			}
+		}
+		// Pass 2 — emit.
+		var sb = StringBuilder()
+		if negative {
+			sb.append_char('-')
+		}
+		// prefix: [0, first_slot), quotes stripped
+		i = 0
+		quoted = false
+		while i < first_slot; i += 1 {
+			var char c = section.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			if was_quoted && c != '\'' {
+				sb.append_char(c)
+			}
+			if !was_quoted && c != '\'' {
+				sb.append_char(c)
+			}
+		}
+		// integer part: zero-pad to the '0' slots, group per the rightmost
+		// comma's run, drop a lone zero when every slot is '#' (the shape
+		// helper's own empty case). The shape result lands in a local — an
+		// inline call argument to append_string would never be anchored.
+		var string shaped = Format.pat_shape_int(int_digits, pad_slots, has_comma, slots_after_comma)
+		sb.append_string(shaped)
+		// fraction: trim trailing zeros down to the section minimum, then
+		// zero-fill up to it (integer values arrive with no fraction at all).
+		var string kept = Format.pat_shape_frac(frac_raw, frac_slots, frac_min)
+		if kept.length > 0 {
+			sb.append_char('.')
+			sb.append(kept)
+		}
+		// suffix: (last_slot, end), quotes stripped, structural dot dropped
+		i = last_slot + 1
+		quoted = false
+		while i < section.length; i += 1 {
+			var char c = section.at(i)
+			var bool was_quoted = quoted
+			if c == '\'' {
+				if was_quoted {
+					quoted = false
+				}
+				if !was_quoted {
+					quoted = true
+				}
+			}
+			if was_quoted && c != '\'' {
+				sb.append_char(c)
+			}
+			if !was_quoted && c != '\'' && i != dot {
+				sb.append_char(c)
+			}
+		}
+		return sb.to_string()
+	}
+
+	// The integer part of a pattern: zero-pad to the '0' slots, then insert
+	// group separators every `group_size` digits. A value of "0" with no '0'
+	// slots renders empty (the `#`-only shapes).
+	internal func pat_shape_int = (string int_digits, int pad_slots, bool has_comma, int group_size, mv out string) {
+		var sb = StringBuilder()
+		if int_digits == "0" && pad_slots == 0 {
+			return sb.to_string()
+		}
+		var int total = int_digits.length
+		if total < pad_slots {
+			total = pad_slots
+		}
+		var int pad_count = total - int_digits.length
+		var int k = 0
+		while k < total; k += 1 {
+			if k < pad_count {
+				sb.append_char('0')
+			} else {
+				sb.append_char(int_digits.at(k - pad_count))
+			}
+			var int remaining = total - k - 1
+			if has_comma && group_size > 0 && remaining > 0 && remaining % group_size == 0 {
+				sb.append_char(',')
+			}
+		}
+		return sb.to_string()
+	}
+
+	// The fraction part of a pattern: clip to the slot count, trim trailing
+	// zeros down to the minimum ('0' slots), then zero-fill back up to it.
+	internal func pat_shape_frac = (string frac_raw, int frac_slots, int frac_min, mv out string) {
+		var sb = StringBuilder()
+		var int n = frac_raw.length
+		if n > frac_slots {
+			n = frac_slots
+		}
+		var bool trimming = true
+		while trimming && n > frac_min {
+			var char last = frac_raw.at(n - 1)
+			if last == '0' {
+				n -= 1
+			}
+			if last != '0' {
+				trimming = false
+			}
+		}
+		var int i = 0
+		while i < n; i += 1 {
+			sb.append_char(frac_raw.at(i))
+		}
+		while n < frac_min; n += 1 {
+			sb.append_char('0')
+		}
+		return sb.to_string()
+	}
+
+	// Pick the sign's section, render, and prepend '-' when a negative value
+	// has no dedicated section.
+	internal func pat_render_all = (string pattern, bool negative, string int_digits, string frac_raw, mv out string) {
+		var string section = Format.pat_section(pattern, negative)
+		var bool has2 = Format.pat_has2(pattern)
+		return Format.pat_render(section, int_digits, frac_raw, negative && !has2)
+	}
+
+	// `#,##0`-style rendering of a signed integer.
+	pub func int_pattern = (int64 value, string pattern, mv out string) {
+		var bool neg = value < 0
+		var uint64 mag = value as uint64
+		if neg {
+			var uint64 zero = 0
+			mag = zero - mag
+		}
+		if Format.pat_has_percent(pattern) {
+			mag = mag * 100
+		}
+		// The digit string passes as a call result (not a local at its last
+		// use) so the boundary keeps it a borrow the call site anchors.
+		return Format.pat_render_all(pattern, neg, Format.pat_digits10(mag), "")
+	}
+
+	// Unsigned twin of int_pattern — no sign, no reinterpretation.
+	pub func uint_pattern = (uint64 value, string pattern, mv out string) {
+		var uint64 mag = value
+		if Format.pat_has_percent(pattern) {
+			mag = mag * 100
+		}
+		return Format.pat_render_all(pattern, false, Format.pat_digits10(mag), "")
+	}
+
+	// Fixed-point pattern rendering of a float: snprintf renders the
+	// fraction at the pattern's widest precision, then the shaping pass
+	// trims to the applied section's slots.
+	pub func float_pattern = (float value, string pattern, mv out string) {
+		var bool neg = value < 0
+		var float v = value
+		if neg {
+			var float zero = 0
+			v = zero - v
+		}
+		if Format.pat_has_percent(pattern) {
+			v = v * (100 as float)
+		}
+		var int max_frac = Format.pat_max_frac(pattern)
+		var spec_sb = StringBuilder()
+		spec_sb.append_char('%')
+		spec_sb.append_char('.')
+		spec_sb.append_int(max_frac)
+		spec_sb.append_char('f')
+		var string rendered = Format.float_fixed(v, spec_sb.to_string())
+		// rendered = digits '.' frac — split them
+		var int dot = rendered.length
+		var int i = 0
+		while i < rendered.length; i += 1 {
+			if rendered.at(i) == '.' {
+				dot = i
+			}
+		}
+		var int_sb = StringBuilder()
+		var frac_sb = StringBuilder()
+		var int s = 0
+		while s < rendered.length; s += 1 {
+			if s < dot {
+				int_sb.append_char(rendered.at(s))
+			}
+			if s > dot {
+				frac_sb.append_char(rendered.at(s))
+			}
+		}
+		// Both digit strings pass as call results (not locals at their last
+		// use) so the boundary keeps them borrows the call site anchors.
+		return Format.pat_render_all(pattern, neg, int_sb.to_string(), frac_sb.to_string())
 	}
 }

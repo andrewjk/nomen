@@ -20,13 +20,43 @@ import get_index from "./utils/get_index.ts";
  *  this accepts any colon-leading token, including a bare `:`. */
 const FORMAT_SPEC_TOKEN = /^:/;
 
-/** Strict grammar walk over the raw spec text (without the `:`). Returns the
- *  spec, or undefined after reporting the syntax error. */
+/** Strict grammar walk over the raw spec text (without the `:`). A spec
+ *  containing `#` or `,` tries the simple grammar first, then the custom
+ *  pattern grammar; everything else reports the simple-grammar failure. */
 function parse_format_spec(
 	text: string,
 	start: number,
 	status: ParseStatus,
 ): FormatSpec | undefined {
+	const simple = parse_simple_spec(text, start);
+	if (simple.spec) return simple.spec;
+	// A COMBINATION failure (`:08n`, `:.2x`) is authoritative — the text IS
+	// simple-shaped and simply rejected. A STRUCTURAL failure may still be
+	// a valid custom pattern (`:00`, `:0.00`, `:#,##0`, …); when one exists
+	// it wins, otherwise the error from whichever grammar the text belongs
+	// to is reported.
+	if (!simple.structural) {
+		add_error(status, simple.error ?? "empty format spec", start);
+		return undefined;
+	}
+	const pattern = parse_pattern_spec(text, start);
+	if (pattern.spec) return pattern.spec;
+	if (/[#,;%'"]/.test(text) || text.includes("E")) {
+		add_error(status, pattern.error ?? "empty format spec", start);
+	} else {
+		add_error(status, simple.error ?? "empty format spec", start);
+	}
+	return undefined;
+}
+
+/** The simple spec grammar: `[fill][width][.precision][mode]`. Returns the
+ *  spec, or an error plus whether the failure was STRUCTURAL (the text
+ *  isn't simple-shaped at all — a custom pattern may still apply) versus a
+ *  combination rule the simple grammar rejects outright. */
+function parse_simple_spec(
+	text: string,
+	start: number,
+): { spec?: FormatSpec; error?: string; structural?: boolean } {
 	const spec: FormatSpec = { text, start };
 	let i = 0;
 	let filled = false;
@@ -46,12 +76,9 @@ function parse_format_spec(
 		filled = true;
 		const width = read_digits();
 		if (width === undefined) {
-			add_error(
-				status,
-				`invalid format spec ':${text}': expected width digits after '${spec.align === "left" ? "<" : ">"}'`,
-				start,
-			);
-			return undefined;
+			return {
+				error: `invalid format spec ':${text}': expected width digits after '${spec.align === "left" ? "<" : ">"}'`,
+			};
 		}
 		spec.width = width;
 	} else if (text[i] === "0") {
@@ -60,8 +87,10 @@ function parse_format_spec(
 		filled = true;
 		const width = read_digits();
 		if (width === undefined) {
-			add_error(status, `invalid format spec ':${text}': expected width digits after '0'`, start);
-			return undefined;
+			return {
+				error: `invalid format spec ':${text}': expected width digits after '0'`,
+				structural: true,
+			};
 		}
 		spec.width = width;
 	}
@@ -76,8 +105,10 @@ function parse_format_spec(
 		i += 1;
 		const precision = read_digits();
 		if (precision === undefined) {
-			add_error(status, `invalid format spec ':${text}': expected digits after '.'`, start);
-			return undefined;
+			return {
+				error: `invalid format spec ':${text}': expected digits after '.'`,
+				structural: true,
+			};
 		}
 		spec.precision = precision;
 		filled = true;
@@ -92,30 +123,125 @@ function parse_format_spec(
 		filled = true;
 	}
 	if (i < text.length) {
-		add_error(status, `invalid format spec ':${text}': unexpected character '${text[i]}'`, start);
-		return undefined;
+		return {
+			error: `invalid format spec ':${text}': unexpected character '${text[i]}'`,
+			structural: true,
+		};
 	}
 	if (!filled) {
-		add_error(status, "empty format spec", start);
-		return undefined;
+		return { error: "empty format spec", structural: true };
 	}
 	if (spec.precision !== undefined && spec.base && BASE_LETTERS.includes(spec.base)) {
-		add_error(status, `invalid format spec ':${text}': precision and base cannot combine`, start);
-		return undefined;
+		return { error: `invalid format spec ':${text}': precision and base cannot combine` };
 	}
 	if (spec.zero && spec.base && (spec.base === "n" || spec.base === "N")) {
-		add_error(
-			status,
-			`invalid format spec ':${text}': zero-padding cannot combine with grouping`,
-			start,
-		);
-		return undefined;
+		return { error: `invalid format spec ':${text}': zero-padding cannot combine with grouping` };
 	}
 	if (spec.width === 0) {
-		add_error(status, `invalid format spec ':${text}': width must be at least 1`, start);
-		return undefined;
+		return { error: `invalid format spec ':${text}': width must be at least 1` };
 	}
-	return spec;
+	return { spec };
+}
+
+/** The custom-pattern grammar (C#-style subset — see FormatSpec). An
+ *  optional `<N`/`>N` alignment prefix composes; the rest is the pattern,
+ *  validated section by section. Returns the spec or the error message. */
+function parse_pattern_spec(text: string, start: number): { spec?: FormatSpec; error?: string } {
+	const spec: FormatSpec = { text, start };
+	let i = 0;
+	if (text[i] === "<" || text[i] === ">") {
+		spec.align = text[i] === "<" ? "left" : "right";
+		i += 1;
+		const begin = i;
+		while (i < text.length && text[i] >= "0" && text[i] <= "9") {
+			i += 1;
+		}
+		if (i === begin) {
+			return {
+				error: `invalid format spec ':${text}': expected width digits after '${spec.align === "left" ? "<" : ">"}'`,
+			};
+		}
+		spec.width = parseInt(text.substring(begin, i), 10);
+		if (spec.width === 0) {
+			return { error: `invalid format spec ':${text}': width must be at least 1` };
+		}
+	}
+	const pattern = text.substring(i);
+	if (pattern.length === 0) {
+		return { error: "empty format spec" };
+	}
+	const failf = (message: string) => {
+		return { error: `invalid format spec ':${text}': ${message}` };
+	};
+
+	// Validate the pattern: quote balance, at most two sections, and per
+	// section at least one digit slot, at most one '.', commas only between
+	// digit slots, and no exponential notation (use the `:e` spec).
+	let quoted = false;
+	let sections = 1;
+	let section_has_slot = false;
+	let section_dot = false;
+	let slots_since_comma = -1;
+	for (const c of pattern) {
+		if (quoted) {
+			if (c === "'") quoted = false;
+			continue;
+		}
+		if (c === "'") {
+			quoted = true;
+			continue;
+		}
+		if (c === ";") {
+			if (!section_has_slot) {
+				return failf("each section needs at least one digit placeholder ('0' or '#')");
+			}
+			if (slots_since_comma === 0) {
+				return failf("group commas must sit between digit placeholders");
+			}
+			sections += 1;
+			if (sections > 2) {
+				return failf("at most two ';'-separated sections");
+			}
+			section_has_slot = false;
+			section_dot = false;
+			slots_since_comma = -1;
+			continue;
+		}
+		if (c === "E" || c === "e") {
+			return failf("exponential patterns are not supported — use the ':e' spec");
+		}
+		if (c === ".") {
+			if (section_dot) {
+				return failf("at most one '.' per section");
+			}
+			section_dot = true;
+			slots_since_comma = -1;
+			continue;
+		}
+		if (c === "0" || c === "#") {
+			section_has_slot = true;
+			if (slots_since_comma >= 0) slots_since_comma += 1;
+			continue;
+		}
+		if (c === ",") {
+			if (!section_has_slot || section_dot || slots_since_comma === 0) {
+				return failf("group commas must sit between digit placeholders");
+			}
+			slots_since_comma = 0;
+			continue;
+		}
+	}
+	if (quoted) {
+		return failf("unbalanced pattern quotes");
+	}
+	if (!section_has_slot) {
+		return failf("each section needs at least one digit placeholder ('0' or '#')");
+	}
+	if (slots_since_comma === 0) {
+		return failf("group commas must sit between digit placeholders");
+	}
+	spec.pattern = pattern;
+	return { spec };
 }
 
 export default function parse_string_interpolation(status: ParseStatus): FunctionCallNode {

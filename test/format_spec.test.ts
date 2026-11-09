@@ -52,6 +52,13 @@ Console.write("gw [\\{big:>12n}] [\\{big:<12n}]\\n")
 Console.write("exp \\{f:e} \\{f:.2E}\\n")
 Console.write("expb \\{speed:e} \\{speed:.1e}\\n")
 Console.write("expw [\\{f:12.2e}] [\\{f:<12.2e}]\\n")
+var float ratio = 0.125
+var int zero_i = 0
+Console.write("pat \\{big:#,##0} \\{neg_big:#,##0}\\n")
+Console.write("patf \\{total:#,##0.00} \\{f:.##} \\{f:0.00}\\n")
+Console.write("patp \\{ratio:0.0%} \\{ratio:#.#%}\\n")
+Console.write("patn \\{neg_big:#,##0.00;(#,##0.00)}\\n")
+Console.write("patw [\\{total:>14#,##0.00}] [\\{zero_i:#,##0}]\\n")
 `;
 
 describe("format specs", () => {
@@ -84,7 +91,12 @@ describe("format specs", () => {
 					"gw [   1,234,567] [1,234,567   ]\n" +
 					"exp 1.500000e+00 1.50E+00\n" +
 					"expb 2.500000e-04 2.5e-04\n" +
-					"expw [    1.50e+00] [1.50e+00    ]\n",
+					"expw [    1.50e+00] [1.50e+00    ]\n" +
+					"pat 1,234,567 -9,876,543\n" +
+					"patf 1,234,567.89 1.5 1.50\n" +
+					"patp 12.5% 12.5%\n" +
+					"patn (9,876,543.00)\n" +
+					"patw [  1,234,567.89] [0]\n",
 			);
 		},
 	);
@@ -201,6 +213,51 @@ Console.write("\\{i:08n}")
 		expect(errors[0].message).toContain("zero-padding cannot combine with grouping");
 	});
 
+	test("patterns require an integer or float", () => {
+		const errors = compile_main(`
+var string s = "x"
+Console.write("\\{s:#,##0}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("pattern requires an integer or float");
+	});
+
+	test("pattern syntax: exponential inside a pattern is rejected", () => {
+		const errors = compile_main(`
+var int i = 5
+Console.write("\\{i:0.00E0}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("exponential patterns are not supported");
+	});
+
+	test("pattern syntax: trailing group comma is rejected", () => {
+		const errors = compile_main(`
+var int i = 5
+Console.write("\\{i:#,##0,}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("group commas must sit between digit placeholders");
+	});
+
+	test("pattern syntax: three sections are rejected", () => {
+		const errors = compile_main(`
+var int i = 5
+Console.write("\\{i:0;-0;-0}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("at most two ';'-separated sections");
+	});
+
+	test("pattern syntax: unbalanced quotes are rejected", () => {
+		const errors = compile_main(`
+var int i = 5
+Console.write("\\{i:'#0}")
+`);
+		expect(errors.length).toBe(1);
+		expect(errors[0].message).toContain("unbalanced pattern quotes");
+	});
+
 	test("syntax: empty alignment", () => {
 		const errors = compile_main(`
 var int i = 5
@@ -210,13 +267,13 @@ Console.write("\\{i:<}")
 		expect(errors[0].message).toContain("invalid format spec");
 	});
 
-	test("syntax: zero without width", () => {
+	test("syntax: zero width is rejected", () => {
 		const errors = compile_main(`
 var int i = 5
-Console.write("\\{i:0}")
+Console.write("\\{i:00}")
 `);
 		expect(errors.length).toBe(1);
-		expect(errors[0].message).toContain("expected width digits after '0'");
+		expect(errors[0].message).toContain("width must be at least 1");
 	});
 
 	test("syntax: unexpected character", () => {

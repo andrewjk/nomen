@@ -87,6 +87,14 @@ export default function check_format_spec_arg(
 		);
 		return undefined;
 	}
+	if (spec.pattern !== undefined && !is_int && !is_float) {
+		add_error(
+			status,
+			`format spec ':${spec.text}': pattern requires an integer or float, but the value is ${t.name || "value"}`,
+			spec.start,
+		);
+		return undefined;
+	}
 	if (spec.base && "eE".includes(spec.base) && !is_float) {
 		add_error(
 			status,
@@ -111,6 +119,25 @@ export default function check_format_spec_arg(
 	const is_exponential = spec.base === "e" || spec.base === "E";
 	const is_grouped = spec.base === "n" || spec.base === "N";
 
+	if (spec.pattern !== undefined) {
+		// Custom pattern (the `#,##0.00` mini-language): the value renders
+		// through the matching `Format.*_pattern`, then width/alignment
+		// compose through `pad`.
+		const fname = is_float ? "float_pattern" : info?.signed ? "int_pattern" : "uint_pattern";
+		const rendered = format_call(spec.start, fname, [
+			new CastNode(
+				target.start,
+				target,
+				new Type(is_float ? "float" : info?.signed ? "int64" : "uint64"),
+			),
+			new ValueNode(target.start, `"${escape_pattern(spec.pattern)}"`, new Type("string", true)),
+		]);
+		if (signed_width === 0) return rendered;
+		return format_call(spec.start, "pad", [
+			rendered,
+			new ValueNode(target.start, String(signed_width), new Type("int", true)),
+		]);
+	}
 	if (is_grouped && is_float) {
 		// Grouped fixed-point: render, then comma the integer part. Width
 		// composes through `pad` — zero-padding never reaches the grouping
@@ -183,4 +210,10 @@ function format_call(start: number, fname: string, params: BaseNode[]): AccessNo
 		new ValueNode(start, "Format"),
 		new AccessFunctionCallNode(start, fname, undefined, params),
 	);
+}
+
+/** The pattern rides a Nomen string literal — escape the two characters
+ *  that would terminate or escape it. */
+function escape_pattern(pattern: string): string {
+	return pattern.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

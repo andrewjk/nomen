@@ -2449,6 +2449,40 @@ Console.write("\{total:.2n} owed")
 Console.write("speed \{speed:.2e} m/s")
 ```
 
+A spec containing `#` or `,` is a custom pattern instead — the C#-style
+mini-language, validated at compile time. A pattern may carry a `<N`/`>N`
+alignment prefix; everything after it is the pattern:
+
+- `0` — a digit slot that always renders (zero-pads the value out to it).
+- `#` — a digit slot that renders only when a digit exists.
+- `.` — the decimal point. Fraction slots after it render decimals; slots
+  ending in `#` trim trailing zeros (`0.00` is fixed two decimals, `0.##`
+  is up to two).
+- `,` — the group separator between digit slots. The rightmost comma's run
+  sets the group size for every group.
+- `%` — scales the value by 100 and emits `%` at its position.
+- `'...'` — a quoted literal. Any other character passes through, so
+  `$#,##0.00` needs no quotes.
+- `;` — at most two sections (`positive;negative`). A negative value
+  renders its absolute value through the second section, sign and all —
+  `#,##0.00;(#,##0.00)` yields accounting parentheses.
+
+Exponential patterns, the per-mille sign, trailing-comma scaling, and
+three-section forms are not in the language (use the `:e` spec for
+scientific output). Rounding is to nearest.
+
+```
+var int audience = 1234567
+var float total = 1234567.5
+var float share = 0.125
+var int debt = -9876
+Console.write("\{audience:#,##0} viewers")
+Console.write("\{total:#,##0.00} owed")
+Console.write("\{share:0.0%} share")
+Console.write("\{debt:#,##0.00;(#,##0.00)}")
+Console.write("[\{total:>14#,##0.00}]")
+```
+
 Anything else in a spec is a compile error — an unknown character, an empty
 width after a fill, a precision combined with a base:
 
