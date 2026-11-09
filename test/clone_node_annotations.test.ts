@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
 import { get_library } from "../src/lib";
+import clone_node from "../src/nodes/clone_node";
 import type AccessFunctionCallNode from "../src/nodes/AccessFunctionCallNode";
 import type FunctionNode from "../src/nodes/FunctionNode";
 import type RootNode from "../src/nodes/RootNode";
@@ -55,6 +56,71 @@ ${source}
 		system,
 	);
 }
+
+/** Deep-collect every AST node in the tree (skipping parent/scope links). */
+function collect_nodes(node: unknown, out: any[] = []): any[] {
+	if (!node || typeof node !== "object") return out;
+	const n = node as Record<string, unknown>;
+	if (typeof n.node_type === "string") out.push(n);
+	for (const key of Object.keys(n)) {
+		if (key === "parent" || key === "scope") continue;
+		const v = n[key];
+		if (Array.isArray(v)) {
+			for (const item of v) collect_nodes(item, out);
+		} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+			collect_nodes(v, out);
+		}
+	}
+	return out;
+}
+
+test("clone_node keeps the checker's transfer and slot stamps", () => {
+	// The checker stamps ownership/lowering facts directly on AST nodes: a
+	// `mv` argument is a transfer (is_moved), and a ref binding of a
+	// container element is rewritten to the slot primitive
+	// (is_element_slot_load). A generic body is cloned for every
+	// monomorphization — a clone that drops the stamps mis-lowers the body
+	// (copy instead of move, owning copy instead of slot alias).
+	const parsed = parse(
+		`
+import System
+
+pub func main = (Init init) {
+	var Map<int, Rec> m = Map<int, Rec>()
+	var Rec r = Rec()
+	r.id = 5
+	m.set(1, mv r)
+	var string s = "x" + "y"
+	var string b = mv s
+	ref Rec v = m.get_or_panic(1)
+	Console.write("\\{v.id}\\{b.length}")
+}
+
+mv struct Rec {
+	pub var int id = 0
+}
+`,
+		system,
+	);
+	expect(parsed.errors).toEqual([]);
+
+	const nodes = collect_nodes(parsed.root);
+
+	// The element-borrow rewrite renamed the call to the slot primitive and
+	// stamped it.
+	const slot_call = nodes.find(
+		(n) => n.node_type === "access_func" && n.is_element_slot_load,
+	) as AccessFunctionCallNode | undefined;
+	expect(slot_call).toBeDefined();
+	const cloned_call = clone_node(slot_call!) as AccessFunctionCallNode;
+	expect(cloned_call.is_element_slot_load).toBe(true);
+
+	// The mv RHS of the declaration carries the transfer stamp.
+	const moved = nodes.find((n) => n.node_type === "value" && n.is_moved);
+	expect(moved).toBeDefined();
+	const cloned_moved = clone_node(moved);
+	expect(cloned_moved.is_moved).toBe(true);
+});
 
 test("rederive owned_return on mv-out method call inside mono body", () => {
 	// Instantiating List<int> monomorphises the generic. The `pop` method's

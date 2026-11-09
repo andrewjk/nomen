@@ -40,12 +40,20 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 					)
 				: undefined,
 		})),
+		// Scoped checker allowances: a region sets these around checking a
+		// subexpression (a null literal allowed by the expected type, an
+		// assignment target exempt from the borrow checks). A cloned region
+		// nested inside one — an if-expression arm under a declaration's
+		// null allowance — must keep them, or it re-reports errors the
+		// enclosing region already allowed. Every setter saves/restores the
+		// flag around its region, so plain inheritance is the contract.
+		allow_null_value: status.allow_null_value,
+		is_assignment_target: status.is_assignment_target,
 		// Devirtualization rebind scan: shared by reference — the scan is
 		// immutable once a function entry computes it, so block clones (if /
 		// while / match bodies) must see the same set. check_function_node
 		// assigns a fresh scan for each nested function.
-		devirt_rebound_names: status.devirt_rebound_names,
-		// Current-function context: block clones (if/else/while) stay in the
+		devirt_rebound_names: status.devirt_rebound_names, // Current-function context: block clones (if/else/while) stay in the
 		// same function, so they keep it; check_function_node overwrites it
 		// for a freshly-entered function. The declared-effect verification
 		// resolves the current `ref` parameters through it.
@@ -72,6 +80,10 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// cloned (block/function) scope must survive the clone's discard and
 		// reach the root's warning pass.
 		warnings: status.warnings,
+		// Capture-error dedupe: shared by reference like errors/warnings —
+		// a capture error reported inside one clone must suppress the
+		// repeat report in a sibling clone.
+		reported_capture_errors: status.reported_capture_errors,
 		// Buffer cap tracking: share the same map (writes propagate to parent)
 		buffer_caps: status.buffer_caps,
 		// Parallel-length equations: block clones stay in the same function,
@@ -97,6 +109,19 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// null assignment) doesn't leak into the parent (or a sibling branch).
 		// check_if_else_node reconciles the survivors explicitly.
 		null_paths: status.null_paths ? new Set(status.null_paths) : undefined,
+		// Moved-variable facts: deep-copy — a branch body's move must not
+		// leak into the parent or a sibling branch, and a branch-local
+		// re-assignment (which un-moves) must not un-move in the parent.
+		// Parent facts stay VISIBLE inside the clone: using a variable moved
+		// before the branch is an error inside it too.
+		moved_variables: status.moved_variables ? new Set(status.moved_variables) : undefined,
+		// Deferred return-bounds: deep-copy — an entry recorded inside a
+		// branch is consumed by the declaration in that same branch; an
+		// unconsumed entry dies with the clone instead of feeding a later,
+		// unrelated declaration in the parent.
+		pending_return_bounds: status.pending_return_bounds
+			? new Map([...status.pending_return_bounds].map(([k, v]) => [k, v.slice()]))
+			: undefined,
 		// Nested-function label uniquification must see every emission name
 		// in the program — share the same set across all clones.
 		function_emission_names: status.function_emission_names,

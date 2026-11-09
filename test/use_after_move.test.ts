@@ -22,6 +22,49 @@ take(mv a)
 		);
 	});
 
+	test("use of a variable moved before a branch errors inside the branch", () => {
+		// The branch body is checked on a CLONED status; the clone used to
+		// start with an empty moved-variable set, so a use-after-mv inside
+		// an if body was missed. The clone must inherit the enclosing
+		// function's moved facts.
+		const input = `
+mv struct Box {
+	var int value
+}
+func take = (mv Box b) {
+}
+var Box a = Box(42)
+take(mv a)
+if true {
+	take(mv a)
+}
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("used after mv"),
+		);
+	});
+
+	test("a move inside a branch does not leak to the enclosing scope", () => {
+		// Deep-copy direction: the branch's move is branch-local, so the
+		// enclosing scope's flow is unchanged (the same conservative
+		// behavior as before the clone inherited moved facts).
+		const input = `
+mv struct Box {
+	var int value
+}
+func take = (mv Box b) {
+}
+var Box a = Box(42)
+if true {
+	take(mv a)
+}
+take(mv a)
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
 	test("class field mutation after mv", () => {
 		const input = `
 mv struct Box {

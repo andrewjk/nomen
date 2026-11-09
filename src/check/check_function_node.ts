@@ -154,6 +154,19 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// statement kept only the reference (aarch64 emitted `adr xN, _param_N`
 	// and clang rejected it).
 	function_status.allocations = [];
+	// Moved-variable facts are FUNCTION-scoped flow facts keyed by bare
+	// name: a nested function (or lambda) starts with none of the
+	// enclosing scope's moves — its locals are a fresh name space, and a
+	// capture's move is recorded explicitly by the capture pass
+	// (utils/captures.ts). Inheriting the enclosing set made every
+	// same-named local in any later-checked function (the library's `n`,
+	// `s`, …) look moved. Block clones (if/while/match bodies) DO inherit
+	// — they stay in the same function.
+	function_status.moved_variables = undefined;
+	// Deferred return-bounds are likewise name-keyed to the enclosing
+	// function's declarations; a fresh function must not consume (or be
+	// fed by) the caller's pending entries.
+	function_status.pending_return_bounds = undefined;
 	// Unsafe context: an `unsafe func` body is one big unsafe region —
 	// `ptr T` values, `p[i]` indexing and pointer casts are legal in it.
 	function_status.in_unsafe = !!func.is_unsafe;

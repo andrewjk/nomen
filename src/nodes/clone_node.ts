@@ -78,6 +78,13 @@ export default function clone_node(node: BaseNode): BaseNode {
 			const n = node as ValueNode;
 			const c = new ValueNode(n.start, n.value, n.type ? clone_type(n.type) : undefined);
 			c.is_enum_shorthand = n.is_enum_shorthand;
+			// Transfer stamps from the checker: a mono clone that drops them
+			// re-classifies the node as an ordinary literal/alias — the
+			// literal-element move stops transferring and the synthesized
+			// zeroed-slot swap value is misread as an int literal.
+			c.literal_last_use_move = n.literal_last_use_move;
+			c.is_struct_zero = n.is_struct_zero;
+			c.is_moved = n.is_moved;
 			c.allocations = n.allocations?.map(clone_node);
 			c.type_args = n.type_args?.map(clone_type);
 			return c;
@@ -173,6 +180,13 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_thread_detach = n.is_thread_detach;
 			c.is_fiber_start = n.is_fiber_start;
 			c.is_fiber_start_on = n.is_fiber_start_on;
+			// Element-borrow/in-place-push stamps from the checker: the mono
+			// re-derivation pass re-derives call targets and contracts but
+			// NOT these — a clone without them lowers the element borrow as a
+			// copy and the `set` value as a by-value argument (use-after-free
+			// and double-free shapes).
+			c.is_element_slot_load = n.is_element_slot_load;
+			c.in_place_push_index = n.in_place_push_index;
 			c.function_return_type = n.function_return_type
 				? clone_type(n.function_return_type)
 				: undefined;
