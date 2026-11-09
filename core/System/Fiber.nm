@@ -74,6 +74,10 @@ pub mv struct Fiber<T> : Spawnable<T> {
 	pub func start = (ref self {}, mv out Task<T>) {
 		```
 		#arch: c
+		// Single-launch contract: a consumed construction (started) owns
+		// nothing — the handles below are zeroed, and writing the ref count
+		// through the null future would fault. Abort with the reason.
+		if (self->started) __nomen_spawn_double_start_abort();
 		struct nomen_future *_f = (struct nomen_future *)self->future;
 		_f->refs = self->nursery_futures ? 3 : 2;
 		__nomen_fiber_spawn((struct nomen_closure *)self->task, _f);
@@ -83,7 +87,12 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		```
 		```
 		#arch: aarch64
-		// x19 = self. f = self->future (#32); nursery_futures at #48.
+		// x19 = self. started at #40; f = self->future (#32); nursery_futures
+		// at #48. Single-launch contract first: a consumed construction has
+		// zeroed handles, and the ref-store below would write through null.
+		ldrb w9, [x19, #40]
+		cbnz w9, .Lnomen_fstart_double
+		// f = self->future (#32); nursery_futures at #48.
 		ldr x0, [x19, #32]
 		ldr x1, [x19, #48]
 		mov w2, #2
@@ -103,6 +112,10 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		ldr x3, [x19, #32]
 		bl ___nomen_nursery_track
 		.Lnomen_fstart_notrack:
+		b .Lnomen_fstart_done
+		.Lnomen_fstart_double:
+		bl ___nomen_spawn_double_start_abort
+		.Lnomen_fstart_done:
 		```
 		var t = Task<T>()
 		t.result_slot = self.result_slot

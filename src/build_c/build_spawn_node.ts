@@ -206,6 +206,15 @@ void __nomen_spawn_must_start_abort(void) {
 	fprintf(stderr, "error: a Thread(fn(args)) / Fiber(fn(args)) value was never started - append .start() (or .detach()) or pass it to a nursery's .start()\\n");
 	abort();
 }
+// The library single-launch contract (Thread/Fiber .start/.detach): the
+// launch consumes the construction's machinery and zeroes its handles, so a
+// second launch on the same value would write through the zeroed future —
+// report why and abort. Reached from the generated .start/.detach bodies on
+// both backends (non-static on aarch64, where raw asm branches into it).
+void __nomen_spawn_double_start_abort(void) {
+	fprintf(stderr, "error: a Thread(fn(args)) / Fiber(fn(args)) value was started more than once - .start()/.detach() launch exactly one task per construction\\n");
+	abort();
+}
 static __thread unsigned long long *__nomen_current_cancel_flag = NULL;
 // Fiber runtime (ASYNC.md Phase 1). The pool and the fiber scheduler
 // share one header text: this block owns the future machinery and declares

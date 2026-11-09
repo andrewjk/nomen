@@ -85,6 +85,10 @@ pub mv struct Thread<T> : Spawnable<T> {
 	pub func start = (ref self {}, mv out Task<T>) {
 		```
 		#arch: c
+		// Single-launch contract: a consumed construction (started) owns
+		// nothing — the handles below are zeroed, and writing the ref count
+		// through the null future would fault. Abort with the reason.
+		if (self->started) __nomen_spawn_double_start_abort();
 		struct nomen_future *_f = (struct nomen_future *)self->future;
 		_f->refs = self->nursery_futures ? 3 : 2;
 		__nomen_pool_submit((struct nomen_closure *)self->task);
@@ -94,7 +98,12 @@ pub mv struct Thread<T> : Spawnable<T> {
 		```
 		```
 		#arch: aarch64
-		// x19 = self. f = self->future (#32); nursery_futures at #48.
+		// x19 = self. started at #40; f = self->future (#32); nursery_futures
+		// at #48. Single-launch contract first: a consumed construction has
+		// zeroed handles, and the ref-store below would write through null.
+		ldrb w9, [x19, #40]
+		cbnz w9, .Lnomen_start_double
+		// f = self->future (#32); nursery_futures at #48.
 		ldr x0, [x19, #32]
 		ldr x1, [x19, #48]
 		mov w2, #2
@@ -113,6 +122,10 @@ pub mv struct Thread<T> : Spawnable<T> {
 		ldr x3, [x19, #32]
 		bl ___nomen_nursery_track
 		.Lnomen_start_notrack:
+		b .Lnomen_start_done
+		.Lnomen_start_double:
+		bl ___nomen_spawn_double_start_abort
+		.Lnomen_start_done:
 		```
 		// The handle is a fresh heap Task built through the internal #init;
 		// the caller owns it (a discarded statement form is reclaimed at
@@ -139,6 +152,9 @@ pub mv struct Thread<T> : Spawnable<T> {
 	pub func detach = (ref self {}) {
 		```
 		#arch: c
+		// Single-launch contract (see .start): a consumed construction has
+		// zeroed handles, and detaching the null closure would crash a worker.
+		if (self->started) __nomen_spawn_double_start_abort();
 		struct nomen_future *_uf = (struct nomen_future *)self->future;
 		if (_uf) {
 			_uf->owner_args = NULL;
@@ -148,6 +164,9 @@ pub mv struct Thread<T> : Spawnable<T> {
 		```
 		```
 		#arch: aarch64
+		// Single-launch contract first (see .start): started at #40.
+		ldrb w9, [x19, #40]
+		cbnz w9, .Lnomen_detach_double
 		// if (self->future) { owner_args = NULL; release it }
 		ldr x0, [x19, #32]
 		cbz x0, .Lnomen_detach_nofut
@@ -157,6 +176,10 @@ pub mv struct Thread<T> : Spawnable<T> {
 		// __nomen_task_detach(self->task)
 		ldr x0, [x19, #8]
 		bl ___nomen_task_detach
+		b .Lnomen_detach_done
+		.Lnomen_detach_double:
+		bl ___nomen_spawn_double_start_abort
+		.Lnomen_detach_done:
 		```
 		self.task = 0
 		self.future = 0

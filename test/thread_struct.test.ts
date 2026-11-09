@@ -118,6 +118,94 @@ pub func main = () {
 		expect(failed).toBe(true);
 	});
 
+	test("starting a Thread twice aborts with an explanation", async () => {
+		// The single-launch contract: .start() consumes the construction's
+		// machinery and zeroes its handles. A second .start() used to write
+		// the future's ref count through the zeroed handle (a null write) —
+		// it must abort with the reason instead.
+		const input = `import System
+
+func work = (int n, out uint64) {
+	return n
+}
+
+pub func main = () {
+	var t = Thread(work(1))
+	var h = t.start()
+	Console.write_line("started")
+	t.start()
+}
+`;
+		let failed = false;
+		try {
+			await build_and_check_output(input, "thread_struct_double_start", "started\n", true, {
+				audit: false,
+			});
+		} catch (e) {
+			failed = true;
+			const err = e as { stderr?: string; message?: string };
+			const text = (err.stderr ?? "") + (err.message ?? "");
+			expect(text).toContain("started more than once");
+		}
+		expect(failed).toBe(true);
+	});
+
+	test("detaching a started Thread aborts with an explanation", async () => {
+		const input = `import System
+
+func work = (int n, out uint64) {
+	return n
+}
+
+pub func main = () {
+	var t = Thread(work(1))
+	t.start()
+	Console.write_line("started")
+	t.detach()
+}
+`;
+		let failed = false;
+		try {
+			await build_and_check_output(input, "thread_struct_start_then_detach", "started\n", true, {
+				audit: false,
+			});
+		} catch (e) {
+			failed = true;
+			const err = e as { stderr?: string; message?: string };
+			const text = (err.stderr ?? "") + (err.message ?? "");
+			expect(text).toContain("started more than once");
+		}
+		expect(failed).toBe(true);
+	});
+
+	test("starting a Fiber twice aborts with an explanation", async () => {
+		const input = `import System
+
+func work = (int n, out uint64) {
+	return n
+}
+
+pub func main = () {
+	var f = Fiber(work(1))
+	var h = f.start()
+	Console.write_line("started")
+	f.start()
+}
+`;
+		let failed = false;
+		try {
+			await build_and_check_output(input, "fiber_struct_double_start", "started\n", true, {
+				audit: false,
+			});
+		} catch (e) {
+			failed = true;
+			const err = e as { stderr?: string; message?: string };
+			const text = (err.stderr ?? "") + (err.message ?? "");
+			expect(text).toContain("started more than once");
+		}
+		expect(failed).toBe(true);
+	});
+
 	test("a stored Thread starts inside a nursery and is joined", async () => {
 		const input = `import System
 
