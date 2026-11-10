@@ -174,7 +174,7 @@ export function print_help(): void {
 			"  --config, -c <path>     Path to a config file",
 			"  --watch, -w             Watch for file changes",
 			"  --filter, -f <regex>    Only run test files whose path matches this regex",
-			"  --arch, -a <arch>       Target architecture: aarch64 | c (default: aarch64)",
+			"  --arch, -a <arch>       Target architecture: aarch64 | c | js (default: aarch64)",
 			"  --platform, -p <name>   Target platform: macos, ios, linux, android, windows, web",
 			"  --lib, -l <path>        Path to System library directory (containing package.jsonc)",
 			"  --audit                 Audit the generated program for memory issues",

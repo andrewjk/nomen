@@ -1,5 +1,5 @@
 export default interface Config {
-	arch?: "c" | "aarch64";
+	arch?: "c" | "aarch64" | "js";
 	platform?: string;
 	lib?: string;
 	audit?: boolean;

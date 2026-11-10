@@ -165,7 +165,7 @@ try {
 			config = JSON.parse(fs.readFileSync(args.config, "utf-8"));
 		}
 		// Overwrite with args
-		if (args.arch) config.arch = args.arch as "aarch64" | "c";
+		if (args.arch) config.arch = args.arch as "aarch64" | "c" | "js";
 		if (args.platform) config.platform = args.platform;
 		if (args.lib) config.lib = args.lib;
 		if (args.audit) config.audit = args.audit;
@@ -382,6 +382,20 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 	// Output lives in the project's `build/` — `build/test` for *.test.nm —
 	// unless an explicit --out names the linked binary.
 	const buildDir = build_dir_for(resolved, filename.endsWith(".test.nm"));
+
+	// The JS backend emits a self-contained ESM module; `run` executes it with
+	// Node instead of compiling and linking a native binary.
+	if (arch === "js") {
+		if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
+		const jsfile = path.join(buildDir, basename + ".mjs");
+		fs.writeFileSync(jsfile, result.code);
+		console.log(`Created ${jsfile} in ${(performance.now() - startTime).toFixed(2)}ms`);
+		if (mode === "run") {
+			execFileSync(process.env.NODE ?? "node", [jsfile, ...program_args], { stdio: "inherit" });
+			console.log(`Completed in ${(performance.now() - startTime).toFixed(2)}ms`);
+		}
+		return;
+	}
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });
 	}

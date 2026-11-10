@@ -51,6 +51,7 @@ Target a specific backend:
 ```bash
 nomen run --arch c         # emit C
 nomen run --arch aarch64   # emit AArch64 assembly (default)
+nomen run --arch js        # emit a JavaScript module and run it with Node
 ```
 
 ### Hello, World!
