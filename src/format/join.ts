@@ -70,7 +70,16 @@ const PREFIX_POSITIONS = new Set([
 export default function join(pieces: Piece[]): string {
 	let out = "";
 	for (let i = 0; i < pieces.length; i++) {
-		if (i > 0 && needs_space(pieces, i)) out += " ";
+		if (i > 0) {
+			// A trailing comment keeps the author's gap verbatim: column
+			// alignment between code and its comment is meaningful, so the
+			// formatter must not collapse it to a single space.
+			if (pieces[i].kind === "comment") {
+				out += pieces[i].gap_before ?? (pieces[i].space_before ? " " : "");
+			} else if (needs_space(pieces, i)) {
+				out += " ";
+			}
+		}
 		out += pieces[i].text;
 	}
 	return out;
@@ -84,8 +93,9 @@ function needs_space(pieces: Piece[], i: number): boolean {
 		return current.space_before;
 	}
 	if (NO_SPACE_BEFORE.has(current.text)) return false;
-	// A prefix symbol has nothing to attach to when a block ends after it.
-	if (current.text === "}") return true;
+	// `{}` stays tight (an empty block, or a `ref x {}` field set); a closing
+	// brace after content keeps its separating space.
+	if (current.text === "}") return previous.text !== "{";
 	if (NO_SPACE_AFTER.has(previous.text)) return false;
 	// `out`/`in` are parameter modifiers: `out int x`, `for x in (...)`, but
 	// `out.length` keeps the dot tight.
@@ -97,8 +107,6 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	// keywords keep a space: `if (...)`, `return (...)`.
 	if (current.text === "(" || current.text === "[")
 		return !is_value_end(pieces, i - 1) && !CALL_KEYWORDS.has(previous.text);
-	// Keep a comment glued to the code when the source had no space before it.
-	if (current.kind === "comment") return current.space_before;
 	return true;
 }
 

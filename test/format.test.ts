@@ -108,6 +108,29 @@ test("keeps hyphenated import names intact", () => {
 	expect(format("import System:: sub-pack ::Thing\n")).toBe("import System::sub-pack::Thing\n");
 });
 
+test("empty braces stay tight (blocks and declared field sets)", () => {
+	// `ref x {}` declares that a ref parameter displaces nothing; the space
+	// inside is not cosmetic — `{ }` is not the canonical spelling.
+	expect(format("func f = (ref Item item {})\n")).toBe("func f = (ref Item item {})\n");
+	expect(format("func f = (ref Item item { })\n")).toBe("func f = (ref Item item {})\n");
+	// A non-empty set keeps its inner spaces.
+	expect(format("func f = (ref Item item { stats })\n")).toBe(
+		"func f = (ref Item item { stats })\n",
+	);
+	expect(format("struct S {}\n")).toBe("struct S {}\n");
+});
+
+test("trailing comments keep their column gap", () => {
+	// Alignment between code and a trailing comment is meaningful: preserve
+	// the author's gap instead of collapsing it to one space.
+	expect(format("var x = 1            // aligned\n")).toBe("var x = 1            // aligned\n");
+	expect(format("var x = 1 // one space\n")).toBe("var x = 1 // one space\n");
+	// A comment glued to the code stays glued.
+	expect(format("var x = 1// glued\n")).toBe("var x = 1// glued\n");
+	// Import lines keep theirs too.
+	expect(format("import System        // note\n")).toBe("import System        // note\n");
+});
+
 test("wraps an argument list past the print width", () => {
 	const source =
 		"func f = (int aaaaaaaaa, int bbbbbbbbbb, int cccccccccc, int dddddddddd, int eeeeeeeeee) {}\n";

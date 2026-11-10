@@ -181,6 +181,12 @@ function join_import(pieces: Piece[]): string {
 			out = piece.text;
 			continue;
 		}
+		// A trailing comment keeps the author's gap (column alignment).
+		if (piece.kind === "comment") {
+			out += piece.gap_before ?? (piece.space_before ? " " : "");
+			out += piece.text;
+			continue;
+		}
 		const tight =
 			piece.text === "::" ||
 			piece.text === "." ||

@@ -7,6 +7,10 @@ export interface Piece {
 	kind: PieceKind;
 	text: string;
 	space_before: boolean;
+	/** The exact whitespace run before this piece ("" when glued). Trailing
+	 *  comments keep it: alignment between code and its comment is meaningful
+	 *  and must survive formatting. */
+	gap_before?: string;
 }
 
 export type LineKind =
@@ -58,12 +62,12 @@ function scan_line(text: string, state: ScanState): Line {
 	}
 
 	const pieces: Piece[] = [];
-	let space_before = false;
+	let gap = "";
 	let i = 0;
 	while (i < text.length) {
 		const c = text[i];
 		if (is_space(c)) {
-			space_before = true;
+			gap += c;
 			i++;
 			continue;
 		}
@@ -102,8 +106,13 @@ function scan_line(text: string, state: ScanState): Line {
 			i += symbol_length(text, i);
 		}
 
-		pieces.push({ kind, text: text.slice(start, i), space_before });
-		space_before = false;
+		pieces.push({
+			kind,
+			text: text.slice(start, i),
+			space_before: gap.length > 0,
+			gap_before: gap,
+		});
+		gap = "";
 	}
 
 	if (!pieces.length) return { kind: "blank", pieces: [], text: "" };
