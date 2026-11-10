@@ -1,3 +1,5 @@
+import vm from "node:vm";
+
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
@@ -1353,5 +1355,36 @@ Console.write("\\n")
 `,
 			"1 2 5 5 6 9 \n",
 		);
+	});
+
+	test("browser runtime: no imports and host-captured Console output", () => {
+		const parsed = parse_with_imports(`
+Console.write("hi ")
+var int x = 1
+while x < 3 {
+	Console.write("\\{x}")
+	x += 1
+}
+Console.write("\\n")
+`);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "js", js_target: "browser" });
+		expect(result.errors ?? []).toEqual([]);
+		expect(result.code).not.toMatch(/^import /m);
+
+		const out: string[] = [];
+		const context = { __nomen_write: (text: string) => out.push(String(text)) };
+		vm.runInNewContext(result.code, context);
+		expect(out.join("")).toBe("hi 12\n");
+	});
+
+	test("browser runtime: panic writes then exits by throwing", () => {
+		const parsed = parse_with_imports('Console.write("before")\npanic("boom")');
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "js", js_target: "browser" });
+		const out: string[] = [];
+		const context = { __nomen_write: (text: string) => out.push(String(text)) };
+		expect(() => vm.runInNewContext(result.code, context)).toThrow("__nomen_exit:2");
+		expect(out.join("")).toBe("beforepanic: boom\n");
 	});
 });

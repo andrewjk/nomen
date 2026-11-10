@@ -61,6 +61,9 @@ export default function build(
 	root: BaseNode,
 	options: {
 		arch?: "c" | "aarch64" | "js";
+		/** JS backend: `node` (default) or `browser` (no imports, host-captured
+		 *  Console output — used by the site's REPL). */
+		js_target?: "node" | "browser";
 		platform?: string;
 		audit?: boolean;
 		emit_mode?: "all" | "system" | "user";
@@ -81,7 +84,7 @@ export default function build(
 		system_defines_weak_runtime?: boolean;
 	} = {},
 ): BuildResult {
-	if (options.arch === "js") return build_js(root);
+	if (options.arch === "js") return build_js(root, { target: options.js_target });
 	let status: BuildStatus = {
 		root,
 		structs: [],

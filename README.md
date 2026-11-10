@@ -811,6 +811,18 @@ hand each child a size range, children report their intrinsic size, and the
 engine resolves it into pixel frames. See [GUI.md](docs/GUI.md) for the full
 layout and compositor design.
 
+## Website and REPL
+
+The website lives in [`site/`](./site). It is a [Torpor](https://torpor.dev)
+app whose REPL compiles Nomen with this repository's compiler (the JavaScript
+backend) and runs the emitted program in the browser. Start it with:
+
+```bash
+pnpm install
+cd site
+pnpm dev
+```
+
 ## Questions
 
 **Why create a new language?** I'm hoping to find the sweet spot between the ease of use of garbage collected languages and the power of manual memory allocated languages, which I don't think anyone has found yet.

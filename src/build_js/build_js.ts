@@ -10,7 +10,7 @@ import build_root_node from "./build_root_node.ts";
 import { create_status } from "./BuildStatus.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { emit_library_queue } from "./library_queue.ts";
-import runtime from "./runtime.ts";
+import runtime, { type JsTarget } from "./runtime.ts";
 
 /**
  * The JavaScript backend.
@@ -31,7 +31,14 @@ import runtime from "./runtime.ts";
  * memory or concurrency fail at runtime through `__unsupported` rather than
  * producing wrong output.
  */
-export default function build_js(root: BaseNode): BuildResult {
+export interface JsBuildOptions {
+	/** `node` (default) targets the process streams and Node's `fs`; `browser`
+	 *  emits a self-contained script with no imports whose Console output is
+	 *  handed to `globalThis.__nomen_write`. */
+	target?: JsTarget;
+}
+
+export default function build_js(root: BaseNode, options?: JsBuildOptions): BuildResult {
 	const status = create_status(root);
 	collect_types(root, status);
 	index_allocations(root, status);
@@ -39,7 +46,7 @@ export default function build_js(root: BaseNode): BuildResult {
 	// Library code referenced by the program is lowered on demand into its own
 	// top-level buffer (function declarations hoist, so it can precede `main()`).
 	emit_library_queue(status);
-	const code = `${runtime()}${status.library_code}${status.code}`;
+	const code = `${runtime(options?.target ?? "node")}${status.library_code}${status.code}`;
 	return {
 		headers: "",
 		code,

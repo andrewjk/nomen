@@ -1,0 +1,22 @@
+{
+	"name": "@nomen/site",
+	"version": "0.0.1",
+	"private": true,
+	"description": "The Nomen website and REPL",
+	"type": "module",
+	"scripts": {
+		"dev": "tb --dev",
+		"build": "tb --build",
+		"preview": "tb --preview",
+		"check": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@torpor/adapter-node": "^1.1.11",
+		"@torpor/build": "^1.8.5",
+		"@torpor/unplugin": "^1.2.9",
+		"@torpor/view": "^1.2.6"
+	},
+	"devDependencies": {
+		"typescript": "^7.0.2"
+	}
+}

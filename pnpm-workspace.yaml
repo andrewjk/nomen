@@ -1,6 +1,7 @@
 packages:
   - cli
   - extension
+  - site
 allowBuilds:
   "@vscode/vsce-sign": true
   esbuild: true

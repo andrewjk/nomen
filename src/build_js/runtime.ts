@@ -13,10 +13,43 @@
  * array methods the backend dispatches). Unsupported library calls surface as
  * a clear runtime error rather than silently wrong output.
  */
-export default function runtime(): string {
-	return `import { readFileSync } from "node:fs";
+export type JsTarget = "node" | "browser";
+
+export default function runtime(target: JsTarget = "node"): string {
+	// The prelude differs only in how the program reaches the outside world.
+	// `node` writes to the process streams; `browser` hands output to a host
+	// hook (`globalThis.__nomen_write`) so a REPL can capture it, and turns
+	// `exit` into a throw the host can catch.
+	const header =
+		target === "browser"
+			? `const __out = (s) => {
+	const write = globalThis.__nomen_write;
+	if (write) write(String(s));
+	else console.log(String(s));
+};
+const __stderr = (s) => {
+	const write = globalThis.__nomen_write;
+	if (write) write(String(s));
+	else console.error(String(s));
+};
+const __read_stdin = () => "";
+const __exit = (code) => {
+	throw new Error("__nomen_exit:" + code);
+};`
+			: `import { readFileSync } from "node:fs";
 
 const __out = (s) => process.stdout.write(String(s));
+const __stderr = (s) => process.stderr.write(String(s));
+const __read_stdin = () => {
+	try {
+		return readFileSync(0, "utf8");
+	} catch (e) {
+		return "";
+	}
+};
+const __exit = (code) => process.exit(code);`;
+
+	return `${header}
 
 // printf "%f" (six decimals). toFixed matches for the magnitudes demos use;
 // note the >1e21 divergence (printf keeps expanding, toFixed goes exponent).
@@ -197,8 +230,8 @@ function __enum_eq(a, b) {
 }
 
 function __panic(message) {
-	process.stderr.write("panic: " + __to_string(message) + "\\n");
-	process.exit(2);
+	__stderr("panic: " + __to_string(message) + "\\n");
+	__exit(2);
 }
 
 function __unsupported(what) {
@@ -215,7 +248,7 @@ let __stdin_index = 0;
 function __ensure_stdin() {
 	if (__stdin_lines !== null) return;
 	try {
-		__stdin_lines = readFileSync(0, "utf8").split("\\n");
+		__stdin_lines = __read_stdin().split("\\n");
 	} catch (e) {
 		__stdin_lines = [];
 	}
