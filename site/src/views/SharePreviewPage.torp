@@ -1,0 +1,31 @@
+/** The social-card preview for a `/playground/preview` link. */
+export default function SharePreviewPage($props?: {
+	data?: { code?: string; out?: string };
+}) {
+	function card_src(): string {
+		const data = $props?.data;
+		if (!data?.code) return "";
+		return data.out ? `/s/${data.code}/card.png?out=${data.out}` : `/s/${data.code}/card.png`;
+	}
+
+	@render {
+		<main id="preview">
+			<header>
+				<h1>Share preview</h1>
+				<p>The card a shared playground link generates.</p>
+			</header>
+			@if ($props?.data?.code) {
+				<img
+					class="preview-card"
+					src={card_src()}
+					alt="Generated share card"
+					width="1200"
+					height="630"
+				/>
+				<p class="preview-back"><a href="/playground">← Back to the playground</a></p>
+			} else {
+				<p>No program to preview. <a href="/playground">Open the playground</a>.</p>
+			}
+		</main>
+	}
+}

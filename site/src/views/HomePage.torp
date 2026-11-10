@@ -1,0 +1,10 @@
+/** The site index: just the wordmark while the real landing page is built. */
+export default function HomePage() {
+	@render {
+		<main id="home">
+			<header>
+				<h1>Nomen</h1>
+			</header>
+		</main>
+	}
+}

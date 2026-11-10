@@ -1,12 +1,12 @@
 import type { PageEndPoint } from "@torpor/build";
 import { ok } from "@torpor/build/response";
 
-import component from "@/views/ReplPage.torp";
+import component from "@/views/PlaygroundPage.torp";
 
 import { decode_source } from "../../../lib/share.ts";
 
-const TITLE = "Nomen REPL";
-const DESCRIPTION = "Open this Nomen program in the REPL and run it in your browser.";
+const TITLE = "Nomen Playground";
+const DESCRIPTION = "Open this Nomen program in the playground and run it in your browser.";
 
 /** A self-contained share link: the program is the URL. */
 export default {

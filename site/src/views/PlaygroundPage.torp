@@ -15,32 +15,40 @@ pub func main = () {
 }
 `;
 
-import { MAX_SHARE_OUTPUT, MAX_SHARE_SOURCE, share_url } from "@/lib/share";
+import { MAX_SHARE_OUTPUT, MAX_SHARE_SOURCE, preview_path, share_url } from "@/lib/share";
 
 const TIMEOUT_MS = 5_000;
 
-interface ReplError {
+interface Diagnostic {
 	message: string;
 	line: number;
 	column: number;
 }
 
 /**
- * The Nomen REPL: compile on the server, run the emitted browser script in a
- * Worker (so a runaway loop can be terminated), and stream Console output.
+ * The Nomen playground: compile on the server, run the emitted browser script
+ * in a Worker (so a runaway loop can be terminated), and stream Console output.
  */
-export default function ReplPage($props?: { embed?: boolean; data?: { source?: string } }) {
+export default function PlaygroundPage($props?: { embed?: boolean; data?: { source?: string } }) {
 	let $state = $watch({
 		source: $props?.data?.source ?? SAMPLE,
 		output: "",
-		errors: [] as ReplError[],
-		warnings: [] as ReplError[],
+		errors: [] as Diagnostic[],
+		warnings: [] as Diagnostic[],
 		running: false,
 		view: "program" as "program" | "output",
 		shared: false,
 		runtime_error: "",
 		highlighted: "",
 		highlight_ready: false,
+		// The source that produced `output`; sharing/preview only carry output
+		// that still belongs to the editor's current text.
+		output_source: "",
+		get preview_href() {
+			const output =
+				this.output_source === this.source ? this.output.slice(0, MAX_SHARE_OUTPUT) : "";
+			return preview_path(this.source, output);
+		},
 	});
 
 	let worker: Worker | undefined;
@@ -112,6 +120,7 @@ export default function ReplPage($props?: { embed?: boolean; data?: { source?: s
 		$state.warnings = [];
 		$state.runtime_error = "";
 		$state.output = "";
+		$state.output_source = "";
 
 		void fetch("/api/compile", {
 			method: "POST",
@@ -130,6 +139,7 @@ export default function ReplPage($props?: { embed?: boolean; data?: { source?: s
 					return;
 				}
 				$state.warnings = result.warnings ?? [];
+				$state.output_source = $state.source;
 				execute(result.js);
 				if (show_output && is_narrow()) $state.view = "output";
 			})
@@ -208,7 +218,8 @@ self.postMessage({ type: "done" });
 			];
 			return;
 		}
-		const output = $state.output.slice(0, MAX_SHARE_OUTPUT);
+		const output =
+			$state.output_source === $state.source ? $state.output.slice(0, MAX_SHARE_OUTPUT) : "";
 		const url = share_url(window.location.origin, $state.source, output);
 		const done = () => {
 			$state.shared = true;
@@ -258,7 +269,7 @@ self.postMessage({ type: "done" });
 			}}
 		>
 			<header id="repl-header">
-				<h1>Nomen <span>REPL</span></h1>
+				<h1>Nomen <span>Playground</span></h1>
 				<p>
 					Write a Nomen program and run it. The System library is
 					imported automatically. Show output with <code>Console.write_line</code>.
@@ -270,6 +281,9 @@ self.postMessage({ type: "done" });
 					<div class="pane-title">
 						<h2>Program</h2>
 						<div class="pane-actions">
+							<a class="ghost" href={$state.preview_href} target="_blank" rel="noopener">
+								Preview share
+							</a>
 							<button class="ghost" onclick={share}>
 								{$state.shared ? "Copied" : "Share"}
 							</button>

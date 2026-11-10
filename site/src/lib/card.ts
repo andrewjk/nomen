@@ -64,7 +64,7 @@ export async function render_code_card(
 
 	// Header: the wordmark, and the host the card belongs to.
 	draw_text(canvas, MARGIN, TITLE_Y, "Nomen", TITLE_COLOR);
-	draw_text(canvas, MARGIN + 6 * ADVANCE, TITLE_Y, "REPL", ACCENT);
+	draw_text(canvas, MARGIN + 6 * ADVANCE, TITLE_Y, "Playground", ACCENT);
 	const host_text = fit_text(host, Math.floor((WIDTH - MARGIN * 2) / (GLYPH_WIDTH + 1)));
 	draw_text(
 		canvas,

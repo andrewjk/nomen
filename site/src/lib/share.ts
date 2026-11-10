@@ -1,6 +1,6 @@
 /**
  * Share links put the whole program in the URL (base64url over UTF-8), so a
- * link is self-contained: the REPL decodes it, and the card image is derived
+ * link is self-contained: the playground decodes it, and the card image is derived
  * from the same bytes.
  */
 
@@ -34,8 +34,16 @@ export function share_url(origin: string, source: string, output = ""): string {
 	return output ? `${base}?out=${encode_source(output)}` : base;
 }
 
-/** Codes longer than this would make unwieldy share links; the REPL refuses
- *  to share them. */
+/** The path to the share-preview page for a program (relative, so it works
+ *  on any origin). */
+export function preview_path(source: string, output = ""): string {
+	const params = new URLSearchParams({ code: encode_source(source) });
+	if (output) params.set("out", encode_source(output));
+	return `/playground/preview?${params}`;
+}
+
+/** Codes longer than this would make unwieldy share links; the playground
+ *  refuses to share them. */
 export const MAX_SHARE_SOURCE = 2_000;
 
 /** Output longer than this is truncated in the share link (the card shows a

@@ -2,7 +2,7 @@ import type { PageEndPoint } from "@torpor/build";
 
 import component from "@/views/EmbedPage.torp";
 
-const TITLE = "Nomen REPL";
+const TITLE = "Nomen Playground";
 const DESCRIPTION =
 	"Write and run Nomen programs inside this post: structs, enums, traits, and the System library.";
 

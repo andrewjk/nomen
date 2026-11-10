@@ -407,13 +407,13 @@ code {
 	gap: 0.5rem;
 }
 
-button.ghost {
+.ghost {
 	background: transparent;
 	border: 1px solid var(--border);
 	color: var(--muted);
 }
 
-button.ghost:hover:not(:disabled) {
+.ghost:hover:not(:disabled) {
 	border-color: var(--muted);
 	color: var(--text);
 	filter: none;
@@ -422,4 +422,76 @@ button.ghost:hover:not(:disabled) {
 /* The player-card frame is tight; sharing from inside it isn't needed. */
 #repl.embed .pane-actions .ghost {
 	display: none;
+}
+
+/* Landing page: just the wordmark for now. */
+#home {
+	max-width: 1000px;
+	margin: 0 auto;
+	padding: 4rem 1.5rem;
+}
+
+#home h1 {
+	margin: 0;
+	font-size: 3.25rem;
+	letter-spacing: -0.04em;
+}
+
+/* Share-card preview. */
+#preview {
+	max-width: 1240px;
+	margin: 0 auto;
+	padding: 2.5rem 1.5rem 3rem;
+}
+
+#preview header h1 {
+	margin: 0 0 0.25rem;
+	font-size: 2rem;
+	letter-spacing: -0.02em;
+}
+
+#preview header p {
+	margin: 0 0 1.5rem;
+	color: var(--muted);
+}
+
+#preview .preview-card {
+	display: block;
+	width: 100%;
+	height: auto;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--panel);
+}
+
+#preview .preview-back {
+	margin-top: 1.25rem;
+}
+
+#preview a {
+	color: var(--accent);
+}
+
+/* "Preview share" is a link styled like the ghost buttons. */
+a.ghost {
+	display: inline-flex;
+	align-items: center;
+	font-size: 0.85rem;
+	font-weight: 600;
+	padding: 0.35rem 0.85rem;
+	border-radius: 6px;
+	text-decoration: none;
+}
+
+/* Narrow playground header: the action row drops below the pane title so
+ * "Preview share" keeps its label on one line. */
+@media (max-width: 600px) {
+	.pane-title {
+		flex-wrap: wrap;
+	}
+
+	.pane-actions {
+		width: 100%;
+		justify-content: flex-start;
+	}
 }

@@ -1,7 +1,8 @@
 # Nomen site
 
-The Nomen website. Right now it is just the REPL: a Nomen program editor that
-compiles on the server and runs the emitted JavaScript in a sandboxed Worker.
+The Nomen website. `/` is a placeholder landing page for now; the real feature
+is the **playground at `/playground`**, a Nomen program editor that compiles on
+the server and runs the emitted JavaScript in a sandboxed Worker.
 
 It is a [Torpor](https://torpor.dev) site deployed to **Cloudflare Workers**
 (with static assets). Compilation happens inside the Worker; the System library
@@ -14,8 +15,9 @@ built-ins:
   excluded — they cannot run in a browser and are half the library's source, so
   referencing one is a compile-time "unknown type".
 - `src/lib/fs-stub.ts` / `src/lib/path-shim.ts` replace `node:fs` / `node:path`
-  for the compiler's Node-only code (library loading, `#embed_file`). The REPL
-  rejects `#embed_file` and uses the embedded library, so neither is reached.
+  for the compiler's Node-only code (library loading, `#embed_file`). The
+  playground rejects `#embed_file` and uses the embedded library, so neither is
+  reached.
 - `site.config.ts` wires those aliases and neutralizes `process.env` (compiler
   debug switches) via Vite.
 - Editor highlighting comes from [`nomen-shiki`](../shiki), a workspace package
@@ -34,8 +36,8 @@ cd site
 pnpm dev            # Torpor dev server on workerd (Cloudflare's local runtime)
 ```
 
-Opening the printed URL auto-runs the sample. Press <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>
-to compile and run the editor's program.
+Open the printed URL at `/playground`; the sample auto-runs there. Press
+<kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> to compile and run the editor's program.
 
 ## Share links
 
@@ -57,15 +59,19 @@ eight lines). Because the URL contains the content, the PNG is content-
 addressed and cached immutably in the Cache API. If rendering fails the route
 redirects to `/og.png`; malformed codes fall back to the sample program and
 the generic card. Posting a share link therefore shows an image card of the
-code, and clicking it opens the REPL with that program loaded.
+code, and clicking it opens the playground with that program loaded.
+
+`/playground/preview?code=…&out=…` renders that card on its own page. The
+playground's **Preview share** link points at it, so you can check the image
+(and the output lines) before posting the link.
 
 ## Social cards
 
 Two card flavours are set up:
 
-- `/` serves Open Graph plus a `summary_large_image` Twitter card, with
-  `og.png` as the image. This works on every platform.
-- `/embed` is a compact, chrome-free REPL intended for an X **Player Card**
+- `/playground` serves Open Graph plus a `summary_large_image` Twitter card,
+  with `og.png` as the image. This works on every platform.
+- `/embed` is a compact, chrome-free playground intended for an X **Player Card**
   (`twitter:card=player`, `twitter:player=/embed`, 640x480, `card.png` poster).
   It sends `Content-Security-Policy: frame-ancestors` for x.com/twitter.com
   (route middleware in `src/routes/embed/+page.server.ts`) and no
@@ -73,13 +79,14 @@ Two card flavours are set up:
   output side by side, with inner scrolling and no page header.
 
 X requires a domain to be **manually allowlisted for Player Cards**, and its
-policy currently reserves them for linear audio/video content — a REPL may not
-be approved (or may stop working if it is). Until the domain is approved, tweet
-`/` (image card); after approval, tweet `/embed` (inline REPL). Change
+policy currently reserves them for linear audio/video content — a playground may
+not be approved (or may stop working if it is). Until the domain is approved,
+tweet `/playground` (image card); after approval, tweet `/embed` (inline
+playground). Change
 `twitter:site` in `src/routes/embed/+page.ts` from `@andrewjk` if needed.
 
-Regenerating the images: `og.png` is a 2x screenshot of `/` at 1200x630, and
-`card.png` a 2x screenshot of `/embed` at 640x480.
+Regenerating the images: `og.png` is a 2x screenshot of `/playground` at
+1200x630, and `card.png` a 2x screenshot of `/embed` at 640x480.
 
 ## Build, preview, deploy
 

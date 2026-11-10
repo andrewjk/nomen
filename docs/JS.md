@@ -112,7 +112,7 @@ continues.
 - GUI controls (`System::Controls`) are native AppKit calls, so their methods
   are skipped; the site's embedded library excludes them entirely.
 - Concurrency runs synchronously (see above): `.detach()` executes the task
-  immediately, so a process-lifetime daemon loop never returns; the REPL's
+  immediately, so a process-lifetime daemon loop never returns; the playground's
   5-second watchdog stops such a program.
 
 `Random()` seeds from `Date.now() * 1_000_000` (millisecond precision).

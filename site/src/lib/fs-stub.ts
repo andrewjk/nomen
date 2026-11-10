@@ -1,7 +1,7 @@
 /**
  * The Worker has no filesystem. The compiler imports `node:fs` at module scope
  * for the Node-only paths (`get_library`, `#embed_file`, a C-backend debug
- * dump); the REPL uses none of them, so the import is aliased to this stub and
+ * dump); the playground uses none of them, so the import is aliased to this stub and
  * fails loudly if those paths are ever reached.
  *
  * Torpor's own modules also import this module (`import fs from "node:fs"` and

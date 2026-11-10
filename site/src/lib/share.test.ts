@@ -5,6 +5,7 @@ import {
 	encode_source,
 	MAX_SHARE_OUTPUT,
 	MAX_SHARE_SOURCE,
+	preview_path,
 	share_url,
 } from "./share.ts";
 
@@ -32,6 +33,15 @@ test("a run output rides along in the query string", () => {
 		`https://nomen.test/s/${encode_source(source)}?out=${encode_source(output)}`,
 	);
 	expect(decode_source(encode_source(output))).toEqual(output);
+});
+
+test("the preview link carries the code and output", () => {
+	const path = preview_path("pub func main = () {}", "hello\n");
+	const url = new URL(path, "https://nomen.test");
+	expect(url.pathname).toBe("/playground/preview");
+	expect(decode_source(url.searchParams.get("code") ?? undefined)).toBe("pub func main = () {}");
+	expect(decode_source(url.searchParams.get("out") ?? undefined)).toBe("hello\n");
+	expect(preview_path("code")).not.toContain("out=");
 });
 
 test("missing or malformed payloads decode to undefined", () => {

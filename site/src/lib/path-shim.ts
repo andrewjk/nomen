@@ -2,7 +2,7 @@
  * A tiny POSIX path implementation for the Worker bundle.
  *
  * The compiler uses `node:path` for library bookkeeping (`join`, `resolve`,
- * `relative`, `dirname`, `basename`, `sep`, `isAbsolute`). The REPL passes a
+ * `relative`, `dirname`, `basename`, `sep`, `isAbsolute`). The playground passes a
  * library rooted at a virtual `/core`, so a root-based POSIX implementation is
  * enough — and it keeps the Worker free of Node built-ins.
  */
