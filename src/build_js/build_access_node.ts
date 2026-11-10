@@ -99,6 +99,7 @@ function build_method_call(
 		if (target_type === "Array" && name === "with") return `__array_with(${args.join(", ")})`;
 		if (target_type === "int" && name === "parse") return `__parse_int(${args[0]})`;
 		if (target_type === "Time") return time_call(name, args);
+		if (target_type === "Utf8") return utf8_call(name, args);
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === name);
@@ -250,6 +251,22 @@ function build_method_call(
 	}
 
 	return unsupported(`${target_type}.${name}`);
+}
+
+/** `System.Utf8` over the JS string model (code units, not bytes): decoding
+ *  advances one code unit for BMP text and two for astral characters. */
+function utf8_call(name: string, args: string[]): string {
+	switch (name) {
+		case "decode_at":
+			return `__utf8_decode(${args[0]}, ${args[1]})`;
+		case "width_at":
+			return `__utf8_decode(${args[0]}, ${args[1]}).byte_length`;
+		case "encode":
+			return `__utf8_encode(${args[0]})`;
+		case "char_count":
+			return `BigInt([...${args[0]}].length)`;
+	}
+	return unsupported(`Utf8.${name}`);
 }
 
 /** `System.Time` reads and sleeps, mapped onto JS clock/sleep primitives. */

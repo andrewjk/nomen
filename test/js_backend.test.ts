@@ -1128,4 +1128,21 @@ Console.write("\\{xs.at(0).x} \\{m.get("a").x} \\{s.has(1)}\\n")
 			"1 9 true\n",
 		);
 	});
+
+	test("array concatenation, Hashable, and Utf8 helpers", async () => {
+		await js_output(
+			"js_misc_ops",
+			`
+pub struct P: Hashable {
+	pub var int n
+}
+const int[] a = [1, 2]
+const int[] b = [3, 4]
+const int[] c = a + b
+const string e = Utf8.encode(233)
+Console.write("\\{c.length} \\{Utf8.char_count("héllo")} \\{e} \\{P(7).hash() == P(7).hash()}\\n")
+`,
+			"4 5 é true\n",
+		);
+	});
 });

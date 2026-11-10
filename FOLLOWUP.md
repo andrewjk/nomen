@@ -555,13 +555,23 @@ Rules of thumb:
 Recorded 2026-11-10. `src/build_js` maps a Nomen `string` onto a JS string,
 so `s.length` counts UTF-16 code units while the C/aarch64 backends count
 bytes. ASCII agrees; `"héllo".length` is 5 in JS and 6 natively, and astral
-characters (emoji) are 2 units in JS vs 4 bytes natively. Byte-oriented
-library code (e.g. `Text.Utf8.decode_at`) still works for BMP characters
-because the generated code walks `.at(i)`/`char_code_at` and the JS code unit
-happens to be one logical character there, but the two models diverge for
-non-BMP input. Modeling strings as `Uint8Array` would fix it at the cost of
-making every JS-facing operation awkward; decide before the JS backend is
-treated as byte-compatible with the native backends.
+characters (emoji) are 2 units in JS vs 4 bytes natively. `Text.Utf8.encode`
+/ `decode_at` / `char_count` are natively mapped onto the JS model
+(`String.fromCodePoint`, `codePointAt`, `[...s].length`), so they are
+self-consistent with the rest of the JS backend but do NOT produce the same
+byte sequences as native. Any other byte-oriented library code that builds a
+string one `char` at a time from byte values (0xC0 | … style) will produce a
+different string on JS. Modeling strings as `Uint8Array` would fix parity at
+the cost of making every JS-facing operation awkward; decide before the JS
+backend is treated as byte-compatible with the native backends.
+
+## JS backend: integer arithmetic does not wrap
+
+Recorded 2026-11-10. Nomen ints are represented as JS `bigint`, which grows
+arbitrarily; the native backends store 64-bit values, so overflow wraps (e.g.
+`int64` max + 1 → min). Sized casts (`as int8`) do truncate via
+`BigInt.asIntN`, but arithmetic that overflows 64 bits silently produces a
+larger value on the JS backend instead of wrapping.
 
 ## JS backend: `Random()` seeding is clock-precision limited
 

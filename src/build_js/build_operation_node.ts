@@ -19,6 +19,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return `(${left}.repeat(Number(${right})))`;
 	}
 
+	// Array concatenation (`[1, 2] + [3, 4]`) — JS `+` would stringify.
+	if (op === "+" && kind_of(node.left_value) === "array") {
+		return `(${left}.concat(${right}))`;
+	}
+
 	// A user struct operator (`Equatable`'s `eq`, `String`'s `add`, …): the
 	// checker resolved the method; call it. Library structs (string) keep the
 	// native lowering above — their Nomen bodies are not emitted.

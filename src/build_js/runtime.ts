@@ -86,6 +86,20 @@ function __sleep_ms(ms) {
 	if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
 }
 
+function __utf8_decode(text, index) {
+	const i = Number(index);
+	if (i < 0 || i >= text.length) __panic("byte index out of range");
+	const cp = text.codePointAt(i);
+	const width = cp > 0xffff ? 2 : 1;
+	return { code_point: BigInt(cp), byte_length: BigInt(width) };
+}
+
+function __utf8_encode(code_point) {
+	let cp = Number(code_point);
+	if (cp < 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) cp = 0xfffd;
+	return String.fromCodePoint(cp);
+}
+
 function __parse_int(text) {
 	if (typeof text !== "string" || !/^[+-]?[0-9]+$/.test(text)) __panic("invalid int: " + text);
 	return BigInt(text);
