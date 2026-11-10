@@ -42,6 +42,10 @@ export function list_method(name: string, list: string, args: string[]): string 
 		case "at":
 		case "at_or_panic":
 			return `__list_at(${list}, ${args[0]})`;
+		// The checker rewrites `for x of a_list` (non-scalar elements) into an
+		// index loop that loads each element through `slot_ptr`.
+		case "slot_ptr":
+			return `${list}[Number(${args[0]})]`;
 		case "at_or":
 			return `__list_at_or(${list}, ${args[0]}, ${args[1]})`;
 		case "set":

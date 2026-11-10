@@ -1253,4 +1253,37 @@ Console.write(" \\{v} \\{s}\\n")
 			"none 2 big\n",
 		);
 	});
+
+	test("List of structs iterates by slot and refs to fields", async () => {
+		await js_output(
+			"js_list_structs",
+			`
+struct P {
+	var int x
+	pub func get = (self, out int) {
+		return self.x
+	}
+}
+struct Holder {
+	var int n
+}
+func bump = (ref int x) {
+	x = x + 10
+}
+var List<P> xs = List<P>()
+xs.push(P(1))
+xs.push(P(2))
+var int sum = 0
+for p of xs {
+	sum = sum + p.get()
+}
+var Holder h = Holder(5)
+bump(ref h.n)
+var int[] arr = [1, 2]
+bump(ref arr.at(0))
+Console.write("\\{sum} \\{h.n} \\{arr.at(0)}\\n")
+`,
+			"3 15 11\n",
+		);
+	});
 });
