@@ -1,3 +1,4 @@
+import type BaseNode from "../nodes/BaseNode.ts";
 import type WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import { emit, expr, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
@@ -23,7 +24,7 @@ export default function build_while_loop_node(node: WhileLoopNode, status: Build
 }
 
 /** The `; update` clause as a JS expression (no trailing semicolon). */
-function update_expression(node: WhileLoopNode["update"], status: BuildStatus): string {
+export function update_expression(node: BaseNode | undefined, status: BuildStatus): string {
 	if (!node) return "";
 	if (node.node_type === "assign") {
 		const assign = node as unknown as {

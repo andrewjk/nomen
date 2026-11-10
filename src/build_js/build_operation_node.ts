@@ -12,8 +12,24 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (op === "u-") return `(-${expr(node.left_value, status)})`;
 	if (op === "!") return `(!${expr(node.left_value, status)})`;
 
-	const left = expr(node.left_value, status);
-	const right = expr(node.right_value, status);
+	let left = expr(node.left_value, status);
+	let right = expr(node.right_value, status);
+	const result_kind = kind_of(node);
+	const left_kind = kind_of(node.left_value);
+	const right_kind = kind_of(node.right_value);
+	const arithmetic = ["+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^"].includes(op);
+
+	// Char operands in an int operation are byte values in Nomen (C promotes
+	// a char to int); JS chars are one-character strings.
+	if (arithmetic && result_kind === "int") {
+		if (left_kind === "char") left = `BigInt(${left}.charCodeAt(0))`;
+		if (right_kind === "char") right = `BigInt(${right}.charCodeAt(0))`;
+	}
+	if (arithmetic && result_kind === "char") {
+		const l = left_kind === "char" ? `BigInt(${left}.charCodeAt(0))` : left;
+		const r = right_kind === "char" ? `BigInt(${right}.charCodeAt(0))` : right;
+		return `__char_from_code((${l} ${op} ${r}) & 255n)`;
+	}
 
 	if (op === "*" && kind_of(node.left_value) === "string") {
 		return `(${left}.repeat(Number(${right})))`;

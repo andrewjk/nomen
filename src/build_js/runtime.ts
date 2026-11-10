@@ -33,6 +33,9 @@ function __to_string(v) {
 	if (typeof v === "number") return __fmt_f(v);
 	if (typeof v === "boolean") return v ? "true" : "false";
 	if (v === null || v === undefined) return "null";
+	// An enum renders as its tag (the native backends delegate enum
+	// to_string to the int tag; a bitset is already a bigint).
+	if (typeof v === "object" && typeof v.$tag === "number") return String(v.$tag);
 	return String(v);
 }
 
@@ -84,6 +87,10 @@ function __math_power(base, exp) {
 function __sleep_ms(ms) {
 	const wait = Number(ms);
 	if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+}
+
+function __char_from_code(code) {
+	return String.fromCharCode(Number(code) & 0xff);
 }
 
 function __utf8_decode(text, index) {

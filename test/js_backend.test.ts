@@ -1168,4 +1168,43 @@ Console.write("\\{v.to_string()} \\{v.length} \\{s.length} \\{s.at(2)}\\n")
 			"1 2 hello 5 3 40\n",
 		);
 	});
+
+	test("enum values render as their tag", async () => {
+		await js_output(
+			"js_enum_print",
+			`
+enum Dir {
+	case north
+	case south
+}
+pub bitset F {
+	case a
+	case b
+}
+var Dir d = Dir.south
+var f = F.a | F.b
+Console.write("\\{d} \\{f}\\n")
+`,
+			"1 3\n",
+		);
+	});
+
+	test("for update clause and char arithmetic", async () => {
+		await js_output(
+			"js_for_update",
+			`
+var int total = 0
+for i of 0 .. 5; total += i {
+}
+var int[] xs = [10, 20, 30]
+var int acc = 0
+for x of xs; acc += x {
+}
+var char c = 'a'
+var int n = c as int
+Console.write("\\{total} \\{acc} \\{n + 1 as char}\\n")
+`,
+			"10 60 98\n",
+		);
+	});
 });
