@@ -115,6 +115,7 @@ export function string_builder_method(
 ): string | undefined {
 	switch (name) {
 		case "append":
+		case "append_string":
 		case "append_string_view":
 		case "append_int":
 		case "append_float":
@@ -135,6 +136,9 @@ export function string_builder_method(
 			return `__sb_take_since(${sb}, ${args[0]})`;
 		case "clear":
 			return `(${sb}.s = "")`;
+		case "ensure":
+			// Capacity is implicit in a JS string.
+			return "undefined";
 	}
 	return undefined;
 }

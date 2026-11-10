@@ -22,6 +22,19 @@ function string_inner(raw: string): string {
 	return out;
 }
 
+/** Escape a bare `"` (a char literal like `'"'`) so the JS string is valid;
+ *  an already-escaped `\"` is left alone. */
+function escape_quotes(text: string): string {
+	let out = "";
+	let backslashes = 0;
+	for (const c of text) {
+		if (c === '"' && backslashes % 2 === 0) out += '\\"';
+		else out += c;
+		backslashes = c === "\\" ? backslashes + 1 : 0;
+	}
+	return out;
+}
+
 const FLOAT_LITERAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 /** Emit an expression for a literal or identifier value. */
@@ -37,10 +50,10 @@ export default function build_value_node(node: ValueNode, status: BuildStatus): 
 	if (value === "null") return "null";
 	if (value === "self") return "self";
 	if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-		return `"${string_inner(value.slice(1, -1))}"`;
+		return `"${escape_quotes(string_inner(value.slice(1, -1)))}"`;
 	}
 	if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
-		return `"${string_inner(value.slice(1, -1))}"`;
+		return `"${escape_quotes(string_inner(value.slice(1, -1)))}"`;
 	}
 	if (is_int_literal(value)) {
 		const n = parse_int_literal_bigint(value);

@@ -549,3 +549,16 @@ Rules of thumb:
   processes — the gap is not a QoS/E-core placement effect. Exact
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
+
+## JS backend: strings are UTF-16 code units, Nomen strings are UTF-8 bytes
+
+Recorded 2026-11-10. `src/build_js` maps a Nomen `string` onto a JS string,
+so `s.length` counts UTF-16 code units while the C/aarch64 backends count
+bytes. ASCII agrees; `"héllo".length` is 5 in JS and 6 natively, and astral
+characters (emoji) are 2 units in JS vs 4 bytes natively. Byte-oriented
+library code (e.g. `Text.Utf8.decode_at`) still works for BMP characters
+because the generated code walks `.at(i)`/`char_code_at` and the JS code unit
+happens to be one logical character there, but the two models diverge for
+non-BMP input. Modeling strings as `Uint8Array` would fix it at the cost of
+making every JS-facing operation awkward; decide before the JS backend is
+treated as byte-compatible with the native backends.

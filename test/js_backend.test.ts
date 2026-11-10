@@ -848,4 +848,47 @@ if xs.length == 3 {
 			"none!\n5\n",
 		);
 	});
+
+	test("System library code is lowered on demand (Text.Regex)", async () => {
+		await js_output(
+			"js_regex",
+			`
+Console.write("\\{Regex.test("a+b", "xaaab")} \\{Regex.test("^[0-9]+$", "12345")} \\{Regex.test("^[0-9]+$", "12a45")}\\n")
+Console.write("\\{Regex.match("[0-9]+", "abc123def")}\\n")
+Console.write("\\{Regex.count("[aeiou]", "programming")}\\n")
+Console.write("\\{Regex.replace_all("[0-9]+", "a1b22c333", "#")}\\n")
+`,
+			"true true false\n123\n3\na#b#c#\n",
+		);
+	});
+
+	test("System library code is lowered on demand (Text.Json)", async () => {
+		await js_output(
+			"js_json",
+			`
+Console.write("\\{Json.serialize("hi \\"there\\"")}\\n")
+Console.write("\\{Json.deserialize("\\"a\\\\\\"b\\"")}\\n")
+`,
+			'"hi \\"there\\""\na"b\n',
+		);
+	});
+
+	test("char literal quoting and library UTF-8 iteration", async () => {
+		await js_output(
+			"js_chars",
+			`
+var Chars cs = Chars("héllo")
+var int n = 0
+while cs.has_next() {
+	var int cp = cs.next()
+	n = n + 1
+}
+var StringBuilder sb = StringBuilder()
+sb.append_char('"')
+sb.append("x")
+Console.write("\\{n} \\{sb.to_string()}\\n")
+`,
+			'5 "x\n',
+		);
+	});
 });

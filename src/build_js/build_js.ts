@@ -9,6 +9,7 @@ import type BuildResult from "../types/BuildResult.ts";
 import build_root_node from "./build_root_node.ts";
 import { create_status } from "./BuildStatus.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { emit_library_queue } from "./library_queue.ts";
 import runtime from "./runtime.ts";
 
 /**
@@ -31,7 +32,10 @@ export default function build_js(root: BaseNode): BuildResult {
 	const status = create_status(root);
 	collect_types(root, status);
 	build_root_node(root as RootNode, status);
-	const code = `${runtime()}${status.code}`;
+	// Library code referenced by the program is lowered on demand into its own
+	// top-level buffer (function declarations hoist, so it can precede `main()`).
+	emit_library_queue(status);
+	const code = `${runtime()}${status.library_code}${status.code}`;
 	return {
 		headers: "",
 		code,
@@ -46,8 +50,9 @@ export default function build_js(root: BaseNode): BuildResult {
 function collect_types(root: BaseNode, status: BuildStatus): void {
 	const visit = (node: BaseNode): void => {
 		const is_library = (node as unknown as { is_library?: boolean }).is_library === true;
-		if (!is_library && node.node_type === "struct") {
-			status.structs.push(node as StructNode);
+		if (node.node_type === "struct") {
+			if (is_library) status.library_structs.push(node as StructNode);
+			else status.structs.push(node as StructNode);
 		}
 		if (!is_library && node.node_type === "enum") {
 			status.enums.push(node as EnumNode);

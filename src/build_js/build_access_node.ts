@@ -6,6 +6,7 @@ import type BuildStatus from "./BuildStatus.ts";
 import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value } from "./enums.ts";
 import { list_method, map_method, set_method, string_builder_method } from "./library.ts";
+import { is_native_library_type, library_method, library_method_call } from "./library_queue.ts";
 import { method_label } from "./names.ts";
 import { kind_of, type_name_of } from "./types.ts";
 
@@ -95,6 +96,16 @@ function build_method_call(
 				access.params,
 				access.ref_param_indices,
 				(arg_exprs) => `${method_label(target_type, name)}(${arg_exprs.join(", ")})`,
+			);
+		}
+		// A System-library struct's static method, lowered from its Nomen body.
+		const library_struct = status.library_structs.find(
+			(s) => s.name === receiver_class && !is_native_library_type(s.name),
+		);
+		const library_func = library_struct && library_method(library_struct, name, args.length, true);
+		if (library_struct && library_func) {
+			return call_with_refs(status, access.params, access.ref_param_indices, (arg_exprs) =>
+				library_method_call(library_struct, library_func, undefined, arg_exprs, status),
 			);
 		}
 		return unsupported(`${target_type}.${name}`);
@@ -198,6 +209,18 @@ function build_method_call(
 			access.ref_param_indices,
 			(arg_exprs) =>
 				`${method_label(receiver_class, name)}(${[expr(target, status), ...arg_exprs].join(", ")})`,
+		);
+	}
+
+	// A System-library instance method, lowered from its Nomen body (e.g.
+	// `Chars`/`Json` readers). The natively modeled containers returned above.
+	const library_struct = status.library_structs.find(
+		(s) => s.name === receiver_class && !is_native_library_type(s.name),
+	);
+	const library_func = library_struct && library_method(library_struct, name, args.length, false);
+	if (library_struct && library_func) {
+		return call_with_refs(status, access.params, access.ref_param_indices, (arg_exprs) =>
+			library_method_call(library_struct, library_func, target, arg_exprs, status),
 		);
 	}
 

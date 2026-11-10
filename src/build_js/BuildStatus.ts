@@ -1,6 +1,7 @@
 import type BaseNode from "../nodes/BaseNode.ts";
 import type BitsetNode from "../nodes/BitsetNode.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
+import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type TraitNode from "../nodes/TraitNode.ts";
 import type CompileError from "../types/CompileError.ts";
@@ -18,6 +19,9 @@ export default interface BuildStatus {
 	indent: number;
 	/** User struct declarations (library types are handled by the runtime). */
 	structs: StructNode[];
+	/** System-library struct declarations: lowered on demand when a program
+	 *  uses code the JS runtime does not natively model (see library_queue). */
+	library_structs: StructNode[];
 	/** User enum declarations (values are inline objects; this table is how
 	 *  case construction and match tags resolve). */
 	enums: EnumNode[];
@@ -35,6 +39,13 @@ export default interface BuildStatus {
 	/** Allocations already emitted in this build (the checked AST is shared,
 	 *  so hoisted temps may be reachable from more than one statement). */
 	emitted_allocations?: Set<unknown>;
+	/** On-demand library lowering: emitted code, pending declarations, and the
+	 *  set of declarations already emitted. */
+	library_code: string;
+	library_method_queue: { struct: StructNode; func: FunctionNode }[];
+	library_init_queue: StructNode[];
+	library_function_queue: FunctionNode[];
+	emitted_library: Set<unknown>;
 	errors: CompileError[];
 }
 
@@ -44,10 +55,16 @@ export function create_status(root: BaseNode): BuildStatus {
 		code: "",
 		indent: 0,
 		structs: [],
+		library_structs: [],
 		enums: [],
 		bitsets: [],
 		traits: [],
 		temp: 0,
+		library_code: "",
+		library_method_queue: [],
+		library_init_queue: [],
+		library_function_queue: [],
+		emitted_library: new Set(),
 		errors: [],
 	};
 }

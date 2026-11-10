@@ -5,6 +5,12 @@ import type BuildStatus from "./BuildStatus.ts";
 import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value, find_enum_case } from "./enums.ts";
 import { library_constructor } from "./library.ts";
+import {
+	is_native_library_type,
+	needs_raw_memory,
+	queue_library_function,
+	queue_library_init,
+} from "./library_queue.ts";
 import { function_label, init_label } from "./names.ts";
 
 /**
@@ -55,6 +61,23 @@ export default function build_function_call_node(
 	const args = node.params.map((p) => expr(p, status));
 	const library = library_constructor(name, args);
 	if (library !== undefined) return library;
+
+	// A System-library struct constructed from Nomen code is lowered on
+	// demand (its checked body is ordinary Nomen). Natively modeled types
+	// (List/Map/StringBuilder/…) are handled above; primitives never get here.
+	const library_struct = status.library_structs.find(
+		(s) => s.name === name && !is_native_library_type(s.name),
+	);
+	if (library_struct) {
+		if (needs_raw_memory(library_struct)) {
+			return `__unsupported(${JSON.stringify(`library ${name}`)})`;
+		}
+		queue_library_init(library_struct, status);
+		return `${init_label(name)}(${args.join(", ")})`;
+	}
+
+	// A free library function: emit its body on demand.
+	if (node.resolved_function?.is_library) queue_library_function(node.resolved_function, status);
 
 	// A free (or nested) function call: `ref` arguments are boxed and copied
 	// back by the wrapper.
