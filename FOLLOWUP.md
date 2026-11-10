@@ -550,16 +550,6 @@ Rules of thumb:
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
 
-### Inline call-result arguments to `internal` string params are not anchored
-
-`sb.append_string(Format.pat_shape_int(...))` — a call result passed
-directly as a `string` parameter of an `internal` function — was neither
-hoisted into a `_param_N` temp nor freed, leaking one allocation per call
-(audit: `LEAK:`). The same shape anchored fine for a `pub` callee
-(`Format.float_fixed(v, sb.to_string())` hoisted and freed correctly).
-Worked around by binding the call result to a local first. Hoisting (or a
-borrow/owned classification) should cover internal callees identically.
-
 ### Last-use move of an owned local into a borrow string parameter leaks
 
 `var string digits = Format.pat_digits10(mag)` followed by a single use

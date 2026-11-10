@@ -577,8 +577,7 @@ pub struct Format {
 		// comma's run, drop a lone zero when every slot is '#' (the shape
 		// helper's own empty case). The shape result lands in a local — an
 		// inline call argument to append_string would never be anchored.
-		var string shaped = Format.pat_shape_int(int_digits, pad_slots, has_comma, slots_after_comma)
-		sb.append_string(shaped)
+		sb.append_string(Format.pat_shape_int(int_digits, pad_slots, has_comma, slots_after_comma))
 		// fraction: trim trailing zeros down to the section minimum, then
 		// zero-fill up to it (integer values arrive with no fraction at all).
 		var string kept = Format.pat_shape_frac(frac_raw, frac_slots, frac_min)
