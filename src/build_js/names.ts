@@ -82,3 +82,8 @@ export function method_label(struct_name: string, func_name: string): string {
 export function init_label(struct_name: string): string {
 	return js_name(`${struct_name}_init`);
 }
+
+/** The emitted JS name for a struct's runtime method table (trait dispatch). */
+export function type_label(struct_name: string): string {
+	return js_name(`${struct_name}_type`);
+}

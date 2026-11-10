@@ -4,7 +4,7 @@ import type StructNode from "../nodes/StructNode.ts";
 import { boxed_param_signature, emit_ref_prologue } from "./build_function_node.ts";
 import { emit, expr, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
-import { init_label, js_name, method_label } from "./names.ts";
+import { init_label, js_name, method_label, type_label } from "./names.ts";
 
 /**
  * Emit a user struct: a constructor factory plus its methods.
@@ -23,7 +23,11 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		const name = js_name(field.name);
 		return field.value ? `${name} = ${expr(field.value, status)}` : name;
 	});
-	const properties = fields.map((field) => `${field.name}: ${js_name(field.name)}`);
+	// `$type` is the runtime method table (trait dispatch): a value knows its
+	// concrete struct, so a trait-typed call site can find the method.
+	const properties = [`$type: ${type_label(node.name)}`].concat(
+		fields.map((field) => `${field.name}: ${js_name(field.name)}`),
+	);
 
 	emit(status, `function ${init_label(node.name)}(${params.join(", ")}) {`);
 	status.indent += 1;
@@ -31,11 +35,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	status.indent -= 1;
 	emit(status, "}");
 
+	const methods: string[] = [];
 	for (const func of node.functions) {
 		if (!func.has_body || func.is_generic) continue;
 		if (func.name.startsWith("#")) continue;
 		emit_method(node, func, status);
+		methods.push(`${js_name(func.name)}: ${method_label(node.name, func.name)}`);
 	}
+	emit(status, `const ${type_label(node.name)} = { ${methods.join(", ")} };`);
 }
 
 function emit_method(struct: StructNode, func: FunctionNode, status: BuildStatus): void {

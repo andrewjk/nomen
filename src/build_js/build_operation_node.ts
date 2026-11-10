@@ -1,6 +1,7 @@
 import type OperationNode from "../nodes/OperationNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { method_label } from "./names.ts";
 import { kind_of, stamped_type } from "./types.ts";
 
 /** Emit a JS expression for a Nomen operator node. Ints are bigints and
@@ -16,6 +17,17 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 
 	if (op === "*" && kind_of(node.left_value) === "string") {
 		return `(${left}.repeat(Number(${right})))`;
+	}
+
+	// A user struct operator (`Equatable`'s `eq`, `String`'s `add`, …): the
+	// checker resolved the method; call it. Library structs (string) keep the
+	// native lowering above — their Nomen bodies are not emitted.
+	if (node.operator_func && !node.operator_func.deferred) {
+		const { struct_name, func_name, invert } = node.operator_func;
+		if (status.structs.some((s) => s.name === struct_name)) {
+			const call = `${method_label(struct_name, func_name)}(${left}, ${right})`;
+			return invert ? `(!${call})` : `(${call})`;
+		}
 	}
 
 	// Enum values are objects: `==` compares tag + payload, not identity.

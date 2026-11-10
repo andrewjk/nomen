@@ -714,4 +714,85 @@ Console.write("\\{f()} \\{d.flags == (Flags.on | Flags.loud)}\\n")
 			"1 true\n",
 		);
 	});
+
+	test("traits: devirtualized trait variable", async () => {
+		await js_output(
+			"js_trait",
+			`
+pub trait Printable {
+	func to_string = (self, out string)
+}
+pub struct Point: Printable {
+	pub var int x
+	pub var int y
+	pub func to_string = (self, out string) {
+		return "Point(\\{self.x}, \\{self.y})"
+	}
+}
+const Printable pt = Point(1, 2)
+const string s = pt.to_string()
+Console.write("\\{s}\\n")
+`,
+			"Point(1, 2)\n",
+		);
+	});
+
+	test("traits: dynamic dispatch on trait-typed parameters and returns", async () => {
+		await js_output(
+			"js_trait_dispatch",
+			`
+pub trait Shape {
+	func area = (self, out int)
+}
+struct Sq: Shape {
+	var int side
+	pub func area = (self, out int) {
+		return self.side * self.side
+	}
+}
+struct Rect: Shape {
+	var int w
+	var int h
+	pub func area = (self, out int) {
+		return self.w * self.h
+	}
+}
+func total = (Shape a, Shape b, out int) {
+	return a.area() + b.area()
+}
+func make = (out Shape) {
+	return Sq(3)
+}
+var List<Shape> shapes = List<Shape>()
+shapes.push(Sq(2))
+shapes.push(Rect(2, 5))
+var int sum = 0
+for s of shapes {
+	sum = sum + s.area()
+}
+Console.write("\\{total(Sq(3), Rect(2, 5))} \\{make().area()} \\{sum}\\n")
+`,
+			"19 9 14\n",
+		);
+	});
+
+	test("auto-derived Equatable and Stringable methods", async () => {
+		await js_output(
+			"js_derived",
+			`
+pub struct Point: Equatable, Stringable {
+	pub var int x
+	pub var int y
+}
+const a = Point(1, 2)
+const b = Point(1, 2)
+const c = Point(1, 3)
+const bool same = a == b
+const bool diff = a != c
+const string s = a.to_string()
+Console.write("\\{same} \\{diff} \\{s}\\n")
+`,
+			"true true Point(x=1, y=2)\n",
+		);
+	});
 });

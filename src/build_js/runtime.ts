@@ -81,6 +81,13 @@ function __math_power(base, exp) {
 	return result;
 }
 
+function __dispatch(self, name, ...args) {
+	const table = self && self.$type;
+	const fn = table && table[name];
+	if (!fn) __unsupported("trait method " + name);
+	return fn(self, ...args);
+}
+
 function __list_at(list, i) {
 	const index = Number(i);
 	if (index < 0 || index >= list.length) __panic("index out of range");

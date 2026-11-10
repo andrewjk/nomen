@@ -63,6 +63,10 @@ function build_method_call(
 	const args = access.params.map((p) => expr(p, status));
 	const target_type = type_name_of(target);
 	const target_kind = kind_of(target);
+	// A trait-typed receiver resolves to the concrete struct at check time;
+	// the value itself is already that struct at runtime, so dispatch uses the
+	// concrete class's method label.
+	const receiver_class = access.devirtualized_class ?? target_type;
 
 	if (access.is_static) {
 		if (target_type === "Console") return `Console_${name}(${args.join(", ")})`;
@@ -169,20 +173,29 @@ function build_method_call(
 		if (mapped !== undefined) return mapped;
 	}
 
-	if (name === "to_string") {
-		return `__to_string(${expr(target, status)})`;
-	}
-
-	const struct = status.structs.find((s) => s.name === target_type);
+	// A user struct method (this also covers a devirtualized trait call: the
+	// concrete method wins over the generic rendering fallback).
+	const struct = status.structs.find((s) => s.name === receiver_class);
 	if (struct) {
 		return call_with_refs(
 			status,
 			access.params,
 			access.ref_param_indices,
 			(arg_exprs) =>
-				`${method_label(target_type, name)}(${[expr(target, status), ...arg_exprs].join(", ")})`,
+				`${method_label(receiver_class, name)}(${[expr(target, status), ...arg_exprs].join(", ")})`,
 		);
 	}
+
+	if (name === "to_string") {
+		return `__to_string(${expr(target, status)})`;
+	}
+
+	// A trait-typed receiver with no compile-time devirtualization (`Shape a`
+	// inside a function): dispatch on the value's runtime `$type` table.
+	if (status.traits.some((t) => t.name === target_type || t.name === receiver_class)) {
+		return `__dispatch(${[expr(target, status), JSON.stringify(name), ...args].join(", ")})`;
+	}
+
 	return unsupported(`${target_type}.${name}`);
 }
 

@@ -4,6 +4,7 @@ import { child_nodes } from "../nodes/child_nodes.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
 import type RootNode from "../nodes/RootNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
+import type TraitNode from "../nodes/TraitNode.ts";
 import type BuildResult from "../types/BuildResult.ts";
 import build_root_node from "./build_root_node.ts";
 import { create_status } from "./BuildStatus.ts";
@@ -55,6 +56,11 @@ function collect_types(root: BaseNode, status: BuildStatus): void {
 		// program may use a System bitset case).
 		if (node.node_type === "bitset") {
 			status.bitsets.push(node as BitsetNode);
+		}
+		// Traits: only the NAMES matter — a trait-typed receiver dispatches on
+		// its runtime struct tag.
+		if (node.node_type === "trait") {
+			status.traits.push(node as TraitNode);
 		}
 		for (const child of child_nodes(node)) visit(child);
 	};

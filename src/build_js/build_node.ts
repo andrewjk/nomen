@@ -1,3 +1,4 @@
+import collect_allocations from "../build_common/collect_allocations.ts";
 import type AccessNode from "../nodes/AccessNode.ts";
 import type ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -155,9 +156,13 @@ export function expr(node: BaseNode, status: BuildStatus): string {
 /** Emit a Nomen statement node (with its checker-hoisted allocation temps). */
 export function stmt(node: BaseNode, status: BuildStatus): void {
 	// The checker hoists sub-expressions (interpolation parts, call args) into
-	// per-statement `const` temps attached as `allocations`. They must be
-	// emitted before the statement that consumes them.
-	for (const allocation of (node as unknown as { allocations?: BaseNode[] }).allocations ?? []) {
+	// `const` temps attached as `allocations`. They must be emitted before the
+	// statement that consumes them; the walk is recursive because temps nest
+	// (a builder's value, a branch's last expression, …).
+	if (!status.emitted_allocations) status.emitted_allocations = new Set();
+	for (const allocation of collect_allocations(node, { let_values: true })) {
+		if (status.emitted_allocations.has(allocation)) continue;
+		status.emitted_allocations.add(allocation);
 		stmt(allocation, status);
 	}
 

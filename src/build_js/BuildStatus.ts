@@ -2,6 +2,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import type BitsetNode from "../nodes/BitsetNode.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
+import type TraitNode from "../nodes/TraitNode.ts";
 import type CompileError from "../types/CompileError.ts";
 
 /** Build state for the JS backend (see src/build_js/build_js.ts). The C
@@ -22,11 +23,18 @@ export default interface BuildStatus {
 	enums: EnumNode[];
 	/** User bitset declarations (cases are single-bit bigint constants). */
 	bitsets: BitsetNode[];
+	/** Trait declarations: a call on a trait-typed receiver dispatches on the
+	 *  value's concrete struct at runtime (JS has no static devirtualization
+	 *  for a trait-typed parameter). */
+	traits: TraitNode[];
 	/** Monotonic counter for generated temp names (`__match_0`, …). */
 	temp: number;
 	/** The CURRENT function's `ref` parameter names (boxed in JS); the
 	 *  assignment builder writes through the box. */
 	ref_params?: Set<string>;
+	/** Allocations already emitted in this build (the checked AST is shared,
+	 *  so hoisted temps may be reachable from more than one statement). */
+	emitted_allocations?: Set<unknown>;
 	errors: CompileError[];
 }
 
@@ -38,6 +46,7 @@ export function create_status(root: BaseNode): BuildStatus {
 		structs: [],
 		enums: [],
 		bitsets: [],
+		traits: [],
 		temp: 0,
 		errors: [],
 	};
