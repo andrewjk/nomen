@@ -1,3 +1,5 @@
+import { CARD_VERSION } from "@/lib/share";
+
 /** The social-card preview for a `/playground/preview` link. */
 export default function SharePreviewPage($props?: {
 	data?: { code?: string; out?: string };
@@ -5,7 +7,9 @@ export default function SharePreviewPage($props?: {
 	function card_src(): string {
 		const data = $props?.data;
 		if (!data?.code) return "";
-		return data.out ? `/s/${data.code}/card.png?out=${data.out}` : `/s/${data.code}/card.png`;
+		const params = new URLSearchParams({ r: CARD_VERSION });
+		if (data.out) params.set("out", data.out);
+		return `/s/${data.code}/card.png?${params}`;
 	}
 
 	@render {

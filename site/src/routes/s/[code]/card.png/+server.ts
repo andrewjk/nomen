@@ -40,6 +40,8 @@ export default {
 			const response = new Response(png, {
 				headers: {
 					"content-type": "image/png",
+					// Which renderer produced this PNG (dev diagnosis).
+					"x-nomen-card-renderer": fallback ? "bitmap" : "browser",
 					// A browser failure could be transient: let a fallback card be
 					// replaced (and retried) instead of caching it forever.
 					"cache-control": fallback ? "public, max-age=60" : "public, max-age=31536000, immutable",

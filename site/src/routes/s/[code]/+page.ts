@@ -3,7 +3,7 @@ import { ok } from "@torpor/build/response";
 
 import component from "@/views/PlaygroundPage.torp";
 
-import { decode_source } from "../../../lib/share.ts";
+import { CARD_VERSION, decode_source } from "../../../lib/share.ts";
 
 const TITLE = "Nomen Playground";
 const DESCRIPTION = "Open this Nomen program in the playground and run it in your browser.";
@@ -20,6 +20,7 @@ export default {
 		const source = decode_source(event.params.code);
 		const out = event.url.searchParams.get("out");
 		const card = new URL(`/s/${event.params.code}/card.png`, origin);
+		card.searchParams.set("r", CARD_VERSION);
 		if (out) card.searchParams.set("out", out);
 		const image = source !== undefined ? card.href : `${origin}/og.png`;
 		return [

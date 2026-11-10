@@ -42,6 +42,10 @@ export function preview_path(source: string, output = ""): string {
 	return `/playground/preview?${params}`;
 }
 
+/** Bump when the card renderer changes (the preview/OG URLs carry it), so
+ *  browsers and the Cache API don't keep serving an old renderer's PNG. */
+export const CARD_VERSION = "2";
+
 /** Codes longer than this would make unwieldy share links; the playground
  *  refuses to share them. */
 export const MAX_SHARE_SOURCE = 2_000;
