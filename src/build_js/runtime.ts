@@ -234,10 +234,182 @@ function Format_float_grouped(value, places) {
 	return grouped + tail;
 }
 
-// Custom patterns are not implemented in the JS backend yet.
-function Format_int_pattern() { __unsupported("format patterns"); }
-function Format_uint_pattern() { __unsupported("format patterns"); }
-function Format_float_pattern() { __unsupported("format patterns"); }
+// --- Custom patterns (#,##0.00, 0.0%, #,##0.00;(#,##0.00)) ----------
+
+function __pat_sections(pattern) {
+	let quoted = false;
+	for (let i = 0; i < pattern.length; i++) {
+		const c = pattern[i];
+		if (quoted) {
+			if (c === "'") quoted = false;
+		} else if (c === "'") {
+			quoted = true;
+		} else if (c === ";") {
+			return [pattern.slice(0, i), pattern.slice(i + 1)];
+		}
+	}
+	return [pattern, null];
+}
+
+function __pat_has_percent(pattern) {
+	let quoted = false;
+	for (let i = 0; i < pattern.length; i++) {
+		const c = pattern[i];
+		if (quoted) {
+			if (c === "'") quoted = false;
+		} else if (c === "'") {
+			quoted = true;
+		} else if (c === "%") {
+			return true;
+		}
+	}
+	return false;
+}
+
+function __pat_max_frac(pattern) {
+	let quoted = false;
+	let inFrac = false;
+	let count = 0;
+	let best = 0;
+	for (let i = 0; i < pattern.length; i++) {
+		const c = pattern[i];
+		if (quoted) {
+			if (c === "'") quoted = false;
+			continue;
+		}
+		if (c === "'") { quoted = true; continue; }
+		if (c === ";") { inFrac = false; count = 0; continue; }
+		if (c === ".") { inFrac = true; continue; }
+		if (c === "0" || c === "#") {
+			if (inFrac) {
+				count += 1;
+				if (count > best) best = count;
+			}
+			continue;
+		}
+		inFrac = false;
+		count = 0;
+	}
+	return best;
+}
+
+function __pat_shape_int(intDigits, padSlots, hasComma, groupSize) {
+	let digits = intDigits;
+	if (digits === "0" && padSlots === 0) return "";
+	if (digits.length < padSlots) digits = "0".repeat(padSlots - digits.length) + digits;
+	if (hasComma && groupSize > 0 && digits.length > groupSize) {
+		digits = digits.replace(new RegExp("\\\\B(?=(\\\\d{" + groupSize + "})+(?!\\\\d))", "g"), ",");
+	}
+	return digits;
+}
+
+function __pat_shape_frac(fracRaw, fracSlots, fracMin) {
+	let kept = fracRaw.length > fracSlots ? fracRaw.slice(0, fracSlots) : fracRaw;
+	let n = kept.length;
+	while (n > fracMin) {
+		if (kept[n - 1] === "0") n -= 1;
+		else { n = fracMin; break; }
+	}
+	kept = kept.slice(0, n);
+	if (kept.length < fracMin) kept += "0".repeat(fracMin - kept.length);
+	return kept;
+}
+
+function __pat_render(section, intDigits, fracRaw, negative) {
+	let quoted = false;
+	let firstSlot = -1;
+	let lastSlot = -1;
+	let dot = -1;
+	let padSlots = 0;
+	let fracSlots = 0;
+	let fracMin = 0;
+	let hasComma = false;
+	let slotsAfterComma = 0;
+
+	for (let i = 0; i < section.length; i++) {
+		const c = section[i];
+		if (quoted) { if (c === "'") quoted = false; continue; }
+		if (c === "'") { quoted = true; continue; }
+		if (c === "." && dot === -1) dot = i;
+		if (c === "0" || c === "#") {
+			lastSlot = i;
+			if (dot === -1) {
+				if (firstSlot === -1) firstSlot = i;
+				slotsAfterComma += 1;
+				if (c === "0") padSlots += 1;
+			} else {
+				fracSlots += 1;
+				if (c === "0") fracMin = fracSlots;
+			}
+		}
+		if (c === "," && dot === -1) { hasComma = true; slotsAfterComma = 0; }
+	}
+
+	let out = negative ? "-" : "";
+	quoted = false;
+	for (let i = 0; i < firstSlot; i++) {
+		const c = section[i];
+		if (quoted) {
+			if (c === "'") quoted = false;
+			else out += c;
+		} else if (c === "'") {
+			quoted = true;
+		} else {
+			out += c;
+		}
+	}
+
+	out += __pat_shape_int(intDigits, padSlots, hasComma, slotsAfterComma);
+	const kept = __pat_shape_frac(fracRaw, fracSlots, fracMin);
+	if (kept.length > 0) out += "." + kept;
+
+	quoted = false;
+	for (let i = lastSlot + 1; i < section.length; i++) {
+		const c = section[i];
+		if (quoted) {
+			if (c === "'") quoted = false;
+			else out += c;
+		} else if (c === "'") {
+			quoted = true;
+		} else if (i !== dot) {
+			out += c;
+		}
+	}
+	return out;
+}
+
+function __pat_apply(pattern, negative, intDigits, fracRaw) {
+	const [positive, negativeSection] = __pat_sections(pattern);
+	if (negative && negativeSection !== null) {
+		return __pat_render(negativeSection, intDigits, fracRaw, false);
+	}
+	return __pat_render(positive, intDigits, fracRaw, negative);
+}
+
+function Format_int_pattern(value, pattern) {
+	let negative = value < 0n;
+	let mag = negative ? -value : value;
+	if (__pat_has_percent(pattern)) mag = mag * 100n;
+	return __pat_apply(pattern, negative, mag.toString(), "");
+}
+
+function Format_uint_pattern(value, pattern) {
+	let mag = value;
+	if (__pat_has_percent(pattern)) mag = mag * 100n;
+	return __pat_apply(pattern, false, mag.toString(), "");
+}
+
+function Format_float_pattern(value, pattern) {
+	let negative = value < 0;
+	let mag = negative ? -value : value;
+	if (__pat_has_percent(pattern)) mag = mag * 100;
+	const maxFrac = __pat_max_frac(pattern);
+	const rendered = mag.toFixed(maxFrac);
+	const dot = rendered.indexOf(".");
+	const intDigits = dot === -1 ? rendered : rendered.slice(0, dot);
+	const frac = dot === -1 ? "" : rendered.slice(dot + 1);
+	return __pat_apply(pattern, negative, intDigits, frac);
+}
 
 `;
 }

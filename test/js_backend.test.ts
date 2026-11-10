@@ -565,4 +565,24 @@ Console.write("\\{a} \\{b}\\n")
 			"2 3\n",
 		);
 	});
+
+	test("custom format patterns: grouping, sections, percent, literals", async () => {
+		await js_output(
+			"js_patterns",
+			`
+var int big = 1234567
+var int neg = -9876543
+var int zero = 0
+var float total = 1234567.891
+var float ratio = 0.125
+Console.write("\\{big:#,##0} \\{neg:#,##0}\\n")
+Console.write("\\{zero:0.00} \\{big:0.00}\\n")
+Console.write("\\{total:#,##0.00} \\{ratio:0.0%}\\n")
+Console.write("\\{neg:#,##0.00;(#,##0.00)}\\n")
+Console.write("\\{big:$#,##0.00} \\{big:'#'0}\\n")
+Console.write("\\{total:>14#,##0.00}\\n")
+`,
+			"1,234,567 -9,876,543\n0.00 1234567.00\n1,234,567.89 12.5%\n(9,876,543.00)\n$1,234,567.00 #1234567\n  1,234,567.89\n",
+		);
+	});
 });
