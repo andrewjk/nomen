@@ -31,6 +31,7 @@ import runtime from "./runtime.ts";
 export default function build_js(root: BaseNode): BuildResult {
 	const status = create_status(root);
 	collect_types(root, status);
+	collect_allocations(root, status);
 	build_root_node(root as RootNode, status);
 	// Library code referenced by the program is lowered on demand into its own
 	// top-level buffer (function declarations hoist, so it can precede `main()`).
@@ -41,6 +42,21 @@ export default function build_js(root: BaseNode): BuildResult {
 		code,
 		errors: status.errors.length ? status.errors : undefined,
 	};
+}
+
+/** Index every checker-hoisted temp by name so `build_value_node` can inline
+ *  its initializer at the reference site. */
+function collect_allocations(root: BaseNode, status: BuildStatus): void {
+	status.allocations = new Map();
+	const visit = (node: BaseNode): void => {
+		for (const allocation of (node as unknown as { allocations?: BaseNode[] }).allocations ?? []) {
+			const name = (allocation as unknown as { name?: string }).name;
+			const value = (allocation as unknown as { value?: BaseNode }).value;
+			if (name && value) status.allocations?.set(name, value);
+		}
+		for (const child of child_nodes(node)) visit(child);
+	};
+	visit(root);
 }
 
 /** Pre-collect every user struct/enum in the tree (declarations may be

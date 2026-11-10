@@ -1,5 +1,6 @@
 import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
+import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { enum_case_value, find_enum_case } from "./enums.ts";
 import { function_label, js_name } from "./names.ts";
@@ -45,6 +46,16 @@ export default function build_value_node(node: ValueNode, status: BuildStatus): 
 	if ((node as unknown as { is_enum_shorthand?: boolean }).is_enum_shorthand) {
 		const hit = find_enum_case(status.enums, value);
 		if (hit) return enum_case_value(hit.enum_node, hit.case_index, [], status);
+	}
+	// A checker-hoisted temp: inline its initializer here (see BuildStatus).
+	const allocation = status.allocations?.get(value);
+	if (allocation) {
+		if (!status.inlining) status.inlining = new Set();
+		if (status.inlining.has(value)) return "undefined";
+		status.inlining.add(value);
+		const text = expr(allocation, status);
+		status.inlining.delete(value);
+		return `(${text})`;
 	}
 	if (value === "true" || value === "false") return value;
 	if (value === "null") return "null";

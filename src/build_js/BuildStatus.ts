@@ -36,9 +36,13 @@ export default interface BuildStatus {
 	/** The CURRENT function's `ref` parameter names (boxed in JS); the
 	 *  assignment builder writes through the box. */
 	ref_params?: Set<string>;
-	/** Allocations already emitted in this build (the checked AST is shared,
-	 *  so hoisted temps may be reachable from more than one statement). */
-	emitted_allocations?: Set<unknown>;
+	/** Checker-hoisted temps by name (`_param_0` → its initializer). The JS
+	 *  backend INLINES these at each reference instead of hoisting a `const`
+	 *  to the statement boundary: evaluation order and loop-fresh values then
+	 *  match the native backends (which assign the temp at the use site). */
+	allocations?: Map<string, BaseNode>;
+	/** Recursion guard while inlining an allocation. */
+	inlining?: Set<string>;
 	/** On-demand library lowering: emitted code, pending declarations, and the
 	 *  set of declarations already emitted. */
 	library_code: string;

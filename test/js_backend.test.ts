@@ -1331,4 +1331,27 @@ Console.write("\\n")
 			"1\n",
 		);
 	});
+
+	test("hoisted temps are inlined at their use site (loop conditions)", async () => {
+		await js_output(
+			"js_alloc_inline",
+			`
+var int[] xs = [5, 2, 9, 1, 5, 6]
+for i of 1 .. xs.length {
+	var int j = i
+	while j > 0 && xs.at(j - 1) > xs.at(j) {
+		const int tmp = xs.at(j)
+		xs.set(j, xs.at(j - 1))
+		xs.set(j - 1, tmp)
+		j -= 1
+	}
+}
+for x of xs {
+	Console.write("\\{x} ")
+}
+Console.write("\\n")
+`,
+			"1 2 5 5 6 9 \n",
+		);
+	});
 });
