@@ -79,6 +79,18 @@ function build_method_call(
 	// concrete class's method label.
 	const receiver_class = access.devirtualized_class ?? target_type;
 
+	// A call through a func-typed FIELD (`h.f(x)`): the field holds a JS
+	// function, invoked with the struct as `self`? No — a func field has no
+	// self; it is the stored function itself.
+	if (access.is_func_field_call) {
+		return call_with_refs(
+			status,
+			access.params,
+			access.ref_param_indices,
+			(arg_exprs) => `${expr(target, status)}.${name}(${arg_exprs.join(", ")})`,
+		);
+	}
+
 	if (access.is_static) {
 		if (target_type === "Console") return `Console_${name}(${args.join(", ")})`;
 		if (target_type === "Format") return `Format_${name}(${args.join(", ")})`;

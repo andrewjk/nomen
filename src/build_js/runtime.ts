@@ -134,6 +134,13 @@ function __sb_take_since(sb, mark) {
 	return taken;
 }
 
+function __enum_to_case(value, tag, name) {
+	if (!value || value.$tag !== tag) {
+		__panic("base to case conversion: the value carries a different variant (" + name + ")");
+	}
+	return value;
+}
+
 function __enum_eq(a, b) {
 	if (a === b) return true;
 	if (!a || !b) return false;

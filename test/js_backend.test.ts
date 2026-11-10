@@ -925,4 +925,95 @@ Console.write("\\n")
 			"range ok clock ok\n",
 		);
 	});
+
+	test("custom struct casts (#op_as) and enum case casts", async () => {
+		await js_output(
+			"js_casts",
+			`
+struct Dog {
+	var int value
+	func #op_as = (self, out int) {
+		return self.value * 2
+	}
+}
+enum Res {
+	case ok(int v)
+	case err
+}
+var Dog d = Dog(21)
+const int v = d as int
+var Res r = Res.ok(7)
+var Res.ok ok = r as Res.ok
+var Res back = ok as Res
+match back {
+	case .ok(payload) -> Console.write("ok \\{payload}")
+	case .err -> Console.write("err")
+}
+Console.write(" \\{v}\\n")
+`,
+			"ok 7 42\n",
+		);
+	});
+
+	test("struct, array, and tuple destructuring", async () => {
+		await js_output(
+			"js_destructure",
+			`
+struct Point {
+	var int x
+	var int y
+}
+const Point p = Point(3, 4)
+var [x, y] = p
+const int[] arr = [5, 6, 7]
+var [a, _, c] = arr
+var [t1, t2] = [11, 22]
+Console.write("\\{x} \\{y} \\{a} \\{c} \\{t1} \\{t2}\\n")
+`,
+			"3 4 5 7 11 22\n",
+		);
+	});
+
+	test("variadic params, default params, func fields, recursion", async () => {
+		await js_output(
+			"js_func_shapes",
+			`
+func count = (...string items, out int) => items.length
+func greet = (string name, string suffix = "!") {
+	Console.write("\\{name}\\{suffix}\\n")
+}
+struct Handler {
+	var func (int, out int) f
+}
+func fact = (int n, out int) {
+	if n <= 1 {
+		return 1
+	}
+	return n * fact(n - 1)
+}
+greet("hi")
+greet("bye", "?")
+var Handler h = Handler((x) => x * 3)
+Console.write("\\{count("a", "b", "c")} \\{h.f(4)} \\{fact(5)}\\n")
+`,
+			"hi!\nbye?\n3 12 120\n",
+		);
+	});
+
+	test("custom #op_add on a struct", async () => {
+		await js_output(
+			"js_op_add",
+			`
+struct Vec {
+	var int x
+	pub func #op_add = (self, Vec other, out Vec) {
+		return Vec(self.x + other.x)
+	}
+}
+const Vec a = Vec(2) + Vec(5)
+Console.write("\\{a.x}\\n")
+`,
+			"7\n",
+		);
+	});
 });
