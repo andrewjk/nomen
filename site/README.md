@@ -103,10 +103,10 @@ pnpm preview        # builds, then serves the built worker with the real config
 pnpm deploy         # builds, then `wrangler deploy`
 ```
 
-`pnpm preview` uses `wrangler dev --config wrangler.jsonc`, so the `BROWSER`
-binding is live (it runs remotely and needs a logged-in Wrangler). `pnpm dev`
-(the Torpor dev server) has no browser binding, so share cards fall back to the
-bitmap renderer there.
+`pnpm preview` uses `wrangler dev --config wrangler.jsonc`, and the Torpor dev
+server reads the same config, so both have the `BROWSER` binding live (it runs
+remotely and needs a logged-in Wrangler). Without the binding or its auth, share
+cards fall back to the bitmap renderer.
 
 `wrangler.jsonc` points Cloudflare at `dist/cloudflare/_worker.js`, with
 `dist/cloudflare` as the static-assets directory. Change `name` there to deploy

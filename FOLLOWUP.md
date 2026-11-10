@@ -218,28 +218,6 @@ build_function_node): deletes the branches in debug builds too, makes
 `--release` a true no-op on aarch64, and lets the branch-to-next pass
 converge instantly.
 
-### Pure-Nomen 64-bit arithmetic emits looser code than a raw `#arch` body — LANDED (2026-11-02)
-
-`Random.next` (splitmix64) is pure Nomen — verified bit-identical on both
-backends — but the aarch64 output was ~40 instructions where the
-hand-written body was ~14. All three gaps are closed now (PERF_PLAN item 15;
-`src/build_aarch64/asm_fold64.ts` + measurements there):
-
-1. **Constant materialization.** Full-width `movz`/`movn` + three-`movk`
-   chains (4 instructions per 64-bit literal) pool into ONE pc-relative
-   `ldr xN, .LC64_N` whose `.quad` entry sits right after the function's
-   final `ret` (adjacent, so the ±1 MB literal reach can never overflow).
-2. **Field-value forwarding.** `self.state = …; var z = self.state` no
-   longer stores and then reloads the field — the reload forwards the
-   stored register.
-3. **Immediate shift counts.** `z >> 30` no longer pays `mov x0, #30; lsr
-x0, x12, x0` — the immediate `lsr x0, x12, #30` form.
-
-Emitted body: 39 → 25 instructions; splitmix shape −10.5% wall; suite
-−4.3% nsieve / −1.9% binarytrees / −1.6% lru / flat json-serde. The raw
-`#arch` bodies stay retired — the pure-Nomen spelling now lands within the
-call protocol's own overhead of the raw form.
-
 ### Post-processing passes dominate large builds
 
 On a synthetic 1609-function corpus, ~15 s of an ~18.8 s build phase is
@@ -565,22 +543,6 @@ different string on JS. Modeling strings as `Uint8Array` would fix parity at
 the cost of making every JS-facing operation awkward; decide before the JS
 backend is treated as byte-compatible with the native backends.
 
-## JS backend: `int` arithmetic wraps at 64 bits
-
-Recorded 2026-11-10 (updated): int expressions are wrapped to their storage
-width (`BigInt.asIntN`/`asUintN`) on arithmetic results and on stores, so
-overflow matches the native backends and seeded `Random` sequences agree with
-C. `int`/`uint` wrap at 64 bits (their C storage is `long`), sized ints at
-their declared width. Unary negation of INT64_MIN is not wrapped.
-
-## JS backend: `Random()` seeding is clock-precision limited
-
-Recorded 2026-11-10 (updated): library `#init` bodies now run from a
-construction IIFE, so `Random()` seeds from `Time.now_ns()`; on the JS backend
-that is `Date.now() * 1_000_000` (millisecond precision), so `Random()`
-instances created within the same millisecond share a stream. Seeded
-construction (`Random(n)`) is fully deterministic.
-
 ## Checker can attach a scrutinee's hoisted argument temp to a branch binding
 
 Recorded 2026-11-10. For `const v = match find([1, 2, 3], 2) { case .some(x) -> x … }`
@@ -640,46 +602,31 @@ synchronously rather than being skipped:
 These are semantic divergences, not crashes: a cross-compiled program runs
 deterministically, single-threaded.
 
-## Share-card font history: workers-og → bitmap fallback → Browser Run
+## Use Fira Code in the bitmap share-card fallback
 
-Recorded 2026-11-11. The card renderer went through three shapes. `workers-og`
-(satori + resvg, ~800 kB gzipped) produced nice text but dominated the Worker
-bundle; it was replaced by a dependency-free bitmap renderer
-(`site/src/lib/font8x8.ts` + `png.ts`). The bitmap card is now only the
-fallback; the primary renderer uses Browser Run with Fira Code (next section).
-Bitmap fallback trade-offs:
+Recorded 2026-11-11. Share cards are rendered by Browser Run with Fira Code
+(`site/src/lib/card_browser.ts`); both `pnpm dev` and `pnpm preview` carry the
+remote `BROWSER` binding and use it. The pure-Worker fallback
+(`site/src/lib/card.ts`: an ASCII 8x8 bitmap font) still looks rough. It is
+only used when Browser Run is unavailable or fails (no binding/auth, quota, or
+a screenshot error), but it could use Fira Code without a browser:
 
-- The font covers ASCII 32–126; other characters (accented text, emoji) render
-  as `?`. A Latin-1/Unicode bitmap table can be added if cards need it.
-- The card shows the author's run output only when the share link carries it
-  (`?out=`). Generating output server-side would mean executing untrusted code
-  in the Worker, which the site deliberately never does (user programs run in
-  the page's Worker with a watchdog).
-- Cards are tokenised with Shiki on the server. If the Worker bundle needs to
-  shrink further, a small Nomen-specific tokenizer could replace it; the card
-  only needs the dark-plus token colours.
+- **Precomputed alpha atlas (preferred)**: rasterize printable ASCII in Fira
+  Code at the card's sizes at build time, embed the atlas (~20-40 kB gzipped),
+  and blit it with coverage blending. Needs a build-time rasterizer
+  (opentype.js plus a small scanline filler, or a committed atlas plus a
+  regeneration script).
+- **On-demand resvg-wasm**: include resvg's ~1.4 MB wasm as a static asset and
+  render SVG text with the Fira Code TTF only when the fallback runs. The
+  Worker script grows little, but the deployment carries a large asset.
+- Either route remains ASCII-only unless a Latin-1/Unicode font subset is
+  added; the browser path's ASCII subset has the same limitation for unusual
+  identifiers.
 
-## Share cards: Browser Run primary, bitmap fallback
+Not done because Browser Run covers normal dev and production.
 
-Recorded 2026-11-11. Share-card PNGs are rendered in a real browser through
-Cloudflare Browser Run quick actions (`env.BROWSER.quickAction("screenshot")`)
-with a Fira Code subset served from `site/src/public/fonts/` (SIL OFL). This
-keeps the Worker bundle small and gives proper typography; the first uncached
-card per location costs ~1–3 s, and the Cache API makes every later fetch
-instant.
+## Share-card tokenizer: replace Shiki on the server
 
-Fallbacks/considerations:
-
-- `pnpm dev` (Torpor's dev server) has no browser binding, so cards there use
-  the bitmap renderer (`site/src/lib/card.ts`, ASCII 8×8 font). `pnpm preview`
-  builds and runs `wrangler dev --config wrangler.jsonc`, which includes the
-  remote browser binding (needs a logged-in Wrangler).
-- If Browser Run is unavailable or a screenshot fails, the route logs the error
-  and falls back to the bitmap card; malformed share payloads still redirect to
-  `/og.png`.
-- Browser Run usage is billed/free-tier limited per browser minute; cards are
-  cached forever per URL (`/s/<code>/card.png?out=…`), so each unique share
-  costs at most one render per location.
-- The embedded font is an ASCII subset (Google Fonts' `text=` subset). Non-ASCII
-  glyphs fall back to the browser's monospace; the HTML carries the code text,
-  so this only affects unusual identifiers/strings.
+Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
+server, but a card only needs the dark-plus token colours. If the Worker bundle
+needs to shrink further, a small Nomen-specific tokenizer could replace it.
