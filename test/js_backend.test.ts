@@ -236,4 +236,140 @@ Console.write("got \\{line}\\n")
 			});
 		},
 	);
+
+	test("enums: tagged values and match", async () => {
+		await js_output(
+			"js_enum_simple",
+			`
+enum Dir {
+	case north
+	case south
+}
+var Dir d = Dir.north
+match d {
+	case .north -> Console.write("N")
+	case .south -> Console.write("S")
+}
+Console.write("\\n")
+`,
+			"N\n",
+		);
+	});
+
+	test("enums: payload binding in match", async () => {
+		await js_output(
+			"js_enum_payload",
+			`
+enum Res {
+	case ok(int v)
+	case err
+}
+func get = (bool good, out Res) {
+	if good {
+		return Res.ok(5)
+	}
+	return Res.err
+}
+var Res r = get(true)
+match r {
+	case .ok(v) -> Console.write("ok \\{v}")
+	case .err -> Console.write("err")
+}
+Console.write("\\n")
+`,
+			"ok 5\n",
+		);
+	});
+
+	test("match with an else arm", async () => {
+		await js_output(
+			"js_match_else",
+			`
+var int x = 3
+match x {
+	case 1 -> Console.write("one")
+	case 2 -> Console.write("two")
+} else -> Console.write("other")
+Console.write("\\n")
+`,
+			"other\n",
+		);
+	});
+
+	test("match as an expression", async () => {
+		await js_output(
+			"js_match_expr",
+			`
+var int x = 2
+const string label = match x {
+	case 1 -> "one"
+	case 2 -> "two"
+} else -> "many"
+Console.write("\\{label}\\n")
+`,
+			"two\n",
+		);
+	});
+
+	test("switch statement and expression", async () => {
+		await js_output(
+			"js_switch",
+			`
+var int x = 2
+switch {
+	case x == 1 {
+		Console.write("one")
+	}
+	case x == 2 {
+		Console.write("two")
+	}
+} else {
+	Console.write("other")
+}
+Console.write("\\n")
+`,
+			"two\n",
+		);
+		await js_output(
+			"js_switch_expr",
+			`
+var int x = 1
+const string label = switch {
+	case x == 1 -> "one"
+	case x == 2 -> "two"
+} else -> "many"
+Console.write("\\{label}\\n")
+`,
+			"one\n",
+		);
+	});
+
+	test("if as an expression", async () => {
+		await js_output(
+			"js_if_expr",
+			`
+var int x = -2
+const string label = if x > 0 -> "pos" else -> "neg"
+Console.write("\\{label}\\n")
+`,
+			"neg\n",
+		);
+	});
+
+	test("enum equality compares tag and payload", async () => {
+		await js_output(
+			"js_enum_eq",
+			`
+enum Flag {
+	case on
+	case off
+}
+var Flag a = Flag.on
+var Flag b = Flag.on
+var Flag c = Flag.off
+Console.write("\\{a == b} \\{a == c}\\n")
+`,
+			"true false\n",
+		);
+	});
 });

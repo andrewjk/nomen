@@ -53,6 +53,19 @@ function __interp(pattern, kinds, ...args) {
 	return out;
 }
 
+function __enum_eq(a, b) {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	if (a.$tag !== b.$tag) return false;
+	const ka = Object.keys(a).filter((k) => k !== "$tag");
+	const kb = Object.keys(b).filter((k) => k !== "$tag");
+	if (ka.length !== kb.length) return false;
+	for (const k of ka) {
+		if (a[k] !== b[k]) return false;
+	}
+	return true;
+}
+
 function __panic(message) {
 	process.stderr.write("panic: " + __to_string(message) + "\\n");
 	process.exit(2);

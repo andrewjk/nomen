@@ -1,7 +1,7 @@
 import type OperationNode from "../nodes/OperationNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
-import { kind_of } from "./types.ts";
+import { kind_of, stamped_type } from "./types.ts";
 
 /** Emit a JS expression for a Nomen operator node. Ints are bigints and
  *  floats are numbers, so the same JS operator serves both; the one special
@@ -18,6 +18,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return `(${left}.repeat(Number(${right})))`;
 	}
 
+	// Enum values are objects: `==` compares tag + payload, not identity.
+	if ((op === "==" || op === "!=") && is_enum(node.left_value, status)) {
+		const compare = `__enum_eq(${left}, ${right})`;
+		return op === "==" ? compare : `(!${compare})`;
+	}
+
 	// Value equality on the JS representations is exact (bigint vs bigint,
 	// string vs string); use the strict forms so a null check can't be
 	// satisfied by undefined.
@@ -25,4 +31,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (op === "!=") return `(${left} !== ${right})`;
 
 	return `(${left} ${op} ${right})`;
+}
+
+function is_enum(node: Parameters<typeof kind_of>[0], status: BuildStatus): boolean {
+	const type = stamped_type(node);
+	if (!type?.name) return false;
+	return status.enums.some((e) => e.name === type.name);
 }

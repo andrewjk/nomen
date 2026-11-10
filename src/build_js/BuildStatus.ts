@@ -16,11 +16,14 @@ export default interface BuildStatus {
 	indent: number;
 	/** User struct declarations (library types are handled by the runtime). */
 	structs: StructNode[];
-	/** User enum declarations (v1: collected, not yet emitted). */
+	/** User enum declarations (values are inline objects; this table is how
+	 *  case construction and match tags resolve). */
 	enums: EnumNode[];
+	/** Monotonic counter for generated temp names (`__match_0`, …). */
+	temp: number;
 	errors: CompileError[];
 }
 
 export function create_status(root: BaseNode): BuildStatus {
-	return { root, code: "", indent: 0, structs: [], enums: [], errors: [] };
+	return { root, code: "", indent: 0, structs: [], enums: [], temp: 0, errors: [] };
 }

@@ -1,6 +1,7 @@
 import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { enum_case_value, find_enum_case } from "./enums.ts";
 import { js_name } from "./names.ts";
 
 /**
@@ -25,8 +26,13 @@ const FLOAT_LITERAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 /** Emit an expression for a literal or identifier value. */
 export default function build_value_node(node: ValueNode, status: BuildStatus): string {
-	void status;
 	const value = node.value;
+	// An enum shorthand case used as a value (`Res.ok` / `.err`, which the
+	// checker flattens to `Res_ok`): a tag-only object literal.
+	if ((node as unknown as { is_enum_shorthand?: boolean }).is_enum_shorthand) {
+		const hit = find_enum_case(status.enums, value);
+		if (hit) return enum_case_value(hit.enum_node, hit.case_index, []);
+	}
 	if (value === "true" || value === "false") return value;
 	if (value === "null") return "null";
 	if (value === "self") return "self";
