@@ -25,7 +25,7 @@ import build_continue_node from "./build_continue_node.ts";
 import build_declaration_node from "./build_declaration_node.ts";
 import build_for_loop_node from "./build_for_loop_node.ts";
 import build_function_call_node from "./build_function_call_node.ts";
-import build_function_node from "./build_function_node.ts";
+import build_function_node, { build_function_expression } from "./build_function_node.ts";
 import build_grouped_node from "./build_grouped_node.ts";
 import { build_if_expression } from "./build_if_else_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
@@ -60,6 +60,14 @@ export function next_temp(status: BuildStatus, prefix: string): string {
  * indent level; the wrapper becomes a single JS expression.
  */
 export function capture_expression(status: BuildStatus, build: () => void): string {
+	const body = capture_body(status, build);
+	return `(() => {\n${body}${"\t".repeat(status.indent)}})()`;
+}
+
+/** Emit statements into a scratch buffer at one extra indent level and return
+ *  the text (used by expression-position function literals and the IIFE
+ *  wrapper). */
+export function capture_body(status: BuildStatus, build: () => void): string {
 	const saved_code = status.code;
 	const saved_indent = status.indent;
 	status.code = "";
@@ -68,7 +76,7 @@ export function capture_expression(status: BuildStatus, build: () => void): stri
 	const body = status.code;
 	status.code = saved_code;
 	status.indent = saved_indent;
-	return `(() => {\n${body}${"\t".repeat(saved_indent)}})()`;
+	return body;
 }
 
 /**
@@ -137,6 +145,8 @@ export function expr(node: BaseNode, status: BuildStatus): string {
 			return build_array_values_node(node as ArrayValuesNode, status);
 		case "grouped":
 			return build_grouped_node(node as GroupedNode, status);
+		case "func":
+			return build_function_expression(node as FunctionNode, status);
 		default:
 			return `__unsupported(${JSON.stringify(`expression ${node.node_type}`)})`;
 	}

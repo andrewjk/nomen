@@ -372,4 +372,54 @@ Console.write("\\{a == b} \\{a == c}\\n")
 			"true false\n",
 		);
 	});
+
+	test("generic structs", async () => {
+		await js_output(
+			"js_generic_struct",
+			`
+mv struct Box2<T> {
+	var T value
+}
+var Box2<int> b = Box2<int>(5)
+Console.write("\\{b.value}\\n")
+`,
+			"5\n",
+		);
+	});
+
+	test("generic free functions specialize on a generic-struct argument", async () => {
+		await js_output(
+			"js_generic_func",
+			`
+mv struct Box3<T> {
+	var T value
+}
+func unwrap<T> = (Box3<T> box, out T) {
+	return box.value
+}
+var Box3<int> b = Box3<int>(5)
+Console.write("\\{unwrap(b)}\\n")
+`,
+			"5\n",
+		);
+	});
+
+	test("lambdas, function values, and capture", async () => {
+		await js_output(
+			"js_closures",
+			`
+func apply = (func (int, out int) f, int x, out int) {
+	return f(x)
+}
+var func (int, out int) doubler = (x) => x * 2
+func plus1 = (int x, out int) => x + 1
+func make = (int n, out func (out int)) {
+	return () => n
+}
+var func (out int) seven = make(7)
+Console.write("\\{doubler(2)} \\{apply(plus1, 4)} \\{seven()}\\n")
+`,
+			"4 5 7\n",
+		);
+	});
 });

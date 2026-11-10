@@ -2,7 +2,7 @@ import { is_int_literal, parse_int_literal_bigint } from "../int_literal.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { enum_case_value, find_enum_case } from "./enums.ts";
-import { js_name } from "./names.ts";
+import { function_label, js_name } from "./names.ts";
 
 /**
  * A Nomen string/char literal is stored as its raw source text (quotes and
@@ -49,5 +49,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus): 
 	if (FLOAT_LITERAL.test(value)) {
 		return value.replace(/_/g, "");
 	}
+	// A reference to a nested function as a VALUE (`apply(plus1, 4)`): the
+	// checker stamps the resolved FunctionNode so the reference uses the
+	// unique emission label, not the bare source name.
+	const resolved = (node as unknown as { resolved_function?: Parameters<typeof function_label>[0] })
+		.resolved_function;
+	if (resolved) return function_label(resolved);
 	return js_name(value);
 }
