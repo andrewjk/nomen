@@ -580,3 +580,16 @@ construction IIFE, so `Random()` seeds from `Time.now_ns()`; on the JS backend
 that is `Date.now() * 1_000_000` (millisecond precision), so `Random()`
 instances created within the same millisecond share a stream. Seeded
 construction (`Random(n)`) is fully deterministic.
+
+## Checker can attach a scrutinee's hoisted argument temp to a branch binding
+
+Recorded 2026-11-10. For `const v = match find([1, 2, 3], 2) { case .some(x) -> x … }`
+the checker hoists the array argument to `_param_0` but attaches that
+allocation to the branch binding `x` instead of the match scrutinee. The C
+backend emits invalid C for this shape (`clang` error at the match/branch
+site); the JS backend works around it by scanning the emitted scrutinee text
+for `_param_N` names and emitting the referenced allocations before the
+scrutinee (`emit_referenced_allocations`). The same workaround covers
+if-expression conditions, switch case conditions, and match statements. Root
+fix belongs in the checker's allocation promotion (`src/check/utils/last_use.ts`)
+so both native backends get it.

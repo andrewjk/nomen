@@ -1,5 +1,11 @@
 import type SwitchNode from "../nodes/SwitchNode.ts";
-import { branch_body, capture_expression, emit, expr } from "./build_node.ts";
+import {
+	branch_body,
+	capture_expression,
+	emit,
+	emit_referenced_allocations,
+	expr,
+} from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 /** `switch` as a statement: an if/else-if chain over boolean case
@@ -22,7 +28,9 @@ function emit_switch(node: SwitchNode, status: BuildStatus, value_mode: boolean)
 	}
 
 	node.cases.forEach((switch_case, index) => {
-		emit(status, `${index === 0 ? "if" : "else if"} (${expr(switch_case.condition, status)}) {`);
+		const condition = expr(switch_case.condition, status);
+		emit_referenced_allocations(status, node, condition);
+		emit(status, `${index === 0 ? "if" : "else if"} (${condition}) {`);
 		status.indent += 1;
 		branch_body(switch_case.branch.statements ?? [], status, value_mode);
 		status.indent -= 1;

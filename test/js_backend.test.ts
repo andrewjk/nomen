@@ -1223,4 +1223,34 @@ Console.write("\\{big} \\{u} \\{b} \\{u >> 60}\\n")
 			"-9223372036854775808 0 -56 0\n",
 		);
 	});
+
+	test("call arguments in match/if/switch conditions", async () => {
+		await js_output(
+			"js_condition_calls",
+			`
+func find = (Array<int> xs, int want, out Option<int>) {
+	for x of xs {
+		if x == want {
+			return Option.some(x)
+		}
+	}
+	return Option.none
+}
+func is_big = (Array<int> xs, out bool) {
+	return xs.length > 2
+}
+const int v = match find([1, 2, 3], 2) {
+	case .some(x) -> x
+	case .none -> -1
+}
+match find(Array<int>(1), 9) {
+	case .some(x) -> Console.write("some")
+	case .none -> Console.write("none")
+}
+const string s = if is_big([1, 2, 3]) -> "big" else -> "small"
+Console.write(" \\{v} \\{s}\\n")
+`,
+			"none 2 big\n",
+		);
+	});
 });

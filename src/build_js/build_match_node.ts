@@ -1,6 +1,13 @@
 import type MatchNode from "../nodes/MatchNode.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
-import { branch_body, capture_expression, emit, expr, next_temp } from "./build_node.ts";
+import {
+	branch_body,
+	capture_expression,
+	emit,
+	emit_referenced_allocations,
+	expr,
+	next_temp,
+} from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { find_enum_case } from "./enums.ts";
 import { js_name } from "./names.ts";
@@ -20,7 +27,9 @@ function emit_match(node: MatchNode, status: BuildStatus, value_mode: boolean): 
 	const temp = next_temp(status, "match");
 	emit(status, "{");
 	status.indent += 1;
-	emit(status, `const ${temp} = ${expr(node.value, status)};`);
+	const scrutinee = expr(node.value, status);
+	emit_referenced_allocations(status, node, scrutinee);
+	emit(status, `const ${temp} = ${scrutinee};`);
 
 	node.cases.forEach((match_case, index) => {
 		const enum_hit =

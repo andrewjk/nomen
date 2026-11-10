@@ -4,6 +4,7 @@ import type ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type CastNode from "../nodes/CastNode.ts";
+import { child_nodes } from "../nodes/child_nodes.ts";
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import type ForLoopNode from "../nodes/ForLoopNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -46,6 +47,46 @@ import type BuildStatus from "./BuildStatus.ts";
 /** Append a statement line at the current indentation. */
 export function emit(status: BuildStatus, text: string): void {
 	status.code += "\t".repeat(status.indent) + text + "\n";
+}
+
+/** Emit every checker-hoisted `const` temp reachable from `node` (recursively
+ *  — temps nest inside values, call arguments, and branch expressions). */
+export function emit_allocations(status: BuildStatus, node: BaseNode): void {
+	if (!status.emitted_allocations) status.emitted_allocations = new Set();
+	for (const allocation of collect_allocations(node, { let_values: true })) {
+		if (status.emitted_allocations.has(allocation)) continue;
+		status.emitted_allocations.add(allocation);
+		stmt(allocation, status);
+	}
+}
+
+/**
+ * Emit allocations referenced by `text` that the checker attached somewhere
+ * else in `subtree`. Normally a hoisted temp rides the expression that uses
+ * it, but a scrutinee's argument temp can be attached to a branch binding
+ * (the C backend chokes on that shape too), so expression-position constructors
+ * scan their subtree for the temps their emitted text names.
+ */
+export function emit_referenced_allocations(
+	status: BuildStatus,
+	subtree: BaseNode,
+	text: string,
+): void {
+	if (!status.emitted_allocations) status.emitted_allocations = new Set();
+	const names = new Set(text.match(/\b_[A-Za-z0-9_]+\b/g) ?? []);
+	if (names.size === 0) return;
+	const visit = (current: BaseNode): void => {
+		for (const allocation of (current as unknown as { allocations?: BaseNode[] }).allocations ??
+			[]) {
+			const name = (allocation as unknown as { name?: string }).name;
+			if (!name || !names.has(name)) continue;
+			if (status.emitted_allocations?.has(allocation)) continue;
+			status.emitted_allocations?.add(allocation);
+			stmt(allocation, status);
+		}
+		for (const child of child_nodes(current)) visit(child);
+	};
+	visit(subtree);
 }
 
 /** A fresh generated temp name (`__match_0`, `__switch_1`, …). */
@@ -104,6 +145,7 @@ export function branch_body(
 		}
 		if (statement.node_type === "let") {
 			const value = (statement as unknown as { value?: BaseNode }).value;
+			if (value) emit_allocations(status, value);
 			emit(status, `return ${value ? expr(value, status) : "undefined"};`);
 			return;
 		}
@@ -111,6 +153,7 @@ export function branch_body(
 			stmt(statement, status);
 			return;
 		}
+		emit_allocations(status, statement);
 		emit(status, `return ${expr(statement, status)};`);
 		return;
 	}
@@ -159,12 +202,7 @@ export function stmt(node: BaseNode, status: BuildStatus): void {
 	// `const` temps attached as `allocations`. They must be emitted before the
 	// statement that consumes them; the walk is recursive because temps nest
 	// (a builder's value, a branch's last expression, …).
-	if (!status.emitted_allocations) status.emitted_allocations = new Set();
-	for (const allocation of collect_allocations(node, { let_values: true })) {
-		if (status.emitted_allocations.has(allocation)) continue;
-		status.emitted_allocations.add(allocation);
-		stmt(allocation, status);
-	}
+	emit_allocations(status, node);
 
 	switch (node.node_type) {
 		case "declare":
