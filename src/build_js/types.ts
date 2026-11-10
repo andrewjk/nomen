@@ -104,3 +104,24 @@ export function copy_if_value_struct(
 ): string {
 	return is_value_struct(type_name, status) ? `__copy(${value})` : value;
 }
+
+/** Wrap a value for a declared type: ints wrap at their width, everything
+ *  else (arrays, views, structs, strings) is untouched. */
+export function wrap_for_type(value: string, type: Type | undefined): string {
+	if (!type || type.is_array || type.is_view || type.is_nullable) return value;
+	return wrap_int_expression(value, type.name);
+}
+
+/** Wrap an int expression to its storage width. Nomen ints are 64-bit words
+ *  (`int`/`uint` included, matching the C backend's `long`), so overflow
+ *  wraps like the native backends instead of growing a JS `bigint`. Sized
+ *  types wrap at their declared width. */
+export function wrap_int_expression(value: string, type_name: string | undefined): string {
+	const info = type_name ? get_built_in_type(type_name) : undefined;
+	if (info?.kind !== "int") return value;
+	const bits = type_name === "int" || type_name === "uint" ? 64 : (info.bits ?? 64);
+	const bounded = bits >= 64 ? 64 : bits;
+	return info.signed
+		? `BigInt.asIntN(${bounded}, ${value})`
+		: `BigInt.asUintN(${bounded}, ${value})`;
+}

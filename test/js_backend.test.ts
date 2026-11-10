@@ -1207,4 +1207,20 @@ Console.write("\\{total} \\{acc} \\{n + 1 as char}\\n")
 			"10 60 98\n",
 		);
 	});
+
+	test("64-bit wrapping arithmetic and sized-int stores", async () => {
+		await js_output(
+			"js_overflow",
+			`
+var int64 big = 9223372036854775807
+big = big + 1
+var uint64 u = 18446744073709551615
+u = u + 1
+var int8 b = 100
+b = b + 100
+Console.write("\\{big} \\{u} \\{b} \\{u >> 60}\\n")
+`,
+			"-9223372036854775808 0 -56 0\n",
+		);
+	});
 });

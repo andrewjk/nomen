@@ -3,7 +3,7 @@ import type ValueNode from "../nodes/ValueNode.ts";
 import { emit, expr, next_temp } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { js_name } from "./names.ts";
-import { copy_if_value_struct, stamped_type } from "./types.ts";
+import { copy_if_value_struct, stamped_type, wrap_for_type, wrap_int_expression } from "./types.ts";
 
 /** Emit an assignment (plain, compound, or `x = y swap z`). */
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus): void {
@@ -27,7 +27,16 @@ export default function build_assignment_node(node: AssignmentNode, status: Buil
 		return;
 	}
 
-	emit(status, `${left} ${node.operator ?? "="} ${right};`);
+	const operator = node.operator ?? "=";
+	if (operator !== "=" && operator.endsWith("=")) {
+		// Compound assignment: the arithmetic wraps at the target's width.
+		const base_op = operator.slice(0, -1);
+		const target = stamped_type(node.left_value)?.name;
+		const combined = wrap_int_expression(`(${left} ${base_op} ${right})`, target);
+		emit(status, `${left} = ${combined};`);
+	} else {
+		emit(status, `${left} = ${wrap_for_type(right, stamped_type(node.left_value))};`);
+	}
 	write_back_ref_param(node, status);
 }
 

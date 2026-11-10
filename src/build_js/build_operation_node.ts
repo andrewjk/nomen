@@ -2,7 +2,7 @@ import type OperationNode from "../nodes/OperationNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { method_label } from "./names.ts";
-import { kind_of, stamped_type } from "./types.ts";
+import { kind_of, stamped_type, wrap_int_expression } from "./types.ts";
 
 /** Emit a JS expression for a Nomen operator node. Ints are bigints and
  *  floats are numbers, so the same JS operator serves both; the one special
@@ -63,7 +63,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	if (op === "==") return `(${left} === ${right})`;
 	if (op === "!=") return `(${left} !== ${right})`;
 
-	return `(${left} ${op} ${right})`;
+	const result = `(${left} ${op} ${right})`;
+	if (arithmetic && result_kind === "int") {
+		return wrap_int_expression(result, stamped_type(node)?.name);
+	}
+	return result;
 }
 
 function is_enum(node: Parameters<typeof kind_of>[0], status: BuildStatus): boolean {

@@ -565,13 +565,13 @@ different string on JS. Modeling strings as `Uint8Array` would fix parity at
 the cost of making every JS-facing operation awkward; decide before the JS
 backend is treated as byte-compatible with the native backends.
 
-## JS backend: integer arithmetic does not wrap
+## JS backend: `int` arithmetic wraps at 64 bits
 
-Recorded 2026-11-10. Nomen ints are represented as JS `bigint`, which grows
-arbitrarily; the native backends store 64-bit values, so overflow wraps (e.g.
-`int64` max + 1 → min). Sized casts (`as int8`) do truncate via
-`BigInt.asIntN`, but arithmetic that overflows 64 bits silently produces a
-larger value on the JS backend instead of wrapping.
+Recorded 2026-11-10 (updated): int expressions are wrapped to their storage
+width (`BigInt.asIntN`/`asUintN`) on arithmetic results and on stores, so
+overflow matches the native backends and seeded `Random` sequences agree with
+C. `int`/`uint` wrap at 64 bits (their C storage is `long`), sized ints at
+their declared width. Unary negation of INT64_MIN is not wrapped.
 
 ## JS backend: `Random()` seeding is clock-precision limited
 
