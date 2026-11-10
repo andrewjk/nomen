@@ -1388,3 +1388,126 @@ Console.write("\\n")
 		expect(out.join("")).toBe("beforepanic: boom\n");
 	});
 });
+
+describe("js backend: slot buffers and their containers", () => {
+	test("Buffer<T> maps onto a JS array", async () => {
+		await js_output(
+			"js_buffer_array",
+			`
+var Buffer<int> b = Buffer<int>()
+b.grow(3)
+b.store(0, 42)
+b.replace(1, 7)
+b.store_int(2, 5)
+Console.write("cap=\\{b.cap} v=\\{b.load(0)} r=\\{b.load(1)} i=\\{b.load_int(2)}\\n")
+`,
+			"cap=3 v=42 r=7 i=5\n",
+		);
+	});
+
+	test("LinkedList keeps its values in the buffers", async () => {
+		await js_output(
+			"js_linked_list",
+			`
+var LinkedList<int> xs = LinkedList<int>()
+xs.add(1)
+xs.add(2)
+Console.write("len=\\{xs.length()} at=\\{xs.at(1)}\\n")
+`,
+			"len=2 at=2\n",
+		);
+	});
+
+	test("Graph nodes and edges", async () => {
+		await js_output(
+			"js_graph",
+			`
+var Graph<int> g = Graph<int>()
+var int a = g.node_count
+g.add_node(1)
+var int b = g.node_count
+g.add_node(2)
+g.add_edge(a, b)
+var int total = 0
+var int e = g.edges_of(a)
+while e != -1 {
+	var int target = g.edge_target(e)
+	total = total + g.at(target)
+	e = g.next_edge(e)
+}
+Console.write("nodes=\\{g.node_length()} total=\\{total}\\n")
+`,
+			"nodes=2 total=2\n",
+		);
+	});
+
+	test("Tree node pool", async () => {
+		await js_output(
+			"js_tree",
+			`
+var Tree<int> t = Tree<int>()
+t.add(1)
+t.add(2)
+t.set_left(0, 1)
+Console.write("count=\\{t.count} left=\\{t.left(0)} nodes=\\{t.count_nodes(0)}\\n")
+`,
+			"count=2 left=1 nodes=2\n",
+		);
+	});
+
+	test("StableList push and element reads", async () => {
+		await js_output(
+			"js_stable_list",
+			`
+var StableList<int> s = StableList<int>()
+s.push(4)
+s.push(5)
+Console.write("len=\\{s.length} at=\\{s.at_or(1, -1)}\\n")
+`,
+			"len=2 at=5\n",
+		);
+	});
+
+	test("Json parse and stringify", async () => {
+		await js_output(
+			"js_json_round_trip",
+			`
+var string src = "{\\"type\\": \\"Feature\\", \\"count\\": 42}"
+var JsonTree tree = JsonTree()
+var int n = Json.parse(src, ref tree)
+Console.write(Json.stringify(ref tree, n))
+Console.write("\\n")
+`,
+			'{"type":"Feature","count":42}\n',
+		);
+	});
+
+	test("BigInt division through its limb Buffer", async () => {
+		await js_output(
+			"js_bigint_division",
+			`
+var BigInt a = BigInt(100)
+var BigInt b = BigInt(10)
+var BigInt q = BigInt()
+var BigInt r = BigInt()
+q.div_to(a, b, ref r)
+Console.write("q=\\{q.to_digit()} r=\\{r.to_digit()}\\n")
+`,
+			"q=10 r=0\n",
+		);
+	});
+
+	test("an unavailable library feature warns and the program continues", async () => {
+		await js_output(
+			"js_skip_thread",
+			`
+func work = (int n, out uint64) {
+	return n * 2
+}
+var t = Thread(work(21)).start()
+Console.write("got \\{t.result_uint64()}\\n")
+`,
+			"got 0\n",
+		);
+	});
+});

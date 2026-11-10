@@ -1,3 +1,5 @@
+import { mono_type_name } from "../build_common/mono_name.ts";
+import { get_built_in_type } from "../built_in_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -5,7 +7,18 @@ import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value } from "./enums.ts";
-import { list_method, map_method, set_method, string_builder_method } from "./library.ts";
+import {
+	bigint_method,
+	buffer_method,
+	is_buffer_type,
+	is_class_buffer_type,
+	library_base_name,
+	list_method,
+	map_method,
+	set_method,
+	stable_list_method,
+	string_builder_method,
+} from "./library.ts";
 import { is_native_library_type, library_method, library_method_call } from "./library_queue.ts";
 import { method_label } from "./names.ts";
 import { copy_if_value_struct, stamped_type } from "./types.ts";
@@ -42,17 +55,29 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		}
 
 		// `length` on the container receivers is a declared property.
-		if (access.name === "length" && target_type === "StringBuilder") {
+		if (access.name === "length" && library_base_name(target_type) === "StringBuilder") {
 			return `BigInt(${expr(node.target, status)}.s.length)`;
 		}
-		if (access.name === "length" && target_type === "Map") {
+		if (access.name === "length" && library_base_name(target_type) === "Map") {
 			return `BigInt(${expr(node.target, status)}.size)`;
 		}
-		if (access.name === "length" && target_type === "Set") {
+		if (access.name === "length" && library_base_name(target_type) === "Set") {
 			return `BigInt(${expr(node.target, status)}.size)`;
 		}
-		if (access.name === "length" && target_type === "List") {
+		if (access.name === "length" && library_base_name(target_type) === "List") {
 			return `BigInt(${expr(node.target, status)}.length)`;
+		}
+		if (access.name === "length" && library_base_name(target_type) === "StableList") {
+			return `BigInt(${expr(node.target, status)}.length)`;
+		}
+		// A Buffer's capacity is its array length; `data` is the raw slab
+		// pointer, which only raw/unsafe bodies observe (and those are not
+		// lowered to JS).
+		if (is_buffer_type(target_type) && access.name === "cap") {
+			return `BigInt(${expr(node.target, status)}.length)`;
+		}
+		if (is_buffer_type(target_type) && access.name === "data") {
+			return "0n";
 		}
 		// A plain array/string `.length` is a JS number; Nomen's is an int.
 		if (access.name === "length") {
@@ -74,11 +99,17 @@ function build_method_call(
 	const name = access.name;
 	const args = access.params.map((p) => expr(p, status));
 	const target_type = type_name_of(target);
+	const native_type = library_base_name(target_type);
 	const target_kind = kind_of(target);
 	// A trait-typed receiver resolves to the concrete struct at check time;
 	// the value itself is already that struct at runtime, so dispatch uses the
-	// concrete class's method label.
-	const receiver_class = access.devirtualized_class ?? target_type;
+	// concrete class's method label. A generic receiver picks its
+	// monomorphized struct when one is registered: the generic body's field
+	// types are unstamped and its template constants unsubstituted.
+	const target_stamp = stamped_type(target);
+	const receiver_class =
+		access.devirtualized_class ??
+		(target_stamp?.type_args?.length ? mono_type_name(target_stamp) : target_type);
 
 	// A call through a func-typed FIELD (`h.f(x)`): the field holds a JS
 	// function, invoked with the struct as `self`? No — a func field has no
@@ -202,20 +233,41 @@ function build_method_call(
 	// Supported System-library receivers map onto their JS representations.
 	// This must precede the generic `to_string` fallback: StringBuilder's
 	// `to_string` is a take, not a rendering.
-	if (target_type === "List") {
+	if (native_type === "List") {
 		const mapped = list_method(name, expr(target, status), stored_args(access.params, status));
 		if (mapped !== undefined) return mapped;
 	}
-	if (target_type === "Set") {
+	if (native_type === "Set") {
 		const mapped = set_method(name, expr(target, status), stored_args(access.params, status));
 		if (mapped !== undefined) return mapped;
 	}
-	if (target_type === "Map") {
+	if (native_type === "Map") {
 		const mapped = map_method(name, expr(target, status), stored_args(access.params, status));
 		if (mapped !== undefined) return mapped;
 	}
-	if (target_type === "StringBuilder") {
+	if (native_type === "StringBuilder") {
 		const mapped = string_builder_method(name, expr(target, status), args);
+		if (mapped !== undefined) return mapped;
+	}
+	if (native_type === "BigInt") {
+		const mapped = bigint_method(name, expr(target, status), args);
+		if (mapped !== undefined) return mapped;
+	}
+	if (native_type === "StableList") {
+		const mapped = stable_list_method(
+			name,
+			expr(target, status),
+			stored_args(access.params, status),
+		);
+		if (mapped !== undefined) return mapped;
+	}
+	// The slot buffers back the linked/chunked containers; JS arrays stand in
+	// for the native slab (see `buffer_method`).
+	if (is_buffer_type(target_type)) {
+		const mapped = buffer_method(name, expr(target, status), args, {
+			class_elements: is_class_buffer_type(target_type),
+			...buffer_zero(target),
+		});
 		if (mapped !== undefined) return mapped;
 	}
 
@@ -263,6 +315,42 @@ function build_method_call(
 	return unsupported(`${target_type}.${name}`);
 }
 
+/** The zero value a freshly grown Buffer slot holds, and whether loads must
+ *  copy: struct/enum slots have value semantics, scalars and strings don't. */
+function buffer_zero(target: BaseNode): { zero: string; copy_loads: boolean } {
+	const type = stamped_type(target);
+	const element_name = buffer_element_name(type);
+	const info = element_name ? get_built_in_type(element_name) : undefined;
+	const is_class = is_class_buffer_type(type?.name ?? "");
+	if (is_class) return { zero: "null", copy_loads: false };
+	switch (info?.kind) {
+		case "int":
+			return { zero: "0n", copy_loads: false };
+		case "float":
+			return { zero: "0", copy_loads: false };
+		case "bool":
+			return { zero: "false", copy_loads: false };
+		case "string":
+		case "char":
+			return { zero: '""', copy_loads: false };
+		default:
+			// A struct/enum slot: no generic zero object, and loads copy so a
+			// slot and its binding never alias.
+			return { zero: "undefined", copy_loads: true };
+	}
+}
+
+/** `Buffer_int` → `int`, `Buffer<T>` → `T`, `ClassBuffer_Animal` → `Animal`. */
+function buffer_element_name(type: { name: string; type_args?: { name: string }[] } | undefined) {
+	const arg = type?.type_args?.[0];
+	if (arg) return arg.name;
+	const name = type?.name ?? "";
+	for (const prefix of ["ClassBuffer_", "Buffer_"]) {
+		if (name.startsWith(prefix)) return name.slice(prefix.length);
+	}
+	return undefined;
+}
+
 /** `System.Utf8` over the JS string model (code units, not bytes): decoding
  *  advances one code unit for BMP text and two for astral characters. */
 function utf8_call(name: string, args: string[]): string {
@@ -303,5 +391,7 @@ function stored_args(args: BaseNode[], status: BuildStatus): string[] {
 }
 
 function unsupported(what: string): string {
-	return `__unsupported(${JSON.stringify(what)})`;
+	// A valid program reached a library/raw feature the JS backend does not
+	// model: warn and continue rather than aborting the whole run.
+	return `__skip(${JSON.stringify(what)})`;
 }

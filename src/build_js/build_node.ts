@@ -148,7 +148,7 @@ export function expr(node: BaseNode, status: BuildStatus): string {
 		case "func":
 			return build_function_expression(node as FunctionNode, status);
 		default:
-			return `__unsupported(${JSON.stringify(`expression ${node.node_type}`)})`;
+			return `__skip(${JSON.stringify(`expression ${node.node_type}`)})`;
 	}
 }
 
@@ -211,8 +211,8 @@ export function stmt(node: BaseNode, status: BuildStatus): void {
 		case "trait":
 		case "extend":
 		case "import":
-			// v1: declarations with no JS emission. Using their members fails
-			// loudly at the call site (`__unsupported`).
+			// Declarations with no JS emission. Using their members falls back
+			// to a warning stub at the call site.
 			return;
 		case "block":
 			emit_block(node as BaseNode & { statements?: BaseNode[] }, status);

@@ -593,3 +593,24 @@ boundary. Nested if-expressions also hit the C backend (`const s = if a -> x
 else -> if b -> y else -> z` produces invalid C). Root fix belongs in the
 checker's allocation promotion (`src/check/utils/last_use.ts`) and the C
 builder's statement hoisting.
+
+## JS backend: Buffer views and raw slab protocols
+
+Recorded 2026-11-11. `Buffer<T>`/`ClassBuffer<T>` map onto JS arrays (capacity =
+array length), which is enough to run the containers built on them
+(`LinkedList`, `Graph`, `Tree`, `Arena`, `StableList`, `JsonTree`, `BigInt`).
+Two native-only shapes are deliberately not mapped:
+
+- `Buffer.slice` returns a JS array COPY, not a `view T` borrow — a write
+  through the slice does not reach the source buffer. `StableList` is modelled
+  natively (its public methods never expose a `Buffer` view to user code), so
+  the JSON pool is unaffected.
+- The raw slab protocols — `Buffer.init_view` / `clear_view` /
+  `store_in_slab` / `slot_ptr` — cannot be expressed when the "slab" is a
+  `uint64` pointer (`malloc` has no JS analogue). Library code that uses them
+  reaches the warning-stub path (`js backend: skipping unavailable feature`).
+  `StableList`'s chunked bodies are bypassed by its native array mapping.
+
+Uninitialized grown slots hold `undefined` rather than the native all-zero
+bytes; container code stores before it loads, so this only shows up in code
+that reads inside `cap` without writing first.

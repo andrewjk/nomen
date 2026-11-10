@@ -9,7 +9,6 @@ import { library_constructor } from "./library.ts";
 import {
 	is_native_library_type,
 	library_method_label,
-	needs_raw_memory,
 	queue_library_function,
 	queue_library_init,
 	queue_library_method,
@@ -81,9 +80,6 @@ export default function build_function_call_node(
 		(s) => s.name === name && !is_native_library_type(s.name),
 	);
 	if (library_struct) {
-		if (needs_raw_memory(library_struct)) {
-			return `__unsupported(${JSON.stringify(`library ${name}`)})`;
-		}
 		// A user-declared `#init` body runs from a construction IIFE. A
 		// synthesized positional `#init` (no `self`) is the field factory.
 		if (node.resolved_function?.name === "#init" && init_has_self(node.resolved_function)) {

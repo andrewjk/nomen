@@ -170,6 +170,72 @@ function __array_with(value, count) {
 	return out;
 }
 
+// --- Buffer (a JS array stands in for the native slab) --------------------
+
+// 128/64 unsigned division (BigInt.div128): the native form saturates when
+// the high word is at least the divisor.
+function __div128(hi, lo, d) {
+	const h = BigInt.asUintN(64, BigInt(hi));
+	const l = BigInt.asUintN(64, BigInt(lo));
+	const divisor = BigInt.asUintN(64, BigInt(d));
+	if (h >= divisor) return 18446744073709551615n;
+	return ((h << 64n) | l) / divisor;
+}
+
+function __buffer_alloc(buf, size, zero) {
+	const n = Number(size);
+	buf.length = 0;
+	if (n > 0) buf.length = n;
+	buf.fill(zero);
+	return BigInt(n);
+}
+
+function __buffer_grow(buf, needed, zero) {
+	const n = Number(needed);
+	if (buf.length >= n) return BigInt(buf.length);
+	const old = buf.length;
+	buf.length = n;
+	for (let i = old; i < n; i++) buf[i] = zero;
+	return BigInt(n);
+}
+
+function __buffer_move(buf, i) {
+	const index = Number(i);
+	const value = buf[index];
+	buf[index] = undefined;
+	return value;
+}
+
+function __buffer_shift(buf, dst, src) {
+	const d = Number(dst);
+	const s = Number(src);
+	if (d === s) return;
+	buf[d] = buf[s];
+	buf[s] = undefined;
+}
+
+function __buffer_move_range(buf, dst, src, count) {
+	const d = Number(dst);
+	const s = Number(src);
+	const n = Number(count);
+	if (n <= 0) return;
+	for (let i = 0; i < n; i++) buf[d + i] = buf[s + i];
+	// Zero the source slots the destination does not cover.
+	for (let i = d + n; i < s + n; i++) buf[i] = undefined;
+}
+
+function __buffer_modify(buf, i, f) {
+	const index = Number(i);
+	const value = f(buf[index]);
+	buf[index] = value;
+	return value;
+}
+
+function __buffer_zero(buf, len, zero) {
+	const n = Number(len);
+	for (let i = 0; i < n && i < buf.length; i++) buf[i] = zero;
+}
+
 function __list_at(list, i) {
 	const index = Number(i);
 	if (index < 0 || index >= list.length) __panic("index out of range");
@@ -236,6 +302,18 @@ function __panic(message) {
 
 function __unsupported(what) {
 	throw new Error("js backend: unsupported feature: " + what);
+}
+
+// A library feature the JS backend cannot express (raw memory, GUI, threads).
+// Cross-compiled programs keep running without it: warn once per feature and
+// let the caller see the statement's zero value.
+const __skipped = new Set();
+function __skip(what) {
+	if (!__skipped.has(what)) {
+		__skipped.add(what);
+		__stderr("js backend: skipping unavailable feature: " + what + "\\n");
+	}
+	return undefined;
 }
 
 // --- Console --------------------------------------------------------------

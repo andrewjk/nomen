@@ -73,6 +73,13 @@ export default function build_value_node(node: ValueNode, status: BuildStatus): 
 	if (FLOAT_LITERAL.test(value)) {
 		return value.replace(/_/g, "");
 	}
+	// A generic library body's template constants. Only monomorphized clones
+	// see these natively; the JS backend lowers the generic body as written.
+	// JS has no ownership distinction, so the copying arms are correct, and
+	// the size constants are only read inside raw bodies (never lowered).
+	if (/^(?:T|TK|TV)_(?:TAKES_OWNERSHIP|IS_VALUE_STRUCT|NEEDS_STRDUP|FAT)$/.test(value))
+		return "false";
+	if (/^(?:T|TK|TV)_SIZE$/.test(value)) return "0n";
 	// A reference to a nested function as a VALUE (`apply(plus1, 4)`): the
 	// checker stamps the resolved FunctionNode so the reference uses the
 	// unique emission label, not the bare source name.

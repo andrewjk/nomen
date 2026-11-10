@@ -9,10 +9,45 @@
  *   Box<T>         → `{ __value }` (the checker rewrites transparent access
  *                    `box.f` to `box.__value.f`)
  *   StringBuilder  → `{ s }`
+ *   Buffer<T>      → a JS array (capacity is the array length)
+ *   ClassBuffer<T> → a JS array (elements are object references)
  *
  * Method dispatch is by the RECEIVER's declared type name plus the method
- * name; anything unmapped falls through to `__unsupported` in the caller.
+ * name; anything unmapped falls through to a warning stub in the caller.
  */
+
+/** Strip a monomorphization suffix: `List_int` → `List`, `StableList_X` →
+ *  `StableList`. Longest prefixes first so `StringBuilder` wins over `String`. */
+export function library_base_name(name: string): string {
+	for (const base of [
+		"StringBuilder",
+		"ClassBuffer",
+		"StableList",
+		"Buffer",
+		"List",
+		"Set",
+		"Map",
+		"Box",
+	]) {
+		if (name === base || name.startsWith(`${base}_`)) return base;
+	}
+	return name;
+}
+
+/** Is `name` a `Buffer<T>` (value slots) or `ClassBuffer<T>` (class slots)? */
+export function is_buffer_type(name: string): boolean {
+	return (
+		name === "Buffer" ||
+		name.startsWith("Buffer_") ||
+		name === "ClassBuffer" ||
+		name.startsWith("ClassBuffer_")
+	);
+}
+
+/** `ClassBuffer<T>` stores class references, so its stores are not copies. */
+export function is_class_buffer_type(name: string): boolean {
+	return name === "ClassBuffer" || name.startsWith("ClassBuffer_");
+}
 
 /** Constructors for the supported library types (`List<int>()`,
  *  `Box<int>(x)`, …). The checker monomorphizes the callee name
@@ -31,6 +66,10 @@ export function library_constructor(name: string, args: string[]): string | unde
 		return `({ __value: ${args[0] ?? "null"} })`;
 	}
 	if (name === "StringBuilder") return `({ s: "" })`;
+	if (name === "StableList" || name.startsWith("StableList_")) return "[]";
+	// The slot buffers back the linked/chunked containers. An array carries
+	// the slots; `.cap` reads map to its length (see `is_buffer_type`).
+	if (is_buffer_type(name)) return "[]";
 	return undefined;
 }
 
@@ -107,6 +146,127 @@ export function map_method(name: string, map: string, args: string[]): string | 
 			return `new Map(${map})`;
 		case "length":
 			return `BigInt(${map}.size)`;
+	}
+	return undefined;
+}
+
+/** A method call on a `Buffer<T>` / `ClassBuffer<T>` receiver (a JS array).
+ *  The array length is the buffer's capacity; slots are grown on demand. */
+export interface BufferOptions {
+	/** `ClassBuffer<T>`: slots hold references, so stores are not copies. */
+	class_elements: boolean;
+	/** Zero value for a freshly grown slot (shown for non-suffixed methods). */
+	zero: string;
+	/** Copy object-valued elements on `load`, matching Nomen's value
+	 *  semantics for struct/enum slots. */
+	copy_loads: boolean;
+}
+
+export function buffer_method(
+	name: string,
+	buf: string,
+	args: string[],
+	options: BufferOptions,
+): string | undefined {
+	const zero = /_(int|u32|u8)$/.test(name) ? "0n" : name.endsWith("_float") ? "0" : options.zero;
+	const store_value = (value: string) => (options.class_elements ? value : `__copy(${value})`);
+	const load_value = (index: string) =>
+		options.copy_loads ? `__copy(${buf}[Number(${index})])` : `${buf}[Number(${index})]`;
+	switch (name) {
+		case "alloc":
+		case "alloc_int":
+		case "alloc_u32":
+		case "alloc_u8":
+		case "alloc_float":
+			return `__buffer_alloc(${buf}, ${args[0]}, ${zero})`;
+		case "grow":
+		case "grow_int":
+		case "grow_u32":
+		case "grow_float":
+			return `__buffer_grow(${buf}, ${args[0]}, ${zero})`;
+		case "load":
+		case "load_from":
+		case "load_int":
+		case "load_u32":
+		case "load_u8":
+		case "load_float":
+			return load_value(args[0]);
+		case "store":
+		case "replace":
+		case "set":
+			return `(${buf}[Number(${args[0]})] = ${store_value(args[1])})`;
+		case "store_int":
+		case "replace_int":
+		case "store_u32":
+		case "store_u8":
+		case "store_float":
+		case "store_take":
+			return `(${buf}[Number(${args[0]})] = ${args[1]})`;
+		case "store_or_int":
+		case "store_or_u32":
+			return `(${buf}[Number(${args[0]})] |= ${args[1]})`;
+		case "move":
+		case "move_int":
+			return `__buffer_move(${buf}, ${args[0]})`;
+		case "modify":
+			return `__buffer_modify(${buf}, ${args[0]}, ${args[1]})`;
+		case "shift":
+			return `__buffer_shift(${buf}, ${args[0]}, ${args[1]})`;
+		case "move_range":
+			return `__buffer_move_range(${buf}, ${args[0]}, ${args[1]}, ${args[2]})`;
+		case "zero":
+		case "zero_int":
+		case "zero_u32":
+			return `__buffer_zero(${buf}, ${args[0]}, ${zero})`;
+		case "slice":
+			return `${buf}.slice(Number(${args[0]}), Number(${args[1]}))`;
+		case "copy":
+			return `__copy(${buf})`;
+		case "destroy_at":
+			return "undefined";
+		case "clear_view":
+			return `(${buf}.length = 0)`;
+	}
+	return undefined;
+}
+
+/** BigInt's raw per-limb accessors, over the `digits` Buffer (a JS array).
+ *  `data_ptr` hands back the array itself, so the loop-hoisted `get_at`/
+ *  `set_at` forms index it directly. */
+export function bigint_method(name: string, self: string, args: string[]): string | undefined {
+	switch (name) {
+		case "get":
+			return `${self}.digits[Number(${args[0]})]`;
+		case "set":
+			return `(${self}.digits[Number(${args[0]})] = ${args[1]})`;
+		case "data_ptr":
+			return `${self}.digits`;
+		case "get_at":
+			return `${args[0]}[Number(${args[1]})]`;
+		case "set_at":
+			return `(${args[0]}[Number(${args[1]})] = ${args[2]})`;
+		case "div128":
+			return `__div128(${args[0]}, ${args[1]}, ${args[2]})`;
+	}
+	return undefined;
+}
+
+/** A method call on a `StableList<T>` receiver (a JS array). */
+export function stable_list_method(name: string, list: string, args: string[]): string | undefined {
+	switch (name) {
+		case "push":
+			return `${list}.push(__copy(${args[0]}))`;
+		case "at":
+		case "at_or_panic":
+			return `__list_at(${list}, ${args[0]})`;
+		// The checker lowers `ref T x = sl.at(i)` (interior mutation) to this
+		// element-borrow primitive; the element itself is the alias.
+		case "slot_ptr":
+			return `${list}[Number(${args[0]})]`;
+		case "at_or":
+			return `__list_at_or(${list}, ${args[0]}, ${args[1]})`;
+		case "copy":
+			return `__copy(${list})`;
 	}
 	return undefined;
 }

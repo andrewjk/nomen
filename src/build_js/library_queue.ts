@@ -3,13 +3,11 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import { child_nodes } from "../nodes/child_nodes.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
-import {
-	boxed_param_signature,
-	emit_ref_prologue,
-	param_signature,
-} from "./build_function_node.ts";
+import type Type from "../nodes/Type.ts";
+import { boxed_param_signature, emit_ref_prologue } from "./build_function_node.ts";
 import { emit, expr, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { is_buffer_type, library_base_name } from "./library.ts";
 import { init_label, js_name, method_label } from "./names.ts";
 
 /**
@@ -35,6 +33,7 @@ const NATIVE_TYPES = new Set([
 	"List",
 	"Map",
 	"Set",
+	"StableList",
 	"String",
 	"StringBuilder",
 ]);
@@ -42,6 +41,10 @@ const NATIVE_TYPES = new Set([
 /** Is this a library type we must not lower generically? */
 export function is_native_library_type(name: string): boolean {
 	if (NATIVE_TYPES.has(name)) return true;
+	// A monomorphized clone (Buffer_int, List_JsonNode, …) is as native as
+	// its bare generic.
+	if (NATIVE_TYPES.has(library_base_name(name))) return true;
+	if (is_buffer_type(name)) return true;
 	return !!get_built_in_type(name);
 }
 
@@ -143,7 +146,7 @@ export function emit_library_queue(status: BuildStatus): void {
 function emit_library_method(struct: StructNode, func: FunctionNode, status: BuildStatus): void {
 	const label = library_method_label(struct, func);
 	if (needs_raw_memory(func)) {
-		emit(status, `function ${label}() { __unsupported(${JSON.stringify(`library ${label}`)}); }`);
+		emit_library_stub(label, func, status);
 		return;
 	}
 
@@ -162,11 +165,7 @@ function emit_library_method(struct: StructNode, func: FunctionNode, status: Bui
 function emit_library_function(func: FunctionNode, status: BuildStatus): void {
 	const label = js_name(func.name);
 	if (needs_raw_memory(func)) {
-		const params = func.params.map(param_signature).join(", ");
-		emit(
-			status,
-			`function ${label}(${params}) { __unsupported(${JSON.stringify(`library ${label}`)}); }`,
-		);
+		emit_library_stub(label, func, status);
 		return;
 	}
 
@@ -195,6 +194,39 @@ export function emit_library_init(struct: StructNode, status: BuildStatus): void
 	emit(status, `return { ${properties.join(", ")} };`);
 	status.indent -= 1;
 	emit(status, "}");
+}
+
+/** Emit a library body the JS backend cannot lower as a warning stub: the
+ *  program keeps running without it (the call site sees a zero value). */
+function emit_library_stub(label: string, func: FunctionNode, status: BuildStatus): void {
+	const old_ref_params = status.ref_params;
+	status.ref_params = new Set();
+	const params = func.params.map((param) => boxed_param_signature(param, status)).join(", ");
+	const returned = func.return_type ? ` return ${zero_for_type(func.return_type)};` : "";
+	emit(
+		status,
+		`function ${label}(${params}) { __skip(${JSON.stringify(`library ${label}`)});${returned} }`,
+	);
+	status.ref_params = old_ref_params;
+}
+
+/** The JS value a skipped library body yields for its declared return type. */
+function zero_for_type(type: Type | undefined): string {
+	if (!type) return "undefined";
+	const info = get_built_in_type(type.name);
+	switch (info?.kind) {
+		case "int":
+			return "0n";
+		case "float":
+			return "0";
+		case "bool":
+			return "false";
+		case "string":
+		case "char":
+			return '""';
+	}
+	if (type.is_array || type.is_view) return "[]";
+	return "null";
 }
 
 /** Does this library body rely on constructs the JS backend cannot express

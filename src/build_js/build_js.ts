@@ -27,9 +27,9 @@ import runtime, { type JsTarget } from "./runtime.ts";
  * nested functions, lambdas and closures, structs (value/owning, `#init`,
  * methods, traits, generics), enums/bitsets, destructuring, tuples, string
  * interpolation and custom format patterns, the native containers, and
- * on-demand lowering of plain-Nomen library code. Constructs that need raw
- * memory or concurrency fail at runtime through `__unsupported` rather than
- * producing wrong output.
+ * on-demand lowering of plain-Nomen library code. Library bodies that need
+ * raw memory or concurrency become warning stubs (`__skip`); the program keeps
+ * running rather than aborting.
  */
 export interface JsBuildOptions {
 	/** `node` (default) targets the process streams and Node's `fs`; `browser`
