@@ -146,14 +146,19 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 	// cached `.type` is not always stamped — special-case it before the type
 	// gate so a literal-initialized target that is later reassigned from
 	// `.to_string()` is force-heap (the literal gets strdup'd, so the
-	// reassignment's free of the previous value is valid).
+	// reassignment's free of the previous value is valid). The same applies
+	// to ANY `mv out` method call (`s = s.copy()` — the checker's
+	// owned_return stamp): the result type rides the resolved function, not
+	// the node, and a target left out of the set kept its rodata literal
+	// initializer, so the reassignment's displaced-value free (statically
+	// gated on the heap mark) was skipped every iteration after the first
+	// and leaked each displaced copy.
 	if (node.node_type === "access") {
 		const access = (node as AccessNode).access;
-		if (
-			access.node_type === "access_func" &&
-			(access as AccessFunctionCallNode).name === "to_string"
-		) {
-			return true;
+		if (access.node_type === "access_func") {
+			const fn = access as AccessFunctionCallNode;
+			if (fn.name === "to_string") return true;
+			if (fn.owned_return) return true;
 		}
 	}
 	const type_name = (node as unknown as { type?: { name?: string } }).type?.name;
@@ -164,7 +169,7 @@ function is_fresh_heap_string(node: BaseNode | undefined): boolean {
 		const access = (node as AccessNode).access;
 		if (access.node_type !== "access_func") return false;
 		const fn = access as AccessFunctionCallNode;
-		return !(!fn.owned_return && is_call_site_borrow_accessor(fn.name));
+		return !is_call_site_borrow_accessor(fn.name);
 	}
 	return false;
 }

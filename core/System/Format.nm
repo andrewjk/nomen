@@ -742,4 +742,5 @@ pub struct Format {
 		// use) so the boundary keeps them borrows the call site anchors.
 		return Format.pat_render_all(pattern, neg, int_sb.to_string(), frac_sb.to_string())
 	}
+
 }

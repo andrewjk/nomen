@@ -550,24 +550,6 @@ Rules of thumb:
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
 
-## Format specs
-
-### Displaced-free gap on conditional owned-string reassignment
-
-While building the pattern engine (`core/System/Format.nm`), a function
-shape leaked under audit: a `var string` local initialized from a call
-result and then REASSIGNED from another call result inside an `if` block
-(`kept = clip_sb.to_string()` in an early draft of `Format.pat_render`)
-freed the displaced value only in SOME shapes — the `_reassign_N`
-machinery rewrote one site but emitted no displaced free for others
-(plain same-block reassignments like `digits = pad_sb.to_string()` were
-fine in `int_base`, leaked in `pat_render`; the C backend inspection
-showed `nomen_free_wrap` present for one reassignment and absent for an
-equivalent one). Worked around by restructuring the library code so every
-owned string has a single binding (helpers return fresh results: the
-`pat_shape_int`/`pat_shape_frac` split). The checker/build should either
-always emit the displaced free or reject the shape loudly.
-
 ### Inline call-result arguments to `internal` string params are not anchored
 
 `sb.append_string(Format.pat_shape_int(...))` — a call result passed
