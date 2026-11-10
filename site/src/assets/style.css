@@ -216,7 +216,7 @@ button:disabled {
 	resize: none;
 	background: transparent;
 	color: var(--text);
-	caret-color: var(--accent);
+	caret-color: #fff;
 	overflow: auto;
 }
 
@@ -306,4 +306,120 @@ code {
 	border: 1px solid var(--border);
 	border-radius: 4px;
 	padding: 0.05rem 0.3rem;
+}
+
+/* X/Twitter player card (`/embed`): no page chrome, fill the frame, scroll
+ * inside the panes. */
+#repl.embed {
+	display: flex;
+	flex-direction: column;
+	max-width: none;
+	height: 100vh;
+	padding: 0.5rem;
+	overflow: hidden;
+}
+
+#repl.embed #repl-header {
+	display: none;
+}
+
+#repl.embed #repl-columns {
+	flex: 1;
+	min-height: 0;
+	gap: 0.5rem;
+}
+
+#repl.embed #repl-input,
+#repl.embed #repl-output {
+	min-height: 0;
+	border-radius: 8px;
+}
+
+#repl.embed #editor {
+	min-height: 0;
+}
+
+#repl.embed .pane-title {
+	padding: 0.3rem 0.6rem;
+}
+
+#repl.embed .pane-title h2 {
+	font-size: 0.7rem;
+}
+
+#repl.embed button {
+	font-size: 0.75rem;
+	padding: 0.25rem 0.6rem;
+}
+
+#repl.embed #editor-highlight,
+#repl.embed #editor textarea {
+	padding: 0.6rem;
+	font-size: 0.8rem;
+	line-height: 1.45;
+}
+
+#repl.embed pre.output {
+	min-height: 0;
+	max-height: none;
+	padding: 0.6rem;
+	font-size: 0.8rem;
+	line-height: 1.45;
+}
+
+#repl.embed .errors,
+#repl.embed .warnings {
+	max-height: 8rem;
+	padding: 0.5rem 0.6rem;
+}
+
+#repl.embed .errors li,
+#repl.embed .warnings li {
+	font-size: 0.75rem;
+}
+
+/* The card frame is 640px wide, so show both panes instead of the narrow
+ * one-at-a-time toggle (there is no back button in the frame). */
+@media (min-width: 560px) {
+	#repl.embed #repl-columns {
+		grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+		grid-template-rows: none;
+	}
+
+	#repl.embed #repl-input,
+	#repl.embed #repl-output {
+		grid-area: auto;
+	}
+
+	#repl.embed #repl-columns.program #repl-output,
+	#repl.embed #repl-columns.output #repl-input {
+		display: flex;
+	}
+
+	#repl.embed .back-button {
+		display: none;
+	}
+}
+
+.pane-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+button.ghost {
+	background: transparent;
+	border: 1px solid var(--border);
+	color: var(--muted);
+}
+
+button.ghost:hover:not(:disabled) {
+	border-color: var(--muted);
+	color: var(--text);
+	filter: none;
+}
+
+/* The player-card frame is tight; sharing from inside it isn't needed. */
+#repl.embed .pane-actions .ghost {
+	display: none;
 }

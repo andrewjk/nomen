@@ -1,0 +1,12 @@
+import ReplPage from "./ReplPage.torp";
+
+/**
+ * The compact REPL served as an X/Twitter player card (`twitter:player`). It
+ * is the same component in embed mode: no page header, inner scrolling, and a
+ * side-by-side program/output at the card's 640px width.
+ */
+export default function EmbedPage() {
+	@render {
+		<ReplPage embed={true} />
+	}
+}

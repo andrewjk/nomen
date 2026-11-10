@@ -19,12 +19,14 @@
 		"@torpor/build": "^1.8.5",
 		"@torpor/unplugin": "^1.2.9",
 		"@torpor/view": "^1.2.6",
-		"nomen-shiki": "workspace:^"
+		"nomen-shiki": "workspace:^",
+		"workers-og": "^0.0.27"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.68.0",
 		"tsx": "^4.23.15",
 		"typescript": "^7.0.2",
+		"vitest": "^4.1.10",
 		"wrangler": "^4.160.0"
 	}
 }

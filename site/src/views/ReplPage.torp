@@ -15,6 +15,8 @@ pub func main = () {
 }
 `;
 
+import { MAX_SHARE_SOURCE, share_url } from "@/lib/share";
+
 const TIMEOUT_MS = 5_000;
 
 interface ReplError {
@@ -27,14 +29,15 @@ interface ReplError {
  * The Nomen REPL: compile on the server, run the emitted browser script in a
  * Worker (so a runaway loop can be terminated), and stream Console output.
  */
-export default function ReplPage() {
+export default function ReplPage($props?: { embed?: boolean; data?: { source?: string } }) {
 	let $state = $watch({
-		source: SAMPLE,
+		source: $props?.data?.source ?? SAMPLE,
 		output: "",
 		errors: [] as ReplError[],
 		warnings: [] as ReplError[],
 		running: false,
 		view: "program" as "program" | "output",
+		shared: false,
 		runtime_error: "",
 		highlighted: "",
 		highlight_ready: false,
@@ -186,6 +189,39 @@ self.postMessage({ type: "done" });
 		};
 	}
 
+	/** Copy a self-contained share link: the program is the URL, and the
+	 *  link's social card is rendered from the same bytes. */
+	function share() {
+		if (!$state.source.trim()) {
+			$state.errors = [
+				{ message: "Write a program before sharing it", line: 1, column: 1 },
+			];
+			return;
+		}
+		if ($state.source.length > MAX_SHARE_SOURCE) {
+			$state.errors = [
+				{
+					message: `Program is too long to share (max ${MAX_SHARE_SOURCE} characters)`,
+					line: 1,
+					column: 1,
+				},
+			];
+			return;
+		}
+		const url = share_url(window.location.origin, $state.source);
+		const done = () => {
+			$state.shared = true;
+			setTimeout(() => {
+				$state.shared = false;
+			}, 1500);
+		};
+		if (navigator.clipboard?.writeText) {
+			void navigator.clipboard.writeText(url).then(done, () => window.prompt("Copy this link", url));
+		} else {
+			window.prompt("Copy this link", url);
+		}
+	}
+
 	function on_key_down(event: KeyboardEvent) {
 		const enter = event.key === "Enter" && (event.metaKey || event.ctrlKey);
 		if (enter) {
@@ -214,6 +250,7 @@ self.postMessage({ type: "done" });
 	@render {
 		<main
 			id="repl"
+			class={$props?.embed ? "embed" : ""}
 			onmount={() => {
 				run(false);
 				schedule_highlight(0);
@@ -231,9 +268,14 @@ self.postMessage({ type: "done" });
 				<section id="repl-input">
 					<div class="pane-title">
 						<h2>Program</h2>
-						<button onclick={() => run()} disabled={$state.running}>
-							{$state.running ? "Running…" : "Run ⌘⏎"}
-						</button>
+						<div class="pane-actions">
+							<button class="ghost" onclick={share}>
+								{$state.shared ? "Copied" : "Share"}
+							</button>
+							<button onclick={() => run()} disabled={$state.running}>
+								{$state.running ? "Running…" : "Run ⌘⏎"}
+							</button>
+						</div>
 					</div>
 					<div
 						id="editor"

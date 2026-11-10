@@ -5,7 +5,8 @@
 		"types": ["node"],
 		"paths": {
 			"@/*": ["./src/*"]
-		}
+		},
+		"declaration": false
 	},
 	"include": ["src/**/*", "scripts/**/*", "site.config.ts"]
 }

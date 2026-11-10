@@ -37,6 +37,45 @@ pnpm dev            # Torpor dev server on workerd (Cloudflare's local runtime)
 Opening the printed URL auto-runs the sample. Press <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>
 to compile and run the editor's program.
 
+## Share links
+
+The **Share** button copies a self-contained link: the whole program is in the
+URL (`/s/<base64url(utf8 source)>`, at most 2000 characters). Opening a share
+link loads the code into the editor and runs it on demand; nothing is stored
+server-side. `src/lib/share.ts` does the encoding, `src/routes/s/[code]` serves
+the page.
+
+Every share link gets its own card: `/s/<code>/card.png` renders the actual
+code in the Worker with `workers-og` (Satori + resvg WASM) and the Shiki
+theme's token colours (`src/lib/card.ts`). Because the URL contains the
+program, the PNG is content-addressed and cached immutably in the Cache API.
+If rendering fails the route redirects to `/og.png`; malformed codes fall back
+to the sample program and the generic card. Posting a share link therefore
+shows an image card of the code, and clicking it opens the REPL with that
+program loaded.
+
+## Social cards
+
+Two card flavours are set up:
+
+- `/` serves Open Graph plus a `summary_large_image` Twitter card, with
+  `og.png` as the image. This works on every platform.
+- `/embed` is a compact, chrome-free REPL intended for an X **Player Card**
+  (`twitter:card=player`, `twitter:player=/embed`, 640x480, `card.png` poster).
+  It sends `Content-Security-Policy: frame-ancestors` for x.com/twitter.com
+  (route middleware in `src/routes/embed/+page.server.ts`) and no
+  `X-Frame-Options`, so X can frame it. At 640px wide it shows the program and
+  output side by side, with inner scrolling and no page header.
+
+X requires a domain to be **manually allowlisted for Player Cards**, and its
+policy currently reserves them for linear audio/video content — a REPL may not
+be approved (or may stop working if it is). Until the domain is approved, tweet
+`/` (image card); after approval, tweet `/embed` (inline REPL). Change
+`twitter:site` in `src/routes/embed/+page.ts` from `@andrewjk` if needed.
+
+Regenerating the images: `og.png` is a 2x screenshot of `/` at 1200x630, and
+`card.png` a 2x screenshot of `/embed` at 640x480.
+
 ## Build, preview, deploy
 
 ```bash
@@ -51,8 +90,10 @@ under a different Worker name.
 
 Compiling is CPU-bound (roughly 10–40 ms per run locally; the first request is
 slower because the Worker starts cold), so pick a Workers plan whose CPU limit
-comfortably covers a compile. The built Worker is ~300 kB gzipped (about 1.4 MB
+comfortably covers a compile. The built Worker is ~1.1 MB gzipped (about 4 MB
 including static assets) and has no Node built-ins. The server bundle only
 imports the JavaScript backend — `build_js` directly, not the C/AArch64
-backends — which is what keeps it small. The highlighter adds ~80 kB gzipped of
-_lazy_ client chunks (loaded after the page is interactive).
+backends — which is what keeps the compiler small; `workers-og` (Satori +
+resvg) accounts for most of the rest and is only exercised by `/s/[code]` card
+requests. The highlighter adds ~80 kB gzipped of _lazy_ client chunks (loaded
+after the page is interactive).
