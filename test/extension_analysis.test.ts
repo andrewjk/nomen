@@ -110,6 +110,49 @@ struct Point {
 		expect(point.methods.get("shift")?.signature).toEqual("pub func shift = (ref self, int by)");
 	});
 
+	test("function signatures show declared field sets", () => {
+		const source = `
+struct Stats {
+	var int hits = 0
+}
+
+mv struct Item {
+	var int weight = 0
+	var Box<Stats> stats
+}
+
+func rebalance = (ref Item item { stats }) {
+	item.stats = mv Box<Stats>(Stats())
+}
+
+func touch = (ref Item item {}, int by) {
+	item.weight = item.weight + by
+}
+
+func wildcard = (ref Item item) {
+	item.stats = mv Box<Stats>(Stats())
+}
+
+mv struct Holder {
+	var Box<Stats> data
+
+	pub func poke = (ref self { data }) {
+		self.data = mv Box<Stats>(Stats())
+	}
+}
+`;
+		const { analysis } = index(source);
+		const func = (name: string) => analysis.defs.find((d) => d.kind === "func" && d.name === name);
+		expect(func("rebalance")?.signature).toEqual("func rebalance = (ref Item item { stats })");
+		expect(func("touch")?.signature).toEqual("func touch = (ref Item item {}, int by)");
+		// No declared set: a wildcard keeps the bare spelling.
+		expect(func("wildcard")?.signature).toEqual("func wildcard = (ref Item item)");
+		// A `ref self` receiver carries its set the same way.
+		expect(analysis.types.get("Holder")?.methods.get("poke")?.signature).toEqual(
+			"pub func poke = (ref self { data })",
+		);
+	});
+
 	test("resolves trait conformance refs on a struct", () => {
 		const source = `
 trait Drawable {}

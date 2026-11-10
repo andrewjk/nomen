@@ -482,7 +482,8 @@ class Builder {
 	}
 
 	private param_signature(node: ParameterNode): string {
-		if (node.is_self_param) return `${node.is_ref ? "ref " : ""}self`;
+		const set = this.field_set_text(node);
+		if (node.is_self_param) return `${node.is_ref ? "ref " : ""}self${set}`;
 		const prefix = node.is_ref
 			? "ref "
 			: node.is_moved
@@ -491,7 +492,16 @@ class Builder {
 					? "var "
 					: "";
 		const spread = node.is_variadic ? "..." : "";
-		return `${prefix}${spread}${this.type_text(node.type)} ${node.name}`.trim();
+		return `${prefix}${spread}${this.type_text(node.type)} ${node.name}${set}`.trim();
+	}
+
+	/** The declared field set suffix (FIELD_EFFECTS.md): `{}` for "displaces
+	 *  nothing", `{ a, b }` for a named set, and nothing at all for a wildcard
+	 *  (no declaration). */
+	private field_set_text(node: ParameterNode): string {
+		if (node.field_set === undefined) return "";
+		if (node.field_set.length === 0) return " {}";
+		return ` { ${node.field_set.join(", ")} }`;
 	}
 
 	private declaration_signature(node: DeclarationNode): string {

@@ -6,6 +6,7 @@ import type BaseNode from "../../src/nodes/BaseNode.ts";
 import type BitsetNode from "../../src/nodes/BitsetNode.ts";
 import type EnumNode from "../../src/nodes/EnumNode.ts";
 import type FunctionNode from "../../src/nodes/FunctionNode.ts";
+import type ParameterNode from "../../src/nodes/ParameterNode.ts";
 import type StructNode from "../../src/nodes/StructNode.ts";
 import type TraitNode from "../../src/nodes/TraitNode.ts";
 import type Type from "../../src/nodes/Type.ts";
@@ -231,10 +232,18 @@ function heading_of(item: DocItem): string {
 function signature_of(fn: FunctionNode): string {
 	const params = fn.params
 		.filter((p) => !p.is_self_param)
-		.map((p) => `${render_type(p.type)}${p.name ? " " + p.name : ""}`);
+		.map((p) => `${render_type(p.type)}${p.name ? " " + p.name : ""}${field_set_of(p)}`);
 	let sig = `${fn.name}(${params.join(", ")})`;
 	if (fn.return_type?.name) sig += ` -> ${render_type(fn.return_type)}`;
 	return sig;
+}
+
+/** The declared field set suffix (FIELD_EFFECTS.md): `{}` for "displaces
+ *  nothing", `{ a, b }` for a named set, nothing for a wildcard. */
+function field_set_of(param: ParameterNode): string {
+	if (param.field_set === undefined) return "";
+	if (param.field_set.length === 0) return " {}";
+	return ` { ${param.field_set.join(", ")} }`;
 }
 
 function members_of(node: BaseNode): FunctionNode[] {
