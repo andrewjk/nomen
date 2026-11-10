@@ -9,11 +9,15 @@ export default defineConfig({
 			typeAware: true,
 			typeCheck: true,
 		},
+		// Generated backend artifacts (the JS backend's `main.mjs` output
+		// lives here too) are test data, not source.
+		ignorePatterns: ["test/out/**"],
 	},
 	fmt: {
 		printWidth: 100,
 		sortImports: true,
 		useTabs: true,
+		ignorePatterns: ["test/out/**"],
 		overrides: [
 			{
 				files: ["*.json", "*.jsonc"],

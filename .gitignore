@@ -16,3 +16,5 @@ site/
 bench/rust/target/
 
 test/out/**/run-*
+test/out/**/main.js
+test/out/**/main.mjs

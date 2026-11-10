@@ -16,7 +16,7 @@ if true {
 }
 Console.write("\\{x}")
 `;
-		await build_and_check_output(input, "control_if_true", "1");
+		await build_and_check_output(input, "control_if_true", "1", false, { js: true });
 	});
 
 	test("if false", async () => {
@@ -53,7 +53,7 @@ if false {
 }
 Console.write("\\{x}")
 `;
-		await build_and_check_output(input, "control_if_else_false", "2");
+		await build_and_check_output(input, "control_if_else_false", "2", false, { js: true });
 	});
 
 	test("if with condition", async () => {
@@ -93,7 +93,7 @@ for i of 0..10 {
 }
 Console.write("\\{sum}")
 `;
-		await build_and_check_output(input, "control_for_break", "10");
+		await build_and_check_output(input, "control_for_break", "10", false, { js: true });
 	});
 
 	test("for loop with continue", async () => {
@@ -107,7 +107,7 @@ for i of 0..5 {
 }
 Console.write("\\{sum}")
 `;
-		await build_and_check_output(input, "control_for_continue", "8");
+		await build_and_check_output(input, "control_for_continue", "8", false, { js: true });
 	});
 
 	test("while loop", async () => {
@@ -120,7 +120,7 @@ while x < 5 {
 }
 Console.write("\\{count}")
 `;
-		await build_and_check_output(input, "control_while", "5");
+		await build_and_check_output(input, "control_while", "5", false, { js: true });
 	});
 
 	test("while loop with break", async () => {

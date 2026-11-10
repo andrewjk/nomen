@@ -49,6 +49,7 @@ import { optimize_asm } from "./build_common/optimize_asm.ts";
 import { scan_borrow_returning_functions } from "./build_common/scan_borrow_returns.ts";
 import { escape_asciz } from "./build_common/string_escapes.ts";
 import { gather_normalized_struct_returners } from "./build_common/struct_return_classification.ts";
+import build_js from "./build_js/build_js.ts";
 import { parse_interp_name } from "./check/utils/interp_arg_kinds.ts";
 import { stamp_last_use_moves } from "./check/utils/last_use.ts";
 import BaseNode from "./nodes/BaseNode.ts";
@@ -59,7 +60,7 @@ import type BuildResult from "./types/BuildResult.ts";
 export default function build(
 	root: BaseNode,
 	options: {
-		arch?: "c" | "aarch64";
+		arch?: "c" | "aarch64" | "js";
 		platform?: string;
 		audit?: boolean;
 		emit_mode?: "all" | "system" | "user";
@@ -80,6 +81,7 @@ export default function build(
 		system_defines_weak_runtime?: boolean;
 	} = {},
 ): BuildResult {
+	if (options.arch === "js") return build_js(root);
 	let status: BuildStatus = {
 		root,
 		structs: [],

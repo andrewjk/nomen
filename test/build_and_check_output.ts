@@ -51,7 +51,7 @@ export default async function build_and_check_output(
 	name: string,
 	expected: string,
 	raw = false,
-	extra_options: { fast_math?: boolean; audit?: boolean; platform?: string } = {},
+	extra_options: { fast_math?: boolean; audit?: boolean; platform?: string; js?: boolean } = {},
 	check_options: Parameters<typeof check_output>[3] = {},
 ) {
 	let architectures = ["aarch64", "c"] as const;
@@ -59,11 +59,13 @@ export default async function build_and_check_output(
 	// structs to emit itself (anything not here) vs reference from system.o.
 	const system_names = load_system_struct_names();
 	const system_fn_names = load_system_fn_names();
+	// `js` is a harness override, not a native build option.
+	const { js, ...build_extra } = extra_options;
 	for (let arch of architectures) {
 		const parsed = raw ? parse_raw(input) : parse_with_imports(input);
 		expect(parsed.errors).toEqual([]);
 
-		const options = { arch, audit: true, ...extra_options };
+		const options = { arch, audit: true, ...build_extra };
 		// Non-GUI tests link the precompiled system.o (built once in the
 		// globalSetup) instead of recompiling the System library per test —
 		// the per-test System recompile was the cold-run timeout. The user TU
@@ -95,6 +97,21 @@ export default async function build_and_check_output(
 			system_lib: split,
 			system_fn_names,
 			...check_options,
+		});
+	}
+
+	// Optional JS-backend coverage (off by default): the same program must
+	// produce the same stdout when compiled to JavaScript and run by Node.
+	// The JS backend has no audit runtime, so the leak assertions don't apply.
+	if (js) {
+		const parsed = raw ? parse_raw(input) : parse_with_imports(input);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "js" });
+		expect(result.errors ?? []).toEqual([]);
+		await check_output(name, result, expected, {
+			arch: "js",
+			audit: false,
+			provideStdin: check_options.provideStdin,
 		});
 	}
 }

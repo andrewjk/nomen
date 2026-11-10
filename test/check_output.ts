@@ -50,7 +50,7 @@ export default async function check_output(
 	built: BuildResult,
 	expected_output: string,
 	options: {
-		arch?: "c" | "aarch64";
+		arch?: "c" | "aarch64" | "js";
 		audit?: boolean;
 		provideStdin?: string;
 		/** Link the precompiled system object (C-backend split). The caller
@@ -73,6 +73,49 @@ export default async function check_output(
 	const arch = options.arch ?? "c";
 	const audit = options.audit ?? true;
 	const system_lib = !!options.system_lib;
+
+	// The JS backend emits a self-contained CommonJS script: no compilation,
+	// no system object, no audit runtime (the GC owns every value). Run it
+	// with Node and compare stdout, writing the same output.txt artifact the
+	// native backends cache.
+	if (arch === "js") {
+		const folder = path.resolve(".", "test", "out", "js", name);
+		if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+		const codefile = path.join(folder, "main.mjs");
+		fs.writeFileSync(codefile, built.code);
+
+		const rundir = path.join(folder, `run-${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
+		fs.mkdirSync(rundir, { recursive: true });
+		fs.copyFileSync(codefile, path.join(rundir, "main.mjs"));
+		if (options.provideStdin !== undefined) {
+			fs.writeFileSync(path.join(rundir, "input.txt"), options.provideStdin);
+		}
+
+		let stdout: string;
+		let stderr = "";
+		try {
+			const run_cmd =
+				options.provideStdin !== undefined ? `node main.mjs < input.txt` : `node main.mjs`;
+			const run = await execPromise(run_cmd, {
+				cwd: rundir,
+				maxBuffer: 10 * 1024 * 1024,
+				// A backend bug can turn a program into an infinite loop; fail
+				// the test instead of hanging the suite.
+				timeout: 60_000,
+			});
+			stdout = run.stdout;
+			stderr = run.stderr;
+		} finally {
+			fs.rmSync(rundir, { recursive: true, force: true });
+		}
+
+		if (stderr && stderr.includes("error:")) {
+			expect(stderr).toBeFalsy();
+		}
+		expect(stdout.substring(0, expected_output.length)).toBe(expected_output);
+		fs.writeFileSync(path.join(folder, "output.txt"), stdout);
+		return;
+	}
 	// The precompiled system object must be the variant built with the SAME
 	// audit mode as this user TU: the mode decides whether the generated code
 	// calls the audit runtime's wrappers or libc directly, and the two halves
