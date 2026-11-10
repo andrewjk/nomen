@@ -1051,4 +1051,81 @@ if b >= 0 && b == c {
 			"ok\n",
 		);
 	});
+
+	test("value-struct copy semantics: binding, assignment, fields, returns", async () => {
+		await js_output(
+			"js_struct_copy",
+			`
+struct Nested {
+	var int n
+}
+struct Wrapper {
+	var Nested inner
+}
+struct P {
+	var int x
+	var int y
+}
+var P a = P(1, 2)
+var P b = a
+b.x = 99
+var P c = P(3, 4)
+var P d = P(4, 5)
+d = c
+d.x = 7
+var Nested i = Nested(1)
+var Wrapper o = Wrapper(i)
+i.n = 7
+Console.write("\\{a.x} \\{b.x} \\{c.x} \\{d.x} \\{o.inner.n} \\{i.n}\\n")
+`,
+			"1 99 3 7 1 7\n",
+		);
+	});
+
+	test("value-struct copies on return and closure capture", async () => {
+		await js_output(
+			"js_struct_copy_return",
+			`
+struct P {
+	var int x
+}
+struct Box2 {
+	var P p
+}
+func get = (Box2 b, out P) {
+	return b.p
+}
+var Box2 box = Box2(P(3))
+var P got = get(box)
+got.x = 8
+var P src = P(1)
+var func (out int) captured = () => src.x
+src.x = 2
+Console.write("\\{box.p.x} \\{got.x} \\{captured()}\\n")
+`,
+			"3 8 1\n",
+		);
+	});
+
+	test("container stores copy value structs", async () => {
+		await js_output(
+			"js_struct_container_copy",
+			`
+struct P {
+	var int x
+}
+var P p = P(1)
+var List<P> xs = List<P>()
+xs.push(p)
+p.x = 9
+var Map<string, P> m = Map<string, P>()
+m.set("a", p)
+p.x = 10
+var Set<int> s = Set<int>()
+s.add(1)
+Console.write("\\{xs.at(0).x} \\{m.get("a").x} \\{s.has(1)}\\n")
+`,
+			"1 9 true\n",
+		);
+	});
 });

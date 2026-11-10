@@ -8,6 +8,7 @@ import { enum_case_value } from "./enums.ts";
 import { list_method, map_method, set_method, string_builder_method } from "./library.ts";
 import { is_native_library_type, library_method, library_method_call } from "./library_queue.ts";
 import { method_label } from "./names.ts";
+import { copy_if_value_struct, stamped_type } from "./types.ts";
 import { kind_of, type_name_of } from "./types.ts";
 
 /**
@@ -182,9 +183,9 @@ function build_method_call(
 			case "at":
 				return `${list}[Number(${args[0]})]`;
 			case "set":
-				return `(${list}[Number(${args[0]})] = ${args[1]})`;
+				return `(${list}[Number(${args[0]})] = ${stored_args(access.params, status)[1]})`;
 			case "push":
-				return `${list}.push(${args[0]})`;
+				return `${list}.push(${stored_args(access.params, status)[0]})`;
 			case "pop":
 				return `${list}.pop()`;
 			case "copy":
@@ -197,15 +198,15 @@ function build_method_call(
 	// This must precede the generic `to_string` fallback: StringBuilder's
 	// `to_string` is a take, not a rendering.
 	if (target_type === "List") {
-		const mapped = list_method(name, expr(target, status), args);
+		const mapped = list_method(name, expr(target, status), stored_args(access.params, status));
 		if (mapped !== undefined) return mapped;
 	}
 	if (target_type === "Set") {
-		const mapped = set_method(name, expr(target, status), args);
+		const mapped = set_method(name, expr(target, status), stored_args(access.params, status));
 		if (mapped !== undefined) return mapped;
 	}
 	if (target_type === "Map") {
-		const mapped = map_method(name, expr(target, status), args);
+		const mapped = map_method(name, expr(target, status), stored_args(access.params, status));
 		if (mapped !== undefined) return mapped;
 	}
 	if (target_type === "StringBuilder") {
@@ -264,6 +265,14 @@ function time_call(name: string, args: string[]): string {
 			return `__sleep_ms(${args[0]})`;
 	}
 	return unsupported(`Time.${name}`);
+}
+
+/** Container stores copy value structs (MEMORY.md: a copy into a container
+ *  slot is independent). Scalars/strings are identity under `__copy`. */
+function stored_args(args: BaseNode[], status: BuildStatus): string[] {
+	return args.map((arg) =>
+		copy_if_value_struct(expr(arg, status), stamped_type(arg)?.name, status),
+	);
 }
 
 function unsupported(what: string): string {

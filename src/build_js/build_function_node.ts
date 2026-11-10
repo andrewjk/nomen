@@ -2,6 +2,7 @@ import type FunctionNode from "../nodes/FunctionNode.ts";
 import { capture_body, emit, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { function_label, js_name } from "./names.ts";
+import { is_value_struct } from "./types.ts";
 
 /** Emit a free or nested function declaration. */
 export default function build_function_node(node: FunctionNode, status: BuildStatus): void {
@@ -55,7 +56,17 @@ export function build_function_expression(node: FunctionNode, status: BuildStatu
 	const body = capture_body(status, () => {
 		for (const statement of node.statements) stmt(statement, status);
 	});
-	return `function (${params}) {\n${body}${"\t".repeat(status.indent)}}`;
+	const fn = `function (${params}) {\n${body}${"\t".repeat(status.indent)}}`;
+
+	// Nomen copies a captured value struct when the closure is created (a
+	// later write to the source is not seen). JS closures capture bindings,
+	// so shadow each such capture with a `__copy` via IIFE parameters.
+	const copied = (node.captures ?? []).filter(
+		(capture) => !capture.is_move && is_value_struct(capture.type?.name, status),
+	);
+	if (copied.length === 0) return fn;
+	const names = copied.map((capture) => js_name(capture.name));
+	return `((${names.join(", ")}) => ${fn})(${names.map((name) => `__copy(${name})`).join(", ")})`;
 }
 
 /** A `ref` parameter other than the `self` receiver. The parser records `ref`

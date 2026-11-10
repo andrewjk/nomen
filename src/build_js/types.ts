@@ -11,6 +11,7 @@ import type OperationNode from "../nodes/OperationNode.ts";
 import type RangeNode from "../nodes/RangeNode.ts";
 import type Type from "../nodes/Type.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
+import type BuildStatus from "./BuildStatus.ts";
 
 /**
  * The checker stamps a `Type` on every expression node; the JS backend reads
@@ -81,4 +82,23 @@ export function is_int_kind(node: BaseNode | undefined): boolean {
 
 export function is_float_kind(node: BaseNode | undefined): boolean {
 	return kind_of(node) === "float";
+}
+
+/** True when `name` is a user `struct` with value semantics (non-`mv`), so
+ *  binding/assigning it copies the fields (MEMORY.md: "Assigning a struct
+ *  creates an independent copy"). `mv`/owning structs move instead. */
+export function is_value_struct(name: string | undefined, status: BuildStatus): boolean {
+	if (!name) return false;
+	const struct = status.structs.find((s) => s.name === name);
+	return !!struct && !struct.is_owning && !struct.is_class;
+}
+
+/** Wrap an emitted struct value in a deep copy when its type has value
+ *  semantics; identity otherwise. */
+export function copy_if_value_struct(
+	value: string,
+	type_name: string | undefined,
+	status: BuildStatus,
+): string {
+	return is_value_struct(type_name, status) ? `__copy(${value})` : value;
 }

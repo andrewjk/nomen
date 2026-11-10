@@ -5,6 +5,7 @@ import { boxed_param_signature, emit_ref_prologue } from "./build_function_node.
 import { emit, expr, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { init_body_label, init_label, js_name, method_label, type_label } from "./names.ts";
+import { copy_if_value_struct } from "./types.ts";
 
 /**
  * Emit a user struct: a constructor factory plus its methods.
@@ -21,12 +22,21 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	const fields = node.fields.filter((f) => !!f.name);
 	const params = fields.map((field: DeclarationNode) => {
 		const name = js_name(field.name);
-		return field.value ? `${name} = ${expr(field.value, status)}` : name;
+		return field.value
+			? `${name} = ${copy_if_value_struct(
+					expr(field.value, status),
+					field.value ? undefined : field.type?.name,
+					status,
+				)}`
+			: name;
 	});
 	// `$type` is the runtime method table (trait dispatch): a value knows its
 	// concrete struct, so a trait-typed call site can find the method.
 	const properties = [`$type: ${type_label(node.name)}`].concat(
-		fields.map((field) => `${field.name}: ${js_name(field.name)}`),
+		fields.map(
+			(field: DeclarationNode) =>
+				`${field.name}: ${copy_if_value_struct(js_name(field.name), field.type?.name, status)}`,
+		),
 	);
 
 	emit(status, `function ${init_label(node.name)}(${params.join(", ")}) {`);
@@ -81,7 +91,9 @@ export function struct_zero_object(
 	const parts = include_type ? [`$type: ${type_label(struct.name)}`] : [];
 	for (const field of struct.fields) {
 		if (!field.name) continue;
-		const value = field.value ? expr(field.value, status) : zero_value(field.type?.name ?? "");
+		const value = field.value
+			? copy_if_value_struct(expr(field.value, status), field.type?.name, status)
+			: zero_value(field.type?.name ?? "");
 		parts.push(`${field.name}: ${value}`);
 	}
 	return `{ ${parts.join(", ")} }`;

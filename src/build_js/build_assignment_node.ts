@@ -3,11 +3,15 @@ import type ValueNode from "../nodes/ValueNode.ts";
 import { emit, expr, next_temp } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { js_name } from "./names.ts";
+import { copy_if_value_struct, stamped_type } from "./types.ts";
 
 /** Emit an assignment (plain, compound, or `x = y swap z`). */
 export default function build_assignment_node(node: AssignmentNode, status: BuildStatus): void {
 	const left = expr(node.left_value, status);
-	const right = expr(node.right_value, status);
+	const raw_right = expr(node.right_value, status);
+	// Value-struct assignment copies (the displaced binding must stay
+	// independent). `mv` transfers keep the reference.
+	const right = copy_if_value_struct(raw_right, stamped_type(node.right_value)?.name, status);
 
 	// `a = b swap c`: `a` takes `b`'s value, then `b` is revalidated with
 	// `c`. The RHS is read once into a temp (the sides may alias).

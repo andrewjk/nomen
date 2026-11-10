@@ -134,6 +134,21 @@ function __sb_take_since(sb, mark) {
 	return taken;
 }
 
+// Nomen value structs are copied on binding, assignment, return, container
+// store, and closure capture. JS objects are by reference, so the builders
+// wrap those transfers in this deep clone.
+function __copy(value) {
+	if (Array.isArray(value)) return value.map(__copy);
+	if (value instanceof Map) return new Map([...value].map(([k, v]) => [__copy(k), __copy(v)]));
+	if (value instanceof Set) return new Set([...value].map(__copy));
+	if (value && typeof value === "object") {
+		const out = {};
+		for (const key of Object.keys(value)) out[key] = __copy(value[key]);
+		return out;
+	}
+	return value;
+}
+
 function __enum_to_case(value, tag, name) {
 	if (!value || value.$tag !== tag) {
 		__panic("base to case conversion: the value carries a different variant (" + name + ")");
