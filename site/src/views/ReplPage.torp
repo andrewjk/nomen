@@ -15,7 +15,7 @@ pub func main = () {
 }
 `;
 
-import { MAX_SHARE_SOURCE, share_url } from "@/lib/share";
+import { MAX_SHARE_OUTPUT, MAX_SHARE_SOURCE, share_url } from "@/lib/share";
 
 const TIMEOUT_MS = 5_000;
 
@@ -208,7 +208,8 @@ self.postMessage({ type: "done" });
 			];
 			return;
 		}
-		const url = share_url(window.location.origin, $state.source);
+		const output = $state.output.slice(0, MAX_SHARE_OUTPUT);
+		const url = share_url(window.location.origin, $state.source, output);
 		const done = () => {
 			$state.shared = true;
 			setTimeout(() => {

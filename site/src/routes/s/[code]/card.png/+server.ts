@@ -17,6 +17,7 @@ export default {
 	get: async (event) => {
 		const source = decode_source(event.params.code);
 		if (source === undefined) return Response.redirect(new URL("/og.png", event.url), 302);
+		const output = decode_source(event.url.searchParams.get("out") ?? undefined);
 
 		let cache: Cache | undefined;
 		try {
@@ -28,7 +29,7 @@ export default {
 		if (hit) return hit;
 
 		try {
-			const png = await render_code_card(source, event.url.host);
+			const png = await render_code_card(source, output, event.url.host);
 			const response = new Response(png, {
 				headers: {
 					"content-type": "image/png",

@@ -639,3 +639,20 @@ synchronously rather than being skipped:
 
 These are semantic divergences, not crashes: a cross-compiled program runs
 deterministically, single-threaded.
+
+## Social-card renderer uses an ASCII bitmap font
+
+Recorded 2026-11-11. The per-program share card is drawn in the Worker with a
+public-domain 8x8 bitmap font (`site/src/lib/font8x8.ts`) plus a small indexed
+PNG encoder (`site/src/lib/png.ts`), replacing `workers-og` (satori + resvg),
+which cost ~800 kB gzipped of Worker bundle. Trade-offs:
+
+- The font covers ASCII 32–126; other characters (accented text, emoji) render
+  as `?`. A Latin-1/Unicode bitmap table can be added if cards need it.
+- The card shows the author's run output only when the share link carries it
+  (`?out=`). Generating output server-side would mean executing untrusted code
+  in the Worker, which the site deliberately never does (user programs run in
+  the page's Worker with a watchdog).
+- Cards are tokenised with Shiki on the server. If the Worker bundle needs to
+  shrink further, a small Nomen-specific tokenizer could replace it; the card
+  only needs the dark-plus token colours.

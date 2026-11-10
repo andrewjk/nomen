@@ -26,11 +26,18 @@ export function decode_source(value: string | undefined): string | undefined {
 	}
 }
 
-/** The share URL for a program (on the given origin). */
-export function share_url(origin: string, source: string): string {
-	return `${origin}/s/${encode_source(source)}`;
+/** The share URL for a program (on the given origin). An optional run output
+ *  rides along as `?out=`, so the card can show it without executing code
+ *  server-side. */
+export function share_url(origin: string, source: string, output = ""): string {
+	const base = `${origin}/s/${encode_source(source)}`;
+	return output ? `${base}?out=${encode_source(output)}` : base;
 }
 
 /** Codes longer than this would make unwieldy share links; the REPL refuses
  *  to share them. */
 export const MAX_SHARE_SOURCE = 2_000;
+
+/** Output longer than this is truncated in the share link (the card shows a
+ *  handful of lines anyway). */
+export const MAX_SHARE_OUTPUT = 2_000;

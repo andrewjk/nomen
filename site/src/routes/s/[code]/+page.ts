@@ -18,8 +18,10 @@ export default {
 	head: (event) => {
 		const origin = event.url.origin;
 		const source = decode_source(event.params.code);
-		const image =
-			source !== undefined ? `${origin}/s/${event.params.code}/card.png` : `${origin}/og.png`;
+		const out = event.url.searchParams.get("out");
+		const card = new URL(`/s/${event.params.code}/card.png`, origin);
+		if (out) card.searchParams.set("out", out);
+		const image = source !== undefined ? card.href : `${origin}/og.png`;
 		return [
 			{ title: TITLE },
 			{ name: "description", content: DESCRIPTION },

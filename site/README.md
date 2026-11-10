@@ -46,13 +46,18 @@ server-side. `src/lib/share.ts` does the encoding, `src/routes/s/[code]` serves
 the page.
 
 Every share link gets its own card: `/s/<code>/card.png` renders the actual
-code in the Worker with `workers-og` (Satori + resvg WASM) and the Shiki
-theme's token colours (`src/lib/card.ts`). Because the URL contains the
-program, the PNG is content-addressed and cached immutably in the Cache API.
-If rendering fails the route redirects to `/og.png`; malformed codes fall back
-to the sample program and the generic card. Posting a share link therefore
-shows an image card of the code, and clicking it opens the REPL with that
-program loaded.
+code in the Worker with Shiki's token colours, a public-domain 8x8 bitmap font
+and a small indexed-colour PNG encoder (`src/lib/card.ts`, `png.ts`,
+`font8x8.ts`). No image library, WASM, or canvas API is involved.
+
+The Share button includes the current run output as `?out=<base64url>`, so the
+card can show the program and its output underneath without executing anything
+on the server. Output is capped at 2000 characters (the card shows at most
+eight lines). Because the URL contains the content, the PNG is content-
+addressed and cached immutably in the Cache API. If rendering fails the route
+redirects to `/og.png`; malformed codes fall back to the sample program and
+the generic card. Posting a share link therefore shows an image card of the
+code, and clicking it opens the REPL with that program loaded.
 
 ## Social cards
 
@@ -90,10 +95,10 @@ under a different Worker name.
 
 Compiling is CPU-bound (roughly 10–40 ms per run locally; the first request is
 slower because the Worker starts cold), so pick a Workers plan whose CPU limit
-comfortably covers a compile. The built Worker is ~1.1 MB gzipped (about 4 MB
-including static assets) and has no Node built-ins. The server bundle only
-imports the JavaScript backend — `build_js` directly, not the C/AArch64
-backends — which is what keeps the compiler small; `workers-og` (Satori +
-resvg) accounts for most of the rest and is only exercised by `/s/[code]` card
-requests. The highlighter adds ~80 kB gzipped of _lazy_ client chunks (loaded
-after the page is interactive).
+comfortably covers a compile. The built Worker is ~410 kB gzipped (about
+1.9 MB including static assets) and has no Node built-ins. The server bundle
+only imports the JavaScript backend — `build_js` directly, not the C/AArch64
+backends — which is what keeps the compiler small. The card renderer adds a
+few kB (bitmap font + PNG encoder) instead of a text-shaping/image stack. The
+highlighter adds ~80 kB gzipped of _lazy_ client chunks (loaded after the page
+is interactive).
