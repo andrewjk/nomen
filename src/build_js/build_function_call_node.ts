@@ -3,6 +3,7 @@ import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { enum_case_value, find_enum_case } from "./enums.ts";
+import { library_constructor } from "./library.ts";
 import { function_label, init_label } from "./names.ts";
 
 /**
@@ -47,6 +48,10 @@ export default function build_function_call_node(
 		return `${node.mangled_name ?? init_label(name)}(${args.join(", ")})`;
 	}
 
+	// Library containers (List/Map/Box/StringBuilder) map onto JS values.
 	const args = node.params.map((p) => expr(p, status));
+	const library = library_constructor(name, args);
+	if (library !== undefined) return library;
+
 	return `${function_label(node.resolved_function ?? node)}(${args.join(", ")})`;
 }

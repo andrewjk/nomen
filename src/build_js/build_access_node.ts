@@ -4,6 +4,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { enum_case_value } from "./enums.ts";
+import { list_method, map_method, string_builder_method } from "./library.ts";
 import { method_label } from "./names.ts";
 import { kind_of, type_name_of } from "./types.ts";
 
@@ -12,17 +13,32 @@ import { kind_of, type_name_of } from "./types.ts";
  *  - field access → `obj.field`;
  *  - static library calls (`Console.write`, `Format.pad`, …) → runtime helpers;
  *  - string/array builtins → the native JS equivalents;
+ *  - the supported System containers (List/Map/StringBuilder) → their JS
+ *    representations;
  *  - user struct methods → `<Struct>_<method>(self, args…)`.
  * Anything outside the supported subset becomes a loud runtime error.
  */
 export default function build_access_node(node: AccessNode, status: BuildStatus): string {
 	const access = node.access;
 	if (access.node_type === "access_field") {
+		const target_type = type_name_of(node.target);
+
 		// A tag-only enum case used as a value (`Dir.north`).
-		const enum_node = status.enums.find((e) => e.name === type_name_of(node.target));
+		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === access.name);
 			if (case_index !== -1) return enum_case_value(enum_node, case_index, []);
+		}
+
+		// `length` on the container receivers is a declared property.
+		if (access.name === "length" && target_type === "StringBuilder") {
+			return `BigInt(${expr(node.target, status)}.s.length)`;
+		}
+		if (access.name === "length" && target_type === "Map") {
+			return `BigInt(${expr(node.target, status)}.size)`;
+		}
+		if (access.name === "length" && target_type === "List") {
+			return `BigInt(${expr(node.target, status)}.length)`;
 		}
 		return `${expr(node.target, status)}.${access.name}`;
 	}
@@ -58,7 +74,7 @@ function build_method_call(
 			case "to_string":
 				return text;
 			case "length":
-				return `${text}.length`;
+				return `BigInt(${text}.length)`;
 			case "at":
 				return `${text}.at(Number(${args[0]}))`;
 			case "slice":
@@ -75,7 +91,7 @@ function build_method_call(
 		const list = expr(target, status);
 		switch (name) {
 			case "length":
-				return `${list}.length`;
+				return `BigInt(${list}.length)`;
 			case "at":
 				return `${list}[Number(${args[0]})]`;
 			case "set":
@@ -88,6 +104,22 @@ function build_method_call(
 				return `${list}.slice()`;
 		}
 		return unsupported(`array.${name}`);
+	}
+
+	// Supported System-library receivers map onto their JS representations.
+	// This must precede the generic `to_string` fallback: StringBuilder's
+	// `to_string` is a take, not a rendering.
+	if (target_type === "List") {
+		const mapped = list_method(name, expr(target, status), args);
+		if (mapped !== undefined) return mapped;
+	}
+	if (target_type === "Map") {
+		const mapped = map_method(name, expr(target, status), args);
+		if (mapped !== undefined) return mapped;
+	}
+	if (target_type === "StringBuilder") {
+		const mapped = string_builder_method(name, expr(target, status), args);
+		if (mapped !== undefined) return mapped;
 	}
 
 	if (name === "to_string") {

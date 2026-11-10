@@ -422,4 +422,69 @@ Console.write("\\{doubler(2)} \\{apply(plus1, 4)} \\{seven()}\\n")
 			"4 5 7\n",
 		);
 	});
+
+	test("List: push, at, length, set, pop, iteration", async () => {
+		await js_output(
+			"js_list",
+			`
+var List<int> xs = List<int>()
+xs.push(1)
+xs.push(2)
+xs.push(3)
+xs.set(1, 99)
+Console.write("\\{xs.length} \\{xs.at(0)} \\{xs.at(1)}\\n")
+Console.write("\\{xs.pop()} \\{xs.length}\\n")
+for v of xs {
+	Console.write("\\{v},")
+}
+Console.write("\\n")
+`,
+			"3 1 99\n3 2\n1,99,\n",
+		);
+	});
+
+	test("Map: set, get, has, remove, get_or", async () => {
+		await js_output(
+			"js_map",
+			`
+var Map<string, int> m = Map<string, int>()
+m.set("a", 1)
+m.set("b", 2)
+Console.write("\\{m.get("a")} \\{m.has("b")} \\{m.has("z")}\\n")
+m.remove("a")
+Console.write("\\{m.has("a")} \\{m.get_or("z", 42)}\\n")
+`,
+			"1 true false\nfalse 42\n",
+		);
+	});
+
+	test("StringBuilder: append overloads, length, to_string", async () => {
+		await js_output(
+			"js_string_builder",
+			`
+var StringBuilder sb = StringBuilder()
+sb.append("hi")
+sb.append(3)
+sb.append("!")
+Console.write("\\{sb.length}: \\{sb.to_string()}\\n")
+`,
+			"4: hi3!\n",
+		);
+	});
+
+	test("Box: construction and transparent field access", async () => {
+		await js_output(
+			"js_box",
+			`
+mv struct P {
+	var int x
+}
+var Box<P> b = Box<P>(P(5))
+Console.write("\\{b.x}\\n")
+var Box<int> n = Box<int>(7)
+Console.write("\\{n.__value}\\n")
+`,
+			"5\n7\n",
+		);
+	});
 });

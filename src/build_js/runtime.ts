@@ -53,6 +53,30 @@ function __interp(pattern, kinds, ...args) {
 	return out;
 }
 
+function __list_at(list, i) {
+	const index = Number(i);
+	if (index < 0 || index >= list.length) __panic("index out of range");
+	return list[index];
+}
+
+function __list_at_or(list, i, fallback) {
+	const index = Number(i);
+	if (index < 0 || index >= list.length) return fallback;
+	return list[index];
+}
+
+function __map_get(map, key) {
+	if (!map.has(key)) __panic("map key not found");
+	return map.get(key);
+}
+
+function __sb_take_since(sb, mark) {
+	const at = Number(mark);
+	const taken = sb.s.slice(at);
+	sb.s = sb.s.slice(0, at);
+	return taken;
+}
+
 function __enum_eq(a, b) {
 	if (a === b) return true;
 	if (!a || !b) return false;
