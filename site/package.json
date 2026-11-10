@@ -5,18 +5,25 @@
 	"description": "The Nomen website and REPL",
 	"type": "module",
 	"scripts": {
+		"bundle:core": "tsx scripts/bundle-core.ts",
+		"predev": "tsx scripts/bundle-core.ts",
 		"dev": "tb --dev",
+		"prebuild": "tsx scripts/bundle-core.ts",
 		"build": "tb --build",
 		"preview": "tb --preview",
+		"deploy": "tb --build && wrangler deploy",
 		"check": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@torpor/adapter-node": "^1.1.11",
+		"@torpor/adapter-cloudflare": "^1.0.26",
 		"@torpor/build": "^1.8.5",
 		"@torpor/unplugin": "^1.2.9",
 		"@torpor/view": "^1.2.6"
 	},
 	"devDependencies": {
-		"typescript": "^7.0.2"
+		"@cloudflare/vite-plugin": "^1.68.0",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2",
+		"wrangler": "^4.160.0"
 	}
 }

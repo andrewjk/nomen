@@ -1,0 +1,11 @@
+{
+	"name": "nomen",
+	"main": "./dist/cloudflare/_worker.js",
+
+	"compatibility_date": "2025-01-01",
+
+	"assets": {
+		"directory": "./dist/cloudflare",
+		"binding": "ASSETS"
+	}
+}

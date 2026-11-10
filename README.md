@@ -814,13 +814,16 @@ layout and compositor design.
 ## Website and REPL
 
 The website lives in [`site/`](./site). It is a [Torpor](https://torpor.dev)
-app whose REPL compiles Nomen with this repository's compiler (the JavaScript
-backend) and runs the emitted program in the browser. Start it with:
+app deployed to Cloudflare Workers: the REPL compiles Nomen in the Worker with
+this repository's compiler (the JavaScript backend, with the System library
+embedded at build time) and runs the emitted program in the browser. Start it
+with:
 
 ```bash
 pnpm install
 cd site
-pnpm dev
+pnpm dev     # workerd (Cloudflare's local runtime)
+pnpm deploy  # build + wrangler deploy
 ```
 
 ## Questions

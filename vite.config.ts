@@ -10,14 +10,15 @@ export default defineConfig({
 			typeCheck: true,
 		},
 		// Generated backend artifacts (the JS backend's `main.mjs` output
-		// lives here too) are test data, not source.
-		ignorePatterns: ["test/out/**"],
+		// lives here too) are test data, not source. The site embeds the
+		// System library as a generated data module.
+		ignorePatterns: ["test/out/**", "site/src/lib/core-library.generated.ts"],
 	},
 	fmt: {
 		printWidth: 100,
 		sortImports: true,
 		useTabs: true,
-		ignorePatterns: ["test/out/**"],
+		ignorePatterns: ["test/out/**", "site/src/lib/core-library.generated.ts"],
 		overrides: [
 			{
 				files: ["*.json", "*.jsonc"],

@@ -3,28 +3,47 @@
 The Nomen website. Right now it is just the REPL: a Nomen program editor that
 compiles on the server and runs the emitted JavaScript in a sandboxed Worker.
 
+It is a [Torpor](https://torpor.dev) site deployed to **Cloudflare Workers**
+(with static assets). Compilation happens inside the Worker; the System library
+is embedded at build time, so the Worker needs no filesystem and no Node
+built-ins:
+
+- `site/scripts/bundle-core.ts` serializes `../core`'s type map into
+  `src/lib/core-library.generated.ts` (`pnpm bundle:core`; `dev`/`build` run it
+  automatically).
+- `src/lib/fs-stub.ts` / `src/lib/path-shim.ts` replace `node:fs` / `node:path`
+  for the compiler's Node-only code (library loading, `#embed_file`). The REPL
+  rejects `#embed_file` and uses the embedded library, so neither is reached.
+- `site.config.ts` wires those aliases and Neutralizes `process.env` (compiler
+  debug switches) via Vite.
+
+User programs never run on the server: the compiled browser script runs in the
+page's Worker, so a runaway loop is terminated by the page's 5s watchdog.
+
 ## Running
 
-Install from the repository root (the site is a pnpm workspace package), then
-start the Torpor dev server:
-
 ```bash
-pnpm install
+pnpm install        # from the repository root
 cd site
-pnpm dev
+pnpm dev            # Torpor dev server on workerd (Cloudflare's local runtime)
 ```
 
-The REPL compiles with the compiler in `../src` and reads the System library
-from `../core` (override with `NOMEN_CORE=/path/to/core`). Compilation happens
-server-side, so the REPL needs a Node host; user programs never run on the
-server — the emitted browser script runs in a Worker in the page.
+Opening the printed URL auto-runs the sample. Press <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd>
+to compile and run the editor's program.
 
-Open the printed URL and press <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> to run the
-program.
-
-To try the production build (it rebuilds first and listens on `$PORT`, default
-`7059`):
+## Build, preview, deploy
 
 ```bash
-pnpm preview
+pnpm build          # regenerates the embedded library, builds dist/cloudflare
+pnpm preview        # builds, then serves the worker with `wrangler dev`
+pnpm deploy         # builds, then `wrangler deploy`
 ```
+
+`wrangler.jsonc` points Cloudflare at `dist/cloudflare/_worker.js`, with
+`dist/cloudflare` as the static-assets directory. Change `name` there to deploy
+under a different Worker name.
+
+Compiling is CPU-bound (roughly 10–40 ms per run locally; the first request is
+slower because the Worker starts cold), so pick a Workers plan whose CPU limit
+comfortably covers a compile. The built Worker is ~750 kB gzipped and has no
+Node built-ins.
