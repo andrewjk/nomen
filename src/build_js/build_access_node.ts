@@ -38,7 +38,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === access.name);
-			if (case_index !== -1) return enum_case_value(enum_node, case_index, []);
+			if (case_index !== -1) return enum_case_value(enum_node, case_index, [], status);
 		}
 
 		// `length` on the container receivers is a declared property.
@@ -103,7 +103,7 @@ function build_method_call(
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === name);
-			if (case_index !== -1) return enum_case_value(enum_node, case_index, args);
+			if (case_index !== -1) return enum_case_value(enum_node, case_index, args, status);
 		}
 		const struct = status.structs.find((s) => s.name === target_type);
 		if (struct) {

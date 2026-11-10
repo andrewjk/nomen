@@ -44,7 +44,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus): 
 	// checker flattens to `Res_ok`): a tag-only object literal.
 	if ((node as unknown as { is_enum_shorthand?: boolean }).is_enum_shorthand) {
 		const hit = find_enum_case(status.enums, value);
-		if (hit) return enum_case_value(hit.enum_node, hit.case_index, []);
+		if (hit) return enum_case_value(hit.enum_node, hit.case_index, [], status);
 	}
 	if (value === "true" || value === "false") return value;
 	if (value === "null") return "null";

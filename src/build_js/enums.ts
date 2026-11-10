@@ -1,4 +1,6 @@
 import type EnumNode from "../nodes/EnumNode.ts";
+import type BuildStatus from "./BuildStatus.ts";
+import { is_value_struct } from "./types.ts";
 
 /**
  * Enum values are plain JS objects: `{ $tag: n, <param>: value, … }`, where
@@ -26,11 +28,21 @@ export function find_enum_case(
 
 /** The JS object literal for a case construction with the given argument
  *  expressions. */
-export function enum_case_value(enum_node: EnumNode, case_index: number, args: string[]): string {
+export function enum_case_value(
+	enum_node: EnumNode,
+	case_index: number,
+	args: string[],
+	status?: BuildStatus,
+): string {
 	const case_def = enum_node.cases[case_index];
 	const parts = [`$tag: ${case_index}`];
 	case_def.params.forEach((param, i) => {
-		if (args[i] !== undefined) parts.push(`${param.name}: ${args[i]}`);
+		if (args[i] === undefined) return;
+		// A payload is stored by value: a struct payload is copied (mutating
+		// the donor afterwards must not change the enum).
+		const copied =
+			status && is_value_struct(param.type?.name, status) ? `__copy(${args[i]})` : args[i];
+		parts.push(`${param.name}: ${copied}`);
 	});
 	return `({ ${parts.join(", ")} })`;
 }

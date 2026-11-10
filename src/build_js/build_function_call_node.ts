@@ -45,12 +45,12 @@ export default function build_function_call_node(
 	if ((node as unknown as { is_enum_shorthand?: boolean }).is_enum_shorthand) {
 		const args = node.params.map((p) => expr(p, status));
 		const hit = find_enum_case(status.enums, name);
-		if (hit) return enum_case_value(hit.enum_node, hit.case_index, args);
+		if (hit) return enum_case_value(hit.enum_node, hit.case_index, args, status);
 		const enum_node = status.enums.find((e) => e.name === node.type?.name);
 		if (enum_node) {
 			const case_name = name.replace(/^\./, "").replace(`${enum_node.name}_`, "");
 			const case_index = enum_node.cases.findIndex((c) => c.name === case_name);
-			if (case_index !== -1) return enum_case_value(enum_node, case_index, args);
+			if (case_index !== -1) return enum_case_value(enum_node, case_index, args, status);
 		}
 	}
 

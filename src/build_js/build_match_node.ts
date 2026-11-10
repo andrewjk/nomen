@@ -11,6 +11,7 @@ import {
 import type BuildStatus from "./BuildStatus.ts";
 import { find_enum_case } from "./enums.ts";
 import { js_name } from "./names.ts";
+import { is_value_struct } from "./types.ts";
 
 /** `match` as a statement: an if/else chain over a hoisted scrutinee. Enum
  *  cases test the tag and bind the payload positionally. */
@@ -45,7 +46,11 @@ function emit_match(node: MatchNode, status: BuildStatus, value_mode: boolean): 
 			const case_def = enum_hit.enum_node.cases[enum_hit.case_index];
 			(match_case.params ?? []).forEach((param, i) => {
 				const field = case_def.params[i]?.name ?? `$${i}`;
-				emit(status, `const ${js_name(param)} = ${temp}.${field};`);
+				const type_name = case_def.params[i]?.type?.name;
+				const value = is_value_struct(type_name, status)
+					? `__copy(${temp}.${field})`
+					: `${temp}.${field}`;
+				emit(status, `const ${js_name(param)} = ${value};`);
 			});
 		}
 		branch_body(match_case.branch.statements ?? [], status, value_mode);

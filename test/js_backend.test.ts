@@ -1306,4 +1306,29 @@ Console.write("\\{a.hash() == a.hash()} \\{a.hash() == b.hash()} \\{h.b.v}\\n")
 			"true false 7\n",
 		);
 	});
+
+	test("enum payloads copy struct values on construction and match", async () => {
+		await js_output(
+			"js_enum_payload_copy",
+			`
+struct P {
+	var int x
+}
+enum E {
+	case has(P p)
+}
+var P p = P(1)
+var E e = E.has(p)
+p.x = 9
+match e {
+	case .has(q) -> q.x = 5
+}
+match e {
+	case .has(q) -> Console.write("\\{q.x}")
+}
+Console.write("\\n")
+`,
+			"1\n",
+		);
+	});
 });
