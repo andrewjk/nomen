@@ -665,4 +665,53 @@ Console.write("\\{c.n} \\{step}\\n")
 			"7,7,7,\n3 6\n",
 		);
 	});
+
+	test("bitsets: case constants and bitwise combination", async () => {
+		await js_output(
+			"js_bitset",
+			`
+pub bitset Permissions {
+	case read
+	case write
+	case execute
+}
+var flags = Permissions.read
+flags = flags | Permissions.write
+const can_write = (flags & Permissions.write) == Permissions.write
+flags = flags ^ Permissions.execute
+Console.write("\\{can_write} \\{flags}\\n")
+`,
+			"true 7\n",
+		);
+	});
+
+	test("bitsets: nested declarations and struct fields", async () => {
+		await js_output(
+			"js_bitset_nested",
+			`
+func f = (out int) {
+	pub bitset Mode {
+		case a
+		case b
+	}
+	var m = Mode.a | Mode.b
+	if (m & Mode.b) == Mode.b {
+		return 1
+	}
+	return 0
+}
+pub bitset Flags {
+	case on
+	case loud
+}
+struct Dev {
+	var Flags flags
+}
+var Dev d = Dev(Flags.on)
+d.flags = d.flags | Flags.loud
+Console.write("\\{f()} \\{d.flags == (Flags.on | Flags.loud)}\\n")
+`,
+			"1 true\n",
+		);
+	});
 });

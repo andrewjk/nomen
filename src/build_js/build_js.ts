@@ -1,4 +1,5 @@
 import type BaseNode from "../nodes/BaseNode.ts";
+import type BitsetNode from "../nodes/BitsetNode.ts";
 import { child_nodes } from "../nodes/child_nodes.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
 import type RootNode from "../nodes/RootNode.ts";
@@ -49,6 +50,11 @@ function collect_types(root: BaseNode, status: BuildStatus): void {
 		}
 		if (!is_library && node.node_type === "enum") {
 			status.enums.push(node as EnumNode);
+		}
+		// Bitsets are pure constants, so library ones are collected too (a
+		// program may use a System bitset case).
+		if (node.node_type === "bitset") {
+			status.bitsets.push(node as BitsetNode);
 		}
 		for (const child of child_nodes(node)) visit(child);
 	};

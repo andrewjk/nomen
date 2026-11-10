@@ -1,4 +1,5 @@
 import type BaseNode from "../nodes/BaseNode.ts";
+import type BitsetNode from "../nodes/BitsetNode.ts";
 import type EnumNode from "../nodes/EnumNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type CompileError from "../types/CompileError.ts";
@@ -19,6 +20,8 @@ export default interface BuildStatus {
 	/** User enum declarations (values are inline objects; this table is how
 	 *  case construction and match tags resolve). */
 	enums: EnumNode[];
+	/** User bitset declarations (cases are single-bit bigint constants). */
+	bitsets: BitsetNode[];
 	/** Monotonic counter for generated temp names (`__match_0`, …). */
 	temp: number;
 	/** The CURRENT function's `ref` parameter names (boxed in JS); the
@@ -28,5 +31,14 @@ export default interface BuildStatus {
 }
 
 export function create_status(root: BaseNode): BuildStatus {
-	return { root, code: "", indent: 0, structs: [], enums: [], temp: 0, errors: [] };
+	return {
+		root,
+		code: "",
+		indent: 0,
+		structs: [],
+		enums: [],
+		bitsets: [],
+		temp: 0,
+		errors: [],
+	};
 }

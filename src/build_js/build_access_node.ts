@@ -24,6 +24,14 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 	if (access.node_type === "access_field") {
 		const target_type = type_name_of(node.target);
 
+		// A bitset case used as a value (`Permissions.read` → one bit).
+		const bitset = status.bitsets.find((b) => b.name === target_type);
+		if (bitset) {
+			const index = bitset.cases.indexOf(access.name);
+			if (index !== -1) return `(1n << ${index}n)`;
+			return unsupported(`bitset ${target_type}.${access.name}`);
+		}
+
 		// A tag-only enum case used as a value (`Dir.north`).
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
