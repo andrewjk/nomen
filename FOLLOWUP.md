@@ -562,3 +562,13 @@ happens to be one logical character there, but the two models diverge for
 non-BMP input. Modeling strings as `Uint8Array` would fix it at the cost of
 making every JS-facing operation awkward; decide before the JS backend is
 treated as byte-compatible with the native backends.
+
+## JS backend: library `#init` constructors are not run
+
+Recorded 2026-11-10. `emit_library_init` (src/build_js/library_queue.ts) builds
+a lowered library struct from its declared field defaults and never executes
+the struct's `#init` body. For `Random` that means `Random()` is always seeded
+with `state = 0` (the `#init` that reads `Time.now_ns()` is skipped) while
+`Random(seed)` works by coincidence (the only field is `state`, and the
+explicit-seed `#init` just stores its argument). A general fix is to emit
+`#init` methods and call them from the factory.

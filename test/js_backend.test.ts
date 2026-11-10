@@ -891,4 +891,38 @@ Console.write("\\{n} \\{sb.to_string()}\\n")
 			'5 "x\n',
 		);
 	});
+
+	test("int.parse and the parse_int helper", async () => {
+		await js_output(
+			"js_int_parse",
+			`
+const int n = int.parse("42")
+const int neg = int.parse("-7")
+const int via_init = parse_int("12")
+Console.write("\\{n + neg + via_init}\\n")
+`,
+			"47\n",
+		);
+	});
+
+	test("Random (seeded) and Time", async () => {
+		await js_output(
+			"js_random_time",
+			`
+var Random rng = Random(42)
+const int a = rng.below(100) as int
+const int b = rng.range(10, 20) as int
+if a >= 0 && a < 100 && b >= 10 && b <= 20 {
+	Console.write("range ok")
+}
+const int ms = Time.now_ms() as int
+if ms > 0 {
+	Console.write(" clock ok")
+}
+Time.sleep_ms(1)
+Console.write("\\n")
+`,
+			"range ok clock ok\n",
+		);
+	});
 });

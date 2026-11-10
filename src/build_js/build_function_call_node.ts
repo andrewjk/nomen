@@ -76,6 +76,9 @@ export default function build_function_call_node(
 		return `${init_label(name)}(${args.join(", ")})`;
 	}
 
+	// The C library's decimal parser is a trivial native helper.
+	if (name === "parse_int" && args.length === 1) return `__parse_int(${args[0]})`;
+
 	// A free library function: emit its body on demand.
 	if (node.resolved_function?.is_library) queue_library_function(node.resolved_function, status);
 

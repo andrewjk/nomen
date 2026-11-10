@@ -198,11 +198,16 @@ export function emit_library_init(struct: StructNode, status: BuildStatus): void
  *  (raw asm/C, unsafe pointer work, foreign functions, threads)? */
 export function needs_raw_memory(node: BaseNode): boolean {
 	if (UNSUPPORTED_NODE_TYPES.has(node.node_type)) return true;
-	if (
-		node.node_type === "func_call" &&
-		(node as unknown as { name?: string }).name?.startsWith("foreign_")
-	) {
-		return true;
+	// A foreign call: the callee is a body-less `foreign func` declaration
+	// (and the emitter would call the `foreign_*` C adapter, which JS lacks).
+	if (node.node_type === "func_call") {
+		const call = node as unknown as {
+			name?: string;
+			resolved_function?: { is_foreign?: boolean; has_body?: boolean };
+		};
+		if (call.name?.startsWith("foreign_")) return true;
+		if (call.resolved_function?.is_foreign) return true;
+		if (call.resolved_function && call.resolved_function.has_body === false) return true;
 	}
 	if (node.node_type === "access") {
 		const access = (node as unknown as { access?: { name?: string } }).access;

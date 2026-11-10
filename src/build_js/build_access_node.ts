@@ -84,6 +84,8 @@ function build_method_call(
 		if (target_type === "Format") return `Format_${name}(${args.join(", ")})`;
 		if (target_type === "Math" && name === "power") return `__math_power(${args.join(", ")})`;
 		if (target_type === "Array" && name === "with") return `__array_with(${args.join(", ")})`;
+		if (target_type === "int" && name === "parse") return `__parse_int(${args[0]})`;
+		if (target_type === "Time") return time_call(name, args);
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === name);
@@ -235,6 +237,21 @@ function build_method_call(
 	}
 
 	return unsupported(`${target_type}.${name}`);
+}
+
+/** `System.Time` reads and sleeps, mapped onto JS clock/sleep primitives. */
+function time_call(name: string, args: string[]): string {
+	switch (name) {
+		case "now_ms":
+			return "BigInt(Date.now())";
+		case "now_ns":
+			return "(BigInt(Date.now()) * 1000000n)";
+		case "now_unix":
+			return "BigInt(Math.floor(Date.now() / 1000))";
+		case "sleep_ms":
+			return `__sleep_ms(${args[0]})`;
+	}
+	return unsupported(`Time.${name}`);
 }
 
 function unsupported(what: string): string {

@@ -81,6 +81,16 @@ function __math_power(base, exp) {
 	return result;
 }
 
+function __sleep_ms(ms) {
+	const wait = Number(ms);
+	if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+}
+
+function __parse_int(text) {
+	if (typeof text !== "string" || !/^[+-]?[0-9]+$/.test(text)) __panic("invalid int: " + text);
+	return BigInt(text);
+}
+
 function __dispatch(self, name, ...args) {
 	const table = self && self.$type;
 	const fn = table && table[name];
