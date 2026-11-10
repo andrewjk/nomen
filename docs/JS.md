@@ -85,20 +85,35 @@ copy (a JS array), not a borrowed `view`; the raw slab protocols (`init_view`,
 `store_in_slab`, …) are only reachable from raw library bodies and take the
 warning-stub path.
 
+### Concurrency runs synchronously
+
+There is no scheduler or thread pool. `async { ... }` executes its body inline,
+`Thread(...)` / `Fiber(...)` constructions record a thunk, and `.start()` runs
+that thunk to completion before returning a finished `Task` (`.detach()` runs
+it and discards the handle). `Task.wait` is a no-op, `result` /`result_uint64` /
+`is_done` read the completed result (a second `result` yields the zero value,
+matching the native move-out), and `cancel`/`current_cancelled` are inert.
+
+`Channel` is an in-memory FIFO (`receive` yields the zero value when empty
+instead of blocking), `Mutex.lock`/`unlock` are no-ops, and `Atomic` operations
+are plain reads/writes. A nursery's implicit join is already satisfied, so
+`timeout` and `mode: "race"` have no effect. `Thread`/`Fiber`/`Task` still
+satisfy `Spawnable`/`Awaitable` through their synthesized `$type` tables.
+
 ## Known gaps
 
 Constructs that cannot be expressed at all are still rejected by the checker
 (user `unsafe`, pointer types, `foreign func`). Everything else in the library
-degrades instead of aborting: a raw/threaded library body warns once and the
-program continues. Specifically:
+degrades instead of aborting: a raw library body warns once and the program
+continues.
 
-- concurrency (`spawn`, `async`, `Thread`, `Fiber`, `Channel`, `Mutex`,
-  `Atomic`, `Nursery`, `Task`) — the emitted program is synchronous, so their
-  operations are skipped;
-- `#arch` blocks and `foreign func` bodies reached through library code —
-  skipped with a warning;
-- GUI controls (`System::Controls`) — native AppKit only, so their calls are
-  skipped; the site's embedded library excludes them entirely.
+- `#arch` blocks and `foreign func` bodies reached through library code are
+  skipped with a warning (e.g. the audit counter used by `Tester`).
+- GUI controls (`System::Controls`) are native AppKit calls, so their methods
+  are skipped; the site's embedded library excludes them entirely.
+- Concurrency runs synchronously (see above): `.detach()` executes the task
+  immediately, so a process-lifetime daemon loop never returns; the REPL's
+  5-second watchdog stops such a program.
 
 `Random()` seeds from `Date.now() * 1_000_000` (millisecond precision).
 Struct-valued `Map` keys compare by JS identity, so a value-hashed lookup

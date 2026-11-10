@@ -28,8 +28,9 @@ import runtime, { type JsTarget } from "./runtime.ts";
  * methods, traits, generics), enums/bitsets, destructuring, tuples, string
  * interpolation and custom format patterns, the native containers, and
  * on-demand lowering of plain-Nomen library code. Library bodies that need
- * raw memory or concurrency become warning stubs (`__skip`); the program keeps
- * running rather than aborting.
+ * raw memory become warning stubs (`__skip`); the program keeps running
+ * rather than aborting. Concurrency is run synchronously (see
+ * build_async_block_node and the runtime's spawn helpers).
  */
 export interface JsBuildOptions {
 	/** `node` (default) targets the process streams and Node's `fs`; `browser`

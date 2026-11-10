@@ -1499,15 +1499,127 @@ Console.write("q=\\{q.to_digit()} r=\\{r.to_digit()}\\n")
 
 	test("an unavailable library feature warns and the program continues", async () => {
 		await js_output(
-			"js_skip_thread",
+			"js_skip_native_only",
+			`
+var Tester t = Tester()
+Console.write("audit=\\{t.audit_count()}\\n")
+`,
+			"audit=0\n",
+		);
+	});
+});
+
+describe("js backend: synchronous async fallback", () => {
+	test("async blocks run inline, in order", async () => {
+		await js_output(
+			"js_async_block_inline",
+			`
+Console.write("before ")
+async {
+	Console.write("inside ")
+}
+Console.write("after\\n")
+`,
+			"before inside after\n",
+		);
+	});
+
+	test("a Thread defers its call until start(); result/is_done read it", async () => {
+		await js_output(
+			"js_thread_sync",
+			`
+func work = (out uint64) {
+	Console.write("ran ")
+	return 42
+}
+var thread = Thread(work())
+Console.write("before-start ")
+var task = thread.start()
+Console.write("result=\\{task.result_uint64()} done=\\{task.is_done()} again=\\{task.result_uint64()}\\n")
+`,
+			"before-start ran result=42 done=true again=0\n",
+		);
+	});
+
+	test("a nursery runs its started tasks before the block exits", async () => {
+		await js_output(
+			"js_nursery_sync",
 			`
 func work = (int n, out uint64) {
+	Console.write("task \\{n} ")
+	return n
+}
+async pool {
+	var task = pool.start(Thread(work(1)))
+	Console.write("got \\{task.result_uint64()} ")
+	pool.start(Thread(work(2)))
+}
+Console.write("after\\n")
+`,
+			"task 1 got 1 task 2 after\n",
+		);
+	});
+
+	test("detach runs and discards the task", async () => {
+		await js_output(
+			"js_detach_sync",
+			`
+func work = () {
+	Console.write("detached ")
+}
+Thread(work()).detach()
+Console.write("after\\n")
+`,
+			"detached after\n",
+		);
+	});
+
+	test("Channel is an in-memory FIFO", async () => {
+		await js_output(
+			"js_channel_fifo",
+			`
+var ch = Channel()
+ch.send(7)
+ch.send(8)
+ch.send_string("hello")
+Console.write("\\{ch.receive()} \\{ch.receive()} \\{ch.receive_string()} empty=\\{ch.receive()} \\{ch.receive_string()}\\n")
+`,
+			"7 8 hello empty=0 \n",
+		);
+	});
+
+	test("Atomic and Mutex are plain single-threaded state", async () => {
+		await js_output(
+			"js_atomic_mutex",
+			`
+var Atomic<int> counter = Atomic<int>()
+counter.store(3)
+var int previous = counter.fetch_add(2)
+var int swapped = counter.swap(9)
+var Mutex m = Mutex()
+m.lock()
+m.unlock()
+Console.write("load=\\{counter.load()} previous=\\{previous} swapped=\\{swapped}\\n")
+`,
+			"load=9 previous=3 swapped=5\n",
+		);
+	});
+
+	test("Awaitable dispatches wait on a task", async () => {
+		await js_output(
+			"js_awaitable_dispatch",
+			`
+func work = (uint64 n, out uint64) {
 	return n * 2
 }
-var t = Thread(work(21)).start()
-Console.write("got \\{t.result_uint64()}\\n")
+func join_it = (Awaitable a) {
+	a.wait()
+}
+var task = Thread(work(21)).start()
+join_it(task)
+Console.write("\\{task.result_uint64()}\\n")
 `,
-			"got 0\n",
+			"42\n",
 		);
 	});
 });

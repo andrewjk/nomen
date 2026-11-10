@@ -1,0 +1,1 @@
+before-start ran result=42 done=true again=0

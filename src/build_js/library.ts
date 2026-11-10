@@ -24,7 +24,14 @@ export function library_base_name(name: string): string {
 		"ClassBuffer",
 		"StableList",
 		"Buffer",
+		"Atomic",
+		"Channel",
+		"Fiber",
+		"Mutex",
+		"Nursery",
 		"List",
+		"Task",
+		"Thread",
 		"Set",
 		"Map",
 		"Box",
@@ -67,6 +74,13 @@ export function library_constructor(name: string, args: string[]): string | unde
 	}
 	if (name === "StringBuilder") return `({ s: "" })`;
 	if (name === "StableList" || name.startsWith("StableList_")) return "[]";
+	// Concurrency primitives are plain single-threaded values (see
+	// `concurrency_method`): a channel is two in-memory queues, a mutex/atomic
+	// is just its state.
+	if (name === "Channel" || name.startsWith("Channel_")) return "({ values: [], strings: [] })";
+	if (name === "Mutex" || name.startsWith("Mutex_")) return "({})";
+	if (name === "Atomic" || name.startsWith("Atomic_")) return "({ word: 0n })";
+	if (name === "Nursery" || name.startsWith("Nursery_")) return "({})";
 	// The slot buffers back the linked/chunked containers. An array carries
 	// the slots; `.cap` reads map to its length (see `is_buffer_type`).
 	if (is_buffer_type(name)) return "[]";
@@ -267,6 +281,83 @@ export function stable_list_method(name: string, list: string, args: string[]): 
 			return `__list_at_or(${list}, ${args[0]}, ${args[1]})`;
 		case "copy":
 			return `__copy(${list})`;
+	}
+	return undefined;
+}
+
+/**
+ * Concurrency surface, run synchronously. The JS backend has no scheduler, so:
+ *  - `Thread`/`Fiber.start` runs the deferred thunk now and returns a finished
+ *    `Task`; `detach` runs and discards it;
+ *  - `Task.result`/`result_uint64`/`is_done` read that finished result,
+ *    `wait` is a no-op, `cancel`/`current_cancelled` are inert;
+ *  - `Channel` is two in-memory FIFOs (receive yields zero when empty);
+ *  - `Mutex.lock`/`unlock` and `Atomic`'s operations are plain value updates.
+ */
+export function concurrency_method(
+	base: string,
+	name: string,
+	self: string,
+	args: string[],
+	is_static: boolean,
+): string | undefined {
+	switch (base) {
+		case "Thread":
+		case "Fiber":
+			if (is_static) return undefined;
+			if (name === "start") return `__spawn_start(${self})`;
+			if (name === "detach") return `__spawn_detach(${self})`;
+			return undefined;
+		case "Nursery":
+			if (name === "start") return `__nursery_start(${self}, ${args[0]})`;
+			return undefined;
+		case "Task":
+			if (is_static) {
+				if (name === "current_cancelled") return "false";
+				if (name === "set_pool_size") return args[0] ?? "0n";
+				if (name === "shutdown_pool") return "undefined";
+				return undefined;
+			}
+			switch (name) {
+				case "wait":
+					return `__task_wait(${self})`;
+				case "result":
+					return `__task_result(${self})`;
+				case "result_uint64":
+					return `__task_result_uint64(${self})`;
+				case "is_done":
+					return "true";
+				case "cancel":
+					return "undefined";
+			}
+			return undefined;
+		case "Channel":
+			switch (name) {
+				case "send":
+					return `__channel_send(${self}, ${args[0]})`;
+				case "send_string":
+					return `__channel_send_string(${self}, ${args[0]})`;
+				case "receive":
+					return `__channel_receive(${self})`;
+				case "receive_string":
+					return `__channel_receive_string(${self})`;
+			}
+			return undefined;
+		case "Mutex":
+			if (name === "lock" || name === "unlock") return "undefined";
+			return undefined;
+		case "Atomic":
+			switch (name) {
+				case "load":
+					return `${self}.word`;
+				case "store":
+					return `(${self}.word = ${args[0]})`;
+				case "fetch_add":
+					return `__atomic_fetch_add(${self}, ${args[0]})`;
+				case "swap":
+					return `__atomic_swap(${self}, ${args[0]})`;
+			}
+			return undefined;
 	}
 	return undefined;
 }

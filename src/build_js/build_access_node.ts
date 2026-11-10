@@ -10,6 +10,7 @@ import { enum_case_value } from "./enums.ts";
 import {
 	bigint_method,
 	buffer_method,
+	concurrency_method,
 	is_buffer_type,
 	is_class_buffer_type,
 	library_base_name,
@@ -131,6 +132,14 @@ function build_method_call(
 		if (target_type === "int" && name === "parse") return `__parse_int(${args[0]})`;
 		if (target_type === "Time") return time_call(name, args);
 		if (target_type === "Utf8") return utf8_call(name, args);
+		const static_concurrency = concurrency_method(
+			library_base_name(target_type),
+			name,
+			"undefined",
+			args,
+			true,
+		);
+		if (static_concurrency !== undefined) return static_concurrency;
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === name);
@@ -270,6 +279,10 @@ function build_method_call(
 		});
 		if (mapped !== undefined) return mapped;
 	}
+
+	// Concurrency primitives run synchronously (see `concurrency_method`).
+	const concurrency = concurrency_method(native_type, name, expr(target, status), args, false);
+	if (concurrency !== undefined) return concurrency;
 
 	// A user struct method (this also covers a devirtualized trait call: the
 	// concrete method wins over the generic rendering fallback).

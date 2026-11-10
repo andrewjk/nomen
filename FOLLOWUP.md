@@ -614,3 +614,28 @@ Two native-only shapes are deliberately not mapped:
 Uninitialized grown slots hold `undefined` rather than the native all-zero
 bytes; container code stores before it loads, so this only shows up in code
 that reads inside `cap` without writing first.
+
+## JS backend: concurrency is a synchronous fallback
+
+Recorded 2026-11-11. The JS backend has no scheduler, so concurrency runs
+synchronously rather than being skipped:
+
+- `async { ... }` runs inline; `Thread(...)`/`Fiber(...)` store a thunk and
+  `.start()` runs it to completion, returning a finished `Task`. `.detach()`
+  also runs it immediately, so a process-lifetime daemon loop never returns
+  (the site's 5-second watchdog stops it). The native form returns from
+  `detach` while the daemon lives on.
+- `Channel.receive` does not block: it returns the zero value when the queue
+  is empty, so producer/consumer choreography that relies on blocking changes
+  shape. `Mutex.lock`/`unlock` are no-ops and `Atomic` is single-threaded.
+- A nursery's `timeout` and `mode: "race"` are ignored: every started task is
+  already complete when the join runs, so there is nothing to cancel.
+- `Task.result` consumes once (a second call yields the zero value), matching
+  the native move-out; `Task.wait` is a no-op.
+- The must-start contract is not enforced: a `Thread`/`Fiber` value that is
+  never started is simply dropped (the JS backend emits no auto-`#destroy`),
+  and calling `.start()` twice runs the thunk once and reuses its result
+  instead of aborting.
+
+These are semantic divergences, not crashes: a cross-compiled program runs
+deterministically, single-threaded.

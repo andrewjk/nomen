@@ -26,16 +26,23 @@ import { init_label, js_name, method_label } from "./names.ts";
  *  generically (the native mapping handles their supported surface). */
 const NATIVE_TYPES = new Set([
 	"Array",
+	"Atomic",
 	"Box",
 	"Buffer",
+	"Channel",
 	"Console",
+	"Fiber",
 	"Format",
 	"List",
 	"Map",
+	"Mutex",
+	"Nursery",
 	"Set",
 	"StableList",
 	"String",
 	"StringBuilder",
+	"Task",
+	"Thread",
 ]);
 
 /** Is this a library type we must not lower generically? */
@@ -202,7 +209,7 @@ function emit_library_stub(label: string, func: FunctionNode, status: BuildStatu
 	const old_ref_params = status.ref_params;
 	status.ref_params = new Set();
 	const params = func.params.map((param) => boxed_param_signature(param, status)).join(", ");
-	const returned = func.return_type ? ` return ${zero_for_type(func.return_type)};` : "";
+	const returned = func.return_type ? ` return ${zero_js_value(func.return_type)};` : "";
 	emit(
 		status,
 		`function ${label}(${params}) { __skip(${JSON.stringify(`library ${label}`)});${returned} }`,
@@ -211,8 +218,9 @@ function emit_library_stub(label: string, func: FunctionNode, status: BuildStatu
 }
 
 /** The JS value a skipped library body yields for its declared return type. */
-function zero_for_type(type: Type | undefined): string {
+export function zero_js_value(type: Type | undefined): string {
 	if (!type) return "undefined";
+	if (!type.name || type.name === "void" || type.name === "?") return "undefined";
 	const info = get_built_in_type(type.name);
 	switch (info?.kind) {
 		case "int":

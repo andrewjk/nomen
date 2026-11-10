@@ -1,6 +1,7 @@
 import type AccessNode from "../nodes/AccessNode.ts";
 import type ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type AssignmentNode from "../nodes/AssignmentNode.ts";
+import type AsyncBlockNode from "../nodes/AsyncBlockNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import type CastNode from "../nodes/CastNode.ts";
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -12,6 +13,7 @@ import type IfElseNode from "../nodes/IfElseNode.ts";
 import type OperationNode from "../nodes/OperationNode.ts";
 import type PanicNode from "../nodes/PanicNode.ts";
 import type ReturnNode from "../nodes/ReturnNode.ts";
+import type SpawnNode from "../nodes/SpawnNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type TodoNode from "../nodes/TodoNode.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
@@ -19,6 +21,7 @@ import type WhileLoopNode from "../nodes/WhileLoopNode.ts";
 import build_access_node from "./build_access_node.ts";
 import build_array_values_node from "./build_array_values_node.ts";
 import build_assignment_node from "./build_assignment_node.ts";
+import build_async_block_node, { build_async_block_expression } from "./build_async_block_node.ts";
 import build_break_node from "./build_break_node.ts";
 import build_cast_node from "./build_cast_node.ts";
 import build_continue_node from "./build_continue_node.ts";
@@ -143,6 +146,10 @@ export function expr(node: BaseNode, status: BuildStatus): string {
 			return build_function_call_node(node as FunctionCallNode, status);
 		case "array":
 			return build_array_values_node(node as ArrayValuesNode, status);
+		case "async_block":
+			return build_async_block_expression(node as AsyncBlockNode, status);
+		case "spawn":
+			return expr((node as SpawnNode).call, status);
 		case "grouped":
 			return build_grouped_node(node as GroupedNode, status);
 		case "func":
@@ -216,6 +223,12 @@ export function stmt(node: BaseNode, status: BuildStatus): void {
 			return;
 		case "block":
 			emit_block(node as BaseNode & { statements?: BaseNode[] }, status);
+			return;
+		case "async_block":
+			build_async_block_node(node as AsyncBlockNode, status);
+			return;
+		case "spawn":
+			emit(status, `${expr((node as SpawnNode).call, status)};`);
 			return;
 		case "let": {
 			// `let` wraps an expression statement (see LetNode); emit the inner

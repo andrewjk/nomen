@@ -12,6 +12,7 @@ import {
 	queue_library_function,
 	queue_library_init,
 	queue_library_method,
+	zero_js_value,
 } from "./library_queue.ts";
 import { function_label, init_label } from "./names.ts";
 
@@ -29,6 +30,20 @@ export default function build_function_call_node(
 	status: BuildStatus,
 ): string {
 	const name = node.name;
+
+	// `Thread(fn(args))` / `Fiber(fn(args))`: the native construction packs a
+	// deferred call. JS has no scheduler, so the thunk is stored and run
+	// synchronously by `.start()` / `.detach()` (see the runtime helpers).
+	if (node.is_thread_ctor || node.is_fiber_ctor) {
+		const first = node.params[0];
+		const call =
+			first?.node_type === "func_call"
+				? `() => (${expr(first, status)})`
+				: `() => (${expr(first, status)}())`;
+		return `({ __task: ${call}, __result: undefined, __zero: ${zero_js_value(
+			node.function_return_type,
+		)}, __done: false, started: false, $type: __spawn_methods })`;
+	}
 
 	if (is_interp_name(name)) {
 		const { kinds } = parse_interp_name(name);

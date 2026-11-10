@@ -236,6 +236,90 @@ function __buffer_zero(buf, len, zero) {
 	for (let i = 0; i < n && i < buf.length; i++) buf[i] = zero;
 }
 
+// --- Concurrency, run synchronously --------------------------------------
+// There is no scheduler here: a started task runs its thunk to completion
+// before start() returns, and the returned Task already holds the result.
+
+// Trait dispatch reads the concrete value's $type table, so the synthesized
+// values carry the methods their traits declare.
+const __spawn_methods = {
+	start: (self) => __spawn_start(self),
+	detach: (self) => __spawn_detach(self),
+};
+
+const __task_methods = {
+	wait: () => {},
+	result: (self) => __task_result(self),
+	result_uint64: (self) => __task_result_uint64(self),
+	is_done: () => true,
+	cancel: () => {},
+	current_cancelled: () => false,
+};
+
+function __spawn_start(thread) {
+	if (!thread.started) {
+		thread.started = true;
+		if (typeof thread.__task === "function") thread.__result = thread.__task();
+		thread.__done = true;
+	}
+	return {
+		__result: thread.__result,
+		__zero: thread.__zero,
+		__done: true,
+		__consumed: false,
+		$type: __task_methods,
+	};
+}
+
+function __spawn_detach(thread) {
+	__spawn_start(thread);
+}
+
+function __nursery_start(nursery, thread) {
+	return __spawn_start(thread);
+}
+
+function __task_wait(task) {}
+
+function __task_result(task) {
+	if (task.__consumed) return task.__zero;
+	task.__consumed = true;
+	return task.__result === undefined ? task.__zero : task.__result;
+}
+
+function __task_result_uint64(task) {
+	const value = __task_result(task);
+	return value === undefined ? 0n : BigInt(value);
+}
+
+function __channel_send(channel, value) {
+	channel.values.push(value);
+}
+
+function __channel_send_string(channel, value) {
+	channel.strings.push(String(value));
+}
+
+function __channel_receive(channel) {
+	return channel.values.length ? channel.values.shift() : 0n;
+}
+
+function __channel_receive_string(channel) {
+	return channel.strings.length ? channel.strings.shift() : "";
+}
+
+function __atomic_fetch_add(atomic, value) {
+	const previous = atomic.word;
+	atomic.word = BigInt.asUintN(64, BigInt(previous) + BigInt(value));
+	return previous;
+}
+
+function __atomic_swap(atomic, value) {
+	const previous = atomic.word;
+	atomic.word = value;
+	return previous;
+}
+
 function __list_at(list, i) {
 	const index = Number(i);
 	if (index < 0 || index >= list.length) __panic("index out of range");
