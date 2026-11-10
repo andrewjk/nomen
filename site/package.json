@@ -18,7 +18,8 @@
 		"@torpor/adapter-cloudflare": "^1.0.26",
 		"@torpor/build": "^1.8.5",
 		"@torpor/unplugin": "^1.2.9",
-		"@torpor/view": "^1.2.6"
+		"@torpor/view": "^1.2.6",
+		"nomen-shiki": "workspace:^"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.68.0",

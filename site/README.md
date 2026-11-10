@@ -16,8 +16,12 @@ built-ins:
 - `src/lib/fs-stub.ts` / `src/lib/path-shim.ts` replace `node:fs` / `node:path`
   for the compiler's Node-only code (library loading, `#embed_file`). The REPL
   rejects `#embed_file` and uses the embedded library, so neither is reached.
-- `site.config.ts` wires those aliases and Neutralizes `process.env` (compiler
+- `site.config.ts` wires those aliases and neutralizes `process.env` (compiler
   debug switches) via Vite.
+- Editor highlighting comes from [`nomen-shiki`](../shiki), a workspace package
+  around Shiki using the VS Code extension's TextMate grammar. It is loaded
+  lazily on the client (Shiki's JavaScript regex engine, no WASM), so it never
+  enters the Worker bundle.
 
 User programs never run on the server: the compiled browser script runs in the
 page's Worker, so a runaway loop is terminated by the page's 5s watchdog.
@@ -50,4 +54,5 @@ slower because the Worker starts cold), so pick a Workers plan whose CPU limit
 comfortably covers a compile. The built Worker is ~300 kB gzipped (about 1.4 MB
 including static assets) and has no Node built-ins. The server bundle only
 imports the JavaScript backend — `build_js` directly, not the C/AArch64
-backends — which is what keeps it small.
+backends — which is what keeps it small. The highlighter adds ~80 kB gzipped of
+_lazy_ client chunks (loaded after the page is interactive).

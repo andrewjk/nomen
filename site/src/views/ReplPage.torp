@@ -34,10 +34,54 @@ export default function ReplPage() {
 		errors: [] as ReplError[],
 		warnings: [] as ReplError[],
 		running: false,
+		highlighted: "",
+		highlight_ready: false,
 	});
 
 	let worker: Worker | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let highlight_timer: ReturnType<typeof setTimeout> | undefined;
+	let highlight_seq = 0;
+
+	/** Highlight the editor with Shiki (lazy-loaded: it is the biggest client
+	 *  dependency, and only needed once the page is interactive). */
+	async function highlight_now() {
+		const seq = ++highlight_seq;
+		try {
+			const { codeToHtml } = await import("nomen-shiki");
+			const html = await codeToHtml($state.source, {
+				lang: "nomen",
+				theme: "dark-plus",
+			});
+			if (seq !== highlight_seq) return;
+			$state.highlighted = html;
+			$state.highlight_ready = true;
+			sync_highlight_scroll();
+		} catch {
+			// Fall back to the plain (opaque) textarea.
+			$state.highlight_ready = false;
+		}
+	}
+
+	function schedule_highlight(delay = 40) {
+		if (highlight_timer) clearTimeout(highlight_timer);
+		highlight_timer = setTimeout(() => {
+			highlight_timer = undefined;
+			void highlight_now();
+		}, delay);
+	}
+
+	function on_input() {
+		schedule_highlight();
+	}
+
+	function sync_highlight_scroll() {
+		const area = document.getElementById("editor-input") as HTMLTextAreaElement | null;
+		const layer = document.getElementById("editor-highlight");
+		if (!area || !layer) return;
+		layer.scrollTop = area.scrollTop;
+		layer.scrollLeft = area.scrollLeft;
+	}
 
 	function stop_worker() {
 		if (timer) clearTimeout(timer);
@@ -158,7 +202,13 @@ self.postMessage({ type: "done" });
 	}
 
 	@render {
-		<main id="repl" onmount={() => run()}>
+		<main
+			id="repl"
+			onmount={() => {
+				run();
+				schedule_highlight(0);
+			}}
+		>
 			<header id="repl-header">
 				<h1>Nomen <span>REPL</span></h1>
 				<p>
@@ -175,12 +225,25 @@ self.postMessage({ type: "done" });
 							{$state.running ? "Running…" : "Run ⌘⏎"}
 						</button>
 					</div>
-					<textarea
-						spellcheck="false"
-						autocomplete="off"
-						&value={$state.source}
-						onkeydown={on_key_down}
-					/>
+					<div
+						id="editor"
+						class={$state.highlight_ready ? "ready" : ""}
+					>
+						<div id="editor-highlight" aria-hidden="true">
+							@html($state.highlighted)
+						</div>
+						<textarea
+							id="editor-input"
+							wrap="off"
+							spellcheck="false"
+							autocomplete="off"
+							autocapitalize="off"
+							&value={$state.source}
+							oninput={on_input}
+							onscroll={sync_highlight_scroll}
+							onkeydown={on_key_down}
+						/>
+					</div>
 				</section>
 
 				<section id="repl-output">

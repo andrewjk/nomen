@@ -1,0 +1,15 @@
+{
+	"name": "nomen-shiki",
+	"version": "0.0.1",
+	"private": true,
+	"description": "Shiki highlighting for the Nomen programming language",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@shikijs/langs": "^4.6.0",
+		"@shikijs/themes": "^4.6.0",
+		"shiki": "^4.6.0"
+	}
+}

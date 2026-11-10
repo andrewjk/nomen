@@ -121,21 +121,85 @@ button:disabled {
 	cursor: default;
 }
 
-textarea {
+/* The editor is a transparent textarea over a Shiki-highlighted copy of the
+ * same text: identical font metrics and padding keep the caret aligned. */
+#editor {
+	position: relative;
 	flex: 1;
-	width: 100%;
 	min-height: 28rem;
+	overflow: hidden;
+}
+
+#editor-highlight,
+#editor textarea {
+	position: absolute;
+	inset: 0;
 	margin: 0;
 	padding: 1rem;
 	border: none;
+	font-family: var(--mono);
+	font-size: 0.9rem;
+	line-height: 1.55;
+	letter-spacing: normal;
+	tab-size: 4;
+	white-space: pre;
+}
+
+#editor-highlight {
+	pointer-events: none;
+	overflow: hidden;
+	color: var(--text);
+}
+
+/* Shiki emits its own <pre class="shiki">; strip its box so the text lines up
+ * with the textarea. */
+#editor-highlight .shiki {
+	margin: 0;
+	padding: 0;
+	border: none;
+	outline: none;
+	background: transparent !important;
+	font-family: inherit;
+	font-size: inherit;
+	line-height: inherit;
+	letter-spacing: inherit;
+	tab-size: inherit;
+	white-space: pre;
+	overflow: visible;
+}
+
+/* The global inline-`code` chrome (background, border, padding) must not
+ * apply to Shiki's block: on an inline <code> it paints a box around each
+ * line. */
+#editor-highlight .shiki code {
+	display: block;
+	background: none;
+	border: 0;
+	border-radius: 0;
+	padding: 0;
+	font: inherit;
+	font-size: inherit;
+	line-height: inherit;
+	letter-spacing: inherit;
+	tab-size: inherit;
+	white-space: pre;
+}
+
+#editor textarea {
+	z-index: 1;
 	outline: none;
 	resize: none;
 	background: transparent;
 	color: var(--text);
-	font-family: var(--mono);
-	font-size: 0.9rem;
-	line-height: 1.55;
-	tab-size: 4;
+	caret-color: var(--accent);
+	overflow: auto;
+}
+
+/* Once the first highlight is in, the textarea's glyphs are hidden and the
+ * highlighted layer shows through; the caret and selection stay visible. */
+#editor.ready textarea {
+	color: transparent;
+	-webkit-text-fill-color: transparent;
 }
 
 pre.output {

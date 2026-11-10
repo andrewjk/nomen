@@ -1,6 +1,7 @@
 packages:
   - cli
   - extension
+  - shiki
   - site
 allowBuilds:
   "@vscode/vsce-sign": true
