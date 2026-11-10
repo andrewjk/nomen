@@ -172,6 +172,8 @@ function build_method_call(
 				return `BigInt(${text}.charCodeAt(Number(${args[0]})))`;
 			case "char_code_at_or":
 				return `__char_code_at_or(${text}, ${args[0]}, ${args[1]})`;
+			case "hash":
+				return `__string_hash(${text})`;
 		}
 		return unsupported(`string.${name}`);
 	}
@@ -228,6 +230,12 @@ function build_method_call(
 			(arg_exprs) =>
 				`${method_label(receiver_class, name)}(${[expr(target, status), ...arg_exprs].join(", ")})`,
 		);
+	}
+
+	// Primitive `hash()` (djb2 for strings, identity for ints) — the integer
+	// containers hash natively in JS, so only direct user calls land here.
+	if (name === "hash" && target_kind === "int") {
+		return `BigInt.asUintN(64, ${expr(target, status)})`;
 	}
 
 	// A System-library instance method, lowered from its Nomen body (e.g.

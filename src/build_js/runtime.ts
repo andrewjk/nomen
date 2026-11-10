@@ -89,6 +89,12 @@ function __sleep_ms(ms) {
 	if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
 }
 
+function __string_hash(text) {
+	let h = 5381n;
+	for (const ch of text) h = BigInt.asUintN(64, h * 33n + BigInt(ch.charCodeAt(0)));
+	return h;
+}
+
 function __char_from_code(code) {
 	return String.fromCharCode(Number(code) & 0xff);
 }

@@ -1286,4 +1286,24 @@ Console.write("\\{sum} \\{h.n} \\{arr.at(0)}\\n")
 			"3 15 11\n",
 		);
 	});
+
+	test("primitive hash() and owning structs with Box", async () => {
+		await js_output(
+			"js_hash_box",
+			`
+mv struct Cell {
+	pub var int v
+}
+mv struct Holder {
+	pub var Box<Cell> b
+}
+const string a = "abc"
+const string b = "abd"
+var Holder h = Holder(Box<Cell>(Cell(5)))
+h.b.v = 7
+Console.write("\\{a.hash() == a.hash()} \\{a.hash() == b.hash()} \\{h.b.v}\\n")
+`,
+			"true false 7\n",
+		);
+	});
 });
