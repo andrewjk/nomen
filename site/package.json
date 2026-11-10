@@ -2,7 +2,7 @@
 	"name": "@nomen/site",
 	"version": "0.0.1",
 	"private": true,
-	"description": "The Nomen website and REPL",
+	"description": "The Nomen website and playground",
 	"type": "module",
 	"scripts": {
 		"bundle:core": "tsx scripts/bundle-core.ts",
@@ -10,7 +10,7 @@
 		"dev": "tb --dev",
 		"prebuild": "tsx scripts/bundle-core.ts",
 		"build": "tb --build",
-		"preview": "tb --preview",
+		"preview": "tb --build && wrangler dev --config wrangler.jsonc",
 		"deploy": "tb --build && wrangler deploy",
 		"check": "tsc --noEmit"
 	},

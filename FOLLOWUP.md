@@ -640,12 +640,14 @@ synchronously rather than being skipped:
 These are semantic divergences, not crashes: a cross-compiled program runs
 deterministically, single-threaded.
 
-## Social-card renderer uses an ASCII bitmap font
+## Share-card font history: workers-og → bitmap fallback → Browser Run
 
-Recorded 2026-11-11. The per-program share card is drawn in the Worker with a
-public-domain 8x8 bitmap font (`site/src/lib/font8x8.ts`) plus a small indexed
-PNG encoder (`site/src/lib/png.ts`), replacing `workers-og` (satori + resvg),
-which cost ~800 kB gzipped of Worker bundle. Trade-offs:
+Recorded 2026-11-11. The card renderer went through three shapes. `workers-og`
+(satori + resvg, ~800 kB gzipped) produced nice text but dominated the Worker
+bundle; it was replaced by a dependency-free bitmap renderer
+(`site/src/lib/font8x8.ts` + `png.ts`). The bitmap card is now only the
+fallback; the primary renderer uses Browser Run with Fira Code (next section).
+Bitmap fallback trade-offs:
 
 - The font covers ASCII 32–126; other characters (accented text, emoji) render
   as `?`. A Latin-1/Unicode bitmap table can be added if cards need it.
@@ -656,3 +658,28 @@ which cost ~800 kB gzipped of Worker bundle. Trade-offs:
 - Cards are tokenised with Shiki on the server. If the Worker bundle needs to
   shrink further, a small Nomen-specific tokenizer could replace it; the card
   only needs the dark-plus token colours.
+
+## Share cards: Browser Run primary, bitmap fallback
+
+Recorded 2026-11-11. Share-card PNGs are rendered in a real browser through
+Cloudflare Browser Run quick actions (`env.BROWSER.quickAction("screenshot")`)
+with a Fira Code subset served from `site/src/public/fonts/` (SIL OFL). This
+keeps the Worker bundle small and gives proper typography; the first uncached
+card per location costs ~1–3 s, and the Cache API makes every later fetch
+instant.
+
+Fallbacks/considerations:
+
+- `pnpm dev` (Torpor's dev server) has no browser binding, so cards there use
+  the bitmap renderer (`site/src/lib/card.ts`, ASCII 8×8 font). `pnpm preview`
+  builds and runs `wrangler dev --config wrangler.jsonc`, which includes the
+  remote browser binding (needs a logged-in Wrangler).
+- If Browser Run is unavailable or a screenshot fails, the route logs the error
+  and falls back to the bitmap card; malformed share payloads still redirect to
+  `/og.png`.
+- Browser Run usage is billed/free-tier limited per browser minute; cards are
+  cached forever per URL (`/s/<code>/card.png?out=…`), so each unique share
+  costs at most one render per location.
+- The embedded font is an ASCII subset (Google Fonts' `text=` subset). Non-ASCII
+  glyphs fall back to the browser's monospace; the HTML carries the code text,
+  so this only affects unusual identifiers/strings.

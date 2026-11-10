@@ -28,6 +28,12 @@ built-ins:
 User programs never run on the server: the compiled browser script runs in the
 page's Worker, so a runaway loop is terminated by the page's 5s watchdog.
 
+Share-card images are the exception: they are rendered by **Cloudflare Browser
+Run** (`env.BROWSER.quickAction("screenshot", …)`) so the card can use a real
+font. The Fira Code subset is a static asset (`src/public/fonts/`, SIL OFL), so
+the Worker bundle stays small. If the binding is unavailable or the screenshot
+fails, `src/lib/card.ts` renders the older bitmap card instead.
+
 ## Running
 
 ```bash
@@ -48,9 +54,10 @@ server-side. `src/lib/share.ts` does the encoding, `src/routes/s/[code]` serves
 the page.
 
 Every share link gets its own card: `/s/<code>/card.png` renders the actual
-code in the Worker with Shiki's token colours, a public-domain 8x8 bitmap font
-and a small indexed-colour PNG encoder (`src/lib/card.ts`, `png.ts`,
-`font8x8.ts`). No image library, WASM, or canvas API is involved.
+code with Shiki's token colours in a real browser via Browser Run, using Fira
+Code (`src/lib/card_browser.ts`). The browser returns a normal PNG. If Browser
+Run is not available, a dependency-free bitmap renderer
+(`src/lib/card.ts` + `png.ts` + `font8x8.ts`) keeps the route working.
 
 The Share button includes the current run output as `?out=<base64url>`, so the
 card can show the program and its output underneath without executing anything
@@ -92,9 +99,14 @@ Regenerating the images: `og.png` is a 2x screenshot of `/playground` at
 
 ```bash
 pnpm build          # regenerates the embedded library, builds dist/cloudflare
-pnpm preview        # builds, then serves the worker with `wrangler dev`
+pnpm preview        # builds, then serves the built worker with the real config
 pnpm deploy         # builds, then `wrangler deploy`
 ```
+
+`pnpm preview` uses `wrangler dev --config wrangler.jsonc`, so the `BROWSER`
+binding is live (it runs remotely and needs a logged-in Wrangler). `pnpm dev`
+(the Torpor dev server) has no browser binding, so share cards fall back to the
+bitmap renderer there.
 
 `wrangler.jsonc` points Cloudflare at `dist/cloudflare/_worker.js`, with
 `dist/cloudflare` as the static-assets directory. Change `name` there to deploy
@@ -106,6 +118,8 @@ comfortably covers a compile. The built Worker is ~410 kB gzipped (about
 1.9 MB including static assets) and has no Node built-ins. The server bundle
 only imports the JavaScript backend — `build_js` directly, not the C/AArch64
 backends — which is what keeps the compiler small. The card renderer adds a
-few kB (bitmap font + PNG encoder) instead of a text-shaping/image stack. The
-highlighter adds ~80 kB gzipped of _lazy_ client chunks (loaded after the page
-is interactive).
+few kB (the bitmap fallback) and the Fira Code asset (~28 kB, served from
+assets) instead of a text-shaping/image stack. Browser Run does the rendering
+for share cards (`env.BROWSER`, free/paid plans; expect ~1–3 s for the first
+uncached card per location, then the Cache API serves it). The highlighter adds
+~80 kB gzipped of _lazy_ client chunks (loaded after the page is interactive).

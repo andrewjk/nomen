@@ -4,14 +4,13 @@ import { FIRST_CHAR, GLYPH_COUNT, GLYPH_HEIGHT, GLYPHS, GLYPH_WIDTH } from "./fo
 import { encode_png } from "./png.ts";
 
 /**
- * Renders the per-program social card for a share link: the syntax-highlighted
- * program, and — when the share link carries the author's run output — that
- * output underneath.
+ * The FALLBACK social-card renderer: a pure-Worker bitmap card, used when the
+ * Browser Run binding is unavailable or a browser screenshot fails.
  *
- * Runs in the Worker with no image stack: Shiki supplies token colours, a
- * public-domain 8x8 bitmap font supplies the glyphs, and `encode_png` writes
- * the result as an indexed-colour PNG. Nothing here needs satori, resvg, a
- * headless browser, or a canvas API.
+ * Shiki supplies token colours, a public-domain 8x8 bitmap font supplies the
+ * glyphs, and `encode_png` writes an indexed-colour PNG. The production path
+ * (`card_browser.ts`) renders the same content in a real browser with Fira
+ * Code; this one keeps share links working without that dependency.
  */
 
 const WIDTH = 1200;
@@ -46,7 +45,7 @@ interface Canvas {
 	index: Map<string, number>;
 }
 
-export async function render_code_card(
+export async function render_bitmap_card(
 	source: string,
 	output: string | undefined,
 	host: string,

@@ -1,6 +1,6 @@
 import type { ServerEndPoint } from "@torpor/build";
 
-import { render_code_card } from "../../../../lib/card.ts";
+import { type CardEnv, render_code_card } from "../../../../lib/card_browser.ts";
 import { decode_source } from "../../../../lib/share.ts";
 
 type CachesGlobal = { caches?: { default?: Cache } };
@@ -29,15 +29,24 @@ export default {
 		if (hit) return hit;
 
 		try {
-			const png = await render_code_card(source, output, event.url.host);
+			const env = (globalThis as { adapter?: { env?: CardEnv } }).adapter?.env;
+			const { png, fallback } = await render_code_card(
+				env,
+				event.url,
+				source,
+				output,
+				event.url.host,
+			);
 			const response = new Response(png, {
 				headers: {
 					"content-type": "image/png",
-					"cache-control": "public, max-age=31536000, immutable",
+					// A browser failure could be transient: let a fallback card be
+					// replaced (and retried) instead of caching it forever.
+					"cache-control": fallback ? "public, max-age=60" : "public, max-age=31536000, immutable",
 				},
 			});
 			const ctx = (globalThis as Adapter).adapter?.ctx;
-			if (cache && ctx) {
+			if (cache && ctx && !fallback) {
 				ctx.waitUntil(cache.put(event.request, response.clone()).catch(() => undefined));
 			}
 			return response;
