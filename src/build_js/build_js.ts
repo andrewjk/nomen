@@ -22,16 +22,19 @@ import runtime from "./runtime.ts";
  * structs → plain objects. Ownership and the audit runtime are native-memory
  * concerns with no JS analogue.
  *
- * The v1 subset covers literals, variables, arithmetic/comparison/logical
- * operators, casts, if/while/for, free and nested functions, structs
- * (constructor + field access + methods), string interpolation (including
- * the Format helpers), and Console I/O. Unsupported constructs fail at
- * runtime through `__unsupported` rather than producing wrong output.
+ * Covered: literals, variables, every operator, casts, if/switch/match (as
+ * statements and expressions), while/for (including `for ref`), free and
+ * nested functions, lambdas and closures, structs (value/owning, `#init`,
+ * methods, traits, generics), enums/bitsets, destructuring, tuples, string
+ * interpolation and custom format patterns, the native containers, and
+ * on-demand lowering of plain-Nomen library code. Constructs that need raw
+ * memory or concurrency fail at runtime through `__unsupported` rather than
+ * producing wrong output.
  */
 export default function build_js(root: BaseNode): BuildResult {
 	const status = create_status(root);
 	collect_types(root, status);
-	collect_allocations(root, status);
+	index_allocations(root, status);
 	build_root_node(root as RootNode, status);
 	// Library code referenced by the program is lowered on demand into its own
 	// top-level buffer (function declarations hoist, so it can precede `main()`).
@@ -46,7 +49,7 @@ export default function build_js(root: BaseNode): BuildResult {
 
 /** Index every checker-hoisted temp by name so `build_value_node` can inline
  *  its initializer at the reference site. */
-function collect_allocations(root: BaseNode, status: BuildStatus): void {
+function index_allocations(root: BaseNode, status: BuildStatus): void {
 	status.allocations = new Map();
 	const visit = (node: BaseNode): void => {
 		for (const allocation of (node as unknown as { allocations?: BaseNode[] }).allocations ?? []) {

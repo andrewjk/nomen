@@ -1,6 +1,6 @@
 # The Nomen Programming Language
 
-Nomen is a statically-typed, memory managed language that compiles to C and AArch64 assembly (macOS only for now).
+Nomen is a statically-typed, memory managed language that compiles to C, AArch64 assembly (macOS only for now), and JavaScript (run with Node).
 
 It's intended to make memory safe programming easier than it has traditionally been while maintaining a relatively small surface area.
 

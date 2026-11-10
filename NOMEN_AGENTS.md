@@ -18,6 +18,7 @@ Flags worth knowing:
 
 - `--in <path>` override the entry file/folder
 - `--arch c` emit C instead of AArch64 assembly
+- `--arch js` emit a JavaScript module and run it with Node
 - `--platform macos|ios|linux|android|windows|web` target platform
 - `--watch` rebuild on change
 - `-f <regex>` filter which test files run

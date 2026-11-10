@@ -79,7 +79,9 @@ output:
 - concurrency (`spawn`, `async`, `Thread`, `Fiber`, `Channel`, `Mutex`,
   `Atomic`, `Nursery`, `Task`) — the emitted program is synchronous;
 - raw memory (`unsafe`, pointer types, pointer indexing, `foreign func`,
-  `#arch` blocks, `Buffer` internals);
+  `#arch` blocks, `Buffer` internals) and the library types built on them:
+  `Buffer`, `StableList`, `LinkedList`, `JsonTree` (`Text.Json.parse`/
+  `stringify`), `Graph`;
 - GUI controls (`System::Controls`) — native AppKit only.
 
 `Random()` seeds from `Date.now() * 1_000_000` (millisecond precision).

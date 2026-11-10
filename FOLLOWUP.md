@@ -587,9 +587,9 @@ Recorded 2026-11-10. For `const v = match find([1, 2, 3], 2) { case .some(x) -> 
 the checker hoists the array argument to `_param_0` but attaches that
 allocation to the branch binding `x` instead of the match scrutinee. The C
 backend emits invalid C for this shape (`clang` error at the match/branch
-site); the JS backend works around it by scanning the emitted scrutinee text
-for `_param_N` names and emitting the referenced allocations before the
-scrutinee (`emit_referenced_allocations`). The same workaround covers
-if-expression conditions, switch case conditions, and match statements. Root
-fix belongs in the checker's allocation promotion (`src/check/utils/last_use.ts`)
-so both native backends get it.
+site); the JS backend is immune because it inlines every hoisted temp at its
+reference site (`build_value_node`) instead of declaring it at a statement
+boundary. Nested if-expressions also hit the C backend (`const s = if a -> x
+else -> if b -> y else -> z` produces invalid C). Root fix belongs in the
+checker's allocation promotion (`src/check/utils/last_use.ts`) and the C
+builder's statement hoisting.
