@@ -1,12 +1,12 @@
-const SAMPLE = `pub func main = () {
+const SAMPLE = `struct Point {
+	var int x
+	var int y
+}
+
+pub func main = () {
 	Console.write_line("Hello, Nomen!")
 
-	struct Point {
-		var int x
-		var int y
-	}
-
-	var Point p = Point(2, 3)
+	const Point p = Point(2, 3)
 	Console.write_line("p = (\\{p.x}, \\{p.y})")
 
 	for i of 1 .. 6 {
@@ -34,6 +34,8 @@ export default function ReplPage() {
 		errors: [] as ReplError[],
 		warnings: [] as ReplError[],
 		running: false,
+		view: "program" as "program" | "output",
+		runtime_error: "",
 		highlighted: "",
 		highlight_ready: false,
 	});
@@ -90,12 +92,22 @@ export default function ReplPage() {
 		worker = undefined;
 	}
 
-	function run() {
+	function is_narrow() {
+		return (
+			typeof window !== "undefined" &&
+			window.matchMedia("(max-width: 900px)").matches
+		);
+	}
+
+	/** Compile and run. `show_output` is false for the mount-time auto-run so
+	 *  a narrow screen still starts on the program. */
+	function run(show_output = true) {
 		if ($state.running) return;
 		stop_worker();
 		$state.running = true;
 		$state.errors = [];
 		$state.warnings = [];
+		$state.runtime_error = "";
 		$state.output = "";
 
 		void fetch("/api/compile", {
@@ -106,18 +118,23 @@ export default function ReplPage() {
 			.then((response) => response.json())
 			.then((result) => {
 				if (!result.ok) {
+					// Diagnostics belong to the program: bring it back into
+					// view on a narrow screen.
 					$state.errors = result.errors ?? [
 						{ message: "Compilation failed", line: 1, column: 1 },
 					];
+					$state.view = "program";
 					return;
 				}
 				$state.warnings = result.warnings ?? [];
 				execute(result.js);
+				if (show_output && is_narrow()) $state.view = "output";
 			})
 			.catch((error) => {
 				$state.errors = [
 					{ message: String(error?.message ?? error), line: 1, column: 1 },
 				];
+				$state.view = "program";
 			})
 			.finally(() => {
 				$state.running = false;
@@ -145,13 +162,8 @@ self.postMessage({ type: "done" });
 
 		timer = setTimeout(() => {
 			stop_worker();
-			$state.errors = [
-				{
-					message: `Stopped after ${TIMEOUT_MS / 1000}s (infinite loop?)`,
-					line: 1,
-					column: 1,
-				},
-			];
+			$state.runtime_error = `Stopped after ${TIMEOUT_MS / 1000}s (infinite loop?)`;
+			$state.view = "output";
 		}, TIMEOUT_MS);
 
 		worker.onmessage = (event: MessageEvent) => {
@@ -159,18 +171,16 @@ self.postMessage({ type: "done" });
 			if (message?.type === "out") {
 				$state.output += message.text;
 			} else if (message?.type === "error") {
-				$state.errors = [
-					{ message: String(message.message), line: 1, column: 1 },
-				];
+				$state.runtime_error = String(message.message);
+				$state.view = "output";
 			} else if (message?.type === "done") {
 				stop_worker();
 				URL.revokeObjectURL(url);
 			}
 		};
 		worker.onerror = (event: ErrorEvent) => {
-			$state.errors = [
-				{ message: event.message || "The program crashed", line: 1, column: 1 },
-			];
+			$state.runtime_error = event.message || "The program crashed";
+			$state.view = "output";
 			stop_worker();
 			URL.revokeObjectURL(url);
 		};
@@ -205,7 +215,7 @@ self.postMessage({ type: "done" });
 		<main
 			id="repl"
 			onmount={() => {
-				run();
+				run(false);
 				schedule_highlight(0);
 			}}
 		>
@@ -213,15 +223,15 @@ self.postMessage({ type: "done" });
 				<h1>Nomen <span>REPL</span></h1>
 				<p>
 					Write a Nomen program and run it. The System library is
-					imported automatically; output comes from <code>Console</code>.
+					imported automatically. Show output with <code>Console.write_line</code>.
 				</p>
 			</header>
 
-			<div id="repl-columns">
+			<div id="repl-columns" class={$state.view}>
 				<section id="repl-input">
 					<div class="pane-title">
 						<h2>Program</h2>
-						<button onclick={run} disabled={$state.running}>
+						<button onclick={() => run()} disabled={$state.running}>
 							{$state.running ? "Running…" : "Run ⌘⏎"}
 						</button>
 					</div>
@@ -244,45 +254,63 @@ self.postMessage({ type: "done" });
 							onkeydown={on_key_down}
 						/>
 					</div>
+
+					@if ($state.errors.length) {
+					<div class="errors">
+						<h3>Errors</h3>
+						<ul>
+							@for (let error of $state.errors) {
+								<li>
+									<span class="position">
+										{error.line}:{error.column}
+									</span>
+									{error.message}
+								</li>
+							}
+						</ul>
+					</div>
+					}
+
+					@if ($state.warnings.length) {
+					<div class="warnings">
+						<h3>Warnings</h3>
+						<ul>
+							@for (let warning of $state.warnings) {
+								<li>
+									<span class="position">
+										{warning.line}:{warning.column}
+									</span>
+									{warning.message}
+								</li>
+							}
+						</ul>
+					</div>
+					}
 				</section>
 
 				<section id="repl-output">
 					<div class="pane-title">
 						<h2>Output</h2>
+						<button
+							class="back-button"
+							onclick={() => {
+								$state.view = "program";
+							}}
+						>
+							← Program
+						</button>
 					</div>
 					<pre class="output">{$state.output}</pre>
 
-					@if ($state.errors.length) {
+					@if ($state.runtime_error) {
 						<div class="errors">
-							<h3>Errors</h3>
+							<h3>Runtime error</h3>
 							<ul>
-								@for (let error of $state.errors) {
-									<li>
-										<span class="position">
-											{error.line}:{error.column}
-										</span>
-										{error.message}
-									</li>
-								}
+								<li>{$state.runtime_error}</li>
 							</ul>
 						</div>
 					}
 
-					@if ($state.warnings.length) {
-						<div class="warnings">
-							<h3>Warnings</h3>
-							<ul>
-								@for (let warning of $state.warnings) {
-									<li>
-										<span class="position">
-											{warning.line}:{warning.column}
-										</span>
-										{warning.message}
-									</li>
-								}
-							</ul>
-						</div>
-					}
 				</section>
 			</div>
 		</main>

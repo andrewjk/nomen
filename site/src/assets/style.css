@@ -64,9 +64,34 @@ body {
 	align-items: stretch;
 }
 
+/* Only the one-pane narrow layout needs a way back from Output. */
+.back-button {
+	display: none;
+}
+
+/* Narrow screens show one pane at a time in the same grid cell: the program
+ * first, then the output after a successful run. `view` on the grid picks. */
 @media (max-width: 900px) {
 	#repl-columns {
 		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
+	}
+
+	#repl-input,
+	#repl-output {
+		grid-area: 1 / 1;
+	}
+
+	#repl-columns.program #repl-output {
+		display: none;
+	}
+
+	#repl-columns.output #repl-input {
+		display: none;
+	}
+
+	.back-button {
+		display: inline-flex;
 	}
 }
 
@@ -200,6 +225,15 @@ button:disabled {
 #editor.ready textarea {
 	color: transparent;
 	-webkit-text-fill-color: transparent;
+}
+
+/* The selection highlight is painted by the textarea, above the highlighted
+ * layer; keep it translucent so the selected code stays readable. */
+#editor textarea::selection {
+	background: rgba(138, 180, 248, 0.3);
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	text-shadow: none;
 }
 
 pre.output {
