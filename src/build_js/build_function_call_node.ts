@@ -1,15 +1,18 @@
 import { is_interp_name, parse_interp_name } from "../check/utils/interp_arg_kinds.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import { expr } from "./build_node.ts";
+import { struct_init_expression, struct_zero_object } from "./build_struct_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value, find_enum_case } from "./enums.ts";
 import { library_constructor } from "./library.ts";
 import {
 	is_native_library_type,
+	library_method_label,
 	needs_raw_memory,
 	queue_library_function,
 	queue_library_init,
+	queue_library_method,
 } from "./library_queue.ts";
 import { function_label, init_label } from "./names.ts";
 
@@ -54,6 +57,15 @@ export default function build_function_call_node(
 	const struct = status.structs.find((s) => s.name === name);
 	if (struct) {
 		const args = node.params.map((p) => expr(p, status));
+		// A user `#init` constructor: build the zeroed object and run the
+		// resolved init body (the field-based factory skips the body).
+		if (node.resolved_function?.name === "#init" && init_has_self(node.resolved_function)) {
+			const inits = struct.functions.filter(
+				(func) => func.name === "#init" && func.has_body && !func.is_generic && init_has_self(func),
+			);
+			const index = inits.indexOf(node.resolved_function);
+			if (index !== -1) return struct_init_expression(struct, index, args, status);
+		}
 		return `${node.mangled_name ?? init_label(name)}(${args.join(", ")})`;
 	}
 
@@ -71,6 +83,18 @@ export default function build_function_call_node(
 	if (library_struct) {
 		if (needs_raw_memory(library_struct)) {
 			return `__unsupported(${JSON.stringify(`library ${name}`)})`;
+		}
+		// A user-declared `#init` body runs from a construction IIFE. A
+		// synthesized positional `#init` (no `self`) is the field factory.
+		if (node.resolved_function?.name === "#init" && init_has_self(node.resolved_function)) {
+			queue_library_method(library_struct, node.resolved_function, status);
+			const label = library_method_label(library_struct, node.resolved_function);
+			const args_text = args.length ? `, ${args.join(", ")}` : "";
+			return `(() => { const __self = ${struct_zero_object(
+				library_struct,
+				status,
+				false,
+			)}; ${label}(__self${args_text}); return __self; })()`;
 		}
 		queue_library_init(library_struct, status);
 		return `${init_label(name)}(${args.join(", ")})`;
@@ -91,4 +115,11 @@ export default function build_function_call_node(
 		node.ref_param_indices,
 		(arg_exprs) => `${label}(${arg_exprs.join(", ")})`,
 	);
+}
+
+/** A hand-written `#init` takes `self`; the checker's synthesized positional
+ *  initializer (`#init = (field, …)`) does not, and the field factory covers
+ *  it. */
+function init_has_self(func: { params?: { is_self_param?: boolean }[] }): boolean {
+	return func.params?.[0]?.is_self_param === true;
 }

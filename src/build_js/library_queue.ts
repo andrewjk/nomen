@@ -90,6 +90,9 @@ export function library_method(
 /** The emitted JS label for a library method. Overloads (same name, different
  *  arity) get an arity suffix so the declarations stay distinct. */
 export function library_method_label(struct: StructNode, func: FunctionNode): string {
+	// `#init` bodies run from the construction IIFE; give them a label that
+	// cannot collide with the `<Struct>_init` factory.
+	if (func.name === "#init") return js_name(`${struct.name}_lib_init_${func.params.length}`);
 	const overloads = struct.functions.filter((f) => f.name === func.name && f.has_body);
 	if (overloads.length <= 1) return method_label(struct.name, func.name);
 	return js_name(`${struct.name}_${func.name}_${func.params.length}`);

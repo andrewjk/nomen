@@ -4,7 +4,7 @@ import type StructNode from "../nodes/StructNode.ts";
 import { boxed_param_signature, emit_ref_prologue } from "./build_function_node.ts";
 import { emit, expr, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
-import { init_label, js_name, method_label, type_label } from "./names.ts";
+import { init_body_label, init_label, js_name, method_label, type_label } from "./names.ts";
 
 /**
  * Emit a user struct: a constructor factory plus its methods.
@@ -43,17 +43,82 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		methods.push(`${js_name(func.name)}: ${method_label(node.name, func.name)}`);
 	}
 	emit(status, `const ${type_label(node.name)} = { ${methods.join(", ")} };`);
+
+	// `#init` bodies run from the constructor IIFE (see init_body_label); they
+	// are not part of the method table.
+	node.functions
+		.filter((func) => func.name === "#init" && func.has_body && !func.is_generic)
+		.forEach((func, index) => {
+			emit_method(node, func, status, init_body_label(node.name, index));
+		});
 }
 
-function emit_method(struct: StructNode, func: FunctionNode, status: BuildStatus): void {
+function emit_method(
+	struct: StructNode,
+	func: FunctionNode,
+	status: BuildStatus,
+	label?: string,
+): void {
 	const old_ref_params = status.ref_params;
 	status.ref_params = new Set();
 	const params = func.params.map((param) => boxed_param_signature(param, status)).join(", ");
-	emit(status, `function ${method_label(struct.name, func.name)}(${params}) {`);
+	emit(status, `function ${label ?? method_label(struct.name, func.name)}(${params}) {`);
 	status.indent += 1;
 	for (const param of func.params) emit_ref_prologue(param, status);
 	for (const statement of func.statements) stmt(statement, status);
 	status.indent -= 1;
 	emit(status, "}");
 	status.ref_params = old_ref_params;
+}
+
+/** The literal for a freshly-constructed struct before its `#init` runs:
+ *  declared field defaults, or the type's zero value. */
+export function struct_zero_object(
+	struct: StructNode,
+	status: BuildStatus,
+	include_type = true,
+): string {
+	const parts = include_type ? [`$type: ${type_label(struct.name)}`] : [];
+	for (const field of struct.fields) {
+		if (!field.name) continue;
+		const value = field.value ? expr(field.value, status) : zero_value(field.type?.name ?? "");
+		parts.push(`${field.name}: ${value}`);
+	}
+	return `{ ${parts.join(", ")} }`;
+}
+
+/** The same object with its `#init` body applied. Emited at the constructor
+ *  call site (the checker resolved which overload runs). */
+export function struct_init_expression(
+	struct: StructNode,
+	init_index: number,
+	args: string[],
+	status: BuildStatus,
+): string {
+	const args_text = args.length ? `, ${args.join(", ")}` : "";
+	return `(() => { const __self = ${struct_zero_object(struct, status)}; ${init_body_label(
+		struct.name,
+		init_index,
+	)}(__self${args_text}); return __self; })()`;
+}
+
+function zero_value(type_name: string): string {
+	switch (type_name) {
+		case "float":
+		case "float32":
+		case "float64":
+		case "ufloat":
+			return "0";
+		case "bool":
+			return "false";
+		case "char":
+			return '"\\u0000"';
+		case "string":
+			return '""';
+		case "":
+			return "undefined";
+		default:
+			if (type_name.startsWith("int") || type_name.startsWith("uint")) return "0n";
+			return "null";
+	}
 }

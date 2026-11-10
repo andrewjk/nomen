@@ -563,12 +563,10 @@ non-BMP input. Modeling strings as `Uint8Array` would fix it at the cost of
 making every JS-facing operation awkward; decide before the JS backend is
 treated as byte-compatible with the native backends.
 
-## JS backend: library `#init` constructors are not run
+## JS backend: `Random()` seeding is clock-precision limited
 
-Recorded 2026-11-10. `emit_library_init` (src/build_js/library_queue.ts) builds
-a lowered library struct from its declared field defaults and never executes
-the struct's `#init` body. For `Random` that means `Random()` is always seeded
-with `state = 0` (the `#init` that reads `Time.now_ns()` is skipped) while
-`Random(seed)` works by coincidence (the only field is `state`, and the
-explicit-seed `#init` just stores its argument). A general fix is to emit
-`#init` methods and call them from the factory.
+Recorded 2026-11-10 (updated): library `#init` bodies now run from a
+construction IIFE, so `Random()` seeds from `Time.now_ns()`; on the JS backend
+that is `Date.now() * 1_000_000` (millisecond precision), so `Random()`
+instances created within the same millisecond share a stream. Seeded
+construction (`Random(n)`) is fully deterministic.

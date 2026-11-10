@@ -1016,4 +1016,39 @@ Console.write("\\{a.x}\\n")
 			"7\n",
 		);
 	});
+
+	test("user #init constructor bodies run", async () => {
+		await js_output(
+			"js_user_init",
+			`
+struct P {
+	var int x
+	var int y
+	func #init = (self, int v) {
+		self.x = v * 2
+		self.y = v + 1
+	}
+}
+var P p = P(5)
+Console.write("\\{p.x} \\{p.y}\\n")
+`,
+			"10 6\n",
+		);
+	});
+
+	test("library #init bodies run (Random seeding)", async () => {
+		await js_output(
+			"js_lib_init",
+			`
+var Random seeded = Random(7)
+const int b = seeded.below(1000000) as int
+var Random again = Random(7)
+const int c = again.below(1000000) as int
+if b >= 0 && b == c {
+	Console.write("ok\\n")
+}
+`,
+			"ok\n",
+		);
+	});
 });

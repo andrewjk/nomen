@@ -87,3 +87,9 @@ export function init_label(struct_name: string): string {
 export function type_label(struct_name: string): string {
 	return js_name(`${struct_name}_type`);
 }
+
+/** The emitted JS name for a struct's `#init` body (called from the
+ *  constructor IIFE, not part of the method table). */
+export function init_body_label(struct_name: string, index: number): string {
+	return js_name(`${struct_name}_init_body_${index}`);
+}
