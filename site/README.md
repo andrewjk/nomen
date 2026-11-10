@@ -10,7 +10,9 @@ built-ins:
 
 - `site/scripts/bundle-core.ts` serializes `../core`'s type map into
   `src/lib/core-library.generated.ts` (`pnpm bundle:core`; `dev`/`build` run it
-  automatically).
+  automatically). GUI namespaces (`System::Controls`, native AppKit) are
+  excluded — they cannot run in a browser and are half the library's source, so
+  referencing one is a compile-time "unknown type".
 - `src/lib/fs-stub.ts` / `src/lib/path-shim.ts` replace `node:fs` / `node:path`
   for the compiler's Node-only code (library loading, `#embed_file`). The REPL
   rejects `#embed_file` and uses the embedded library, so neither is reached.
@@ -45,5 +47,7 @@ under a different Worker name.
 
 Compiling is CPU-bound (roughly 10–40 ms per run locally; the first request is
 slower because the Worker starts cold), so pick a Workers plan whose CPU limit
-comfortably covers a compile. The built Worker is ~750 kB gzipped and has no
-Node built-ins.
+comfortably covers a compile. The built Worker is ~300 kB gzipped (about 1.4 MB
+including static assets) and has no Node built-ins. The server bundle only
+imports the JavaScript backend — `build_js` directly, not the C/AArch64
+backends — which is what keeps it small.

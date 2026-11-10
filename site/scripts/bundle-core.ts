@@ -23,37 +23,49 @@ const out_file = path.join(repo, "site/src/lib/core-library.generated.ts");
 
 const library = get_library(core);
 const virtual_root = "/core";
+
+// The GUI namespaces (System::Controls) are native AppKit views — they can
+// never run in a browser, and they are half the library's source. Leaving them
+// out keeps the Worker small; referencing one is a compile-time "unknown type"
+// instead of a runtime unsupported-feature error.
+const DROPPED = /\/Controls\//;
 const to_virtual = (file: string): string =>
 	virtual_root + "/" + path.relative(core, file).split(path.sep).join("/");
 
 // One copy of each file's source; entries reference it by path.
+const kept = (entry: { path: string }): boolean => !DROPPED.test(entry.path);
+
 const files = new Map<string, string>();
 for (const entry of [...library.types.values(), ...library.functions.values()]) {
-	files.set(to_virtual(entry.path), entry.source);
+	if (kept(entry)) files.set(to_virtual(entry.path), entry.source);
 }
 
 const data = {
 	name: library.name,
 	dir: virtual_root,
 	files: Object.fromEntries([...files.entries()].sort(([a], [b]) => a.localeCompare(b))),
-	types: [...library.types].map(([name, entry]) => [
-		name,
-		{
-			name: entry.name,
-			path: to_virtual(entry.path),
-			deps: entry.deps,
-			...(entry.namespace !== undefined ? { namespace: entry.namespace } : {}),
-		},
-	]),
-	functions: [...library.functions].map(([name, entry]) => [
-		name,
-		{
-			name: entry.name,
-			path: to_virtual(entry.path),
-			deps: entry.deps,
-			...(entry.namespace !== undefined ? { namespace: entry.namespace } : {}),
-		},
-	]),
+	types: [...library.types]
+		.filter(([, entry]) => kept(entry))
+		.map(([name, entry]) => [
+			name,
+			{
+				name: entry.name,
+				path: to_virtual(entry.path),
+				deps: entry.deps,
+				...(entry.namespace !== undefined ? { namespace: entry.namespace } : {}),
+			},
+		]),
+	functions: [...library.functions]
+		.filter(([, entry]) => kept(entry))
+		.map(([name, entry]) => [
+			name,
+			{
+				name: entry.name,
+				path: to_virtual(entry.path),
+				deps: entry.deps,
+				...(entry.namespace !== undefined ? { namespace: entry.namespace } : {}),
+			},
+		]),
 	namespaces: [...library.namespaces].map(([namespace, names]) => [namespace, [...names]]),
 };
 

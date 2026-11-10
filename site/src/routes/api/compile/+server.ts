@@ -1,6 +1,6 @@
 import type { ServerEndPoint } from "@torpor/build";
 
-import build from "../../../../../src/build.ts";
+import build_js from "../../../../../src/build_js/build_js.ts";
 import parse from "../../../../../src/parse.ts";
 import { core_library } from "../../../lib/core.ts";
 
@@ -92,7 +92,7 @@ export default {
 			if (parsed.errors.length > 0) {
 				return json({ ok: false, errors: to_errors(parsed.errors, line_offset), warnings: [] });
 			}
-			const result = build(parsed.root, { arch: "js", js_target: "browser" });
+			const result = build_js(parsed.root, { target: "browser" });
 			if (result.errors && result.errors.length > 0) {
 				return json({ ok: false, errors: to_errors(result.errors, line_offset), warnings: [] });
 			}
