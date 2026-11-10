@@ -2,6 +2,7 @@ import { is_interp_name, parse_interp_name } from "../check/utils/interp_arg_kin
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value, find_enum_case } from "./enums.ts";
 import { library_constructor } from "./library.ts";
 import { function_label, init_label } from "./names.ts";
@@ -9,9 +10,11 @@ import { function_label, init_label } from "./names.ts";
 /**
  * Emit a JS expression for a call node:
  *  - interpolation helpers (`_string_interpolate_N[_kinds]`) → `__interp`;
+ *  - enum case constructions → tagged object literals;
  *  - struct constructors → the `<Struct>_init` factory;
- *  - free/nested functions → the checker's emission label.
- * Enum constructors and library constructors are outside the v1 subset.
+ *  - library containers (List/Map/Box/StringBuilder) → their JS values;
+ *  - free/nested functions → the checker's emission label (with `ref`
+ *    arguments boxed and copied back).
  */
 export default function build_function_call_node(
 	node: FunctionCallNode,
@@ -53,5 +56,13 @@ export default function build_function_call_node(
 	const library = library_constructor(name, args);
 	if (library !== undefined) return library;
 
-	return `${function_label(node.resolved_function ?? node)}(${args.join(", ")})`;
+	// A free (or nested) function call: `ref` arguments are boxed and copied
+	// back by the wrapper.
+	const label = function_label(node.resolved_function ?? node);
+	return call_with_refs(
+		status,
+		node.params,
+		node.ref_param_indices,
+		(arg_exprs) => `${label}(${arg_exprs.join(", ")})`,
+	);
 }

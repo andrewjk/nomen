@@ -21,6 +21,9 @@ export default interface BuildStatus {
 	enums: EnumNode[];
 	/** Monotonic counter for generated temp names (`__match_0`, …). */
 	temp: number;
+	/** The CURRENT function's `ref` parameter names (boxed in JS); the
+	 *  assignment builder writes through the box. */
+	ref_params?: Set<string>;
 	errors: CompileError[];
 }
 

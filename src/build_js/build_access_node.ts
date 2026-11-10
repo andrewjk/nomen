@@ -3,6 +3,7 @@ import type AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value } from "./enums.ts";
 import { list_method, map_method, string_builder_method } from "./library.ts";
 import { method_label } from "./names.ts";
@@ -65,7 +66,14 @@ function build_method_call(
 			if (case_index !== -1) return enum_case_value(enum_node, case_index, args);
 		}
 		const struct = status.structs.find((s) => s.name === target_type);
-		if (struct) return `${method_label(target_type, name)}(${args.join(", ")})`;
+		if (struct) {
+			return call_with_refs(
+				status,
+				access.params,
+				access.ref_param_indices,
+				(arg_exprs) => `${method_label(target_type, name)}(${arg_exprs.join(", ")})`,
+			);
+		}
 		return unsupported(`${target_type}.${name}`);
 	}
 
@@ -159,7 +167,13 @@ function build_method_call(
 
 	const struct = status.structs.find((s) => s.name === target_type);
 	if (struct) {
-		return `${method_label(target_type, name)}(${[expr(target, status), ...args].join(", ")})`;
+		return call_with_refs(
+			status,
+			access.params,
+			access.ref_param_indices,
+			(arg_exprs) =>
+				`${method_label(target_type, name)}(${[expr(target, status), ...arg_exprs].join(", ")})`,
+		);
 	}
 	return unsupported(`${target_type}.${name}`);
 }

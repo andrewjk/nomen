@@ -1,7 +1,7 @@
 import type DeclarationNode from "../nodes/DeclarationNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
-import { param_signature } from "./build_function_node.ts";
+import { boxed_param_signature, emit_ref_prologue } from "./build_function_node.ts";
 import { emit, expr, stmt } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { init_label, js_name, method_label } from "./names.ts";
@@ -39,10 +39,14 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 }
 
 function emit_method(struct: StructNode, func: FunctionNode, status: BuildStatus): void {
-	const params = func.params.map(param_signature).join(", ");
+	const old_ref_params = status.ref_params;
+	status.ref_params = new Set();
+	const params = func.params.map((param) => boxed_param_signature(param, status)).join(", ");
 	emit(status, `function ${method_label(struct.name, func.name)}(${params}) {`);
 	status.indent += 1;
+	for (const param of func.params) emit_ref_prologue(param, status);
 	for (const statement of func.statements) stmt(statement, status);
 	status.indent -= 1;
 	emit(status, "}");
+	status.ref_params = old_ref_params;
 }

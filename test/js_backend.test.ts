@@ -585,4 +585,84 @@ Console.write("\\{total:>14#,##0.00}\\n")
 			"1,234,567 -9,876,543\n0.00 1234567.00\n1,234,567.89 12.5%\n(9,876,543.00)\n$1,234,567.00 #1234567\n  1,234,567.89\n",
 		);
 	});
+
+	test("ref parameters write back to the caller", async () => {
+		await js_output(
+			"js_ref_params",
+			`
+func makeFive = (ref int x) {
+	x = 5
+}
+func inner = (ref int x) {
+	x = x + 1
+}
+func outer = (ref int x) {
+	x = x + 1
+	inner(ref x)
+}
+var int a = 0
+makeFive(ref a)
+var int b = 0
+outer(ref b)
+Console.write("\\{a} \\{b}\\n")
+`,
+			"5 2\n",
+		);
+	});
+
+	test("for ref: element write-back", async () => {
+		await js_output(
+			"js_for_ref",
+			`
+struct P {
+	var int n
+}
+var int[] xs = [1, 2, 3]
+for ref x of xs {
+	x = x * 10
+}
+for x of xs {
+	Console.write("\\{x},")
+}
+Console.write("\\n")
+var P[] ps = [P(1), P(2)]
+for ref p of ps {
+	p.n = p.n * 10
+}
+Console.write("\\{ps.at(0).n} \\{ps.at(1).n}\\n")
+`,
+			"10,20,30,\n10 20\n",
+		);
+	});
+
+	test("ref array parameter and ref operand on a struct method", async () => {
+		await js_output(
+			"js_ref_array",
+			`
+func fill = (var ref int[] xs, int v) {
+	for ref x of xs {
+		x = v
+	}
+}
+struct Counter {
+	var int n
+	pub func bump = (ref self, ref int amount) {
+		self.n = self.n + amount
+		amount = amount * 2
+	}
+}
+var int[] a = [1, 2, 3]
+fill(ref a, 7)
+for x of a {
+	Console.write("\\{x},")
+}
+Console.write("\\n")
+var Counter c = Counter(0)
+var int step = 3
+c.bump(ref step)
+Console.write("\\{c.n} \\{step}\\n")
+`,
+			"7,7,7,\n3 6\n",
+		);
+	});
 });
