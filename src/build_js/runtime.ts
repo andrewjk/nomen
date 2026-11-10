@@ -53,6 +53,34 @@ function __interp(pattern, kinds, ...args) {
 	return out;
 }
 
+function __string_at(text, i) {
+	const index = Number(i);
+	if (index < 0 || index >= text.length) __panic("index out of range");
+	return text.at(index);
+}
+
+function __string_at_or(text, i, fallback) {
+	const index = Number(i);
+	if (index < 0 || index >= text.length) return fallback;
+	return text.at(index);
+}
+
+function __char_code_at_or(text, i, fallback) {
+	const index = Number(i);
+	if (index < 0 || index >= text.length) return fallback;
+	return BigInt(text.charCodeAt(index));
+}
+
+function __math_power(base, exp) {
+	let result = 1n;
+	let n = exp;
+	while (n > 0n) {
+		result = result * base;
+		n = n - 1n;
+	}
+	return result;
+}
+
 function __list_at(list, i) {
 	const index = Number(i);
 	if (index < 0 || index >= list.length) __panic("index out of range");

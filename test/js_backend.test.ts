@@ -487,4 +487,82 @@ Console.write("\\{n.__value}\\n")
 			"5\n7\n",
 		);
 	});
+
+	test("Option and Result: generic library enums with match", async () => {
+		await js_output(
+			"js_option_result",
+			`
+func find = (int[] xs, int want, out Option<int>) {
+	for x of xs {
+		if x == want {
+			return Option.some(x)
+		}
+	}
+	return Option.none
+}
+func half = (int n, out Result<int, string>) {
+	if n % 2 == 0 {
+		return Result.ok(n / 2)
+	}
+	return Result.error("odd")
+}
+var int[] xs = [3, 8, 1]
+match find(xs, 8) {
+	case .some(v) -> Console.write("some \\{v}")
+	case .none -> Console.write("none")
+}
+Console.write(" ")
+match half(8) {
+	case .ok(v) -> Console.write("ok \\{v}")
+	case .error(e) -> Console.write("err \\{e}")
+}
+Console.write("\\n")
+`,
+			"some 8 ok 4\n",
+		);
+	});
+
+	test("anonymous structs and tuples", async () => {
+		await js_output(
+			"js_tuples",
+			`
+var x = [a = 1, b = 2]
+func divmod = (int a, out [int, int]) {
+	return [a / 5, a % 5]
+}
+var [q, r] = divmod(17)
+Console.write("\\{x.a} \\{x.b} \\{q} \\{r}\\n")
+`,
+			"1 2 3 2\n",
+		);
+	});
+
+	test("string methods", async () => {
+		await js_output(
+			"js_string_methods",
+			`
+var string s = "Hello, World"
+Console.write("\\{s.contains("World")} \\{s.starts_with("Hell")} \\{s.index_of("World")}\\n")
+Console.write("\\{s.to_lowercase()} \\{s.to_uppercase()}\\n")
+`,
+			"true true 7\nhello, world HELLO, WORLD\n",
+		);
+	});
+
+	test("Math.power", async () => {
+		await js_output("js_math", `Console.write("\\{Math.power(2, 10)}\\n")`, "1024\n");
+	});
+
+	test("swap assignment revalidates the source", async () => {
+		await js_output(
+			"js_swap",
+			`
+var int a = 1
+var int b = 2
+a = b swap 3
+Console.write("\\{a} \\{b}\\n")
+`,
+			"2 3\n",
+		);
+	});
 });

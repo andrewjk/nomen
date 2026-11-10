@@ -58,6 +58,7 @@ function build_method_call(
 	if (access.is_static) {
 		if (target_type === "Console") return `Console_${name}(${args.join(", ")})`;
 		if (target_type === "Format") return `Format_${name}(${args.join(", ")})`;
+		if (target_type === "Math" && name === "power") return `__math_power(${args.join(", ")})`;
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === name);
@@ -76,13 +77,43 @@ function build_method_call(
 			case "length":
 				return `BigInt(${text}.length)`;
 			case "at":
-				return `${text}.at(Number(${args[0]}))`;
+			case "at_or_panic":
+				return `__string_at(${text}, ${args[0]})`;
+			case "at_or":
+				return `__string_at_or(${text}, ${args[0]}, ${args[1]})`;
 			case "slice":
+			case "substring":
 				return `${text}.slice(Number(${args[0]}), Number(${args[1]}))`;
 			case "copy":
 				return text;
 			case "trim":
 				return `${text}.trim()`;
+			case "trim_start":
+				return `${text}.replace(/^\\s+/, "")`;
+			case "trim_end":
+				return `${text}.replace(/\\s+$/, "")`;
+			case "to_lowercase":
+				return `${text}.toLowerCase()`;
+			case "to_uppercase":
+				return `${text}.toUpperCase()`;
+			case "contains":
+				return `${text}.includes(${args[0]})`;
+			case "starts_with":
+				return `${text}.startsWith(${args[0]})`;
+			case "ends_with":
+				return `${text}.endsWith(${args[0]})`;
+			case "index_of":
+				return `BigInt(${text}.indexOf(${args[0]}))`;
+			case "index_of_from":
+				return `BigInt(${text}.indexOf(${args[0]}, Number(${args[1]})))`;
+			case "replace_first":
+				return `${text}.replace(${args[0]}, ${args[1]})`;
+			case "replace_all":
+				return `${text}.replaceAll(${args[0]}, ${args[1]})`;
+			case "char_code_at":
+				return `BigInt(${text}.charCodeAt(Number(${args[0]})))`;
+			case "char_code_at_or":
+				return `__char_code_at_or(${text}, ${args[0]}, ${args[1]})`;
 		}
 		return unsupported(`string.${name}`);
 	}
