@@ -9,6 +9,38 @@
 
 
 
+
+## 0.10.0
+<sub>2026-11-10</sub>
+
+-  *(minor)*
+  Feat: declared field sets on ref params — `ref x { fields }` declares the fields a `ref` parameter may displace, enabling field-scoped borrow invalidation. Bodies are verified against the set, trait conformers must narrow it, and editor quick fixes add or extend it. Lints name the fields an un-annotated ref displaces, suggest `{}` for refs that displace nothing (so calls keep callers' borrows alive), suggest taking copyable non-mutating refs by value, and suggest bare `self` for un-mutated `ref self` receivers — each with a local quick fix where one exists. Trait method declarations carry the contract, generic-struct templates resolve their own fields, and the bundled System library declares a set on every concrete `ref` parameter, so calls into `core/System` invalidate precisely (trait receivers and primitive mutators stay conservative wildcards).
+-  *(minor)*
+  View-field staleness is per-field: mutating a view source poisons only the fields it sourced (declared-effects attribution); copies inherit staleness; unattributable merges keep the wholesale fallback
+-  *(minor)*
+  Place-scoped List element borrows: slot writes (set/set_or_panic) invalidate only the places they displace; i != j guard facts; sibling-slot borrows survive
+-  *(minor)*
+  Aliasing relaxation: two aliased ref params with disjoint declared field sets are accepted; wildcards and ownership params keep the rejection
+-  *(minor)*
+  Field-path bounds contracts discharge: guard facts consulted for path receivers (flipped literal + exact name), synthetic-self path keys, dotted-receiver shrink narrowing
+-  *(minor)*
+  Fix path-fact leak: comparison evaluator consults the base's shared bound arrays only for bare right sides; dotted paths use their path entry
+-  *(minor)*
+  LinkedList/Tree bounds discharge: Tree gains at_or/at_or_panic; count-keyed exact lengths (fresh=0, add=+1, setters preserve) with .count facts; param/return contracts forward exact lengths
+-  *(patch)* - Guard Task result reads on empty handles; drop dead pthread_join fields
+-  *(patch)*
+  Fix containers zeroing non-owning value-struct arguments — `List.push`, `Buffer`, `Arena`, `Set`, `Map` and `LinkedList` now copy handle-like elements (a legal bare argument to a `mv` parameter) instead of taking and zeroing the caller's copy (`T_TAKES_OWNERSHIP`).
+-  *(patch)*
+  Fix symbol tokens carrying the preceding word's source offset — a word-adjacent symbol (e.g. the `)` after `nothing`) was anchored one token behind, shifting symbol-anchored error positions and editor offsets.
+-  *(patch)*
+  Fix the lint pass being suppressed by internal errors on synthesized nodes (`start: -1`) — warnings now run whenever the checker reports no user-addressable errors, so `nomen check` surfaces them for programs with string-field structs and auto-derived `copy` bodies. Also exempts the synthesized `copy` field store from the copy-out-of-a-field rejection (it strdups by design), and adds a `Use 'const'` quick fix to the var-never-changed warning.
+-  *(patch)* - Fix first-check string-field copy errors
+-  *(patch)* - Reject double start on Thread/Fiber (null-write guard)
+-  *(patch)* - Reset the window close-forced latch after a forced close
+-  *(patch)* - Copy missing checker stamps in clone_status/clone_node
+-  *(patch)* - Maintain BigInt sign through arithmetic; sign-aware cmp
+-  *(patch)* - Reconcile branch-local moves into the enclosing scope
+
 ## 0.9.0
 <sub>2026-11-06</sub>
 
