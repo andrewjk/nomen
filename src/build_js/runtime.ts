@@ -88,6 +88,18 @@ function __dispatch(self, name, ...args) {
 	return fn(self, ...args);
 }
 
+function __set_get(set, value) {
+	if (!set.has(value)) __panic("set value not found");
+	return set.get(value);
+}
+
+function __array_with(value, count) {
+	const n = Number(count);
+	const out = [];
+	for (let i = 0; i < n; i++) out.push(value);
+	return out;
+}
+
 function __list_at(list, i) {
 	const index = Number(i);
 	if (index < 0 || index >= list.length) __panic("index out of range");

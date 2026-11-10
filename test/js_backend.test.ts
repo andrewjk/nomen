@@ -795,4 +795,57 @@ Console.write("\\{same} \\{diff} \\{s}\\n")
 			"true true Point(x=1, y=2)\n",
 		);
 	});
+
+	test("Set: add, has, get_or, remove, copy, length", async () => {
+		await js_output(
+			"js_set",
+			`
+var Set<int> s = Set<int>()
+s.add(1)
+s.add(2)
+s.add(2)
+Console.write("\\{s.length} \\{s.has(1)} \\{s.has(9)}\\n")
+s.remove(1)
+var Set<int> t = s.copy()
+t.add(7)
+Console.write("\\{s.length} \\{s.get_or(9, 42)} \\{t.length}\\n")
+`,
+			"2 true false\n1 42 2\n",
+		);
+	});
+
+	test("Array<T> constructor and Array.with", async () => {
+		await js_output(
+			"js_array_ctor",
+			`
+const ints = Array<int>(1, 2, 3)
+const zeros = Array.with(0, 3)
+Console.write("\\{ints.length} \\{zeros.at(2)} \\{zeros.length}\\n")
+`,
+			"3 0 3\n",
+		);
+	});
+
+	test("nullable scalars and int-valued length comparisons", async () => {
+		await js_output(
+			"js_nullable",
+			`
+var int? x = null
+var string? name = null
+if x == null {
+	Console.write("none")
+}
+if name == null {
+	Console.write("!")
+}
+Console.write("\\n")
+x = 5
+var int[] xs = [1, 2, 3]
+if xs.length == 3 {
+	Console.write("\\{x}\\n")
+}
+`,
+			"none!\n5\n",
+		);
+	});
 });

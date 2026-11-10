@@ -5,7 +5,7 @@ import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import call_with_refs from "./call_with_refs.ts";
 import { enum_case_value } from "./enums.ts";
-import { list_method, map_method, string_builder_method } from "./library.ts";
+import { list_method, map_method, set_method, string_builder_method } from "./library.ts";
 import { method_label } from "./names.ts";
 import { kind_of, type_name_of } from "./types.ts";
 
@@ -46,8 +46,18 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 		if (access.name === "length" && target_type === "Map") {
 			return `BigInt(${expr(node.target, status)}.size)`;
 		}
+		if (access.name === "length" && target_type === "Set") {
+			return `BigInt(${expr(node.target, status)}.size)`;
+		}
 		if (access.name === "length" && target_type === "List") {
 			return `BigInt(${expr(node.target, status)}.length)`;
+		}
+		// A plain array/string `.length` is a JS number; Nomen's is an int.
+		if (access.name === "length") {
+			const target_kind = kind_of(node.target);
+			if (target_kind === "array" || target_kind === "string") {
+				return `BigInt(${expr(node.target, status)}.length)`;
+			}
 		}
 		return `${expr(node.target, status)}.${access.name}`;
 	}
@@ -72,6 +82,7 @@ function build_method_call(
 		if (target_type === "Console") return `Console_${name}(${args.join(", ")})`;
 		if (target_type === "Format") return `Format_${name}(${args.join(", ")})`;
 		if (target_type === "Math" && name === "power") return `__math_power(${args.join(", ")})`;
+		if (target_type === "Array" && name === "with") return `__array_with(${args.join(", ")})`;
 		const enum_node = status.enums.find((e) => e.name === target_type);
 		if (enum_node) {
 			const case_index = enum_node.cases.findIndex((c) => c.name === name);
@@ -162,6 +173,10 @@ function build_method_call(
 	// `to_string` is a take, not a rendering.
 	if (target_type === "List") {
 		const mapped = list_method(name, expr(target, status), args);
+		if (mapped !== undefined) return mapped;
+	}
+	if (target_type === "Set") {
+		const mapped = set_method(name, expr(target, status), args);
 		if (mapped !== undefined) return mapped;
 	}
 	if (target_type === "Map") {

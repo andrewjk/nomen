@@ -4,6 +4,7 @@
  * containers map onto JS representations:
  *
  *   List<T>        → a JS array
+ *   Set<T>         → a JS Set
  *   Map<K, V>      → a JS Map
  *   Box<T>         → `{ __value }` (the checker rewrites transparent access
  *                    `box.f` to `box.__value.f`)
@@ -19,6 +20,9 @@
 export function library_constructor(name: string, args: string[]): string | undefined {
 	if (name === "List" || name.startsWith("List_")) {
 		return args.length ? `[${args.join(", ")}]` : "[]";
+	}
+	if (name === "Set" || name.startsWith("Set_")) {
+		return "new Set()";
 	}
 	if (name === "Map" || name.startsWith("Map_")) {
 		return args.length ? `new Map(${args[0]})` : "new Map()";
@@ -55,6 +59,28 @@ export function list_method(name: string, list: string, args: string[]): string 
 			return `${list}.slice()`;
 		case "clear":
 			return `(${list}.length = 0)`;
+	}
+	return undefined;
+}
+
+/** A method call on a `Set<T>` receiver (a JS Set). */
+export function set_method(name: string, set: string, args: string[]): string | undefined {
+	switch (name) {
+		case "add":
+			return `${set}.add(${args[0]})`;
+		case "has":
+			return `${set}.has(${args[0]})`;
+		case "get":
+		case "get_or_panic":
+			return `__set_get(${set}, ${args[0]})`;
+		case "get_or":
+			return `(${set}.has(${args[0]}) ? ${set}.get(${args[0]}) : ${args[1]})`;
+		case "remove":
+			return `${set}.delete(${args[0]})`;
+		case "copy":
+			return `new Set(${set})`;
+		case "length":
+			return `BigInt(${set}.size)`;
 	}
 	return undefined;
 }
