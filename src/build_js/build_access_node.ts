@@ -189,6 +189,8 @@ function build_method_call(
 				return `${list}.push(${stored_args(access.params, status)[0]})`;
 			case "pop":
 				return `${list}.pop()`;
+			case "slice":
+				return `${list}.slice(Number(${args[0]}), Number(${args[1]}))`;
 			case "copy":
 				return `${list}.slice()`;
 		}

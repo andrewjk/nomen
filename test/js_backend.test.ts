@@ -1145,4 +1145,27 @@ Console.write("\\{c.length} \\{Utf8.char_count("héllo")} \\{e} \\{P(7).hash() =
 			"4 5 é true\n",
 		);
 	});
+
+	test("views (string and array slices), generic and anonymous enums", async () => {
+		await js_output(
+			"js_views",
+			`
+enum Pair<T> {
+	case both(T a, T b)
+	case none
+}
+const string str = "hello world"
+view v = str.slice(0, 5)
+const int[] nums = [10, 20, 30, 40, 50]
+view s = nums.slice(1, 4)
+var Pair<int> p = Pair.both(1, 2)
+match p {
+	case .both(a, b) -> Console.write("\\{a} \\{b} ")
+	case .none -> Console.write("none ")
+}
+Console.write("\\{v.to_string()} \\{v.length} \\{s.length} \\{s.at(2)}\\n")
+`,
+			"1 2 hello 5 3 40\n",
+		);
+	});
 });

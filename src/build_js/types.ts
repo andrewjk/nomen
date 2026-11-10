@@ -58,7 +58,9 @@ export function kind_of(node: BaseNode | undefined): ValueKind {
 	const t = stamped_type(node);
 	if (!t) return "other";
 	if (t.is_array) return "array";
-	if (t.is_view && t.name === "string") return "string";
+	// A `view` slice is a borrowed array except for string/char views (a JS
+	// string is the representation for both).
+	if (t.is_view) return t.name === "string" || t.name === "char" ? "string" : "array";
 	const info = get_built_in_type(t.name);
 	switch (info?.kind) {
 		case "int":
