@@ -684,9 +684,15 @@ pub struct Format {
 		if Format.pat_has_percent(pattern) {
 			mag = mag * 100
 		}
-		// The digit string passes as a call result (not a local at its last
-		// use) so the boundary keeps it a borrow the call site anchors.
-		return Format.pat_render_all(pattern, neg, Format.pat_digits10(mag), "")
+		// The digit string stays a named local on purpose: a plain `string`
+		// parameter is a borrow, so this local must free at scope exit, and
+		// the per-function ownership sets must isolate it from the
+		// same-named `const string digits` locals in int_base/uint_base
+		// (name-keyed marks bleeding across library methods suppressed this
+		// free — FOLLOWUP receipt; displaced_free.test.ts pins the class).
+		var string digits = Format.pat_digits10(mag)
+		var string rendered = Format.pat_render_all(pattern, neg, digits, "")
+		return rendered
 	}
 
 	// Unsigned twin of int_pattern — no sign, no reinterpretation.

@@ -549,14 +549,3 @@ Rules of thumb:
   processes — the gap is not a QoS/E-core placement effect. Exact
   attribution (P-core contention with the desktop session's load, or
   sustained-load frequency state on a fanless Air) needs `sudo powermetrics`.
-
-### Last-use move of an owned local into a borrow string parameter leaks
-
-`var string digits = Format.pat_digits10(mag)` followed by a single use
-`Format.pat_render_all(pattern, neg, digits, "")` — the local at its LAST
-use was passed into a plain `string` (borrow) parameter with ownership
-transferred, and neither side freed it (a silent owned→borrow move at the
-boundary). Worked around by passing the call RESULT inline instead of a
-local (`Format.pat_render_all(pattern, neg, Format.pat_digits10(mag), "")`),
-which anchors correctly. The last-use pass should either keep the
-borrow (no move) or stamp the callee-side free for same-family params.

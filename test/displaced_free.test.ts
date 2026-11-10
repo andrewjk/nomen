@@ -136,6 +136,43 @@ Console.write_line(s)
 `,
 		expected: "literal\nview\n",
 	},
+	{
+		// Issue: an inline call result passed to an INTERNAL string param was
+		// neither hoisted nor freed. The checker-hoisted temp must anchor and
+		// free it like any owned argument.
+		name: "call result into an internal string param (inline, not hoisted)",
+		body: `
+var sb = StringBuilder()
+sb.append_string(Format.pad("x", 3))
+Console.write_line(sb.to_string())
+`,
+		expected: "  x\n",
+	},
+	{
+		// Issue: the name-keyed string-ownership sets bled across struct
+		// methods — a `const string digits` borrow mark in one method
+		// suppressed the auto-free of an owned `digits` local in a sibling
+		// (the int_base/int_pattern shape). Both must free correctly.
+		name: "same-named string locals across struct methods stay isolated",
+		body: `
+struct Owner {
+	pub func show = (self) {
+		const string digits = "0123456789"
+		Console.write_line(digits)
+	}
+	pub func take = (self, string seed) {
+		var string digits = Format.pad(seed, 6)
+		var string rendered = digits.copy()
+		Console.write_line(rendered)
+	}
+}
+
+var Owner o = Owner()
+o.show()
+o.take("ab")
+`,
+		expected: "0123456789\n    ab\n",
+	},
 ];
 
 describe("displaced free on owned-string reassignment", () => {

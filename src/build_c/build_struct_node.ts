@@ -839,6 +839,19 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.ref_class_param_types = new Map();
 		status.scoped_declarations = enter_c_scope(status);
 		status.c_borrow_only_strings = scan_borrow_only_strings(func);
+		// String-ownership sets are name-keyed and must be per-function, like
+		// build_function_node's resets: `const string digits = "0123…"` in
+		// int_base/uint_base recorded a borrow-only mark that bled into the
+		// UNRELATED local `digits` of the later int_pattern — its auto-free
+		// was suppressed (borrowed strings are never freed) and every call
+		// leaked the displaced value. Save/restore so each function sees only
+		// its own marks.
+		const old_string_borrow_vars = status.string_borrow_vars;
+		status.string_borrow_vars = new Set();
+		const old_moved_string_vars = status.moved_string_vars;
+		status.moved_string_vars = new Set();
+		const old_owned_string_vars = status.owned_string_vars;
+		status.owned_string_vars = new Set();
 		// Shared with the aarch64 backend (see build_function_node): force
 		// heap ownership for string vars that receive a heap value later.
 		status.force_heap_strings = scan_force_heap_strings(func.statements ?? [], status.structs);
@@ -1180,6 +1193,9 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.ref_local_vars = old_ref_locals;
 		status.ref_slot_vars = old_slot_locals;
 		status.variable_types = old_variable_types;
+		status.string_borrow_vars = old_string_borrow_vars;
+		status.moved_string_vars = old_moved_string_vars;
+		status.owned_string_vars = old_owned_string_vars;
 	}
 	status.current_struct = old_current_struct;
 
