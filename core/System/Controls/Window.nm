@@ -1136,10 +1136,11 @@ pub mv struct Window: Control {
 		```
 	}
 
-	// The default Dock icon: the Nomen logo (core/assets/nomen.png,
-	// rasterized from the SVG by the site's icon script) — embedded at
-	// library build time. `run` applies it at startup; call this directly
-	// in manual-loop apps that don't go through run.
+	// The default Dock icon: the Nomen logo (core/assets/nomen.png, a
+	// full-bleed square rasterized from the SVG by the site's icon script)
+	// — embedded at library build time and laid out by set_icon. `run`
+	// applies it at startup; call this directly in manual-loop apps that
+	// don't go through run.
 	pub func apply_default_icon = () {
 		Window.set_icon(#embed_file("assets/nomen.png"))
 	}
@@ -1471,36 +1472,123 @@ pub mv struct Window: Control {
 	// disarmed right after. Left armed it is process-global — every LATER
 	// red-button close (another window, a later run loop) would silently
 	// bypass App.close_requested forever.
-	// Replace the default Nomen Dock icon with the app's own (PNG bytes —
-	// usually an `#embed_file` literal). App-wide on macOS: every window
-	// shares the single Dock tile, so this is static for call-site
+	// Replace the Dock icon with the app's own art (PNG bytes — usually an
+	// `#embed_file` literal). AppKit draws a runtime icon image as-is (Tahoe
+	// only masks its outer bounds), so full-bleed art renders edge-to-edge
+	// and looks oversized beside native icons. Normalise onto Apple's
+	// app-icon grid first: aspect-fit the art into an 824px squircle body
+	// centred on a transparent 1024px canvas. Any square source works; pass
+	// raw complete art, not a pre-masked icon. App-wide on macOS: every
+	// window shares the single Dock tile, so this is static for call-site
 	// ergonomics (`Window.set_icon(png)`).
 	pub func set_icon = (string png) {
 		```
 		#arch: c
 		#platform: macos
+		#include <math.h>
 		id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
 			(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
 			(const void *)png.ptr, (unsigned long)png.len);
-		id img = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
-		img = ((id(*)(id, SEL, id))objc_msgSend)(img, sel_registerName("initWithData:"), data);
-		if (img) {
-			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), img);
+		id source = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+		source = ((id(*)(id, SEL, id))objc_msgSend)(source, sel_registerName("initWithData:"), data);
+		if (!source) return;
+
+		const double canvas = 1024.0;
+		const double body = 824.0;
+		const double inset = (canvas - body) / 2.0;
+		id image = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+		image = ((id(*)(id, SEL, NSSize))objc_msgSend)(image, sel_registerName("initWithSize:"), NSMakeSize(canvas, canvas));
+		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("lockFocus"));
+		((void(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColor"), sel_registerName("clearColor")),
+			sel_registerName("set"));
+		NSRectFill(NSMakeRect(0.0, 0.0, canvas, canvas));
+
+		// Squircle: a superellipse (n = 5) matching Apple's continuous
+		// corners, fitted to the 824px body.
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBezierPath"), sel_registerName("bezierPath"));
+		for (int step = 0; step < 240; step++) {
+			const double angle = ((double)step / 240.0) * 6.283185307179586;
+			const double cos_angle = cos(angle);
+			const double sin_angle = sin(angle);
+			const double x = canvas / 2.0 + (body / 2.0) * (cos_angle < 0.0 ? -pow(-cos_angle, 0.4) : pow(cos_angle, 0.4));
+			const double y = canvas / 2.0 + (body / 2.0) * (sin_angle < 0.0 ? -pow(-sin_angle, 0.4) : pow(sin_angle, 0.4));
+			if (step == 0) {
+				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("moveToPoint:"), NSMakePoint(x, y));
+			} else {
+				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("lineToPoint:"), NSMakePoint(x, y));
+			}
 		}
+		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("closePath"));
+		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("addClip"));
+
+		// Aspect-fit the source art inside the body (square icons fill it).
+		const NSSize source_size = ((NSSize(*)(id, SEL))objc_msgSend)(source, sel_registerName("size"));
+		const double longest = source_size.width > source_size.height ? source_size.width : source_size.height;
+		const double scale = longest > 0.0 ? body / longest : 1.0;
+		const double width = source_size.width * scale;
+		const double height = source_size.height * scale;
+		((void(*)(id, SEL, NSRect))objc_msgSend)(
+			source, sel_registerName("drawInRect:"),
+			NSMakeRect(inset + (body - width) / 2.0, inset + (body - height) / 2.0, width, height));
+		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("unlockFocus"));
+
+		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), image);
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
+		#include <math.h>
 		id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
 			(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
 			(const void *)png.ptr, (unsigned long)png.len);
-		id img = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
-		img = ((id(*)(id, SEL, id))objc_msgSend)(img, sel_registerName("initWithData:"), data);
-		if (img) {
-			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), img);
+		id source = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+		source = ((id(*)(id, SEL, id))objc_msgSend)(source, sel_registerName("initWithData:"), data);
+		if (!source) return;
+
+		const double canvas = 1024.0;
+		const double body = 824.0;
+		const double inset = (canvas - body) / 2.0;
+		id image = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+		image = ((id(*)(id, SEL, NSSize))objc_msgSend)(image, sel_registerName("initWithSize:"), NSMakeSize(canvas, canvas));
+		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("lockFocus"));
+		((void(*)(id, SEL))objc_msgSend)(
+			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColor"), sel_registerName("clearColor")),
+			sel_registerName("set"));
+		NSRectFill(NSMakeRect(0.0, 0.0, canvas, canvas));
+
+		// Squircle: a superellipse (n = 5) matching Apple's continuous
+		// corners, fitted to the 824px body.
+		id clip = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBezierPath"), sel_registerName("bezierPath"));
+		for (int step = 0; step < 240; step++) {
+			const double angle = ((double)step / 240.0) * 6.283185307179586;
+			const double cos_angle = cos(angle);
+			const double sin_angle = sin(angle);
+			const double x = canvas / 2.0 + (body / 2.0) * (cos_angle < 0.0 ? -pow(-cos_angle, 0.4) : pow(cos_angle, 0.4));
+			const double y = canvas / 2.0 + (body / 2.0) * (sin_angle < 0.0 ? -pow(-sin_angle, 0.4) : pow(sin_angle, 0.4));
+			if (step == 0) {
+				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("moveToPoint:"), NSMakePoint(x, y));
+			} else {
+				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("lineToPoint:"), NSMakePoint(x, y));
+			}
 		}
+		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("closePath"));
+		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("addClip"));
+
+		// Aspect-fit the source art inside the body (square icons fill it).
+		const NSSize source_size = ((NSSize(*)(id, SEL))objc_msgSend)(source, sel_registerName("size"));
+		const double longest = source_size.width > source_size.height ? source_size.width : source_size.height;
+		const double scale = longest > 0.0 ? body / longest : 1.0;
+		const double width = source_size.width * scale;
+		const double height = source_size.height * scale;
+		((void(*)(id, SEL, NSRect))objc_msgSend)(
+			source, sel_registerName("drawInRect:"),
+			NSMakeRect(inset + (body - width) / 2.0, inset + (body - height) / 2.0, width, height));
+		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("unlockFocus"));
+
+		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+		((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), image);
 		```
 		```
 		#arch: c

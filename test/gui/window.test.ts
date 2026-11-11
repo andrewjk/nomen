@@ -34,4 +34,29 @@ pub func main = () {
 			audit: false,
 		});
 	});
+
+	// The default icon goes through set_icon's runtime grid layout: decode the
+	// embedded PNG, draw it into the 824/1024 squircle, and hand the result to
+	// AppKit. Exercised end-to-end (both backends) so a bad AppKit call or an
+	// unreadable asset fails the run instead of just looking wrong in the Dock.
+	test("default icon applies at startup", { timeout: 300000 }, async () => {
+		const input = `
+import System
+import System::Controls
+
+pub func main = (Init init) {
+	var Window win = Window("Icon", 200, 100)
+	Window.apply_default_icon()
+	win.show()
+	win.quit()
+	Console.write("icon ok\\n")
+}
+`;
+		const parsed = parse(input, system);
+		expect(parsed.errors).toEqual([]);
+		await build_and_check_output(input, "gui_window_icon", "icon ok\n", true, {
+			platform: "macos",
+			audit: false,
+		});
+	});
 });
