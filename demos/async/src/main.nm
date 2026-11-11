@@ -36,6 +36,7 @@ func run_fetch = (mv Channel done, out string) {
 
 pub func main = () {
 	const win = Window("Nomen Async", 380, 150)
+	Window.apply_default_icon()
 
 	const status = Text(win)
 	status.set_text("Press Fetch to run 5 tasks")

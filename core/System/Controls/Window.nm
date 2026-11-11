@@ -1136,6 +1136,14 @@ pub mv struct Window: Control {
 		```
 	}
 
+	// The default Dock icon: the Nomen logo (core/assets/nomen.png,
+	// rasterized from the SVG by the site's icon script) — embedded at
+	// library build time. `run` applies it at startup; call this directly
+	// in manual-loop apps that don't go through run.
+	pub func apply_default_icon = () {
+		Window.set_icon(#embed_file("assets/nomen.png"))
+	}
+
 	// Quit the APP (not just the window): sets the app-quit flag and closes
 	// this window. `run`/`keep_alive` return once the flag is set, so main
 	// unwinds normally. This is the programmatic equivalent of the Dock's
@@ -1463,6 +1471,49 @@ pub mv struct Window: Control {
 	// disarmed right after. Left armed it is process-global — every LATER
 	// red-button close (another window, a later run loop) would silently
 	// bypass App.close_requested forever.
+	// Replace the default Nomen Dock icon with the app's own (PNG bytes —
+	// usually an `#embed_file` literal). App-wide on macOS: every window
+	// shares the single Dock tile, so this is static for call-site
+	// ergonomics (`Window.set_icon(png)`).
+	pub func set_icon = (string png) {
+		```
+		#arch: c
+		#platform: macos
+		id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
+			(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
+			(const void *)png.ptr, (unsigned long)png.len);
+		id img = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+		img = ((id(*)(id, SEL, id))objc_msgSend)(img, sel_registerName("initWithData:"), data);
+		if (img) {
+			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), img);
+		}
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
+			(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
+			(const void *)png.ptr, (unsigned long)png.len);
+		id img = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+		img = ((id(*)(id, SEL, id))objc_msgSend)(img, sel_registerName("initWithData:"), data);
+		if (img) {
+			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), img);
+		}
+		```
+		```
+		#arch: c
+		#platform: ios
+		/* TODO: iOS */
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		/* TODO: iOS */
+		```
+	}
+
 	pub func close = (self) {
 		```
 		#arch: c
@@ -1507,6 +1558,7 @@ pub mv struct Window: Control {
 		app.start(ref self)
 		Container.arm_resize_delegate(self)
 		self.arm_mouse_moves()
+		Window.apply_default_icon()
 		self.relayout(0)
 		self.show()
 		self.relayout(1)
