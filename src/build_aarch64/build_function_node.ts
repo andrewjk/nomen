@@ -1364,6 +1364,16 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.heap_returning_functions.add(label_name);
 	}
 
+	// Collapse the tail branch-to-next: the last statement's `b
+	// .return_X` sits immediately before the label it targets. It used to
+	// be the only work the `--release` text passes ever found — emitting
+	// none makes `--release` a true no-op on aarch64 and debug output
+	// identical to release. (Strip only the branch itself — the preceding
+	// newline belongs to the last instruction.)
+	const tail_branch = `b ${return_label}\n`;
+	if (status.code.endsWith(tail_branch)) {
+		status.code = status.code.slice(0, status.code.length - tail_branch.length);
+	}
 	emit_asm(status, `${return_label}:\n`);
 	if (node.name === "main") {
 		// In audit mode, call nomen_audit_check at main exit (linked from
