@@ -6,13 +6,14 @@
 	"type": "module",
 	"scripts": {
 		"bundle:core": "tsx scripts/bundle-core.ts",
-		"predev": "tsx scripts/bundle-core.ts",
+		"predev": "tsx scripts/bundle-core.ts && tsx scripts/generate-favicons.ts",
 		"dev": "tb --dev",
-		"prebuild": "tsx scripts/bundle-core.ts",
+		"prebuild": "tsx scripts/bundle-core.ts && tsx scripts/generate-favicons.ts",
 		"build": "tb --build",
 		"preview": "tb --build && wrangler dev --config wrangler.jsonc",
 		"deploy": "tb --build && wrangler deploy",
-		"check": "tsc --noEmit"
+		"check": "tsc --noEmit",
+		"icons": "tsx scripts/generate-favicons.ts"
 	},
 	"dependencies": {
 		"@torpor/adapter-cloudflare": "^1.0.26",
@@ -23,6 +24,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.68.0",
+		"@resvg/resvg-wasm": "^2.6.2",
 		"tsx": "^4.23.15",
 		"typescript": "^7.0.2",
 		"vitest": "^4.1.10",

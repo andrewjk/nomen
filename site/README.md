@@ -45,6 +45,16 @@ pnpm dev            # Torpor dev server on workerd (Cloudflare's local runtime)
 Open the printed URL at `/playground`; the sample auto-runs there. Press
 <kbd>Cmd/Ctrl</kbd>+<kbd>Enter</kbd> to compile and run the editor's program.
 
+## Icons
+
+`src/assets/nomen.svg` is the source of truth for the mark: an `N` whose
+strokes run off the top and bottom (with bevelled bends) in Torpor's white-on-
+`#111122` circular badge. `pnpm icons`
+rasterises it with resvg into `src/public/favicon.ico` (16/32/48),
+`favicon-16x16.png`, `favicon-32x32.png`, and the opaque
+`apple-touch-icon.png`; `pnpm dev` / `pnpm build` run it automatically. The
+resvg renderer is a dev-only dependency — it never enters the Worker.
+
 ## Share links
 
 The **Share** button copies a self-contained link: the whole program is in the

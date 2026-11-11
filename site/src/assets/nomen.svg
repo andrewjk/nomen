@@ -1,4 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-	<rect width="64" height="64" rx="14" fill="#101214"/>
-	<path d="M18 46V18h5l18 20V18h5v28h-5L23 26v20z" fill="#8ab4f8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+	<clipPath id="disc"><circle cx="100" cy="100" r="100" /></clipPath>
+	<circle cx="100" cy="100" r="100" fill="#ffffff" />
+	<circle cx="100" cy="100" r="85" fill="#111122" />
+	<path
+		d="M62 215V65L138 135V-15"
+		fill="none"
+		stroke="#ffffff"
+		stroke-width="25"
+		stroke-linejoin="bevel"
+		stroke-linecap="round"
+		clip-path="url(#disc)"
+	/>
 </svg>
