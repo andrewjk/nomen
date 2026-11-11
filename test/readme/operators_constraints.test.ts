@@ -27,7 +27,7 @@ struct Box<T> {
     var T value
 }
 
-var Box<int> b = Box<int>(42)
+var b = Box<int>(42)
 Console.write("\\{b.value}")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -56,7 +56,7 @@ func unwrap<T> = (Box<T> box, out T) {
     return box.value
 }
 
-var Box<int> b = Box<int>(42)
+var b = Box<int>(42)
 var int v = unwrap(b)
 `;
 		expect(compile_main(input)).toEqual([]);

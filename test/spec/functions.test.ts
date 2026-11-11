@@ -91,7 +91,7 @@ func increment = (int x, out int) {
 func makeFive = (ref int x) {
     x = 5
 }
-var int num = 1
+var num = 1
 makeFive(ref num)
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -294,7 +294,7 @@ pub func main = () {
 
 	test("lambda captures an enclosing local", () => {
 		const input = `
-var int base = 10
+var base = 10
 var func (int, out int) add_base = (x, out int) => x + base
 Console.write("\\{add_base(1)} \\{add_base(2)}")
 `;

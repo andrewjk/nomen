@@ -8,9 +8,9 @@ describe("readme: standard library — Console", () => {
 Console.write("no newline")
 Console.write_line("with newline")
 
-const string line = Console.read_line()
-const char c = Console.read_char()
-const string p = Console.platform()
+const line = Console.read_line()
+const c = Console.read_char()
+const p = Console.platform()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

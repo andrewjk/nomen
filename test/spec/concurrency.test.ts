@@ -127,7 +127,7 @@ describe("spec: concurrency - daemon tasks", () => {
 		// argument has no join to bound it, so the app-lifetime channel lives
 		// at the root scope (globals are exempt — process lifetime).
 		const input = `
-var Channel sink = Channel()
+var sink = Channel()
 
 func flusher = (Channel ch) {
 	ch.send(1)
@@ -155,7 +155,7 @@ func producer = (Channel ch) {
 }
 
 pub func main = () {
-	var Channel c = Channel()
+	var c = Channel()
 	Thread(producer(c)).detach()
 }
 `;
@@ -290,7 +290,7 @@ func work = (mv Counter c) {
 }
 
 pub func main = () {
-	var Counter c = Counter()
+	var c = Counter()
 	Thread(work(mv c)).start()
 }
 `;
@@ -315,7 +315,7 @@ pub func main = () {
 	test("Task cancel and current_cancelled", () => {
 		const input = `
 func long_running = (uint64 arg) {
-	var int i = 0
+	var i = 0
 	while i < 100 {
 		if Task.current_cancelled() {
 			return
@@ -343,7 +343,7 @@ func worker = (Mutex m) {
 }
 
 pub func main = () {
-	var Mutex m = Mutex()
+	var m = Mutex()
 	async {
 		Thread(worker(m)).start()
 	}
@@ -361,7 +361,7 @@ func producer = (Channel c) {
 }
 
 pub func main = () {
-	var Channel c = Channel()
+	var c = Channel()
 	async {
 		Thread(producer(c)).start()
 	}
@@ -378,7 +378,7 @@ func producer = (Channel c) {
 }
 
 pub func main = () {
-	var Channel c = Channel()
+	var c = Channel()
 	async {
 		Thread(producer(c)).start()
 	}
@@ -393,7 +393,7 @@ describe("spec: concurrency - timeout", () => {
 	test("async with timeout compiles", () => {
 		const input = `
 func work = (uint64 arg) {
-	var int i = 0
+	var i = 0
 	while i < 1000000 {
 		i = i + 1
 	}
@@ -497,7 +497,7 @@ func step = (Channel ch, uint64 id) {
 }
 
 pub func main = () {
-	var Channel ch = Channel()
+	var ch = Channel()
 	async {
 		var a = Fiber(step(ch, 1)).start()
 		var b = Fiber(step(ch, 2)).start()

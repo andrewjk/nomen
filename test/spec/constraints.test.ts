@@ -50,7 +50,7 @@ safe_index(items, 5)
 	test("const passed to constrained param", () => {
 		const input = `
 func above_zero = (int x: x > 0) {}
-const int threshold = 10
+const threshold = 10
 above_zero(threshold)
 `;
 		expect(compile_main(input)).toEqual([]);

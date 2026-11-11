@@ -47,7 +47,7 @@ and calls always go through `.name(...)` access, so library methods may use
 reserved words (e.g. `Text::Regex.match(...)`):
 
 ```
-const string m = Regex.match("[0-9]+", "abc123")
+const m = Regex.match("[0-9]+", "abc123")
 Console.write("\{m}")
 ```
 
@@ -187,7 +187,7 @@ Constraints also work with `const` variables passed as arguments:
 ```
 func above_zero = (int x: x > 0) { ... }
 
-const int threshold = 10
+const threshold = 10
 above_zero(threshold)   // OK, 10 > 0
 ```
 
@@ -258,7 +258,7 @@ func makeFive = (ref int x) {
     x = 5
 }
 
-var int num = 1
+var num = 1
 makeFive(ref num)
 // num is now 5
 ```
@@ -280,10 +280,10 @@ A `const` value cannot be passed to a `ref` parameter — a mutable borrow requi
 a mutable value. Declare the caller's binding as `var` first:
 
 ```
-const int fixed = 1
+const fixed = 1
 makeFive(ref fixed)   // Error: Cannot pass const 'fixed' to ref parameter 'x'
 
-var int mutable = 1
+var mutable = 1
 makeFive(ref mutable) // OK — mutable is now 5
 ```
 
@@ -313,8 +313,8 @@ func touch = (ref Item item {}, int by) {
     item.weight = item.weight + by   // value-type fields never need declaring
 }
 
-var Item item = Item(1, mv Box<Stats>(mv Stats(2)))
-var Box<Stats> s = item.stats        // borrow rooted at item, via stats
+var item = Item(1, mv Box<Stats>(mv Stats(2)))
+var s = item.stats        // borrow rooted at item, via stats
 touch(ref item, 1)                   // declared: {} — s stays live
 rebalance(ref item)                  // declared: { stats }
 Console.write("\{s.hits}")          // Error: borrow 's' was invalidated
@@ -391,7 +391,7 @@ struct Counter {
     }
 }
 
-var Counter c = Counter()
+var c = Counter()
 c.bump()
 Console.write("\{c.count}")   // 1
 ```
@@ -403,7 +403,7 @@ struct Counter {
     readonly count = 0
 }
 
-var Counter c = Counter()
+var c = Counter()
 c.count = 5
 // Error: Cannot assign to readonly field 'count' from outside Counter
 ```
@@ -460,10 +460,10 @@ mv struct Config {
     var string name
 }
 
-var Config c = Config("x")
-mv Config c2 = c        // transfer: c is invalid afterwards
-var Config c3 = c.copy()  // deep copy: c stays valid
-var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
+var c = Config("x")
+mv c2 = c        // transfer: c is invalid afterwards
+var c3 = c.copy()  // deep copy: c stays valid
+var c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
 ```
 
 Construction, methods (`ref self` for mutation), and `#destroy` follow the
@@ -482,7 +482,7 @@ mv struct Node {
     var int value
 }
 
-var Box<Node> p = Box<Node>(Node(10))
+var p = Box<Node>(Node(10))
 ref Box<Node> q = p    // alias: owner defers its free; both names see writes
 q.value = 99           // p.value is now also 99 — one instance, two names
 ```
@@ -505,9 +505,9 @@ Structs can declare type parameters using `<T>` syntax. Type parameters are type
 
 ```
 pub struct List<T> {
-    var int length = 0
-    var int capacity = 0
-    var int items = 0
+    var length = 0
+    var capacity = 0
+    var items = 0
 
     pub func push = (self, T value) { ... }
     pub func pop = (self, out T) { ... }
@@ -517,9 +517,9 @@ pub struct List<T> {
 Generic structs are instantiated by providing concrete type arguments in the constructor call:
 
 ```
-var List<int> numbers = List<int>()
+var numbers = List<int>()
 numbers.push(42)
-const int top = numbers.pop()
+const top = numbers.pop()
 ```
 
 Type parameters can be used in:
@@ -555,8 +555,8 @@ A struct literal may be seeded from a base expression with `..`, then override f
 
 ```
 struct LayoutParams {
-    var int grow = 0
-    var int shrink = 0
+    var grow = 0
+    var shrink = 0
 }
 
 const LayoutParams DEF = [ .. LayoutParams(), grow = 2, shrink = 3 ]
@@ -607,7 +607,7 @@ var mixed = [1, "hello"]                     // inferred as [int, string] tuple
 Tuple fields are accessed with underscore-prefixed indices:
 
 ```
-var [int, string] things = [42, "answer"]
+var things = [42, "answer"]
 Console.write("\{things._0} \{things._1}")  // "42 answer"
 ```
 
@@ -1009,7 +1009,7 @@ extend struct Point {
 }
 
 const p = Point(3, 4)
-const int m = p.manhattan()
+const m = p.manhattan()
 ```
 
 `extend` blocks may appear before or after the type they target, and may target a type from another module (including standard-library types). A method that redeclares an existing method name with the same parameter types is a duplicate error; overloads with differing parameter types are allowed. A method declared `extend` can call an in-body method on the same type, and vice versa.
@@ -1539,7 +1539,7 @@ capture is taken once, when the lambda value is created:
 
 ```
 pub func main = () {
-    var int base = 10
+    var base = 10
     var func (int, out int) add_base = (x, out int) => x + base
     Console.write("\{add_base(1)} \{add_base(2)}")
 }
@@ -1684,10 +1684,10 @@ mv struct Config {
     var string name
 }
 
-var Config c = Config("x")
-mv Config c2 = c        // transfer: c is invalid afterwards
-var Config c3 = c.copy()  // explicit deep copy, c stays valid
-var Config c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
+var c = Config("x")
+mv c2 = c        // transfer: c is invalid afterwards
+var c3 = c.copy()  // explicit deep copy, c stays valid
+var c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
 ```
 
 ```
@@ -1738,8 +1738,8 @@ mv struct Node {
     var Box<Node>? next      // the sanctioned pointer field: breaks the cycle
 }
 
-var Node n = Node(1, null)
-var Box<Node> b = Box<Node>(mv n)   // boxing moves: n is invalid after
+var n = Node(1, null)
+var b = Box<Node>(mv n)   // boxing moves: n is invalid after
 Console.write_line("\{b.value}")      // 1 — access through the box
 Console.write_line("\{b.next}")       // null (the pointee's next slot)
 ```
@@ -1813,7 +1813,7 @@ const a = Point(1, 2)
 const b = Point(1, 2)
 const bool same = a == b            // true  — derived #op_eq
 const bool diff = a != b            // false — derived from #op_eq
-const string s = a.to_string()      // "Point(x=1, y=2)" — derived to_string
+const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
 ```
 
 `Stringable` derives a `to_string` that lists each field as `name=value`.
@@ -2012,9 +2012,9 @@ one-zero-cost way to release a `mv` value before the enclosing function ends.
 A block-local is invisible after the block, and may shadow an outer binding:
 
 ```
-var string shared = "outer"
+var shared = "outer"
 {
-    var string temp = "heap value".to_string()
+    var temp = "heap value".to_string()
     Console.write(temp)         // "heap value"
 }                               // temp's storage is released here
 Console.write(shared)           // "outer"
@@ -2137,7 +2137,7 @@ package root (the directory containing `package.jsonc`), or the compiled
 file's folder when no package root exists:
 
 ```
-const string banner = #embed_file("assets/banner.txt")
+const banner = #embed_file("assets/banner.txt")
 Console.write(banner)
 ```
 
@@ -2330,9 +2330,9 @@ int)`); scalar arithmetic still lowers natively, so those declarations are
 Explicit type conversion using `as`:
 
 ```
-const int x = 42
-const float f = x as float
-const int8 b = x as int8
+const x = 42
+const f = x as float
+const b = x as int8
 ```
 
 Allowed casts:
@@ -2354,9 +2354,9 @@ mv enum Res {
     case ok(int count)
 }
 
-var Res r = Res.ok(42)
+var r = Res.ok(42)
 var Res.ok ok = r as Res.ok
-var Res back = ok as Res
+var back = ok as Res
 ```
 
 - `r as Res.ok` is a **checked cast**: the value's tag is compared at runtime
@@ -2434,13 +2434,13 @@ optional:
   and width compose as usual.
 
 ```
-var float price = 9.5
-var int count = 3
-var int flags = 255
-var string label = "Go"
-var float total = price * (count as float)
-var int audience = 1234567
-var float speed = 0.00025
+var price = 9.5
+var count = 3
+var flags = 255
+var label = "Go"
+var total = price * (count as float)
+var audience = 1234567
+var speed = 0.00025
 Console.write("total \{total:.2}")
 Console.write("[\{label:>8}] [\{count:03}] [\{flags:x}]")
 Console.write("[\{label:<8}] [\{flags:08X}] [\{flags:b}]")
@@ -2472,10 +2472,10 @@ three-section forms are not in the language (use the `:e` spec for
 scientific output). Rounding is to nearest.
 
 ```
-var int audience = 1234567
-var float total = 1234567.5
-var float share = 0.125
-var int debt = -9876
+var audience = 1234567
+var total = 1234567.5
+var share = 0.125
+var debt = -9876
 Console.write("\{audience:#,##0} viewers")
 Console.write("\{total:#,##0.00} owed")
 Console.write("\{share:0.0%} share")
@@ -2487,7 +2487,7 @@ Anything else in a spec is a compile error — an unknown character, an empty
 width after a fill, a precision combined with a base:
 
 ```
-var int n = 5
+var n = 5
 Console.write("\{n:.2}")
 // Error: format spec ':.2': precision requires a float, but the value is int
 ```
@@ -2532,13 +2532,13 @@ view v = str.slice(0, 5)          // const view, type inferred as `view string`
 Console.write(v.to_string())      // "hello"
 Console.write("\{v.length}")         // 5
 
-const int[] nums = [10, 20, 30, 40, 50]
+const nums = [10, 20, 30, 40, 50]
 view s = nums.slice(1, 4)         // `view int`
 Console.write("\{s.length}")          // 3
 Console.write("\{s.at(0)}")           // 20
 Console.write("\{s.at(2)}")           // 40
 
-var List<int> list = List<int>()
+var list = List<int>()
 list.push(1)
 list.push(2)
 list.push(3)
@@ -2571,8 +2571,8 @@ view T)` method. In practice a container just delegates to its backing
 
 ```
 pub struct UserList: Viewable {
-    var int length = 0
-    var Buffer<User> items = Buffer<User>()
+    var length = 0
+    var items = Buffer<User>()
     pub func slice = (
         self,
         int start: start >= 0,
@@ -2607,7 +2607,7 @@ func bad = (int[] a: a.length >= 2, out view int) {
     return a.slice(0, 2)   // Error: cannot return a view borrowing from a parameter
 }
 
-var int[] arr = [1, 2, 3]
+var arr = [1, 2, 3]
 view v = arr.slice(0, 2)
 arr = [9, 9, 9]
 Console.write("\{v.length}")  // Error: borrow invalidated by source reassignment
@@ -2627,8 +2627,8 @@ pub struct Line {
     var len = 0
 }
 
-var string doc = "name other"
-var Line first = Line(doc.slice(0, 4))
+var doc = "name other"
+var first = Line(doc.slice(0, 4))
 first.text.to_string()   // "name" — no heap copy of the slice was made
 ```
 
@@ -2651,7 +2651,7 @@ render(first)
 
 ```
 func make_line = (out Line) {
-    var string doc = "hi"
+    var doc = "hi"
     return Line(doc.slice(0, 2))   // Error: structs with 'view' fields are scope-local
 }
 ```
@@ -2662,8 +2662,8 @@ check is the scope itself. Mutating a source invalidates every bundle borrowing
 from it until the field is re-pointed:
 
 ```
-var string doc = "name other"
-var Line first = Line(doc.slice(0, 4))
+var doc = "name other"
+var first = Line(doc.slice(0, 4))
 doc = "other name"
 first.text.to_string()
 // Error: view field 'text' was invalidated by a mutation of its source
@@ -2823,9 +2823,9 @@ Output and input on `stdin` / `stdout`:
 Console.write("no newline")           // write a string
 Console.write_line("with newline")    // write a string followed by '\n'
 
-const string line = Console.read_line()   // read a line from stdin (no trailing '\n')
-const char c     = Console.read_char()    // read a single character from stdin
-const string p   = Console.platform()     // current target platform, e.g. "macos"
+const line = Console.read_line()   // read a line from stdin (no trailing '\n')
+const c     = Console.read_char()    // read a single character from stdin
+const p   = Console.platform()     // current target platform, e.g. "macos"
 ```
 
 ### Ansi
@@ -2876,7 +2876,7 @@ or via `Channel`). `Mutex` exists for when you genuinely need shared
 mutability:
 
 ```
-var Mutex mu = Mutex()
+var mu = Mutex()
 
 func worker = (Mutex m) {
     m.lock()
@@ -2906,7 +2906,7 @@ wakes the parked receivers, and a receiver cancelled while waiting returns
 the zero value (the task observes `Task.current_cancelled()` itself).
 
 ```
-var Channel ch = Channel()
+var ch = Channel()
 
 func producer = (Channel c) {
     c.send(101)
@@ -2935,7 +2935,7 @@ sender keeps its string) and moved out to the receiver as an owned value, so
 the message survives the sender's scope exit with its true length intact.
 
 ```
-var Channel ch = Channel()
+var ch = Channel()
 
 func producer = (Channel c) {
     c.send_string("hello")
@@ -2945,7 +2945,7 @@ async {
     Thread(producer(ch)).start()
 }
 
-var string s = ch.receive_string()   // blocks until ready
+var s = ch.receive_string()   // blocks until ready
 ```
 
 ## Concurrency
@@ -3042,10 +3042,10 @@ every slot holding the pointer; `get` compares generations and returns the
 live pointer or `null`.
 
 ```
-var Widget child = Widget(2)
-var WeakHandle<Widget> h = WeakHandle<Widget>(child)
+var child = Widget(2)
+var h = WeakHandle<Widget>(child)
 
-var Widget? live = h.get()
+var live = h.get()
 if live != null {
     Console.write_line("still here")
 }
@@ -3072,7 +3072,7 @@ protected slot, and the Atomic's methods are the sanctioned mutation path
 (the freeze on borrowed roots deliberately exempts them).
 
 ```
-var Atomic<int> counter = Atomic<int>()
+var counter = Atomic<int>()
 
 func work = (ref Atomic<int> c) {
     c.fetch_add(1)
@@ -3211,7 +3211,7 @@ func step = (Channel ch, uint64 id) {
 }
 
 pub func main = () {
-    var Channel ch = Channel()
+    var ch = Channel()
     async {
         var a = Fiber(step(ch, 1)).start()
         var b = Fiber(step(ch, 2)).start()
@@ -3431,7 +3431,7 @@ poll `current_cancelled()` at their own checkpoints:
 
 ```
 func long_running = (uint64 arg) {
-    var int i = 0
+    var i = 0
     while i < 1000000 {
         if Task.current_cancelled() {
             return

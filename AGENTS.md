@@ -263,6 +263,18 @@ Functions).
   blocks containing another `if` (`else { if … { } }`) are also forbidden —
   pull the inner condition out into its own top-level `if` (when the
   conditions are independent) or fold the whole chain into a single `switch`.
+- **This applies to ALL Nomen in the repo — not just `.nm` files**: doc
+  examples, `test/spec/` and `test/readme/` blocks, test fixtures, demo
+  programs, and template strings embedded in site/CLI code. Nomen inside a
+  string literal is still Nomen code.
+- Prefer inferred types. Don't spell out a type the initializer already says:
+  write `const p = Point(2, 3)`, not `const Point p = Point(2, 3)`, and
+  `var x = 5`, not `var int x = 5`. Annotate only when inference would be
+  wrong or the annotation is load-bearing: no initializer, a nullable (where
+  `null` infers nothing), a wider type like `int16`, fixed-length arrays, or
+  a `pub` API signature. nomen check warns on the redundant ones; nomen
+  format removes them. The full directive is in
+  [`NOMEN_AGENTS.md`](./NOMEN_AGENTS.md) ("Prefer implicit types").
 
 1. Always run `npm run check` after changes to verify type correctness
 2. Run `npm test` to ensure all tests pass

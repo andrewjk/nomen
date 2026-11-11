@@ -262,6 +262,10 @@ export default function check_function_call_node(
 						type.type_args = expected_args;
 						node.type = type;
 						node.type_args = expected_args;
+						// The arguments came from the EXPECTED type, not the
+						// written call — stamp that so the redundant-annotation
+						// lint treats the annotation as load-bearing.
+						node.type_args_from_expected = true;
 						// Point the call at the mono's emission name so the build
 						// emits `<Generic_<T>>_init`, not the never-emitted generic.
 						node.name = target.name;

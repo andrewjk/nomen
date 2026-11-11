@@ -8,6 +8,7 @@ import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import StructNode from "../nodes/StructNode.ts";
+import Type from "../nodes/Type.ts";
 import type CompileError from "../types/CompileError.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_box_type } from "./utils/box.ts";
@@ -17,15 +18,17 @@ import {
 	type FieldSetQuickFix,
 } from "./utils/field_effects.ts";
 import { is_owning_struct_value_type } from "./utils/ownership.ts";
+import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 /**
- * Lint pass run after a successful check. It walks the AST to surface three
+ * Lint pass run after a successful check. It walks the AST to surface four
  * kinds of warning:
  *
  *  - an unused value/parameter (declared but never read)
  *  - a `var` that is never reassigned (it could be a `const`)
  *  - a function or method that is never called
+ *  - a type annotation that repeats what the initializer already infers
  *
  * The analysis is deliberately conservative: it biases towards not warning
  * when ownership (mv/ref/cp), trait vtables, library code or the `_`-discard
@@ -184,6 +187,12 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 		}
 	}
 
+	// Redundant type annotations: a declaration whose annotation repeats what
+	// its initializer already infers (see warn_redundant_annotation).
+	for_each_node(root, (node) => {
+		if (node.node_type === "declare") warn_redundant_annotation(node as DeclarationNode, status);
+	});
+
 	// Monomorphised clones share their original's offsets, so the same warning
 	// can be emitted more than once — collapse exact duplicates.
 	status.warnings = dedupe_warnings(status.warnings);
@@ -325,6 +334,108 @@ function warn_var_not_changed(decl: DeclarationNode, locals: Locals, status: Che
 				}
 			: undefined,
 	);
+}
+
+// --- Redundant type annotations ----------------------------------------------
+
+/**
+ * A declaration whose annotation repeats what its initializer already infers
+ * (NOMEN_AGENTS.md, "Prefer implicit types"): `const Point p = Point(2, 3)`
+ * or `var int x = 5`. The recognised forms mirror `nomen format`'s
+ * conservative strip — a constructor call with every generic argument written
+ * at the call, and a single self-describing literal — so everything the
+ * warning flags is also what formatting removes. Forms whose annotation is
+ * load-bearing stay silent: generic constructions the annotation instantiates
+ * (`var List<int> v = List()`), enum shorthand (`.east`), wider/narrower
+ * literals (`var int16 small = 300`), nullables, view/ref bindings, and
+ * constrained declarations. Library code is exempt.
+ */
+function warn_redundant_annotation(decl: DeclarationNode, status: CheckStatus): void {
+	if (decl.is_library || decl.is_loop_iterator || decl.is_readonly) return;
+	// The `is_library` stamp misses declarations nested inside closures that
+	// hang off an expression (mark_library_nodes only descends through
+	// statements/allocations), so also compare the source offset against the
+	// library boundary.
+	if (status.library_boundary !== undefined && decl.start >= status.library_boundary) return;
+	// A missing annotation parses as an empty type name; `type_start` is only
+	// stamped for a source-written annotation, so checker-synthesized
+	// declarations (hoisted temps, loop iterators) never qualify either.
+	if (!decl.type.name || decl.type_start === undefined || decl.name_start === undefined) return;
+	if (decl.type.is_view || decl.type.is_ref || decl.type.is_nullable || decl.type.is_array) return;
+	if (decl.declaration === "view" || decl.declaration === "ref") return;
+	// `format`'s line transform doesn't strip constrained declarations, so
+	// neither does the lint.
+	if (decl.constraint) return;
+	const value = decl.value;
+	if (!value) return;
+
+	if (value.node_type === "func_call") {
+		const call = value as FunctionCallNode;
+		// Compiler-special constructions (Thread/Fiber/WeakHandle/…), enum
+		// shorthand, and anon-struct conversions take their meaning from the
+		// annotation or rewrite the written form — never strip those.
+		if (
+			call.is_thread_ctor ||
+			call.is_fiber_ctor ||
+			call.is_awaitable_ctor ||
+			call.is_weak_ctor ||
+			call.is_func_value_ctor ||
+			call.is_enum_shorthand ||
+			call.field_overrides?.length
+		)
+			return;
+		if (call.resolved_function?.name !== "#init") return;
+		const struct = status.structs.find((s) => s.name === call.name);
+		if (!struct) return;
+		// Type arguments the checker recovered from the annotation (or that
+		// weren't written at the call) make the annotation load-bearing —
+		// dropping it could change the program. Only fully-written generic
+		// args qualify (`Map<int, int>()`), mirroring format's identical-text
+		// rule.
+		if (call.type_args_from_expected) return;
+		if (struct.type_params.length && (call.type_args?.length ?? 0) !== struct.type_params.length)
+			return;
+	} else if (value.node_type === "value") {
+		// A single self-describing literal only — an identifier or computed
+		// initializer may rely on the annotation for mv/view/box semantics.
+		const text = (value as unknown as { value: string }).value;
+		if (literal_type_name(text) === undefined) return;
+	} else {
+		return;
+	}
+
+	if (type_display(decl.type) !== type_display(type_from_value_node(value, status))) return;
+
+	add_warning(
+		status,
+		`Type annotation on '${decl.name}' is redundant — '${type_display(
+			decl.type,
+		)}' is already inferred; run 'nomen format' to drop it`,
+		decl.type_start,
+		{
+			title: "Drop redundant type",
+			param_start: decl.start,
+			replace_start: decl.type_start,
+			replace_end: decl.name_start,
+			replace_text: "",
+		},
+	);
+}
+
+/** The type a literal value spells out on its own; undefined when it doesn't. */
+function literal_type_name(text: string): string | undefined {
+	if (text === "true" || text === "false") return "bool";
+	if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) return "string";
+	if (text.length >= 3 && text.startsWith("'") && text.endsWith("'")) return "char";
+	if (/^-?\d+$/.test(text)) return "int";
+	if (/^-?(\d+\.\d*|\.\d+)([eE][+-]?\d+)?$/.test(text)) return "float";
+	return undefined;
+}
+
+/** The user-visible spelling of a type (`List<int>`, `Map<string, int>`). */
+function type_display(t: Type): string {
+	if (!t.type_args?.length) return t.name ?? "?";
+	return `${t.name}<${t.type_args.map(type_display).join(", ")}>`;
 }
 
 // --- Collection --------------------------------------------------------------

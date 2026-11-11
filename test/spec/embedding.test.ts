@@ -7,7 +7,7 @@ import { compile_main } from "./_helpers.ts";
 describe("spec: compile-time embedding", () => {
 	test("#embed_file is a string literal of the file's contents", () => {
 		const input = `
-const string banner = #embed_file("assets/banner.txt")
+const banner = #embed_file("assets/banner.txt")
 Console.write(banner)
 `;
 		expect(compile_main(input)).toEqual([]);

@@ -532,9 +532,9 @@ while true {
 describe("spec: nested blocks", () => {
 	test("bare block is a lexical scope; declarations die at the closing brace", () => {
 		const input = `
-var string shared = "outer"
+var shared = "outer"
 {
-    var string temp = "heap value".to_string()
+    var temp = "heap value".to_string()
     Console.write(temp)
 }
 Console.write(shared)

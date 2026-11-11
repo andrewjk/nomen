@@ -630,3 +630,23 @@ Not done because Browser Run covers normal dev and production.
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
 server, but a card only needs the dark-plus token colours. If the Worker bundle
 needs to shrink further, a small Nomen-specific tokenizer could replace it.
+
+## `mark_library_nodes` misses declarations inside expression-held closures
+
+Recorded 2026-11-11. `mark_library_nodes` (`src/parse.ts`) stamps
+`is_library` by walking functions' `statements`/`allocations` and struct/trait
+`functions`/`fields` — but a closure nested inside an EXPRESSION (e.g. a
+lambda in a declaration's `value`, a call argument) is never visited, so
+declarations inside those closures stay unstamped even in the appended System
+library source. Surfaced by the redundant-type-annotation lint
+(`check/warnings.ts`): `core/System/Text/Regex.nm`'s second `old_start` (line
+1158, inside such a closure) was unstamped while its two siblings were
+stamped. The lint now also compares `decl.start` against
+`CheckStatus.library_boundary`, so the lint is correct — but the underlying
+stamp gap remains for any consumer that trusts the flag alone (e.g. the
+library-split TU routing in `build_c/utils/is_system_definition.ts`, and the
+other lint gates in `check/warnings.ts`). Fixing it means making the walk
+descend into all node-valued children reflectively; the risk is
+over-stamping changing System-lib split placement for generated closure
+functions, so it needs its own pass over the backends' TU decisions rather
+than a drive-by.

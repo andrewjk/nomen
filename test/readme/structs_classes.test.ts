@@ -127,7 +127,7 @@ const a = Point(1, 2)
 const b = Point(1, 2)
 const bool same = a == b
 const bool diff = a != b
-const string s = a.to_string()
+const s = a.to_string()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

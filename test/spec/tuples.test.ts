@@ -29,7 +29,7 @@ var mixed = [1, "hello"]
 
 	test("tuple field access", () => {
 		const input = `
-var [int, string] things = [42, "answer"]
+var things = [42, "answer"]
 Console.write("\\{things._0} \\{things._1}")
 `;
 		expect(compile_main(input)).toEqual([]);

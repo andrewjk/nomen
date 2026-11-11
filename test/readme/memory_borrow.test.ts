@@ -47,7 +47,7 @@ pub func main = () {
 	test("view string slice borrows from source", () => {
 		const input = `
 pub func main = () {
-    var string s = "hello world"
+    var s = "hello world"
     view v = s.slice(0, 5)
     Console.write(v.to_string())
 }
@@ -58,7 +58,7 @@ pub func main = () {
 	test("using a view after reassigning its source is rejected", () => {
 		const input = `
 pub func main = () {
-    var string s = "hello world"
+    var s = "hello world"
     view v = s.slice(0, 5)
     s = "changed"
     Console.write("\\{v.length}")

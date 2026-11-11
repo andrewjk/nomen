@@ -91,9 +91,10 @@ if Regex.test("\\r?\\n\\\\d", "line1\\n2") {
 
 	test("a dynamic pattern is not linted", () => {
 		// The pattern comes from a runtime variable — not checkable. `var`
-		// triggers the never-changed lint, so use `const`.
+		// triggers the never-changed lint, so use `const` (and an implicit
+		// type — `nomen check` warns on the redundant annotation).
 		const input = `
-const string p = "val\\\\z"
+const p = "val\\\\z"
 Console.write(Regex.test(p, "valz").to_string())
 `;
 		const parsed = parse_with_imports(input);

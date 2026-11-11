@@ -18,7 +18,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 const PROGRAM = (param: string, body: string) => `import System
 
 mv struct Inner {
-	var int n = 0
+	var n = 0
 }
 
 mv struct Item {
@@ -31,7 +31,7 @@ func touch = (${param}) {
 }
 
 pub func main = (Init init) {
-	var Item item = Item(mv Box<Inner>(mv Inner()), mv Box<Inner>(mv Inner()))
+	var item = Item(mv Box<Inner>(mv Inner()), mv Box<Inner>(mv Inner()))
 	touch(ref item)
 }
 `;
@@ -42,7 +42,16 @@ function apply_quick_fix(
 ): { signature?: string; errors: string[]; warning_gone: boolean } {
 	const source = PROGRAM(param, body);
 	const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
-	const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+	// Same family selector as the inline tests below: this file's fixes edit
+	// parameter field sets (the lint warnings), and the checker's own
+	// declared-set errors carry the same kind of fix.
+	const diag = [...first.errors, ...first.warnings].find(
+		(d) =>
+			!!d.quick_fix &&
+			(d.message.startsWith("Ref parameter") ||
+				d.message.startsWith("Method receiver") ||
+				d.message.includes("but the body writes")),
+	);
 	expect(diag, "expected a diagnostic carrying a quick fix").toBeDefined();
 	const fix = diag!.quick_fix!;
 	const edited =
@@ -69,7 +78,7 @@ describe("declared-effect quick fixes", () => {
 		const source = `import System
 
 mv struct Inner {
-	var int n = 0
+	var n = 0
 }
 
 mv struct Item {
@@ -81,12 +90,22 @@ mv struct Item {
 }
 
 pub func main = (Init init) {
-	var Item item = Item(mv Box<Inner>(mv Inner()))
+	var item = Item(mv Box<Inner>(mv Inner()))
 	item.touch()
 }
 `;
 		const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
-		const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+		// The declared-effect diagnostics this file tests: their quick fixes
+		// edit parameter field sets. Quick-fix-carrying lints with earlier
+		// source positions exist (the redundant-type-annotation lint), so the
+		// selector names the family instead of taking the first fix.
+		const diag = [...first.errors, ...first.warnings].find(
+			(d) =>
+				!!d.quick_fix &&
+				(d.message.startsWith("Ref parameter") ||
+					d.message.startsWith("Method receiver") ||
+					d.message.includes("but the body writes")),
+		);
 		expect(diag).toBeDefined();
 		const fix = diag!.quick_fix!;
 		const edited =
@@ -121,7 +140,17 @@ pub func main = (Init init) {
 	item.spare = mv Box<Inner>(mv Inner())`,
 		).replace("pub func main = (Init init) {", "pub func main = (Init init) {");
 		const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
-		const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+		// The declared-effect diagnostics this file tests: their quick fixes
+		// edit parameter field sets. Quick-fix-carrying lints with earlier
+		// source positions exist (the redundant-type-annotation lint), so the
+		// selector names the family instead of taking the first fix.
+		const diag = [...first.errors, ...first.warnings].find(
+			(d) =>
+				!!d.quick_fix &&
+				(d.message.startsWith("Ref parameter") ||
+					d.message.startsWith("Method receiver") ||
+					d.message.includes("but the body writes")),
+		);
 		// Two undeclared writes accumulate into one set with sorted fields.
 		expect(diag?.quick_fix?.insert_text).toBe(" { inner, spare }");
 	});
@@ -143,7 +172,17 @@ pub func main = (Init init) {
 }
 `;
 		const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
-		const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+		// The declared-effect diagnostics this file tests: their quick fixes
+		// edit parameter field sets. Quick-fix-carrying lints with earlier
+		// source positions exist (the redundant-type-annotation lint), so the
+		// selector names the family instead of taking the first fix.
+		const diag = [...first.errors, ...first.warnings].find(
+			(d) =>
+				!!d.quick_fix &&
+				(d.message.startsWith("Ref parameter") ||
+					d.message.startsWith("Method receiver") ||
+					d.message.includes("but the body writes")),
+		);
 		expect(diag).toBeDefined();
 		const fix = diag!.quick_fix!;
 		expect(fix.insert_text).toBe(" {}");
@@ -174,7 +213,17 @@ pub func main = (Init init) {
 }
 `;
 		const first = parse(source, system, "/tmp/probe.nomen", { allow_internal: true });
-		const diag = [...first.errors, ...first.warnings].find((d) => d.quick_fix);
+		// The declared-effect diagnostics this file tests: their quick fixes
+		// edit parameter field sets. Quick-fix-carrying lints with earlier
+		// source positions exist (the redundant-type-annotation lint), so the
+		// selector names the family instead of taking the first fix.
+		const diag = [...first.errors, ...first.warnings].find(
+			(d) =>
+				!!d.quick_fix &&
+				(d.message.startsWith("Ref parameter") ||
+					d.message.startsWith("Method receiver") ||
+					d.message.includes("but the body writes")),
+		);
 		expect(diag).toBeDefined();
 		const fix = diag!.quick_fix!;
 		const edited =

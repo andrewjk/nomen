@@ -336,6 +336,189 @@ struct Holder {
 	mv Pair pair = Pair()
 }
 `;
+		expect(
+			warning_messages(input).filter((m) => m.includes("'mv' on field 'pair' is redundant")),
+		).toEqual([]);
+	});
+});
+
+describe("warnings — redundant type annotations", () => {
+	test("annotated constructor initializer warns", () => {
+		const input = `
+import System
+struct Point {
+	var int x
+	var int y
+}
+func main = () {
+	const Point p = Point(2, 3)
+	Console.write("\\{p.x + p.y}")
+}
+main()
+`;
+		expect(
+			warning_messages(input).some((m) =>
+				m.includes("Type annotation on 'p' is redundant — 'Point' is already inferred"),
+			),
+		).toBe(true);
+	});
+
+	test("annotated literal initializer warns", () => {
+		const input = `
+import System
+func main = () {
+	var int n = 5
+	var string s = "hi"
+	Console.write("\\{n}\\{s}")
+}
+main()
+`;
+		expect(warning_messages(input)).toContain(
+			"Type annotation on 'n' is redundant — 'int' is already inferred; run 'nomen format' to drop it",
+		);
+		expect(warning_messages(input)).toContain(
+			"Type annotation on 's' is redundant — 'string' is already inferred; run 'nomen format' to drop it",
+		);
+	});
+
+	test("implicit initializers do not warn", () => {
+		const input = `
+import System
+struct Point {
+	var int x
+	var int y
+}
+func main = () {
+	const p = Point(2, 3)
+	var n = 5
+	Console.write("\\{p.x + n}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("a literal that infers a different type does not warn", () => {
+		const input = `
+import System
+func main = () {
+	var int16 small = 300
+	var float f = 5
+	Console.write("\\{small}\\{f}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("a nullable annotation is not redundant", () => {
+		const input = `
+import System
+func main = () {
+	var int? x = null
+	Console.write("\\{x == null}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("a field with an initializer warns", () => {
+		const input = `
+import System
+struct Counter {
+	var int count = 0
+}
+func main = () {
+	Console.write("\\{Counter().count}")
+}
+main()
+`;
+		expect(warning_messages(input)).toContain(
+			"Type annotation on 'count' is redundant — 'int' is already inferred; run 'nomen format' to drop it",
+		);
+	});
+
+	test("a fully-written generic constructor annotation warns", () => {
+		const input = `
+import System
+struct Box2<T> {
+	var T value
+}
+func main = () {
+	var Box2<int> b = Box2<int>(1)
+	Console.write("\\{b.value}")
+}
+main()
+`;
+		expect(warning_messages(input)).toContain(
+			"Type annotation on 'b' is redundant — 'Box2<int>' is already inferred; run 'nomen format' to drop it",
+		);
+	});
+
+	test("a generic annotation the call relies on does not warn", () => {
+		const input = `
+import System
+struct Box2<T> {
+	var T value
+}
+func main = () {
+	var Box2<int> b = Box2(1)
+	Console.write("\\{b.value}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("an enum shorthand initializer does not warn", () => {
+		const input = `
+import System
+enum Direction {
+	.east
+	.west
+}
+func main = () {
+	var Direction d = .east
+	Console.write("\\{d == .east}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("an array literal initializer does not warn", () => {
+		const input = `
+import System
+func main = () {
+	var int[] nums = [1, 2, 3]
+	Console.write("\\{nums.length}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("a constrained declaration does not warn", () => {
+		const input = `
+import System
+func main = () {
+	var int x: x > 0 = 5
+	Console.write("\\{x}")
+}
+main()
+`;
+		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
+	});
+
+	test("System library internals do not warn", () => {
+		const input = `
+import System
+func main = () {
+	Console.write("\\{Regex.count("\\\\d", "a1b2")}")
+}
+main()
+`;
 		expect(warning_messages(input).filter((m) => m.includes("is redundant"))).toEqual([]);
 	});
 });

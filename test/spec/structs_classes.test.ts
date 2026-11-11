@@ -50,7 +50,7 @@ struct Counter {
     }
 }
 
-var Counter c = Counter()
+var c = Counter()
 c.bump()
 Console.write("\\{c.count}")
 `;
@@ -63,7 +63,7 @@ struct Counter {
     readonly count = 0
 }
 
-var Counter c = Counter()
+var c = Counter()
 c.count = 5
 `);
 		expect(
@@ -98,7 +98,7 @@ describe("spec: mv structs (types section)", () => {
 mv struct Config {
 	var string name
 }
-var Config c = Config("x")
+var c = Config("x")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -108,9 +108,9 @@ var Config c = Config("x")
 mv struct Config {
 	var string name
 }
-var Config c = Config("x")
-mv Config c2 = c
-var Config c3 = c2.copy()
+var c = Config("x")
+mv c2 = c
+var c3 = c2.copy()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -120,8 +120,8 @@ var Config c3 = c2.copy()
 mv struct Config {
 	var string name
 }
-var Config c = Config("x")
-var Config c4 = c
+var c = Config("x")
+var c4 = c
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("cannot copy 'Config' by value"))).toBe(true);
@@ -133,7 +133,7 @@ mv struct Node {
 	var int value
 }
 pub func main = () {
-	var Box<Node> p = Box<Node>(Node(10))
+	var p = Box<Node>(Node(10))
 	ref Box<Node> q = p
 	q.value = 99
 	Console.write("\\{p.value} \\{q.value}")
@@ -151,7 +151,7 @@ mv struct Counter {
 		self.count = self.count + 1
 	}
 }
-var Counter c = Counter(0)
+var c = Counter(0)
 c.increment()
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -227,9 +227,9 @@ pub struct List<T> {
         return self.elem
     }
 }
-var List<int> numbers = List<int>(0)
+var numbers = List<int>(0)
 numbers.push(42)
-const int top = numbers.pop()
+const top = numbers.pop()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -293,7 +293,7 @@ extend struct Point {
 }
 
 const p = Point(3, 4)
-const int m = p.manhattan()
+const m = p.manhattan()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

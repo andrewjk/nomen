@@ -130,7 +130,7 @@ func takeRefNode = (ref Node? n) { var int z = 0 }
 func makeFive = (ref int x) {
     x = 5
 }
-var int num = 1
+var num = 1
 makeFive(ref num)
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -141,7 +141,7 @@ makeFive(ref num)
 func makeFive = (ref int x) {
     x = 5
 }
-var int num = 1
+var num = 1
 makeFive(num)
 `;
 		const errors = compile_main(input);
@@ -162,7 +162,7 @@ print(ref 5)
 func makeFive = (ref int x) {
     x = 5
 }
-const int fixed = 1
+const fixed = 1
 makeFive(ref fixed)
 `;
 		const errors = compile_main(input);
@@ -174,7 +174,7 @@ makeFive(ref fixed)
 func makeFive = (ref int x) {
     x = 5
 }
-var int mutable = 1
+var mutable = 1
 makeFive(ref mutable)
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -201,8 +201,8 @@ func touch = (ref Item item {}, int by) {
 }
 
 pub func main = () {
-    var Item item = Item(1, mv Box<Stats>(mv Stats(2)))
-    var Box<Stats> s = item.stats
+    var item = Item(1, mv Box<Stats>(mv Stats(2)))
+    var s = item.stats
     touch(ref item, 1)
     Console.write("\\{s.hits}")
 }
@@ -294,8 +294,8 @@ func touch = (ref Item item, int by) {
 }
 
 pub func main = () {
-    var Item item = Item(1, mv Box<Stats>(mv Stats(2)))
-    var Box<Stats> s = item.stats
+    var item = Item(1, mv Box<Stats>(mv Stats(2)))
+    var s = item.stats
     touch(ref item, 1)
     Console.write("\\{s.hits}")
 }

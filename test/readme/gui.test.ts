@@ -8,8 +8,8 @@ describe("readme: GUI", () => {
 import System::Controls
 
 pub func main = () {
-    var Window win = Window("Nomen", 400, 300)
-    var Text title = Text(win)
+    var win = Window("Nomen", 400, 300)
+    var title = Text(win)
     title.set_text("Hello")
     win.show()
 }

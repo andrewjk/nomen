@@ -189,7 +189,7 @@ const bool diff = a != c
 describe("spec: cast operator", () => {
 	test("explicit casts", () => {
 		const input = `
-const int x = 42
+const x = 42
 const float f = x as float
 const int8 b = x as int8
 `;
@@ -219,9 +219,9 @@ mv enum Res {
     case err(string message)
     case ok(int count)
 }
-var Res r = Res.ok(42)
+var r = Res.ok(42)
 var Res.ok ok = r as Res.ok
-var Res back = ok as Res
+var back = ok as Res
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -250,13 +250,13 @@ Console.write("Hello, \\{name}. You are \\{age} years old.")
 
 	test("format specs: precision, width, zero-pad, base, grouping, exponential", () => {
 		const input = `
-var float price = 9.5
-var int count = 3
-var int flags = 255
-var string label = "Go"
-var float total = price * (count as float)
-var int audience = 1234567
-var float speed = 0.00025
+var price = 9.5
+var count = 3
+var flags = 255
+var label = "Go"
+var total = price * (count as float)
+var audience = 1234567
+var speed = 0.00025
 Console.write("total \\{total:.2}")
 Console.write("[\\{label:>8}] [\\{count:03}] [\\{flags:x}]")
 Console.write("[\\{label:<8}] [\\{flags:08X}] [\\{flags:b}]")
@@ -269,10 +269,10 @@ Console.write("speed \\{speed:.2e} m/s")
 
 	test("format specs: custom patterns", () => {
 		const input = `
-var int audience = 1234567
-var float total = 1234567.5
-var float share = 0.125
-var int debt = -9876
+var audience = 1234567
+var total = 1234567.5
+var share = 0.125
+var debt = -9876
 Console.write("\\{audience:#,##0} viewers")
 Console.write("\\{total:#,##0.00} owed")
 Console.write("\\{share:0.0%} share")
@@ -304,7 +304,7 @@ Console.write("\\{s:n}")
 
 	test("format specs: exponential on an integer is an error", () => {
 		const input = `
-var int n = 5
+var n = 5
 Console.write("\\{n:e}")
 `;
 		const errors = compile_main(input);
@@ -314,7 +314,7 @@ Console.write("\\{n:e}")
 
 	test("format specs: precision on a non-float is an error", () => {
 		const input = `
-var int n = 5
+var n = 5
 Console.write("\\{n:.2}")
 `;
 		const errors = compile_main(input);
@@ -370,13 +370,13 @@ if str.length == 11 {
 
 	test("array and list slices return a view of elements", () => {
 		const input = `
-const int[] nums = [10, 20, 30, 40, 50]
+const nums = [10, 20, 30, 40, 50]
 view s = nums.slice(1, 4)
 Console.write("\\{s.length}")
 Console.write("\\{s.at(0)}")
 Console.write("\\{s.at(2)}")
 
-var List<int> list = List<int>()
+var list = List<int>()
 list.push(1)
 list.push(2)
 list.push(3)
@@ -489,8 +489,8 @@ pub struct Line {
 	var len = 0
 }
 
-var string doc = "name other"
-var Line first = Line(doc.slice(0, 4))
+var doc = "name other"
+var first = Line(doc.slice(0, 4))
 first.text.to_string()
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -502,7 +502,7 @@ struct Line {
 	var view string text
 }
 func make_line = (out Line) {
-	var string doc = "hi"
+	var doc = "hi"
 	return Line(doc.slice(0, 2))
 }
 pub func main = () { Console.write("x") }

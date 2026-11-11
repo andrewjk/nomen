@@ -286,7 +286,7 @@ access:
 
 ```nomen
 mv struct Counter {
-    var int count = 0
+    var count = 0
 
     func increment = (ref self) {
         self.count = self.count + 1
@@ -437,7 +437,7 @@ const a = Point(1, 2)
 const b = Point(1, 2)
 const bool same = a == b            // true  — derived #op_eq
 const bool diff = a != b            // false — derived from #op_eq
-const string s = a.to_string()      // "Point(x=1, y=2)" — derived to_string
+const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
 ```
 
 ### Operator Overloading
@@ -467,7 +467,7 @@ struct Box<T> {
     var T value
 }
 
-var Box<int> b = Box<int>(42)
+var b = Box<int>(42)
 Console.write("\{b.value}")
 ```
 
@@ -492,7 +492,7 @@ func unwrap<T> = (Box<T> box, out T) {
     return box.value
 }
 
-var Box<int> b = Box<int>(42)
+var b = Box<int>(42)
 var int v = unwrap(b)   // T inferred as int
 ```
 
@@ -596,8 +596,8 @@ func print_circle = (Circle c) {
 print_circle(Circle("C", 25, 70, 15))
 
 struct Layout {
-    var int grow = 0
-    var int shrink = 0
+    var grow = 0
+    var shrink = 0
 }
 
 const Layout big = [ .. Layout(), grow = 2, shrink = 3 ]
@@ -643,9 +643,9 @@ The standard `System` library is imported with `import System`.
 Console.write("no newline")
 Console.write_line("with newline")
 
-const string line = Console.read_line()
-const char c = Console.read_char()
-const string p = Console.platform()
+const line = Console.read_line()
+const c = Console.read_char()
+const p = Console.platform()
 ```
 
 ## Concurrency
@@ -779,7 +779,7 @@ The checker guarantees a view can't outlive its source and is invalidated once
 the source is reassigned (which frees the buffer it points into):
 
 ```nomen
-var string s = "hello world"
+var s = "hello world"
 view v = s.slice(0, 5)               // borrows from s
 Console.write(v.to_string())         // "hello" — materializes an owned copy
 s = "changed"                        // frees s's old buffer → v dangles
@@ -799,8 +799,8 @@ import System
 import System::Controls
 
 pub func main = () {
-    var Window win = Window("Nomen", 400, 300)
-    var Text title = Text(win)
+    var win = Window("Nomen", 400, 300)
+    var title = Text(win)
     title.set_text("Hello")
     win.show()
 }

@@ -10,6 +10,15 @@ export default class FunctionCallNode extends BaseNode {
 	is_static?: boolean;
 	is_func_param?: boolean;
 	type_args?: Type[];
+	/**
+	 * True when `type_args` was NOT written at the call site — the checker
+	 * recovered the arguments from the expected (annotation / return /
+	 * parameter) type (check_function_call_node's expected-args branch). The
+	 * redundant-type-annotation lint consults this: an annotation that
+	 * instantiates the constructor is load-bearing and must never be flagged
+	 * as redundant, even though `type_args` is populated after checking.
+	 */
+	type_args_from_expected?: boolean;
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**

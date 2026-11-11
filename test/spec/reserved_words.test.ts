@@ -19,7 +19,7 @@ pub func main = () {
 
 	test("keyword method names are callable", () => {
 		const input = `
-const string m = Regex.match("[0-9]+", "abc123")
+const m = Regex.match("[0-9]+", "abc123")
 Console.write("\\{m}")
 `;
 		expect(compile_main(input)).toEqual([]);

@@ -180,7 +180,7 @@ import System::Test
 func add = (int a, int b, out int) => a + b
 
 func add_once = () {
-	const int r = add(1, 1)
+	const r = add(1, 1)
 }
 
 pub func test_add = (ref Tester t) {
@@ -198,10 +198,10 @@ pub func bench_add = (ref Tester t) {
 
 ```nomen
 const x = 5                          // immutable
-var int y = 10                       // mutable, explicit type
-const int[] nums = [1, 2, 3]
-const int[10] buf = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  // fixed-length
-var int? maybe = null                // nullable
+var y = 10                           // mutable
+const nums = [1, 2, 3]
+const int[10] buf = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  // fixed-length — annotation is load-bearing
+var int? maybe = null                // nullable — annotation required (null infers nothing)
 ref Box q = p                        // mv-struct alias — must be spelled (no plain copies)
 ```
 

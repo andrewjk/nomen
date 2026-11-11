@@ -6,7 +6,7 @@ const SAMPLE = `struct Point {
 pub func main = () {
 	Console.write_line("Hello, Nomen!")
 
-	const Point p = Point(2, 3)
+	const p = Point(2, 3)
 	Console.write_line("p = (\\{p.x}, \\{p.y})")
 
 	for i of 1 .. 6 {
