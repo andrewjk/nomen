@@ -10,10 +10,38 @@ const WIN_H = 500
 // the app's #init — where everything is still a local (see GUI.md, "The App
 // run loop": composite `ref` wiring on fields would alias `self`).
 func add_todo = (
-	ref Container todos,
+	ref Container todos {
+		aligns,
+		cols,
+		dirty,
+		dirty_idx,
+		gaps,
+		grows,
+		h_kinds,
+		h_vals,
+		handles,
+		kinds,
+		measured_count,
+		mh,
+		mw,
+		pads,
+		pars,
+		prh,
+		prw,
+		prx,
+		pry,
+		rh,
+		rw,
+		rx,
+		ry,
+		shrinks,
+		spans,
+		w_kinds,
+		w_vals
+	},
 	Window content,
-	ref List<CheckBox> owned,
-	ref List<uint64> handles,
+	ref List<CheckBox> owned { items },
+	ref List<uint64> handles { items },
 	string text
 ) {
 	// Created against the DOCUMENT VIEW (`content`), not the window: the
