@@ -35,10 +35,7 @@ export function compile_module(body: string): ReturnType<typeof parse>["errors"]
 	source += body;
 	// Spec snippets are trusted like the rest of the suite: the examples drive
 	// System internals (e.g. `Buffer`) that user builds keep locked down.
-	return assert_lint_clean(
-		parse(source, core, undefined, { allow_internal: true }),
-		source,
-	);
+	return assert_lint_clean(parse(source, core, undefined, { allow_internal: true }), source);
 }
 
 // Wrap free-standing statements inside a main function and parse.
