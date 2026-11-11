@@ -117,7 +117,17 @@ function validate_qualified_paths(status: ParseStatus, prefixes: Set<string>): v
 function mark_library_nodes(root: RootNode, boundary: number): void {
 	// The System library source is appended after the user source, so any
 	// declaration starting at or past `boundary` belongs to the library.
-	// Walk the tree and flag functions (including struct methods) and structs.
+	// Walk EVERY node reflectively (skipping parent/scope back-refs), not
+	// just statement-list trees: a closure held by an expression — a lambda
+	// in a declaration's value or a call argument — has no statements/alloc
+	// path to it, and its inner declarations must be stamped too.
+	function is_node(value: unknown): boolean {
+		return (
+			!!value &&
+			typeof value === "object" &&
+			typeof (value as { node_type?: unknown }).node_type === "string"
+		);
+	}
 	function walk(node: any): void {
 		if (!node || typeof node !== "object") return;
 		if (Array.isArray(node)) {
@@ -125,36 +135,25 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
 			return;
 		}
 		const type = node.node_type as string | undefined;
-		if (type === "func") {
-			if ((node.start as number) >= boundary) node.is_library = true;
-			if (node.statements) walk(node.statements);
-			if (node.allocations) walk(node.allocations);
-			return;
-		}
-		if (type === "struct") {
-			if ((node.start as number) >= boundary) node.is_library = true;
-			if (node.functions) for (const f of node.functions) walk(f);
-			if (node.fields) walk(node.fields);
-		}
-		if (type === "trait") {
-			if ((node.start as number) >= boundary) node.is_library = true;
-			if (node.functions) for (const f of node.functions) walk(f);
-			if (node.fields) walk(node.fields);
-		}
-		if (type === "enum" || type === "bitset") {
+		if (
+			type === "func" ||
+			type === "struct" ||
+			type === "trait" ||
+			type === "enum" ||
+			type === "bitset" ||
+			type === "declare"
+		) {
 			if ((node.start as number) >= boundary) node.is_library = true;
 		}
-		if (type === "declare") {
-			if ((node.start as number) >= boundary) node.is_library = true;
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const value = node[key];
+			if (Array.isArray(value)) {
+				for (const item of value) if (is_node(item)) walk(item);
+			} else if (is_node(value)) {
+				walk(value);
+			}
 		}
-		if (type === "extend") {
-			// An extend's methods are merged into the target struct during
-			// check (after this pass), so walk them here to set is_library on
-			// library-defined extension methods.
-			if (node.functions) for (const f of node.functions) walk(f);
-		}
-		if (node.statements) walk(node.statements);
-		if (node.allocations) walk(node.allocations);
 	}
 	walk(root);
 }
