@@ -12,7 +12,7 @@ enum Direction {
     case west
 }
 
-var int x = 5
+var x = 5
 var Direction direction = Direction.north
 const int[] items = [1, 2, 3]
 

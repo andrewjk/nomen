@@ -5,8 +5,8 @@ import { compile_main, compile_module } from "./_helpers.ts";
 describe("readme: strings", () => {
 	test("concatenation, repetition, interpolation", () => {
 		const input = `
-const string name = "Alice"
-var int age = 30
+const name = "Alice"
+var age = 30
 const string greeting = "Hello, " + name
 const string dashes = "-" * 10
 Console.write("You are \\{age} years old.")
@@ -16,7 +16,7 @@ Console.write("You are \\{age} years old.")
 
 	test("view string slice returns a non-mv view", () => {
 		const input = `
-const string greeting = "Hello, world"
+const greeting = "Hello, world"
 if greeting.length >= 5 {
     view hi = greeting.slice(0, 5)
     Console.write(hi.to_string())

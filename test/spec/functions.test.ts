@@ -267,8 +267,8 @@ var func (int, out int) quadrupler = func (x, out int) {
 func apply = (func (out int) f, out int) { return f() }
 
 pub func main = () {
-	var int a = 1
-	var int b = 2
+	var a = 1
+	var b = 2
 	var int r1 = apply(() => a + b)
 	var int r2 = apply(func (out int) { return a + b })
 	Console.write_line("\\{quadrupler(1)} \\{r1} \\{r2}")
@@ -282,7 +282,7 @@ pub func main = () {
 func apply = (func (out int) f, out int) { return f() }
 
 pub func main = () {
-	var int a = 1
+	var a = 1
 	var int r = apply(() => { return a + 1 })
 }
 `;
@@ -306,7 +306,7 @@ Console.write("\\{add_base(1)} \\{add_base(2)}")
 mv struct Owned {
 	var List<int> data
 }
-var Owned o = Owned(List<int>())
+var o = Owned(List<int>())
 var func (out int) first = (out int) => o.data.at_or(0, -1)
 Console.write("\\{first()}")
 `;
@@ -361,7 +361,7 @@ var func (int, out int) square = func (n, out int) {
 	test("a declaration block body with a declared return must return", () => {
 		const input = `
 var func (int, out int) square {
-	var int a = 1
+	var a = 1
 }
 `;
 		const errors = compile_main(input);

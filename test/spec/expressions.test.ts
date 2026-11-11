@@ -5,8 +5,8 @@ import { compile_main, compile_module } from "./_helpers.ts";
 describe("spec: variables", () => {
 	test("basic declarations", () => {
 		const input = `
-const string name = "Alice"
-var int age = 30
+const name = "Alice"
+var age = 30
 var count = 10
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -14,7 +14,7 @@ var count = 10
 
 	test("view and var view declarations", () => {
 		const input = `
-const string greeting = "hello"
+const greeting = "hello"
 view a = greeting.slice(0, 3)
 var view b = greeting.slice(0, 3)
 b = greeting.slice(1, 4)
@@ -26,12 +26,12 @@ b = greeting.slice(1, 4)
 describe("spec: literals", () => {
 	test("numbers, strings, chars, bools, null", () => {
 		const input = `
-const int a = 42
-const float b = 3.14
-const int c = -5
-const string s = "Hello, World!"
-const char ch = 'h'
-const bool flag = true
+const a = 42
+const b = 3.14
+const c = -5
+const s = "Hello, World!"
+const ch = 'h'
+const flag = true
 var int? nothing = null
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -81,7 +81,7 @@ const range = 0..5
 describe("spec: operators", () => {
 	test("arithmetic and comparison", () => {
 		const input = `
-var int x = 5
+var x = 5
 x = x + 2
 x = x - 1
 x = x * 3
@@ -230,7 +230,7 @@ var back = ok as Res
 describe("spec: string operations", () => {
 	test("concatenation and repetition", () => {
 		const input = `
-const string name = "World"
+const name = "World"
 const greeting = "Hello, " + name
 const dashes = "-" * 10
 `;
@@ -241,8 +241,8 @@ const dashes = "-" * 10
 describe("spec: string interpolation", () => {
 	test("interpolation in Console.write", () => {
 		const input = `
-const string name = "Alice"
-const int age = 30
+const name = "Alice"
+const age = 30
 Console.write("Hello, \\{name}. You are \\{age} years old.")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -388,7 +388,7 @@ Console.write("\\{t.at(1)}")
 
 	test("var view is a re-pointable mutable view", () => {
 		const input = `
-var string greeting = "hello world"
+var greeting = "hello world"
 var view hi = greeting.slice(0, 5)
 hi = greeting.slice(6, 11)
 Console.write(hi.to_string())
@@ -407,7 +407,7 @@ Console.write(v.to_string())
 
 	test("view keyword with an explicit element type is a const view", () => {
 		const input = `
-var string greeting = "hello world"
+var greeting = "hello world"
 view string hi = greeting.slice(0, 5)
 Console.write(hi.to_string())
 `;
@@ -430,7 +430,7 @@ var v = str.slice(0, 5)
 	test("user-defined Viewable container delegates slice to its Buffer", () => {
 		const input = `
 pub mv struct UserList: Viewable {
-	var int length = 0
+	var length = 0
 	var Buffer<int> items = Buffer<int>()
 	pub func slice = (
 		self,

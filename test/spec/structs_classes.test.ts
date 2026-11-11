@@ -198,8 +198,8 @@ describe("spec: generic structs", () => {
 	test("generic struct declaration", () => {
 		const input = `
 pub struct List<T> {
-    var int length = 0
-    var int capacity = 0
+    var length = 0
+    var capacity = 0
     var T elem
 
     pub func push = (ref self, T value) {
@@ -216,8 +216,8 @@ pub struct List<T> {
 	test("generic struct instantiation", () => {
 		const input = `
 pub struct List<T> {
-    var int length = 0
-    var int capacity = 0
+    var length = 0
+    var capacity = 0
     var T elem
 
     pub func push = (ref self, T value) {
@@ -261,8 +261,8 @@ printCircle(Circle("c", 25, 70, 15))
 		// plain variable (mv structs require mv/.copy()).
 		const input = `
 struct LayoutParams {
-    var int grow = 0
-    var int shrink = 0
+    var grow = 0
+    var shrink = 0
 }
 
 func layout = (int grow, out LayoutParams) {

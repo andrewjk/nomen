@@ -650,17 +650,3 @@ descend into all node-valued children reflectively; the risk is
 over-stamping changing System-lib split placement for generated closure
 functions, so it needs its own pass over the backends' TU decisions rather
 than a drive-by.
-
-## Assert doc examples are lint-clean in the mirror suites
-
-Recorded 2026-11-11. `test/spec/` and `test/readme/` compile every fenced
-SPEC/README block but assert ERRORS only — warnings (the var-never-changed
-lint, the redundant-annotation lint) pass silently, so annotated or
-`var`-should-be-`const` examples can re-accumulate in the docs unnoticed
-(they did: ~40 spots cleaned this pass). The helpers (`compile_module` /
-`compile_main`) could also assert `warnings` is empty for blocks that check
-clean. Two wrinkles to sort first: blocks that are deliberate
-teaching-counterexamples (they error, so they never reach the lint — fine),
-and error-demo blocks whose warnings are suppressed anyway (the lint only
-runs on clean checks), so the assertion would be zero-warning ON CLEAN
-BLOCKS only.

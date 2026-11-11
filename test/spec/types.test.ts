@@ -120,7 +120,7 @@ describe("spec: reference types", () => {
 struct Character { var int code }
 struct Node { var int value }
 func takeRef = (ref int x) { var int y = x }
-func takeRefNode = (ref Node? n) { var int z = 0 }
+func takeRefNode = (ref Node? n) { var z = 0 }
 `;
 		expect(compile_module(input)).toEqual([]);
 	});

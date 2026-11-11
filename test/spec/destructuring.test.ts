@@ -116,7 +116,7 @@ pub func main = () {
 	test("mv struct destructuring with rename", () => {
 		const input = `
 mv struct Slot {
-	var List<string> items = List<string>()
+	var items = List<string>()
 }
 pub func main = () {
 	var s = Slot()

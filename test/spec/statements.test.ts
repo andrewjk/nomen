@@ -7,7 +7,7 @@ import { compile_main, compile_module, core } from "./_helpers.ts";
 describe("spec: if/else", () => {
 	test("basic if/else with blocks", () => {
 		const input = `
-var int x = 1
+var x = 1
 if x > 0 {
     Console.write("positive")
 } else {
@@ -19,7 +19,7 @@ if x > 0 {
 
 	test("if expression with else", () => {
 		const input = `
-var int x = 1
+var x = 1
 const result = if x > 0 -> "positive"
                else -> "zero"
 `;
@@ -28,7 +28,7 @@ const result = if x > 0 -> "positive"
 
 	test("else if chain (nested else blocks)", () => {
 		const input = `
-var int x = 1
+var x = 1
 if x > 0 {
     Console.write("positive")
 } else {
@@ -44,7 +44,7 @@ if x > 0 {
 
 	test("switch for chained conditions (no `else if`)", () => {
 		const input = `
-var int x = 1
+var x = 1
 switch {
     case x > 0 -> Console.write("positive")
     case x < 0 -> Console.write("negative")
@@ -57,7 +57,7 @@ switch {
 describe("spec: if expression", () => {
 	test("if -> return syntax", () => {
 		const input = `
-var bool condition = true
+var condition = true
 const result = if condition -> "yes"
                else -> "no"
 `;
@@ -68,7 +68,7 @@ const result = if condition -> "yes"
 describe("spec: match statement", () => {
 	test("match with else", () => {
 		const input = `
-var int x = 1
+var x = 1
 const result = match x {
     case 1 -> "one"
     case 2 -> "two"
@@ -98,7 +98,7 @@ match direction {
 
 	test("match bool exhaustive", () => {
 		const input = `
-var bool flag = true
+var flag = true
 match flag {
     case true -> Console.write("yes")
     case false -> Console.write("no")
@@ -422,7 +422,7 @@ const message = match result {
 describe("spec: switch statement", () => {
 	test("switch as expression", () => {
 		const input = `
-var int x = 5
+var x = 5
 const size = switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
@@ -435,7 +435,7 @@ const size = switch {
 describe("spec: while loop", () => {
 	test("basic while", () => {
 		const input = `
-var int x = 0
+var x = 0
 while x < 10 {
     Console.write("\\{x}")
     x += 1
@@ -446,7 +446,7 @@ while x < 10 {
 
 	test("while with update clause", () => {
 		const input = `
-var int x = 0
+var x = 0
 while x < 10; x += 1 {
     Console.write("\\{x}")
 }
@@ -514,8 +514,8 @@ for ref n of nums {
 describe("spec: break and continue", () => {
 	test("break and continue inside while", () => {
 		const input = `
-var bool should_exit = false
-var bool should_skip = false
+var should_exit = false
+var should_skip = false
 while true {
     if should_exit {
         break
@@ -596,7 +596,7 @@ func build = (int x, out string) {
 describe("spec: let and arrow shorthand", () => {
 	test("let and -> interchangeable in expression position", () => {
 		const input = `
-var int x = 1
+var x = 1
 const a = if x > 0 -> "yes"
           else -> "no"
 const b = if x > 0 let "yes"
@@ -629,7 +629,7 @@ todo("with parens")
 describe("spec: method/function calls as expressions", () => {
 	test("match, switch, if as expressions", () => {
 		const input = `
-var int x = 5
+var x = 5
 const label = match x {
     case 1 -> "one"
     case 2 -> "two"

@@ -18,7 +18,7 @@ pub func work = (Point p) {
 }
 
 pub func main = () {
-	var Point p = Point(0, 0)
+	var p = Point(0, 0)
 	Thread(work(p)).start()
 }
 `;
@@ -28,14 +28,14 @@ pub func main = () {
 	test("structs auto-derive Sendable; the explicit marker is accepted", () => {
 		const input = `
 pub struct SafeCounter : Sendable {
-	var int count = 0
+	var count = 0
 }
 
 pub func work = (SafeCounter c) {
 }
 
 pub func main = () {
-	var SafeCounter c = SafeCounter()
+	var c = SafeCounter()
 	Thread(work(c)).start()
 }
 `;
@@ -106,14 +106,14 @@ pub func main = () {
 	test("spawn with struct arg", () => {
 		const input = `
 pub struct Packet : Sendable {
-	var int value = 0
+	var value = 0
 }
 
 func work = (Packet p) {
 }
 
 pub func main = () {
-	var Packet p = Packet()
+	var p = Packet()
 	Thread(work(p)).start()
 }
 `;
@@ -283,7 +283,7 @@ pub func main = () {
 	test("a moved mv struct crosses outside a nursery", () => {
 		const input = `
 mv struct Counter {
-	var int count = 0
+	var count = 0
 }
 
 func work = (mv Counter c) {
