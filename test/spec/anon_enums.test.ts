@@ -41,7 +41,7 @@ pub enum Result<T, E> {
     case error(E error)
 }
 
-var Result<int, string> result = .error("not a number")
+const Result<int, string> result = .error("not a number")
 match result {
     case .ok(age) -> Console.write("\\{age}")
     case .error(msg) -> Console.write("error \\{msg}")

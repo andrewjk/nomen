@@ -17,7 +17,7 @@ mv struct ButtonApp: App {
 
 	// Create controls in the constructor
 	pub func #init = (self, Window window) {
-		var btn = Button(window, "Click me")
+		const btn = Button(window, "Click me")
 		var Container grid = VStack(0)
 		grid.add_spacer_to(grid.root_index(), 1, 1)
 		grid.add_to_kind(

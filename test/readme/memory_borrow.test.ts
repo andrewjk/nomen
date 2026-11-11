@@ -36,7 +36,7 @@ func take = (mv Box b) {
 }
 
 pub func main = () {
-    var h = Holder(mv Box(7))
+    const h = Holder(mv Box(7))
     var b = Box(42)
     take(mv b)
 }

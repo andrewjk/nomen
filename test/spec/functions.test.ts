@@ -294,7 +294,7 @@ pub func main = () {
 
 	test("lambda captures an enclosing local", () => {
 		const input = `
-var base = 10
+const base = 10
 var func (int, out int) add_base = (x, out int) => x + base
 Console.write("\\{add_base(1)} \\{add_base(2)}")
 `;

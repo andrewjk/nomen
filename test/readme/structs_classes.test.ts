@@ -63,7 +63,7 @@ func take = (mv Box b, out int) {
 }
 
 pub func main = () {
-	var h = Holder(mv Box(7))
+	const h = Holder(mv Box(7))
 	var b = Box(42)
 	var int v = take(mv b)
 	Console.write("\\{v} \\{h.content.value}")

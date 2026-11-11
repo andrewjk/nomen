@@ -134,122 +134,122 @@ mv struct GalleryApp: App {
 		// The whole gallery scrolls: the page lives on a Scrollable's
 		// document view. The window is a viewport on a page much taller
 		// than it, so every section stays reachable by scrolling.
-		var page = Scrollable(window)
+		const page = Scrollable(window)
 		// The document view hosts every page control. The +1 from
 		// content_window releases when this constructor's local dies — the
 		// Scrollable holds its own reference.
-		var Window content = page.content_window()
+		const Window content = page.content_window()
 
 		// ── Controls (built against the document view) ──
-		var header = Text(content)
+		const header = Text(content)
 		header.set_text("Controls Gallery")
 		header.set_bold(true)
 
-		var title = Text(content)
+		const title = Text(content)
 		title.set_text("Inputs")
 		title.set_bold(true)
-		var name = TextBox(content)
+		const name = TextBox(content)
 		name.set_placeholder("Text box")
-		var secret = SecureField(content)
+		const secret = SecureField(content)
 		secret.set_placeholder("Password")
-		var search = SearchField(content)
+		const search = SearchField(content)
 		search.set_placeholder("Search")
-		var notes = TextView(content)
+		const notes = TextView(content)
 		notes.set_placeholder("Multiline notes…")
 
-		var choice_title = Text(content)
+		const choice_title = Text(content)
 		choice_title.set_text("Choices")
 		choice_title.set_bold(true)
-		var agree = CheckBox(content)
+		const agree = CheckBox(content)
 		agree.set_title("Check me")
-		var radio_a = Radio(content, "One")
-		var radio_b = Radio(content, "Two")
+		const radio_a = Radio(content, "One")
+		const radio_b = Radio(content, "Two")
 		radio_a.set_checked(true)
-		var flip = Switch(content)
+		const flip = Switch(content)
 		flip.set_checked(true)
-		var stamp = Toggle(content, "Toggle")
-		var views = Segmented(content, 3)
+		const stamp = Toggle(content, "Toggle")
+		const views = Segmented(content, 3)
 		views.set_label(0, "Day")
 		views.set_label(1, "Week")
 		views.set_label(2, "Month")
 		views.set_selected(1)
-		var pick = Select(content)
+		const pick = Select(content)
 		pick.add_item("Red")
 		pick.add_item("Green")
 		pick.add_item("Blue")
-		var step = Stepper(content)
+		const step = Stepper(content)
 		step.set_min(0.0)
 		step.set_max(10.0)
 		step.set_increment(1.0)
 		step.set_value(3.0)
-		var slide = Slider(content, 0.0, 100.0)
+		const slide = Slider(content, 0.0, 100.0)
 		slide.set_value(40.0)
 
-		var display_title = Text(content)
+		const display_title = Text(content)
 		display_title.set_text("Display")
 		display_title.set_bold(true)
-		var bar = Progress(content)
+		const bar = Progress(content)
 		bar.set_value(0.4)
 		var spin = Spinner(content)
 		spin.start()
-		var stars = LevelIndicator(content)
+		const stars = LevelIndicator(content)
 		stars.set_max(5.0)
 		stars.set_value(3.0)
-		var icon = ImageView(content)
+		const icon = ImageView(content)
 		icon.set_symbol("gearshape")
-		var when = DatePicker(content)
+		const when = DatePicker(content)
 		when.set_time(1760000000)
-		var color = ColorPicker(content)
+		const color = ColorPicker(content)
 		color.set_rgb(52, 149, 235)
 		// The display controls show no title of their own, so each row pairs
 		// the control with a caption label (the caption sizes to its text;
 		// the control fills the rest of the row).
-		var prog_caption = Text(content)
+		const prog_caption = Text(content)
 		prog_caption.set_text("Progress")
-		var spin_caption = Text(content)
+		const spin_caption = Text(content)
 		spin_caption.set_text("Spinner")
-		var stars_caption = Text(content)
+		const stars_caption = Text(content)
 		stars_caption.set_text("Level indicator")
-		var icon_caption = Text(content)
+		const icon_caption = Text(content)
 		icon_caption.set_text("Image view")
-		var when_caption = Text(content)
+		const when_caption = Text(content)
 		when_caption.set_text("Date picker")
-		var color_caption = Text(content)
+		const color_caption = Text(content)
 		color_caption.set_text("Color picker")
 
-		var action_title = Text(content)
+		const action_title = Text(content)
 		action_title.set_text("Actions")
 		action_title.set_bold(true)
-		var hover_btn = Button(content, "Hover me")
+		const hover_btn = Button(content, "Hover me")
 		set_tooltip(hover_btn.handle, "Tooltips attach to any control by handle")
-		var alert_btn = Button(content, "Show alert")
-		var sheet_btn = Button(content, "Show sheet")
-		var pop_btn = Button(content, "Show popover")
+		const alert_btn = Button(content, "Show alert")
+		const sheet_btn = Button(content, "Show sheet")
+		const pop_btn = Button(content, "Show popover")
 
-		var group_title = Text(content)
+		const group_title = Text(content)
 		group_title.set_text("Grouping")
 		group_title.set_bold(true)
-		var rule = Separator(content)
-		var form = GroupBox(content, "Group box")
+		const rule = Separator(content)
+		const form = GroupBox(content, "Group box")
 
-		var scroll_title = Text(content)
+		const scroll_title = Text(content)
 		scroll_title.set_text("Scrolling")
 		scroll_title.set_bold(true)
-		var scroll = Scrollable(content) // nested: the Scrolling section's viewport
+		const scroll = Scrollable(content) // nested: the Scrolling section's viewport
 		var Container scroll_grid = Grid(1, 6)
 		scroll_grid.padding = 8
-		var Window scroll_content = scroll.content_window()
-		var row_1 = Text(scroll_content)
+		const Window scroll_content = scroll.content_window()
+		const row_1 = Text(scroll_content)
 		row_1.set_text("Row 1 — scroll me")
-		var row_2 = Text(scroll_content)
+		const row_2 = Text(scroll_content)
 		row_2.set_text("Row 2")
-		var row_3 = Text(scroll_content)
+		const row_3 = Text(scroll_content)
 		row_3.set_text("Row 3")
-		var row_4 = Text(scroll_content)
+		const row_4 = Text(scroll_content)
 		row_4.set_text("Row 4")
-		var row_5 = Text(scroll_content)
+		const row_5 = Text(scroll_content)
 		row_5.set_text("Row 5")
-		var row_6 = Text(scroll_content)
+		const row_6 = Text(scroll_content)
 		row_6.set_text("Row 6 — the end")
 		scroll_grid.add(row_1.handle, 0, 24, 1)
 		scroll_grid.add(row_2.handle, 0, 24, 1)
@@ -258,77 +258,77 @@ mv struct GalleryApp: App {
 		scroll_grid.add(row_5.handle, 0, 24, 1)
 		scroll_grid.add(row_6.handle, 0, 24, 1)
 
-		var tabs_title = Text(content)
+		const tabs_title = Text(content)
 		tabs_title.set_text("Tabs")
 		tabs_title.set_bold(true)
-		var tabs = Tabs(content, 2)
+		const tabs = Tabs(content, 2)
 		tabs.set_label(0, "One")
 		tabs.set_label(1, "Two")
 		// Each page is its own layout root (content_window(index)); the
 		// laid-out frames stay valid when the user switches pages natively.
-		var Window tabs_page_0 = tabs.content_window(0)
-		var Window tabs_page_1 = tabs.content_window(1)
+		const Window tabs_page_0 = tabs.content_window(0)
+		const Window tabs_page_1 = tabs.content_window(1)
 		var Container tabs_grid_0 = Grid(1, 6)
 		tabs_grid_0.padding = 12
-		var tabs_label_0 = Text(tabs_page_0)
+		const tabs_label_0 = Text(tabs_page_0)
 		tabs_label_0.set_text("Page one content")
 		tabs_grid_0.add(tabs_label_0.handle, 0, 24, 1)
 		var Container tabs_grid_1 = Grid(1, 6)
 		tabs_grid_1.padding = 12
-		var tabs_label_1 = Text(tabs_page_1)
+		const tabs_label_1 = Text(tabs_page_1)
 		tabs_label_1.set_text("Page two content")
 		tabs_grid_1.add(tabs_label_1.handle, 0, 24, 1)
 
-		var list_title = Text(content)
+		const list_title = Text(content)
 		list_title.set_text("List")
 		list_title.set_bold(true)
-		var list = ListView(content)
+		const list = ListView(content)
 		list.add_row("alpha")
 		list.add_row("beta")
 		list.add_row("gamma")
 		list.add_row("delta")
 		list.select_row(1)
 
-		var combo_title = Text(content)
+		const combo_title = Text(content)
 		combo_title.set_text("Combo box")
 		combo_title.set_bold(true)
-		var combo = ComboBox(content)
+		const combo = ComboBox(content)
 		combo.add_item("Red")
 		combo.add_item("Green")
 		combo.add_item("Blue")
 		combo.set_selected(1)
 
-		var menu_btn = Button(content, "Right-click me")
-		var menu = Menu()
+		const menu_btn = Button(content, "Right-click me")
+		const menu = Menu()
 		menu.add_item("Cut")
 		menu.add_item("Copy")
 		menu.add_separator()
 		menu.add_item("Paste")
 		menu.attach(menu_btn.handle)
 
-		var split_title = Text(content)
+		const split_title = Text(content)
 		split_title.set_text("Split view")
 		split_title.set_bold(true)
-		var split = SplitView(content, 2, true)
+		const split = SplitView(content, 2, true)
 		// Each pane is its own layout root (content_window(index)); the pane
 		// layouts re-run after the split is re-framed (see layout_panes).
-		var Window split_left = split.content_window(0)
-		var Window split_right = split.content_window(1)
+		const Window split_left = split.content_window(0)
+		const Window split_right = split.content_window(1)
 		var Container split_grid_0 = Grid(1, 6)
 		split_grid_0.padding = 8
-		var split_label_0 = Text(split_left)
+		const split_label_0 = Text(split_left)
 		split_label_0.set_text("Left pane")
 		split_grid_0.add(split_label_0.handle, 0, 24, 1)
 		var Container split_grid_1 = Grid(1, 6)
 		split_grid_1.padding = 8
-		var split_label_1 = Text(split_right)
+		const split_label_1 = Text(split_right)
 		split_label_1.set_text("Right pane")
 		split_grid_1.add(split_label_1.handle, 0, 24, 1)
 
-		var outline_title = Text(content)
+		const outline_title = Text(content)
 		outline_title.set_text("Outline")
 		outline_title.set_bold(true)
-		var outline = OutlineView(content)
+		const outline = OutlineView(content)
 		outline.add_item("Sources", -1)
 		outline.add_item("main.nm", 0)
 		outline.add_item("Window.nm", 0)
@@ -337,10 +337,10 @@ mv struct GalleryApp: App {
 		outline.add_item("controls", 3)
 		outline.set_expanded(0, true)
 
-		var table_title = Text(content)
+		const table_title = Text(content)
 		table_title.set_text("Table")
 		table_title.set_bold(true)
-		var table = Table(content, 3)
+		const table = Table(content, 3)
 		table.set_header(0, "Item")
 		table.set_header(1, "Qty")
 		table.set_header(2, "Price")
@@ -358,7 +358,7 @@ mv struct GalleryApp: App {
 		table.set_cell(2, 2, "0.30")
 		table.select_row(1)
 
-		var comp_title = Text(content)
+		const comp_title = Text(content)
 		comp_title.set_text("Composites")
 		comp_title.set_bold(true)
 		var num = NumberInput(content)
@@ -367,42 +367,42 @@ mv struct GalleryApp: App {
 		var otp = OtpInput(content)
 		var pag = Pagination(content, 3)
 		var signin = Form(content, "Sign in")
-		var form_name = TextBox(content)
+		const form_name = TextBox(content)
 		form_name.set_placeholder("user")
-		var form_ok = CheckBox(content)
+		const form_ok = CheckBox(content)
 		form_ok.set_title("Remember me")
 
-		var status = Text(content)
+		const status = Text(content)
 		status.set_text("")
 
 		// Window chrome: the toolbar shrinks the contentView (AppKit owns
 		// the layout rect), so it must exist BEFORE the first grid layout.
 		// Its three labeled buttons report picks as on_item_select events.
-		var toolbar = Toolbar(window, 3)
+		const toolbar = Toolbar(window, 3)
 		toolbar.set_label(0, "One")
 		toolbar.set_label(1, "Two")
 		toolbar.set_label(2, "Three")
 
 		// ── Modal companions (driven from frame) ──
-		var alert = Alert()
+		const alert = Alert()
 		alert.set_title("Delete todo?")
 		alert.set_message("This cannot be undone.")
 		alert.add_button("Delete")
 		alert.add_button("Cancel")
 
-		var sheet = Sheet(window, 260, 150)
+		const sheet = Sheet(window, 260, 150)
 		sheet.set_title("Settings")
-		var Window sheet_content = sheet.content_window()
+		const Window sheet_content = sheet.content_window()
 		var Container sheet_grid = Grid(1, 8)
 		sheet_grid.padding = 12
-		var sheet_label = Text(sheet_content)
+		const sheet_label = Text(sheet_content)
 		sheet_label.set_text("Sheet content")
-		var sheet_close_btn = Button(sheet_content, "Close")
+		const sheet_close_btn = Button(sheet_content, "Close")
 		sheet_grid.add(sheet_label.handle, 0, 24, 1)
 		sheet_grid.add(sheet_close_btn.handle, 0, 32, 1)
 		sheet_grid.layout(sheet_content)
 
-		var pop = Popover(window)
+		const pop = Popover(window)
 
 		// ── Layout: the window stacks the page scroll (which fills it); the
 		// page itself is a 2-column grid, bold section headings spanning
@@ -425,7 +425,7 @@ mv struct GalleryApp: App {
 		// unbounded hstack measures 0 wide, so both radios would draw from
 		// the same spot and the click hit-test (which reads the laid-out
 		// frame) would never match either of them.
-		var int radio_row = page_grid.add_hstack(page_grid.root_index(), 12, 1)
+		const int radio_row = page_grid.add_hstack(page_grid.root_index(), 12, 1)
 		page_grid.add_to_kind(radio_row, radio_a.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
 		page_grid.add_to_kind(radio_row, radio_b.handle, LEN_INTRINSIC, 0, LEN_FIXED, 24, 1)
 		page_grid.add(flip.handle, 0, 24, 1)
@@ -436,24 +436,24 @@ mv struct GalleryApp: App {
 		page_grid.add(slide.handle, 0, 24, 1)
 
 		page_grid.add(display_title.handle, 0, 22, 2)
-		var int prog_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		const int prog_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
 		page_grid.add_to_intrinsic(prog_row, prog_caption.handle, 1)
 		page_grid.add_to(prog_row, bar.handle, 0, 20, 1, 1)
-		var int spin_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		const int spin_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
 		page_grid.add_to_intrinsic(spin_row, spin_caption.handle, 1)
 		page_grid.add_to(spin_row, spin.handle, 0, 22, 1, 1)
-		var int stars_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		const int stars_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
 		page_grid.add_to_intrinsic(stars_row, stars_caption.handle, 1)
 		page_grid.add_to(stars_row, stars.handle, 0, 24, 1, 1)
-		var int icon_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		const int icon_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
 		page_grid.add_to_intrinsic(icon_row, icon_caption.handle, 1)
 		page_grid.add_to(icon_row, icon.handle, 0, 32, 1, 1)
 		// The date picker has no useful fixed size — it takes its intrinsic
 		// one.
-		var int when_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		const int when_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
 		page_grid.add_to_intrinsic(when_row, when_caption.handle, 1)
 		page_grid.add_to_intrinsic(when_row, when.handle, 1)
-		var int color_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
+		const int color_row = page_grid.add_hstack(page_grid.root_index(), 8, 2)
 		page_grid.add_to_intrinsic(color_row, color_caption.handle, 1)
 		page_grid.add_to(color_row, color.handle, 0, 28, 1, 1)
 
@@ -643,7 +643,7 @@ mv struct GalleryApp: App {
 		// never reaches a poll.
 		self.alert_btn.on_click(func() {
 				// Blocks in NSAlert's own modal loop until dismissed.
-				var int choice = self.alert.run()
+				const int choice = self.alert.run()
 				self.status.set_text("alert: button \{choice}")
 				self.prev_status = ""
 			})
@@ -666,11 +666,11 @@ mv struct GalleryApp: App {
 
 	// The polled status line: the continuous controls' current values, as
 	// one string (read every frame — no change callbacks in v1).
-	func poll_status = (ref self, out string) {
-		var int sv = self.slide.value() as int
-		var int nv = self.step.value() as int
+	func poll_status = (self, out string) {
+		const int sv = self.slide.value() as int
+		const int nv = self.step.value() as int
 		var Rgb c = self.color.rgb()
-		var int64 secs = self.when.time()
+		const int64 secs = self.when.time()
 		return "slider \{sv}  stepper \{nv}  rgb \{c.red},\{c.green},\{c.blue}  date \{secs}"
 	}
 
@@ -682,7 +682,7 @@ mv struct GalleryApp: App {
 		// Progress mirrors the slider; the status line reports the polled
 		// values (slider / stepper / color / date).
 		self.bar.set_value(self.slide.value() / 100.0)
-		var string polled = self.poll_status()
+		const string polled = self.poll_status()
 		if polled != self.prev_status {
 			self.status.set_text(polled)
 			// A conditional `mv` out of `polled` would statically suppress

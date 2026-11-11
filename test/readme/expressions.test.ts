@@ -43,7 +43,7 @@ const repeated = [1, 2] * 3
 describe("readme: tuples", () => {
 	test("literal, field access, destructuring", () => {
 		const input = `
-var things = [1, "first"]
+const things = [1, "first"]
 Console.write("\\{things._0} \\{things._1}")
 
 func get_person = (int id, out [string, int]) {

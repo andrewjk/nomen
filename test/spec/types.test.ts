@@ -5,10 +5,10 @@ import { compile_main, compile_module } from "./_helpers.ts";
 describe("spec: basic types", () => {
 	test("sized and unsigned numeric types with literal coercion", () => {
 		const input = `
-var int16 small = 300
-var int doubled = small * 2
-var ufloat ratio = 0.5
-var ufloat scaled = ratio * 2.0
+const int16 small = 300
+const int doubled = small * 2
+const ufloat ratio = 0.5
+const ufloat scaled = ratio * 2.0
 Console.write("\\{doubled} \\{scaled}\\n")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -16,7 +16,7 @@ Console.write("\\{doubled} \\{scaled}\\n")
 
 	test("negative literals are rejected for unsigned types", () => {
 		const input = `
-var ufloat ratio = -0.5
+const ufloat ratio = -0.5
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);
@@ -64,7 +64,7 @@ describe("spec: Array<T> type", () => {
 	test("constructors", () => {
 		const input = `
 const ints = Array<int>(1, 2, 3)
-var Array<string> names = ["a", "b"]
+const Array<string> names = ["a", "b"]
 const nums = Array<int>(0, 1, 2)
 `;
 		expect(compile_main(input)).toEqual([]);

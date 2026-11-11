@@ -13,23 +13,23 @@ var [int, string, bool] triple
 
 	test("tuple values", () => {
 		const input = `
-var things = [1, "first"]
-var triple = [42, "hello", true]
+const things = [1, "first"]
+const triple = [42, "hello", true]
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
 	test("typed array vs tuple", () => {
 		const input = `
-var Array<int> nums = [1, 2, 3]
-var mixed = [1, "hello"]
+const Array<int> nums = [1, 2, 3]
+const mixed = [1, "hello"]
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
 	test("tuple field access", () => {
 		const input = `
-var things = [42, "answer"]
+const things = [42, "answer"]
 Console.write("\\{things._0} \\{things._1}")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -96,8 +96,8 @@ Console.write("\\{c.payload._0} \\{c.payload._1}")
 
 	test("tuple concatenation", () => {
 		const input = `
-var [int, string] pair = [1, "a"]
-var triple = pair + [2, true]
+const pair = [1, "a"]
+const triple = pair + [2, true]
 Console.write("\\{triple._2} \\{triple._3}")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -105,7 +105,7 @@ Console.write("\\{triple._2} \\{triple._3}")
 
 	test("arrays of tuples", () => {
 		const input = `
-var [int, bool][] flags = [[1, true], [2, false]]
+const [int, bool][] flags = [[1, true], [2, false]]
 var Array<[int, bool]> same = [[3, true]]
 Console.write("\\{flags.at(1)._0}")
 `;
@@ -125,9 +125,9 @@ match results.at(1) {
 
 	test("nested arrays", () => {
 		const input = `
-var int[][] grid = [[1, 2], [3, 4]]
-var int[2][] fixed = [[1], [2, 3]]
-var int[][][] cube = [[[1], [2, 3]], [[4]]]
+const int[][] grid = [[1, 2], [3, 4]]
+const int[2][] fixed = [[1], [2, 3]]
+const int[][][] cube = [[[1], [2, 3]], [[4]]]
 Console.write("\\{grid.at(1).at(0)} \\{grid.at(0).length}")
 Console.write("\\{cube.at(0).at(1).at(1)}")
 `;

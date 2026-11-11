@@ -181,7 +181,7 @@ sum(1, 2, 3)    //
 `if` and `else`:
 
 ```nomen
-var x = 5
+const x = 5
 if x > 0 {
     Console.write("positive")
 } else {
@@ -467,7 +467,7 @@ struct Box<T> {
     var T value
 }
 
-var b = Box<int>(42)
+const b = Box<int>(42)
 Console.write("\{b.value}")
 ```
 
@@ -492,8 +492,8 @@ func unwrap<T> = (Box<T> box, out T) {
     return box.value
 }
 
-var b = Box<int>(42)
-var int v = unwrap(b)   // T inferred as int
+const b = Box<int>(42)
+const int v = unwrap(b)   // T inferred as int
 ```
 
 Type parameters are type-erased at the storage level — all values are 8 bytes
@@ -559,7 +559,7 @@ Tuples are anonymous structs with positional fields `_0`, `_1`, etc and that sup
 destructuring:
 
 ```nomen
-var things = [1, "first"]
+const things = [1, "first"]
 Console.write("\{things._0} \{things._1}")
 
 func get_person = (int id, out [string, int]) {
@@ -761,7 +761,7 @@ func take = (mv Box b, out int) {
     Console.write("\{b.value}")
 }
 
-var h = Holder(mv Box(7))
+const h = Holder(mv Box(7))
 var b = Box(42)
 take(mv b)   // b is invalid after this
 ```
@@ -799,8 +799,8 @@ import System
 import System::Controls
 
 pub func main = () {
-    var win = Window("Nomen", 400, 300)
-    var title = Text(win)
+    const win = Window("Nomen", 400, 300)
+    const title = Text(win)
     title.set_text("Hello")
     win.show()
 }

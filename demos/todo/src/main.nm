@@ -42,14 +42,14 @@ mv struct TodoApp: App {
 	var Container grid
 
 	pub func #init = (self, Window window) {
-		var title = Text(window)
+		const title = Text(window)
 		title.set_text("Todo List")
 
 		// The todo list lives on a Scrollable's document view: however many
 		// todos are added, the input row below stays reachable, and the list
 		// scrolls.
-		var scroll = Scrollable(window)
-		var Window content = scroll.content_window()
+		const scroll = Scrollable(window)
+		const Window content = scroll.content_window()
 		var Container todos = VStack(8)
 		// Owned checkboxes, index-aligned with `handles` (the grid handles
 		// for hit-testing). Reading a CheckBox out of the list would
@@ -60,9 +60,9 @@ mv struct TodoApp: App {
 		var owned = List<CheckBox>()
 		var handles = List<uint64>()
 
-		var input = TextBox(window)
+		const input = TextBox(window)
 		input.set_placeholder("Type a new todo...")
-		var add_btn = Button(window, "Add")
+		const add_btn = Button(window, "Add")
 
 		// A vertical root: title, the scrollable list (which GROWS to fill
 		// the leftover height), then the input row pinned at the bottom.
@@ -70,7 +70,7 @@ mv struct TodoApp: App {
 		grid.padding = 16
 		grid.add(title.handle, 0, 30, 1)
 		grid.add(scroll.handle, 0, 0, 1, 1)
-		var int input_row = grid.add_hstack(grid.root_index(), 8, 1)
+		const int input_row = grid.add_hstack(grid.root_index(), 8, 1)
 		grid.add_to(input_row, input.handle, 0, 24, 1, 1)
 		grid.add_to_intrinsic(input_row, add_btn.handle, 1)
 
@@ -105,7 +105,7 @@ mv struct TodoApp: App {
 		win.set_content(ref self.grid)
 		self.todos.set_document(self.scroll.handle, self.scroll.doc_handle())
 		self.add_btn.on_click(func() {
-				var string new_text = self.input.get_text()
+				const string new_text = self.input.get_text()
 				if new_text != "" {
 					self.add_item(new_text)
 					self.input.set_text("")
@@ -121,7 +121,7 @@ mv struct TodoApp: App {
 		// hit-tests. The dispatch-time `ref self` borrow reaches the rows,
 		// the owned list, and `redance` with no captures.
 		self.todos.on_right_click(func() {
-				var [tx, ty] = content_click(self.scroll, win.click_x(), win.click_y())
+				const [tx, ty] = content_click(self.scroll, win.click_x(), win.click_y())
 				if self.remove_todo_at(tx, ty) {
 					self.redance(ref win)
 				}
@@ -130,7 +130,7 @@ mv struct TodoApp: App {
 
 	// Add a todo at runtime (fields — every statement borrows `self` once).
 	func add_item = (ref self, string text) {
-		var cb = CheckBox(self.doc)
+		const cb = CheckBox(self.doc)
 		cb.set_title(text)
 		self.todos.add(cb.handle, 0, 24, 1)
 		self.handles.push(cb.handle)
@@ -152,7 +152,7 @@ mv struct TodoApp: App {
 	// #destroy runs at the block's closing brace, removing the view and
 	// releasing it.
 	func remove_todo_at = (ref self, int tx, int ty, out bool) {
-		var int found = -1
+		var found = -1
 		var uint64 found_handle = 0
 		var i = 0
 		while i < self.handles.length; i += 1 {

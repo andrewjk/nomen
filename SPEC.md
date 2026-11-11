@@ -67,10 +67,10 @@ Numeric literals coerce into sized numeric types when the value fits. Unsigned
 types (`uint*`, `ufloat*`) reject negative literals:
 
 ```
-var int16 small = 300
-var int doubled = small * 2
-var ufloat ratio = 0.5
-var ufloat scaled = ratio * 2.0
+const int16 small = 300
+const int doubled = small * 2
+const ufloat ratio = 0.5
+const ufloat scaled = ratio * 2.0
 Console.write("\{doubled} \{scaled}\n")
 ```
 
@@ -103,7 +103,7 @@ useful for type inference and for passing arrays through generic boundaries:
 
 ```
 const ints = Array<int>(1, 2, 3)   // equivalent to [1, 2, 3] as int[]
-var Array<string> names = ["a", "b"]
+const Array<string> names = ["a", "b"]
 
 // Type args can be supplied at the constructor for clarity
 const nums = Array<int>(0, 1, 2)
@@ -591,15 +591,15 @@ var [int, string, bool] triple
 #### Tuple Values
 
 ```
-var things = [1, "first"]                    // inferred as [int, string]
-var triple = [42, "hello", true]             // [int, string, bool]
+const things = [1, "first"]                  // inferred as [int, string]
+const triple = [42, "hello", true]           // [int, string, bool]
 ```
 
 When no explicit type is provided, a bracket-enclosed heterogeneous list is inferred as a tuple. To create a typed array instead, use `Array<T>`:
 
 ```
-var Array<int> nums = [1, 2, 3]             // typed array, not tuple
-var mixed = [1, "hello"]                     // inferred as [int, string] tuple
+const Array<int> nums = [1, 2, 3]            // typed array, not tuple
+const mixed = [1, "hello"]                   // inferred as [int, string] tuple
 ```
 
 #### Field Access
@@ -607,7 +607,7 @@ var mixed = [1, "hello"]                     // inferred as [int, string] tuple
 Tuple fields are accessed with underscore-prefixed indices:
 
 ```
-var things = [42, "answer"]
+const things = [42, "answer"]
 Console.write("\{things._0} \{things._1}")  // "42 answer"
 ```
 
@@ -664,8 +664,8 @@ Console.write("\{c.payload._0} \{c.payload._1}")  // "99 bottles"
 elements followed by the right operand's:
 
 ```
-var [int, string] pair = [1, "a"]
-var triple = pair + [2, true]         // [int, string, int, bool]
+const pair = [1, "a"]
+const triple = pair + [2, true]         // [int, string, int, bool]
 Console.write("\{triple._2} \{triple._3}")  // "2 true"
 ```
 
@@ -675,8 +675,8 @@ An array type whose element is a tuple is written `[T1, T2][]`; the
 `Array<T>` alias accepts the same spelling:
 
 ```
-var [int, bool][] flags = [[1, true], [2, false]]
-var Array<[int, bool]> same = [[3, true]]
+const [int, bool][] flags = [[1, true], [2, false]]
+const Array<[int, bool]> same = [[3, true]]
 Console.write("\{flags.at(1)._0}")  // "2"
 ```
 
@@ -699,9 +699,9 @@ supported up to five levels. Every level is a heap array with its own
 length, so inner rows may differ in length:
 
 ```
-var int[][] grid = [[1, 2], [3, 4]]
-var int[2][] fixed = [[1], [2, 3]]
-var int[][][] cube = [[[1], [2, 3]], [[4]]]
+const int[][] grid = [[1, 2], [3, 4]]
+const int[2][] fixed = [[1], [2, 3]]
+const int[][][] cube = [[[1], [2, 3]], [[4]]]
 Console.write("\{grid.at(1).at(0)} \{grid.at(0).length}")  // "3 2"
 Console.write("\{cube.at(0).at(1).at(1)}")                  // "3"
 ```
@@ -1083,7 +1083,7 @@ pub enum Result {
     case error(int code)
 }
 
-var result = Result.error(5)
+const result = Result.error(5)
 ```
 
 Enum cases can have multiple fields:
@@ -1094,7 +1094,7 @@ pub enum Shape {
     case rect(int width, int height)
 }
 
-var shape = Shape.rect(10, 20)
+const shape = Shape.rect(10, 20)
 ```
 
 ### Generic Enums
@@ -1107,7 +1107,7 @@ pub enum Result<T, E> {
     case error(E error)
 }
 
-var Result<int, string> result = .error("not a number")
+const Result<int, string> result = .error("not a number")
 match result {
     case .ok(age) -> Console.write("\{age}")
     case .error(msg) -> Console.write("error \{msg}")
@@ -1178,7 +1178,7 @@ pub bitset Permissions {
     case execute
 }
 
-var perms = Permissions.read | Permissions.write
+const perms = Permissions.read | Permissions.write
 ```
 
 Like enums, bitsets can be declared `checked` (`pub checked bitset Flags`), with the same discard rules — see [Strict Enums](#checked-enums).
@@ -1539,7 +1539,7 @@ capture is taken once, when the lambda value is created:
 
 ```
 pub func main = () {
-    var base = 10
+    const base = 10
     var func (int, out int) add_base = (x, out int) => x + base
     Console.write("\{add_base(1)} \{add_base(2)}")
 }
@@ -1884,7 +1884,7 @@ enum Direction {
     case west
 }
 
-var direction = Direction.north
+const direction = Direction.north
 match direction {
     case .north -> Console.write("north")
     case .south -> Console.write("south")
@@ -2012,7 +2012,7 @@ one-zero-cost way to release a `mv` value before the enclosing function ends.
 A block-local is invisible after the block, and may shadow an outer binding:
 
 ```
-var shared = "outer"
+const shared = "outer"
 {
     var temp = "heap value".to_string()
     Console.write(temp)         // "heap value"
@@ -2497,7 +2497,7 @@ Console.write("\{n:.2}")
 Arrays and strings are accessed via `.at()` and modified via `.set()`:
 
 ```
-const arr = [10, 20, 30]
+var arr = [10, 20, 30]
 const first = arr.at(0)  // 10
 arr.set(1, 99)           // arr is now [10, 99, 30]
 

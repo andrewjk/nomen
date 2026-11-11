@@ -85,7 +85,7 @@ enum Direction {
     case east
     case west
 }
-var direction = Direction.north
+const direction = Direction.north
 match direction {
     case .north -> Console.write("north")
     case .south -> Console.write("south")
@@ -532,7 +532,7 @@ while true {
 describe("spec: nested blocks", () => {
 	test("bare block is a lexical scope; declarations die at the closing brace", () => {
 		const input = `
-var shared = "outer"
+const shared = "outer"
 {
     var temp = "heap value".to_string()
     Console.write(temp)

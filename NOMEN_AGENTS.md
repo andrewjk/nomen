@@ -46,7 +46,7 @@ const int x = 5                    // avoid
 const lines = split_lines(text)     // good — inferred List<Line>
 const List<Line> lines = split_lines(text)  // avoid
 const msg = "hi"                   // good
-var items = [1, 2, 3]              // good — int[]
+const items = [1, 2, 3]              // good — int[]
 ```
 
 Annotate when you need a wider type (`int64` rather than `int`), when there is

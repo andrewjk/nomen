@@ -57,7 +57,7 @@ pub enum Result {
     case ok
     case error(int code)
 }
-var result = Result.error(5)
+const result = Result.error(5)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -68,7 +68,7 @@ pub enum Shape {
     case circle(int radius)
     case rect(int width, int height)
 }
-var shape = Shape.rect(10, 20)
+const shape = Shape.rect(10, 20)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -178,7 +178,7 @@ pub bitset Permissions {
     case write
     case execute
 }
-var perms = Permissions.read | Permissions.write
+const perms = Permissions.read | Permissions.write
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
