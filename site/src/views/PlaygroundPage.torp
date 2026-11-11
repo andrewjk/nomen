@@ -85,6 +85,17 @@ export default function PlaygroundPage($props?: { embed?: boolean; data?: { sour
 	}
 
 	function on_input() {
+		// Editing invalidates the displayed output: it belongs to the previous
+		// source, and share/preview links deliberately omit stale output. Clear
+		// it (and stop a run in flight) so the screen matches what would be
+		// shared.
+		if ($state.running || $state.output_source) {
+			stop_worker();
+			$state.running = false;
+			$state.output = "";
+			$state.runtime_error = "";
+			$state.output_source = "";
+		}
 		schedule_highlight();
 	}
 
