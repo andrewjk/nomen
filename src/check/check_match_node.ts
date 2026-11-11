@@ -19,6 +19,18 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 	const match_type = type_from_value_node(match_node.value, status);
 	match_node.value_type = match_type.name;
 
+	// The scrutinee's pending hoisted temps (an argument hoisted out of the
+	// match value — `_param_0 = [1, 2, 3]`) belong to the STATEMENT this
+	// match sits in: they must emit before the match value, which already
+	// references them. The arm clones below copy status.allocations, and
+	// promote_allocations would then attach the scrutinee's temps to a
+	// branch binding — the C builder emits that binding's declaration
+	// inside the arm while the match value still references the temp
+	// (use of undeclared identifier `_param_0`). Park them for the arms
+	// and restore afterwards.
+	const scrutinee_allocations = status.allocations;
+	status.allocations = [];
+
 	status.stack.push(match_node);
 
 	// The enclosing scope's values length when the arm clones are taken:
@@ -85,6 +97,11 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 	}
 
 	status.stack.pop();
+
+	// Restore the scrutinee's pending temps (plus anything the arms parked
+	// here): the enclosing statement's promote attaches them ahead of
+	// itself, before the match value that references them.
+	status.allocations = scrutinee_allocations.concat(status.allocations);
 
 	for (let [i, value] of status.values.entries()) {
 		if (value.declaration === "const" && !value.is_set) {

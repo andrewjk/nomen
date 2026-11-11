@@ -48,6 +48,14 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	// moved names whose innermost declaration sits at or beyond this index
 	// are arm-local (a shadow or a fresh local) and must not merge.
 	const arms_base = status.values.length;
+	// The condition's pending hoisted temps belong to the statement this
+	// if/else sits in (nested if-expressions: `const w = if a -> x else ->
+	// if b -> y`) — they must emit before the condition, which references
+	// them. The arm clones copy status.allocations, and promote_allocations
+	// would then attach them inside an arm while the condition still
+	// references the temp. Park for the arms; restore after both check.
+	const condition_allocations = status.allocations;
+	status.allocations = [];
 	let if_status = clone_status(status);
 	let else_status = clone_status(status);
 
@@ -96,6 +104,11 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 		check_block_node(if_else.else_branch, else_status);
 	}
 	status.stack.pop();
+
+	// Restore the condition's pending temps (plus anything the arms parked
+	// here): the enclosing statement's promote attaches them ahead of
+	// itself, before the condition that references them.
+	status.allocations = condition_allocations.concat(status.allocations);
 
 	// Evaluate the condition at compile time if possible
 	const const_cond = evaluate_const_condition(if_else.condition, status);

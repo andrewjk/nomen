@@ -542,20 +542,6 @@ string one `char` at a time from byte values (0xC0 | … style) will produce a
 different string on JS. Modeling strings as `Uint8Array` would fix parity at
 the cost of making every JS-facing operation awkward; decide before the JS
 backend is treated as byte-compatible with the native backends.
-
-## Checker can attach a scrutinee's hoisted argument temp to a branch binding
-
-Recorded 2026-11-10. For `const v = match find([1, 2, 3], 2) { case .some(x) -> x … }`
-the checker hoists the array argument to `_param_0` but attaches that
-allocation to the branch binding `x` instead of the match scrutinee. The C
-backend emits invalid C for this shape (`clang` error at the match/branch
-site); the JS backend is immune because it inlines every hoisted temp at its
-reference site (`build_value_node`) instead of declaring it at a statement
-boundary. Nested if-expressions also hit the C backend (`const s = if a -> x
-else -> if b -> y else -> z` produces invalid C). Root fix belongs in the
-checker's allocation promotion (`src/check/utils/last_use.ts`) and the C
-builder's statement hoisting.
-
 ## JS backend: Buffer views and raw slab protocols
 
 Recorded 2026-11-11. `Buffer<T>`/`ClassBuffer<T>` map onto JS arrays (capacity =
