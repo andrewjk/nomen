@@ -542,6 +542,7 @@ string one `char` at a time from byte values (0xC0 | … style) will produce a
 different string on JS. Modeling strings as `Uint8Array` would fix parity at
 the cost of making every JS-facing operation awkward; decide before the JS
 backend is treated as byte-compatible with the native backends.
+
 ## JS backend: Buffer views and raw slab protocols
 
 Recorded 2026-11-11. `Buffer<T>`/`ClassBuffer<T>` map onto JS arrays (capacity =
