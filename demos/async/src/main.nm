@@ -70,6 +70,11 @@ pub func main = () {
 		if win.close_pending() {
 			win.close()
 		}
+		// The app menu's Quit item (⌘Q) sets the app-quit flag — a manual
+		// loop consults it the same way.
+		if win.quit_requested() {
+			win.close()
+		}
 
 		const int had_click = Window.process_events()
 		if had_click == 1 {

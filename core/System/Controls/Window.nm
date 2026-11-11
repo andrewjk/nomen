@@ -41,6 +41,10 @@ pub mv struct Window: Control {
 		((void(*)(id, SEL, double, double))objc_msgSend)(
 			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
 		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+		// Survive close: on macOS the app outlives its last window and a
+		// Dock click reopens it, so a closed window's handle must stay
+		// valid (the default releases the NSWindow on close).
+		((void(*)(id, SEL, BOOL))objc_msgSend)(win, sel_registerName("setReleasedWhenClosed:"), 0);
 		// The content view must resize with the window and autoresize its
 		// subviews so each control's autoresizingMask takes effect during a
 		// live resize (AppKit's blocking drag loop bypasses our event loop).
@@ -79,6 +83,10 @@ pub mv struct Window: Control {
 		((void(*)(id, SEL, double, double))objc_msgSend)(
 			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
 		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+		// Survive close: on macOS the app outlives its last window and a
+		// Dock click reopens it, so a closed window's handle must stay
+		// valid (the default releases the NSWindow on close).
+		((void(*)(id, SEL, BOOL))objc_msgSend)(win, sel_registerName("setReleasedWhenClosed:"), 0);
 		// The content view must resize with the window and autoresize its
 		// subviews so each control's autoresizingMask takes effect during a
 		// live resize (AppKit's blocking drag loop bypasses our event loop).
@@ -1167,6 +1175,33 @@ pub mv struct Window: Control {
 		}
 	}
 
+	// True when the Dock was clicked while every window was closed —
+	// Window.run resumes the frame loop for the reopened window.
+	pub func reopen_flag = (out bool) {
+		```
+		#arch: c
+		#platform: macos
+		extern int nomen_app_reopen;
+		return nomen_app_reopen != 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: macos
+		extern int nomen_app_reopen;
+		return nomen_app_reopen != 0;
+		```
+		```
+		#arch: c
+		#platform: ios
+		return 0;
+		```
+		```
+		#arch: aarch64_use_c
+		#platform: ios
+		return 0;
+		```
+	}
+
 	// The raw app-quit flag behind `quit_requested`/`keep_alive`.
 	func quit_flag = (out bool) {
 		```
@@ -1478,67 +1513,85 @@ pub mv struct Window: Control {
 		var int prev_w = self.content_width()
 		var int prev_h = self.content_height()
 		var ev = FrameEvents()
-		while self.is_visible() {
-			// Close interception: the delegate refused the native close and
-			// set the pending flag; consult the app. Accept → forced close
-			// (bypasses the delegate); decline → window stays, flag cleared.
-			if self.close_pending() {
-				if app.close_requested(ref self) {
+		while true {
+			while self.is_visible() {
+				// App menu Quit / ⌘Q (or quit()): close the window — the
+				// quit flag then ends the app below.
+				if self.quit_flag() {
 					self.close()
 				}
-				self.clear_close_pending()
+				// Close interception: the delegate refused the native close and
+				// set the pending flag; consult the app. Accept → forced close
+				// (bypasses the delegate); decline → window stays, flag cleared.
+				if self.close_pending() {
+					if app.close_requested(ref self) {
+						self.close()
+					}
+					self.clear_close_pending()
+				}
+				// An accepted close above releases the native window mid-frame;
+				// skip the rest of this iteration (the while re-checks and
+				// exits).
+				if self.is_visible() {
+					ev.click = Window.process_events()
+					ev.click_x = self.click_x()
+					ev.click_y = self.click_y()
+					ev.mouse_button = self.mouse_button()
+					ev.mouse_click_count = self.mouse_click_count()
+					ev.mouse_modifiers = self.mouse_modifiers()
+					ev.scroll_dx = self.scroll_dx()
+					ev.scroll_dy = self.scroll_dy()
+					ev.key_code = self.key_code()
+					ev.key_modifiers = self.key_modifiers()
+					ev.key_repeat = self.key_repeat()
+					ev.key_up_code = self.key_up_code()
+					ev.mouse_x = self.mouse_x()
+					ev.mouse_y = self.mouse_y()
+					ev.dt = self.dt()
+					ev.resized = false
+					self.stamp_resize(false, 0, 0)
+					var int cur_w = self.content_width()
+					var int cur_h = self.content_height()
+					if cur_w != prev_w {
+						ev.resized = true
+					}
+					if cur_h != prev_h {
+						ev.resized = true
+					}
+					if ev.resized {
+						prev_w = cur_w
+						prev_h = cur_h
+						ev.width = cur_w
+						ev.height = cur_h
+						self.stamp_resize(true, cur_w, cur_h)
+						self.relayout(0)
+					}
+					// The window refreshes the per-frame event sources (the
+					// first-responder snapshot feeds the focus/blur drains), then the
+					// app's synthesized `handle_events` pump drains registered
+					// handlers — conformers without registrations inherit the
+					// trait's empty default. One arm per registered control.
+					nomen_window_focus_poll(self.handle)
+					app.handle_events(ref self)
+					app.frame(ref self, ev)
+				}
 			}
-			// An accepted close above releases the native window mid-frame;
-			// skip the rest of this iteration (the while re-checks and
-			// exits).
-			if self.is_visible() {
-				ev.click = Window.process_events()
-				ev.click_x = self.click_x()
-				ev.click_y = self.click_y()
-				ev.mouse_button = self.mouse_button()
-				ev.mouse_click_count = self.mouse_click_count()
-				ev.mouse_modifiers = self.mouse_modifiers()
-				ev.scroll_dx = self.scroll_dx()
-				ev.scroll_dy = self.scroll_dy()
-				ev.key_code = self.key_code()
-				ev.key_modifiers = self.key_modifiers()
-				ev.key_repeat = self.key_repeat()
-				ev.key_up_code = self.key_up_code()
-				ev.mouse_x = self.mouse_x()
-				ev.mouse_y = self.mouse_y()
-				ev.dt = self.dt()
-				ev.resized = false
-				self.stamp_resize(false, 0, 0)
-				var int cur_w = self.content_width()
-				var int cur_h = self.content_height()
-				if cur_w != prev_w {
-					ev.resized = true
-				}
-				if cur_h != prev_h {
-					ev.resized = true
-				}
-				if ev.resized {
-					prev_w = cur_w
-					prev_h = cur_h
-					ev.width = cur_w
-					ev.height = cur_h
-					self.stamp_resize(true, cur_w, cur_h)
-					self.relayout(0)
-				}
-				// The window refreshes the per-frame event sources (the
-				// first-responder snapshot feeds the focus/blur drains), then the
-				// app's synthesized `handle_events` pump drains registered
-				// handlers — conformers without registrations inherit the
-				// trait's empty default. One arm per registered control.
-				nomen_window_focus_poll(self.handle)
-				app.handle_events(ref self)
-				app.frame(ref self, ev)
+			// macOS convention: the app stays alive after the last window
+			// closes — pump until Dock Quit (or quit()) ends the process, or
+			// a Dock click reopens the window and the frame loop resumes.
+			while !self.quit_flag() && !Window.reopen_flag() {
+				Window.process_events()
 			}
+			if self.quit_flag() {
+				return
+			}
+			// Reopened from the Dock: re-show and resume frames. start() runs
+			// once — layout roots and handlers are already registered.
+			self.show()
+			self.relayout(1)
+			prev_w = self.content_width()
+			prev_h = self.content_height()
 		}
-		// macOS convention: the app stays alive after the last window
-		// closes — keep pumping (Dock Quit / quit() end it) instead of
-		// returning from main and dropping the process.
-		Window.keep_alive()
 	}
 
 	// ── Control trait conformance ──

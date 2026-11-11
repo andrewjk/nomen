@@ -42,11 +42,11 @@
  *   `.on_<event>` handlers.
  *
  * - LIFETIME — on macOS the process OUTLIVES the last window: after the
- *   frame loop ends, run keeps pumping via `Window.keep_alive` (the Dock
- *   icon stays; Dock Quit ends the process) instead of returning from
- *   main and dropping the process. Apps that want exit-on-last-close call
- *   `win.quit()` from their `close_requested` override; self-terminating
- *   programs (tests, probes) call `win.quit()` where they used to call
+ *   frame loop ends, run keeps pumping until Dock Quit or the app menu's
+ *   Quit (⌘Q) ends the process, and a Dock click reopens the window and
+ *   resumes frames. Apps that want exit-on-last-close call `win.quit()`
+ *   from their `close_requested` override; self-terminating programs
+ *   (tests, probes) call `win.quit()` where they used to call
  *   `win.close()`.
  *
  * Handlers are METHODS on the app (the `ref self` receiver), so app state —

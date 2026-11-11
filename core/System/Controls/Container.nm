@@ -1713,11 +1713,72 @@ pub mv struct Container: Control {
 		// stays alive after the last window closes (the platform
 		// convention); quitting is explicit.
 		int nomen_app_quit = 0;
+		// Set by the Dock-click reopen handler; Window.run resumes the
+		// frame loop when it is set.
+		int nomen_app_reopen = 0;
+		// The app menu's Quit item (⌘Q): sets the same flag Window.quit()
+		// sets, so main unwinds normally instead of hard-exiting.
+		void nomen_quit_clicked_imp(id self, SEL cmd, id sender) {
+			(void)self; (void)cmd; (void)sender;
+			nomen_app_quit = 1;
+		}
+		// Dock click while every window is closed: re-show the window and
+		// tell the Nomen loop to resume its frame loop.
+		BOOL nomen_app_should_reopen_imp(id self, SEL cmd, id notification, BOOL flag) {
+			(void)self; (void)cmd; (void)notification; (void)flag;
+			nomen_app_reopen = 1;
+			return NO; // handled — the Nomen loop re-shows the window
+		}
 		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (nomen_close_forced) return YES;
 			nomen_close_pending = 1;
 			return NO;
+		}
+		// The one NSApp/window delegate class (resize, close interception,
+		// menu Quit, Dock reopen). Created lazily, registered once.
+		void nomen_window_did_resize(id self, SEL cmd, id notification);
+		Class nomen_delegate_class(void) {
+			Class Dc = objc_getClass("NomenResizeDelegate");
+			if (!Dc) {
+				Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+				if (Dc) {
+					class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+					// Close interception: refuse the native close, set the
+					// pending flag, let Window.run consult the app.
+					class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
+					class_addMethod(Dc, sel_registerName("quitClicked:"), (IMP)nomen_quit_clicked_imp, "v@:@");
+					class_addMethod(Dc, sel_registerName("applicationShouldHandleReopen:hasVisibleWindows:"), (IMP)nomen_app_should_reopen_imp, "c@:@c");
+					objc_registerClassPair(Dc);
+				}
+			}
+			return Dc;
+		}
+		// The standard app menu: an app submenu with Quit (⌘Q). Quit sets
+		// the app-quit flag on the delegate so main unwinds normally
+		// (terminate: would hard-exit past Nomen's cleanup).
+		void nomen_install_app_menu(id delegate) {
+			static BOOL installed = 0;
+			if (installed) return;
+			installed = 1;
+			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setDelegate:"), delegate);
+			id nsstr = (id)objc_getClass("NSString");
+			id utf8 = sel_registerName("stringWithUTF8String:");
+			id menubar = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+			menubar = ((id(*)(id, SEL))objc_msgSend)(menubar, sel_registerName("init"));
+			id app_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+			app_item = ((id(*)(id, SEL, id, id, id))objc_msgSend)(app_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"), (id)0, ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, ""));
+			id submenu = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+			submenu = ((id(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("initWithTitle:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"));
+			id quit_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+			quit_item = ((id(*)(id, SEL, id, id, id))objc_msgSend)(quit_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Quit"), (id)sel_registerName("quitClicked:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "q"));
+			((void(*)(id, SEL, unsigned long))objc_msgSend)(quit_item, sel_registerName("setKeyEquivalentModifierMask:"), 1UL << 20);
+			((void(*)(id, SEL, id))objc_msgSend)(quit_item, sel_registerName("setTarget:"), delegate);
+			((void(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("addItem:"), quit_item);
+			((void(*)(id, SEL, id))objc_msgSend)(app_item, sel_registerName("setSubmenu:"), submenu);
+			((void(*)(id, SEL, id))objc_msgSend)(menubar, sel_registerName("addItem:"), app_item);
+			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setMainMenu:"), menubar);
 		}
 		void nomen_window_did_resize(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
@@ -1760,11 +1821,72 @@ pub mv struct Container: Control {
 		// stays alive after the last window closes (the platform
 		// convention); quitting is explicit.
 		int nomen_app_quit = 0;
+		// Set by the Dock-click reopen handler; Window.run resumes the
+		// frame loop when it is set.
+		int nomen_app_reopen = 0;
+		// The app menu's Quit item (⌘Q): sets the same flag Window.quit()
+		// sets, so main unwinds normally instead of hard-exiting.
+		void nomen_quit_clicked_imp(id self, SEL cmd, id sender) {
+			(void)self; (void)cmd; (void)sender;
+			nomen_app_quit = 1;
+		}
+		// Dock click while every window is closed: re-show the window and
+		// tell the Nomen loop to resume its frame loop.
+		BOOL nomen_app_should_reopen_imp(id self, SEL cmd, id notification, BOOL flag) {
+			(void)self; (void)cmd; (void)notification; (void)flag;
+			nomen_app_reopen = 1;
+			return NO; // handled — the Nomen loop re-shows the window
+		}
 		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (nomen_close_forced) return YES;
 			nomen_close_pending = 1;
 			return NO;
+		}
+		// The one NSApp/window delegate class (resize, close interception,
+		// menu Quit, Dock reopen). Created lazily, registered once.
+		void nomen_window_did_resize(id self, SEL cmd, id notification);
+		Class nomen_delegate_class(void) {
+			Class Dc = objc_getClass("NomenResizeDelegate");
+			if (!Dc) {
+				Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+				if (Dc) {
+					class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+					// Close interception: refuse the native close, set the
+					// pending flag, let Window.run consult the app.
+					class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
+					class_addMethod(Dc, sel_registerName("quitClicked:"), (IMP)nomen_quit_clicked_imp, "v@:@");
+					class_addMethod(Dc, sel_registerName("applicationShouldHandleReopen:hasVisibleWindows:"), (IMP)nomen_app_should_reopen_imp, "c@:@c");
+					objc_registerClassPair(Dc);
+				}
+			}
+			return Dc;
+		}
+		// The standard app menu: an app submenu with Quit (⌘Q). Quit sets
+		// the app-quit flag on the delegate so main unwinds normally
+		// (terminate: would hard-exit past Nomen's cleanup).
+		void nomen_install_app_menu(id delegate) {
+			static BOOL installed = 0;
+			if (installed) return;
+			installed = 1;
+			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setDelegate:"), delegate);
+			id nsstr = (id)objc_getClass("NSString");
+			id utf8 = sel_registerName("stringWithUTF8String:");
+			id menubar = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+			menubar = ((id(*)(id, SEL))objc_msgSend)(menubar, sel_registerName("init"));
+			id app_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+			app_item = ((id(*)(id, SEL, id, id, id))objc_msgSend)(app_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"), (id)0, ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, ""));
+			id submenu = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+			submenu = ((id(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("initWithTitle:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"));
+			id quit_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+			quit_item = ((id(*)(id, SEL, id, id, id))objc_msgSend)(quit_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Quit"), (id)sel_registerName("quitClicked:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "q"));
+			((void(*)(id, SEL, unsigned long))objc_msgSend)(quit_item, sel_registerName("setKeyEquivalentModifierMask:"), 1UL << 20);
+			((void(*)(id, SEL, id))objc_msgSend)(quit_item, sel_registerName("setTarget:"), delegate);
+			((void(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("addItem:"), quit_item);
+			((void(*)(id, SEL, id))objc_msgSend)(app_item, sel_registerName("setSubmenu:"), submenu);
+			((void(*)(id, SEL, id))objc_msgSend)(menubar, sel_registerName("addItem:"), app_item);
+			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setMainMenu:"), menubar);
 		}
 		void nomen_window_did_resize(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
@@ -1777,42 +1899,28 @@ pub mv struct Container: Control {
 		#arch: c
 		#platform: macos
 		nomen_set_resize_target(self, win);
-		Class Dc = objc_getClass("NomenResizeDelegate");
-		if (!Dc) {
-			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
-			if (Dc) {
-				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
-				// Close interception: refuse the native close, set the
-				// pending flag, let Window.run consult the app.
-				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
-				objc_registerClassPair(Dc);
-			}
-		}
+		Class Dc = nomen_delegate_class();
 		if (Dc) {
 			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
 			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
 			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+			// Also the NSApp delegate (Dock reopen), and the app menu with
+			// its Quit ⌘Q item — installed once per process.
+			nomen_install_app_menu(delegate);
 		}
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
 		nomen_set_resize_target(self, win);
-		Class Dc = objc_getClass("NomenResizeDelegate");
-		if (!Dc) {
-			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
-			if (Dc) {
-				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
-				// Close interception: refuse the native close, set the
-				// pending flag, let Window.run consult the app.
-				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
-				objc_registerClassPair(Dc);
-			}
-		}
+		Class Dc = nomen_delegate_class();
 		if (Dc) {
 			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
 			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
 			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+			// Also the NSApp delegate (Dock reopen), and the app menu with
+			// its Quit ⌘Q item — installed once per process.
+			nomen_install_app_menu(delegate);
 		}
 		```
 	}
@@ -1826,41 +1934,27 @@ pub mv struct Container: Control {
 		```
 		#arch: c
 		#platform: macos
-		Class Dc = objc_getClass("NomenResizeDelegate");
-		if (!Dc) {
-			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
-			if (Dc) {
-				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
-				// Close interception: refuse the native close, set the
-				// pending flag, let Window.run consult the app.
-				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
-				objc_registerClassPair(Dc);
-			}
-		}
+		Class Dc = nomen_delegate_class();
 		if (Dc) {
 			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
 			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
 			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+			// Also the NSApp delegate (Dock reopen), and the app menu with
+			// its Quit ⌘Q item — installed once per process.
+			nomen_install_app_menu(delegate);
 		}
 		```
 		```
 		#arch: aarch64_use_c
 		#platform: macos
-		Class Dc = objc_getClass("NomenResizeDelegate");
-		if (!Dc) {
-			Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
-			if (Dc) {
-				class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
-				// Close interception: refuse the native close, set the
-				// pending flag, let Window.run consult the app.
-				class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
-				objc_registerClassPair(Dc);
-			}
-		}
+		Class Dc = nomen_delegate_class();
 		if (Dc) {
 			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
 			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
 			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+			// Also the NSApp delegate (Dock reopen), and the app menu with
+			// its Quit ⌘Q item — installed once per process.
+			nomen_install_app_menu(delegate);
 		}
 		```
 	}
