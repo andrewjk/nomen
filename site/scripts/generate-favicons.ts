@@ -65,4 +65,15 @@ for (const frame of small.slice(0, 2)) {
 await fs.writeFile(path.join(publicDir, "favicon.ico"), ico(small));
 await fs.writeFile(path.join(publicDir, "apple-touch-icon.png"), png(180, "#111122"));
 
-console.log(`icons: wrote favicon.ico (${small.map((frame) => frame.size).join("/")}) and PNGs`);
+// The 512 logo rasterizes for everything outside the site too — the VS Code
+// extension's marketplace icon and the GUI framework's default app icon
+// (embedded by core/System/Controls/Window.nm). Both must track the SVG.
+const logo_512 = png(512);
+await fs.writeFile(path.resolve(root, "../extension/logo.png"), logo_512);
+const core_icon = path.resolve(root, "../core/assets/nomen.png");
+await fs.mkdir(path.dirname(core_icon), { recursive: true });
+await fs.writeFile(core_icon, logo_512);
+
+console.log(
+	`icons: wrote favicon.ico (${small.map((frame) => frame.size).join("/")}) and PNGs, extension/logo.png + core/assets/nomen.png @ 512`,
+);
