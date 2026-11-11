@@ -588,7 +588,7 @@ mv struct VoiceApp : App {
 		}
 		if self.frames == 3 {
 			Console.write_line(self.heard.to_string())
-			win.close()
+			win.quit()
 		}
 	}
 }

@@ -184,7 +184,7 @@ mv struct MouseInputApp : App {
 		}
 		if self.frames == 5 {
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }

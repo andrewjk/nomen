@@ -82,7 +82,7 @@ mv struct ClickApp : App {
 			// handle_clicks ran before this frame: the arm's hidden method set
 			// the text through the ref-self receiver. Read it through the owner.
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }

@@ -96,7 +96,7 @@ mv struct FocusApp : App {
 			// f4's handle_focus drained the handoff: b gained, a blurred.
 			// b stays focused at close — its blur never fires.
 			Console.write_line("\\{self.focus_a} \\{self.blur_a} \\{self.focus_b} \\{self.blur_b}")
-			win.close()
+			win.quit()
 		}
 	}
 }
@@ -147,7 +147,7 @@ mv struct InputApp : App {
 		}
 		if self.frames == 4 {
 			Console.write_line("\\{self.changes}")
-			win.close()
+			win.quit()
 		}
 	}
 }

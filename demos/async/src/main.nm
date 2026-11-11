@@ -64,8 +64,14 @@ pub func main = () {
 	var fetch = Task<string>()
 
 	while win.is_visible() {
-		const int had_click = Window.process_events()
+		// Close interception: the window delegate refuses the native close
+		// and sets a pending flag — a manual loop consults and forces it
+		// itself (the App-trait run loop does this automatically).
+		if win.close_pending() {
+			win.close()
+		}
 
+		const int had_click = Window.process_events()
 		if had_click == 1 {
 			const int cx = win.click_x()
 			const int cy = win.click_y()
@@ -88,4 +94,9 @@ pub func main = () {
 			status.set_text("Done! " + fetch.result())
 		}
 	}
+
+	// macOS convention: the app stays alive after the last window closes —
+	// hand control to the keep-alive pump (Dock Quit ends it; apps that
+	// want the reverse call `win.quit()` instead of `win.close()`).
+	Window.keep_alive()
 }

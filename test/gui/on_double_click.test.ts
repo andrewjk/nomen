@@ -109,7 +109,7 @@ mv struct OpenApp : App {
 		}
 		if self.frames == 4 {
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }

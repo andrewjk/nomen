@@ -1708,6 +1708,11 @@ pub mv struct Container: Control {
 		// close() and close_pending() extern both flags.
 		int nomen_close_pending = 0;
 		int nomen_close_forced = 0;
+		// App-lifetime quit: set by Window.quit() — the keep-alive pump
+		// (Window.keep_alive) returns when it is set. On macOS the process
+		// stays alive after the last window closes (the platform
+		// convention); quitting is explicit.
+		int nomen_app_quit = 0;
 		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (nomen_close_forced) return YES;
@@ -1750,6 +1755,11 @@ pub mv struct Container: Control {
 		// close() and close_pending() extern both flags.
 		int nomen_close_pending = 0;
 		int nomen_close_forced = 0;
+		// App-lifetime quit: set by Window.quit() — the keep-alive pump
+		// (Window.keep_alive) returns when it is set. On macOS the process
+		// stays alive after the last window closes (the platform
+		// convention); quitting is explicit.
+		int nomen_app_quit = 0;
 		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
 			(void)self; (void)cmd; (void)notification;
 			if (nomen_close_forced) return YES;

@@ -76,7 +76,10 @@ mv struct ButtonApp : App {
 			var int cy = win.content_height() / 2
 			var bool centered = self.grid.contains(self.click.handle, cx, cy)
 			Console.write_line("centered=\\{centered} title=\\{self.click.get_title()}")
-			win.close()
+			// Quit the app, not just the window: on macOS the process
+			// outlives its last window (run keeps pumping), so a
+			// self-terminating program ends with quit().
+			win.quit()
 		}
 	}
 }

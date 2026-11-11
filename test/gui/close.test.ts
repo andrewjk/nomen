@@ -52,9 +52,12 @@ mv struct LifecycleApp : App {
 	}
 
 	// The unsaved-changes pattern: decline the first request, allow the
-	// rest. run consults this on the frame after the red button.
+	// rest. run consults this on the frame after the red button. Allowing
+	// QUITS the app: on macOS the process outlives its last window (run
+	// keeps pumping), so the test ends via quit(), not close().
 	func close_requested = (ref self, ref Window win {}, out bool) {
 		if self.allow_close {
+			win.quit()
 			return true
 		}
 		self.allow_close = true

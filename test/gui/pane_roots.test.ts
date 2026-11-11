@@ -58,7 +58,7 @@ mv struct PaneApp : App {
 			// during the first post-show relayout.
 			var string f = self.pane_grid.fmt_frame(1)
 			Console.write_line("laid=\\{f != "0,0,0,0"}")
-			win.close()
+			win.quit()
 		}
 	}
 }

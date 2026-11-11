@@ -1,5 +1,11 @@
 # Nomen Demos
 
+All GUI demos follow the macOS app-lifetime convention: the process stays
+alive after the last window closes (`run` keeps pumping via
+`Window.keep_alive`; the async demo, a manual-loop app, calls it directly) —
+quit from the Dock, or call `win.quit()` programmatically. `win.close()`
+closes one window; `win.quit()` ends the app.
+
 ## Button
 
 The smallest App: one "Click me" button in the middle of the window; clicking

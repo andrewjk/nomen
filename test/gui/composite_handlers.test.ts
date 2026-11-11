@@ -112,7 +112,7 @@ mv struct PagerApp : App {
 		}
 		if self.frames == 5 {
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }
@@ -250,7 +250,7 @@ mv struct PagerApp : App {
 		}
 		if self.frames == 5 {
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }

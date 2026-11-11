@@ -33,7 +33,7 @@ mv struct CountApp : App {
 		var string s = self.frames.to_string()
 		self.label.set_text(s)
 		if self.frames == 3 {
-			win.close()
+			win.quit()
 		}
 	}
 }
@@ -83,7 +83,7 @@ mv struct ResizeApp : App {
 			var string s = self.resizes.to_string()
 			self.label.set_text(s)
 			Console.write_line("resizes \\{s}")
-			win.close()
+			win.quit()
 		}
 	}
 }
@@ -136,7 +136,7 @@ mv struct ProbeApp : App {
 		}
 		if self.frames == 4 {
 			Console.write_line(native_frame(self.label.handle))
-			win.close()
+			win.quit()
 		}
 	}
 }

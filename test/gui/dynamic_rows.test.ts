@@ -127,7 +127,7 @@ mv struct RowsApp : App {
 		}
 		if self.frames == 5 {
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }

@@ -131,7 +131,7 @@ mv struct RightClickApp : App {
 			// handle_events ran before this frame: the arm's hit-test found
 			// the row and removed it through the ref-self receiver.
 			Console.write_line("\\{self.owned.length}")
-			win.close()
+			win.quit()
 		}
 	}
 }

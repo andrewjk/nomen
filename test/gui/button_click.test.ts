@@ -75,7 +75,7 @@ mv struct ClickApp : App {
 			} else {
 				Console.write_line("miss")
 			}
-			win.close()
+			win.quit()
 		}
 	}
 }

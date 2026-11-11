@@ -41,6 +41,14 @@
  *   the desugar synthesizes the override dispatching ids to the app's
  *   `.on_<event>` handlers.
  *
+ * - LIFETIME — on macOS the process OUTLIVES the last window: after the
+ *   frame loop ends, run keeps pumping via `Window.keep_alive` (the Dock
+ *   icon stays; Dock Quit ends the process) instead of returning from
+ *   main and dropping the process. Apps that want exit-on-last-close call
+ *   `win.quit()` from their `close_requested` override; self-terminating
+ *   programs (tests, probes) call `win.quit()` where they used to call
+ *   `win.close()`.
+ *
  * Handlers are METHODS on the app (the `ref self` receiver), so app state —
  * every control field — is reachable without lambda captures (capturing a
  * control MOVES it; a capture-free method reference moves nothing). The

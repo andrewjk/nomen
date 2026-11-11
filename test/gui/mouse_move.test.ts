@@ -100,7 +100,7 @@ mv struct MoveApp : App {
 		}
 		if self.frames == 3 {
 			Console.write_line(self.label.get_text())
-			win.close()
+			win.quit()
 		}
 	}
 }

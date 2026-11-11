@@ -128,7 +128,7 @@ mv struct SubmitApp : App {
 		// handle_events drains all three records.
 		if self.frames == 4 {
 			Console.write_line("hits=\\{self.hits}")
-			win.close()
+			win.quit()
 		}
 	}
 }

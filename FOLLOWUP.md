@@ -650,3 +650,33 @@ descend into all node-valued children reflectively; the risk is
 over-stamping changing System-lib split placement for generated closure
 functions, so it needs its own pass over the backends' TU decisions rather
 than a drive-by.
+
+## Assert doc examples are lint-clean in the mirror suites
+
+Recorded 2026-11-11. `test/spec/` and `test/readme/` compile every fenced
+SPEC/README block but assert ERRORS only — warnings (the var-never-changed
+lint, the redundant-annotation lint) pass silently, so annotated or
+`var`-should-be-`const` examples can re-accumulate in the docs unnoticed
+(they did: ~40 spots cleaned this pass). The helpers (`compile_module` /
+`compile_main`) could also assert `warnings` is empty for blocks that check
+clean. Two wrinkles to sort first: blocks that are deliberate
+teaching-counterexamples (they error, so they never reach the lint — fine),
+and error-demo blocks whose warnings are suppressed anyway (the lint only
+runs on clean checks), so the assertion would be zero-warning ON CLEAN
+BLOCKS only.
+
+## GUI: no app menu bar — Dock Quit is the only system quit path
+
+Recorded 2026-11-11. GUI apps run without `NSApplication.run()`: the
+framework's own pump (`Window.process_events`) drains NSEvents and pumps
+`CFRunLoopRunInMode` so Dock Quit (the terminate Apple Event) and Dock
+lifetime conventions work. But no menu bar is installed, so there is no
+Quit menu item and **⌘Q does nothing** — the only system quit path is
+Dock → Quit. Restoring the pre-App-contract lifetime (the process stays
+alive after the last window closes, `Window.keep_alive`) makes this gap
+user-visible: an app whose window is closed can only be quit from the
+Dock. The fix is to install a standard minimal app menu (app submenu with
+Quit ⌘Q wired to `Window.quit()` — the flag and unwind path already
+exist) plus `applicationShouldHandleReopen` → reopen the last window on
+Dock click. Menu construction is the same delegate-class trick the resize
+delegate uses.
