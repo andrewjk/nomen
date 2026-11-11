@@ -12,7 +12,6 @@ build/
 *.s
 main.js
 main.mjs
-site/
 bench/rust/target/
 
 test/out/**/run-*
