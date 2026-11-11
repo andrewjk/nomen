@@ -60,8 +60,9 @@ Run is not available, a dependency-free bitmap renderer
 (`src/lib/card.ts` + `png.ts` + `font8x8.ts`) keeps the route working.
 
 The Share button includes the current run output as `?out=<base64url>`, so the
-card can show the program and its output underneath without executing anything
-on the server. Output is capped at 2000 characters (the card shows at most
+card can show the program and its output without executing anything on the
+server. They sit side by side (75% code / 25% output); the code font shrinks
+from 18px down to 10px when needed so every line fits, then truncates. Output is capped at 2000 characters (the card shows at most
 eight lines). Because the URL contains the content, the PNG is content-
 addressed and cached immutably in the Cache API. If rendering fails the route
 redirects to `/og.png`; malformed codes fall back to the sample program and

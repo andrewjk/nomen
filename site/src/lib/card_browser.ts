@@ -12,6 +12,10 @@ import { render_bitmap_card } from "./card.ts";
  * binding is absent (or the browser call fails), `render_bitmap_card` keeps the
  * share route working.
  *
+ * Layout: the code gets the whole left column (75% of the card) and the run
+ * output sits beside it (25%), so a long output never steals code lines. The
+ * code font shrinks (to a floor) until every line fits, then truncates.
+ *
  * The Fira Code subset is a static asset (SIL OFL, see
  * `src/public/fonts/OFL.txt`). It is embedded as a data URL so the screenshot
  * never races an external font request.
@@ -19,11 +23,26 @@ import { render_bitmap_card } from "./card.ts";
 
 const WIDTH = 1200;
 const HEIGHT = 630;
-const MAX_OUTPUT_LINES = 8;
-/** Card lines that fit below the header at the CSS line height (25px). */
-const MAX_LINES = 19;
+const PAD_Y = 40;
+const PAD_X = 48;
+/** h1 line box + header padding + border + margin (keep in sync with CSS). */
+const HEADER_HEIGHT = 59;
+const BODY_HEIGHT = HEIGHT - PAD_Y * 2 - HEADER_HEIGHT;
+const CONTENT_WIDTH = WIDTH - PAD_X * 2;
+const COLUMN_GAP = 24;
+/** Code column share when output is shown: 75% code / 25% output. */
+const CODE_FRACTION = 0.75;
+const OUTPUT_PADDING = 20;
+/** Fira Code's advance width is 0.6em. */
+const ADVANCE_EM = 0.6;
+const LINE_HEIGHT_RATIO = 1.45;
+/** Try the largest first; never go below the last entry. */
+const FONT_SIZES = [18, 17, 16, 15, 14, 13, 12, 11, 10];
+const MIN_FONT_SIZE = FONT_SIZES[FONT_SIZES.length - 1];
+
 const FONT_URL = "/fonts/fira-code.woff2";
 const TOKEN_FALLBACK = "#d4d4d4";
+const OUTPUT_COLOR = "#9aa4b2";
 const MUTED = "#6f7885";
 
 interface ScreenshotOptions {
@@ -47,6 +66,16 @@ export interface CardEnv {
 interface TokenLine {
 	text: string;
 	color: string;
+}
+
+interface CardLayout {
+	fontSize: number;
+	lineHeight: number;
+	split: boolean;
+	/** Wrapped output lines at the chosen font size. */
+	output: string[];
+	maxOutputLines: number;
+	maxCodeLines: number;
 }
 
 let font_promise: Promise<string> | undefined;
@@ -95,29 +124,29 @@ export async function build_card_html(
 ): Promise<string> {
 	const font = await load_font(env, url);
 	const lines = await highlighted_lines(source);
-	const output_lines = (output ?? "").replace(/\r\n?/g, "\n").split("\n");
-	while (output_lines.length > 0 && output_lines[output_lines.length - 1].trim() === "") {
-		output_lines.pop();
+	const raw_output = (output ?? "").replace(/\r\n?/g, "\n").split("\n");
+	while (raw_output.length > 0 && raw_output[raw_output.length - 1].trim() === "") {
+		raw_output.pop();
 	}
 
-	const shown_output = Math.min(output_lines.length, MAX_OUTPUT_LINES);
-	const code_limit = Math.max(1, MAX_LINES - (shown_output > 0 ? shown_output + 1 : 0));
-	const code_truncated = lines.length > code_limit;
-	const shown_code = code_truncated ? code_limit - 1 : lines.length;
+	const layout = layout_card(lines, raw_output);
+	const code_truncated = lines.length > layout.maxCodeLines;
+	const shown_code = code_truncated ? Math.max(0, layout.maxCodeLines - 1) : lines.length;
 	const code_html = lines
 		.slice(0, shown_code)
-		.map((line) => line_html(line))
+		.map((line) => token_line_html(line))
 		.join("");
-	const ellipsis = code_truncated ? `<div class="line muted">...</div>` : "";
+	const code_ellipsis = code_truncated ? `<div class="line muted">...</div>` : "";
 
 	let output_html = "";
-	if (shown_output > 0) {
-		const shown = output_lines.slice(0, shown_output);
-		if (output_lines.length > shown_output) {
-			shown[shown.length - 1] = "...";
-		}
-		output_html = `<div class="rule"></div><div class="output">${shown
-			.map((line) => line_html([{ text: line || "\u00a0", color: "#9aa4b2" }]))
+	if (layout.split) {
+		const output_truncated = layout.output.length > layout.maxOutputLines;
+		const shown = output_truncated
+			? layout.output.slice(0, Math.max(0, layout.maxOutputLines - 1))
+			: layout.output;
+		if (output_truncated) shown.push("...");
+		output_html = `<div class="output" style="font-size:${layout.fontSize}px;line-height:${layout.lineHeight}px">${shown
+			.map((line) => `<div class="line">${escape_html(line) || "&#160;"}</div>`)
 			.join("")}</div>`;
 	}
 
@@ -152,52 +181,122 @@ body {
 	flex-direction: column;
 	width: ${WIDTH}px;
 	height: ${HEIGHT}px;
-	padding: 40px 48px;
+	padding: ${PAD_Y}px ${PAD_X}px;
 }
 header {
 	display: flex;
 	align-items: baseline;
 	justify-content: space-between;
 	flex: 0 0 auto;
-	padding-bottom: 14px;
+	padding-bottom: 12px;
 	margin-bottom: 18px;
 	border-bottom: 1px solid #262d36;
 }
 h1 {
 	margin: 0;
-	font-size: 30px;
-	line-height: 36px;
-	font-weight: 600;
-	letter-spacing: -0.5px;
+	font-size: 22px;
+	line-height: 28px;
+	font-weight: 700;
+	letter-spacing: -0.3px;
 	color: #e6e9ee;
 }
 h1 span { color: #8ab4f8; }
-.host { font-size: 16px; line-height: 36px; color: ${MUTED}; }
-.code, .output {
-	font-size: 18px;
-	line-height: 25px;
-	white-space: pre;
-	overflow: hidden;
+.host { font-size: 14px; line-height: 28px; color: ${MUTED}; }
+.body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: ${COLUMN_GAP}px;
+	flex: 1;
+	min-height: 0;
 }
-.code { flex: 0 0 auto; }
+.body.split { grid-template-columns: 3fr 1fr; }
+.code {
+	overflow: hidden;
+	white-space: pre;
+}
+.output {
+	border-left: 1px solid #262d36;
+	padding-left: ${OUTPUT_PADDING}px;
+	overflow: hidden;
+	white-space: pre;
+	color: ${OUTPUT_COLOR};
+}
 .line { white-space: pre; }
 .muted { color: ${MUTED}; }
-.rule {
-	flex: 0 0 auto;
-	border-top: 1px solid #262d36;
-	margin: 14px 0 10px;
-}
-.output { flex: 0 0 auto; color: #9aa4b2; }
 </style>
 </head>
 <body>
 <div class="card">
 <header><h1>Nomen <span>Playground</span></h1><div class="host">${escape_html(host)}</div></header>
-<div class="code">${code_html}${ellipsis}</div>
+<div class="body${layout.split ? " split" : ""}">
+<div class="code" style="font-size:${layout.fontSize}px;line-height:${layout.lineHeight}px">${code_html}${code_ellipsis}</div>
 ${output_html}
+</div>
 </div>
 </body>
 </html>`;
+}
+
+/** Pick the largest code font that fits the code column; wrap/limit output. */
+function layout_card(lines: TokenLine[][], raw_output: string[]): CardLayout {
+	const split = raw_output.length > 0;
+	const code_width = split
+		? Math.floor((CONTENT_WIDTH - COLUMN_GAP) * CODE_FRACTION)
+		: CONTENT_WIDTH;
+	const output_width = split ? CONTENT_WIDTH - COLUMN_GAP - code_width - OUTPUT_PADDING : 0;
+	const max_code_columns = Math.max(0, ...lines.map(line_width));
+
+	let fontSize = MIN_FONT_SIZE;
+	for (const size of FONT_SIZES) {
+		const line_height = Math.round(size * LINE_HEIGHT_RATIO);
+		if (
+			lines.length * line_height <= BODY_HEIGHT &&
+			max_code_columns * size * ADVANCE_EM <= code_width
+		) {
+			fontSize = size;
+			break;
+		}
+	}
+
+	const lineHeight = Math.round(fontSize * LINE_HEIGHT_RATIO);
+	const output_columns = split
+		? Math.max(1, Math.floor(output_width / (fontSize * ADVANCE_EM)))
+		: 1;
+	const wrapped = split ? wrap_output(raw_output, output_columns) : [];
+	const max_lines = Math.max(1, Math.floor(BODY_HEIGHT / lineHeight));
+	return {
+		fontSize,
+		lineHeight,
+		split,
+		output: wrapped,
+		maxOutputLines: max_lines,
+		maxCodeLines: max_lines,
+	};
+}
+
+function line_width(line: TokenLine[]): number {
+	return line.reduce((total, token) => total + token.text.length, 0);
+}
+
+/** Wrap console output to the column, preferring spaces (tabs expand to
+ *  four); unbreakable runs fall back to a hard split. */
+function wrap_output(lines: string[], columns: number): string[] {
+	const wrapped: string[] = [];
+	for (const raw of lines) {
+		let text = raw.replace(/\t/g, "    ");
+		if (text.length === 0) {
+			wrapped.push("");
+			continue;
+		}
+		while (text.length > columns) {
+			let cut = text.lastIndexOf(" ", columns);
+			if (cut <= 0) cut = columns;
+			wrapped.push(text.slice(0, cut));
+			text = text.slice(cut).replace(/^ /, "");
+		}
+		wrapped.push(text);
+	}
+	return wrapped;
 }
 
 async function load_font(env: CardEnv, url: URL): Promise<string> {
@@ -242,7 +341,7 @@ async function highlighted_lines(source: string): Promise<TokenLine[][]> {
 	}
 }
 
-function line_html(tokens: TokenLine[]): string {
+function token_line_html(tokens: TokenLine[]): string {
 	if (tokens.every((token) => token.text.length === 0)) {
 		return `<div class="line">&#160;</div>`;
 	}
