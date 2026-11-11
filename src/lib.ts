@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { embed_root_for } from "./parse.ts";
+import { escape_embedded_bytes } from "./parse/utils/parse_embed_file.ts";
 import tokenize from "./tokenize.ts";
 
 export interface LibraryConfig {
@@ -176,6 +178,7 @@ function extract_free_func_names(source: string): string[] {
 function build_type_map(
 	files: string[],
 	lib_dir: string,
+	file_texts?: Map<string, string>,
 ): { types: Map<string, LibraryType>; functions: Map<string, LibraryType> } {
 	// First pass: collect every declared type name. A library is concatenated
 	// into a single compilation unit at build time, so each file can reference
@@ -189,7 +192,11 @@ function build_type_map(
 	// *declares* it (free functions aren't tracked by name in the type map).
 	const func_to_type = new Map<string, string>();
 	for (const f of files) {
-		const source = fs.readFileSync(f, "utf8");
+		// The recorded per-file source must be the INLINED text (embeds
+		// resolved against the library's own package root) — resolve_linked_
+		// types appends these per-type sources, and an un-inlined
+		// `#embed_file` here would resolve against the caller's CWD.
+		const source = file_texts?.get(f) ?? fs.readFileSync(f, "utf8");
 		file_sources.set(f, source);
 		const type_names = extract_type_names(source);
 		for (const name of type_names) all_type_names.add(name);
@@ -308,8 +315,15 @@ export function build_library(lib_dir: string): Library {
 
 	all_files.sort((a, b) => get_file_priority(a) - get_file_priority(b));
 
-	const source = all_files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
-	const { types, functions } = build_type_map(all_files, lib_dir);
+	// Inline `#embed_file` directives per file (resolved against the
+	// library's own package root) BEFORE anything records file text: both
+	// the concatenated source and the per-type `entry.source` copies that
+	// resolve_linked_types appends must carry the inlined bytes.
+	const file_texts = new Map<string, string>(
+		all_files.map((f) => [f, inline_library_embeds(f, fs.readFileSync(f, "utf8"))]),
+	);
+	const source = all_files.map((f) => file_texts.get(f)).join("\n");
+	const { types, functions } = build_type_map(all_files, lib_dir, file_texts);
 
 	const namespaces = new Map<string, Set<string>>();
 	for (const [name, type] of types) {
@@ -334,6 +348,29 @@ export function build_library(lib_dir: string): Library {
 }
 
 const library_cache = new Map<string, Library>();
+
+/**
+ * `#embed_file` inside LIBRARY sources resolves against the library's own
+ * package root, but the concatenated library source is parsed without a
+ * file path — the caller's CWD/package root would win, and the directive
+ * would fail (or read the wrong file) for every program built outside the
+ * repo. Inline the directive textually at concat time: the file's bytes
+ * become an escape-encoded string literal exactly like parse_embed_file
+ * produces, so downstream sees a plain literal. Library sources are
+ * trusted repo files, so a plain directive match is fine.
+ */
+function inline_library_embeds(file: string, text: string): string {
+	if (!text.includes("#embed_file")) return text;
+	console.log(`[inline_embeds] ${file}`);
+	const base = embed_root_for(file) ?? path.dirname(file);
+	const out = text.replace(/#embed_file\("([^"]+)"\)/g, (_match, rel_path: string) => {
+		const full = path.isAbsolute(rel_path) ? rel_path : path.join(base, rel_path);
+		const bytes = fs.readFileSync(full);
+		return `"${escape_embedded_bytes(bytes)}"`;
+	});
+	console.log(`[inline_embeds] remaining directives in ${path.basename(file)}: ${(out.match(/#embed_file\(/g) ?? []).length}`);
+	return out;
+}
 
 export function get_library(lib_dir: string): Library {
 	const cached = library_cache.get(lib_dir);

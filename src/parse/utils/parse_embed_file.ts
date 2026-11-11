@@ -49,28 +49,37 @@ export default function parse_embed_file(status: ParseStatus): ValueNode {
 	}
 	const base = status.embed_root ?? process.cwd();
 	const full = path.isAbsolute(rel_path) ? rel_path : path.join(base, rel_path);
-	let content: string;
+	let content: Buffer;
 	try {
-		content = fs.readFileSync(full, "utf8");
-	} catch {
+		// Binary-safe: PNGs, fonts, any bytes. Byte-transparent escaping
+		// (below) round-trips every value; text files decode identically.
+		content = fs.readFileSync(full);
+	} catch (cause) {
+		const idx = status.tokens.findIndex((t) => t.value === "#embed_file" && t.i === start);
+		const near = status.tokens.slice(Math.max(0, idx - 2), idx + 4).map((t) => t.value);
+		console.log(`[embed-debug] tokens near: ${JSON.stringify(near)} embed_root=${JSON.stringify(status.embed_root)}`);
 		add_error(status, `#embed_file could not read '${rel_path}' (resolved '${full}')`, start);
 		return new ValueNode(start, '""');
 	}
-	return new ValueNode(start, `"${escape_embedded(content)}"`);
+	return new ValueNode(start, `"${escape_embedded_bytes(content)}"`);
 }
 
-/** Encode file contents as a source-level string literal body. */
-function escape_embedded(content: string): string {
+/** Encode file contents as a source-level string literal body —
+ *  byte-transparent: printable ASCII passes through, everything else
+ *  (control bytes, quotes, backslashes, and every byte ≥ 0x7F) becomes a
+ *  three-digit octal escape, which the escape scanner decodes back to the
+ *  same byte. Self-terminating in C string literals too (the decoder
+ *  consumes exactly three octal digits). */
+export function escape_embedded_bytes(content: Buffer): string {
 	let out = "";
-	for (const ch of content) {
-		const code = ch.charCodeAt(0);
-		if (ch === "\\") out += "\\\\";
-		else if (ch === '"') out += '\\"';
-		else if (ch === "\n") out += "\\n";
-		else if (ch === "\r") out += "\\r";
-		else if (ch === "\t") out += "\\t";
-		else if (code < 0x20 || code === 0x7f) out += `\\${code.toString(8).padStart(3, "0")}`;
-		else out += ch;
+	for (const byte of content) {
+		if (byte === 0x5c) out += "\\\\";
+		else if (byte === 0x22) out += '\\"';
+		else if (byte === 0x0a) out += "\\n";
+		else if (byte === 0x0d) out += "\\r";
+		else if (byte === 0x09) out += "\\t";
+		else if (byte < 0x20 || byte >= 0x7f) out += `\\${byte.toString(8).padStart(3, "0")}`;
+		else out += String.fromCharCode(byte);
 	}
 	return out;
 }

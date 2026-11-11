@@ -162,9 +162,11 @@ function mark_library_nodes(root: RootNode, boundary: number): void {
  * The base directory for `#embed_file` paths: the package root (the nearest
  * enclosing directory with a package.jsonc), falling back to the entry
  * file's folder. No file path — undefined, so `#embed_file` resolves
- * against the process CWD.
+ * against the process CWD. Exported for the library builder, which inlines
+ * library-level embeds against each source file's own root (the
+ * concatenated library source is parsed without a file path).
  */
-function embed_root_for(file_path?: string): string | undefined {
+export function embed_root_for(file_path?: string): string | undefined {
 	if (!file_path) return undefined;
 	let dir = path.dirname(path.resolve(file_path));
 	for (let i = 0; i < 32; i++) {
