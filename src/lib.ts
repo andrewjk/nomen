@@ -361,14 +361,12 @@ const library_cache = new Map<string, Library>();
  */
 function inline_library_embeds(file: string, text: string): string {
 	if (!text.includes("#embed_file")) return text;
-	console.log(`[inline_embeds] ${file}`);
 	const base = embed_root_for(file) ?? path.dirname(file);
 	const out = text.replace(/#embed_file\("([^"]+)"\)/g, (_match, rel_path: string) => {
 		const full = path.isAbsolute(rel_path) ? rel_path : path.join(base, rel_path);
 		const bytes = fs.readFileSync(full);
 		return `"${escape_embedded_bytes(bytes)}"`;
 	});
-	console.log(`[inline_embeds] remaining directives in ${path.basename(file)}: ${(out.match(/#embed_file\(/g) ?? []).length}`);
 	return out;
 }
 
