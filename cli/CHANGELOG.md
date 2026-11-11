@@ -26,6 +26,19 @@
 
 
 
+
+## 0.11.0
+<sub>2026-11-11</sub>
+
+-  *(minor)* - Compile-time-checked format specs in string interpolation
+-  *(minor)* - Grouping and exponential format specs
+-  *(minor)* - Custom pattern format specs
+-  *(patch)* - Fix displaced free on string reassignment
+-  *(patch)* - Anchor inline call-result string args
+-  *(patch)* - Isolate string ownership per struct method
+-  *(patch)* - Preserve empty braces and comment gaps in formatter
+-  *(patch)* - Show declared field sets in signatures
+
 ## 0.10.0
 <sub>2026-11-10</sub>
 
