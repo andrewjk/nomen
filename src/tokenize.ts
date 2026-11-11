@@ -32,9 +32,6 @@ export const COMPOUND_SYMBOLS = [
 export const LONG_COMPOUND_SYMBOLS = [
 	// Variadic
 	"...",
-	// Emphasis (mostly for ziglings, can be removed if necessary)
-	"???",
-	"!!!",
 ];
 
 interface TokenizeStatus {

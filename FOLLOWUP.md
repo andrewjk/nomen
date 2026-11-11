@@ -208,15 +208,6 @@ Fiber-specific (embedded/no-heap path); `Spawnable<T>`'s surface remains
 
 ## aarch64 code-quality notes
 
-### `--release` emitter cleanup
-
-The release pipeline's four text passes only ever fire on the emitters'
-one per-function `b .return_X` before the (always adjacent) return label.
-Stop emitting that branch when the return label immediately follows
-(per-function tail emission, or a single post-pass in
-build_function_node): deletes the branches in debug builds too, makes
-`--release` a true no-op on aarch64, and lets the branch-to-next pass
-converge instantly.
 
 ### Post-processing passes dominate large builds
 
@@ -486,20 +477,6 @@ calls. What remains is gated, recorded so the next request lands here:
   is per-pointer (all-or-nothing), not per-field-disjoint, and aarch64 has
   no per-instruction aliasing hints. Parked until a backend that can
   express it exists.
-
-## Orphaned `???`/`!!!` tokenizer symbols
-
-The ziglings test corpus (removed 2026-10-24 — early scaffolding: 56 files
-never ran at all, and the 54 that did duplicated coverage the other 500+
-test files provide) was the only producer of the emphasis symbols `???` /
-`!!!` (`src/tokenize.ts`, where the comment already says "mostly for
-ziglings, can be removed if necessary"; also listed in `src/format/join.ts`'s
-`NO_SPACE_AFTER`). Nothing else emits them. Deleting the symbols is a small
-compiler change (the tokenizer compound list plus the formatter set) with no
-functional payoff beyond tidiness, so it was recorded rather than done —
-worth folding into the next tokenizer-touching change. Nothing else in the
-repo uses `???` as a placeholder.
-
 ## Context measurement hazard: agent/background shells are not the interactive baseline
 
 Recorded 2026-11-03 (full story: docs/scratch/ALLOCATOR_PLAN.md). The same

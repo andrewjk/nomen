@@ -21,7 +21,7 @@ const CALL_KEYWORDS = new Set([
 ]);
 
 const NO_SPACE_BEFORE = new Set([",", ";", ")", "]", ":", "?", "::"]);
-const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "!", "???", "!!!", "::"]);
+const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "!", "::"]);
 // `<` and `>` are both generic brackets and comparisons, `>>` is both a
 // nested-generic closer (`List<List<int>>`) and a shift, and `..` is written
 // either `0..3` or `0 .. 3`. Rather than guess, keep whatever was written.
