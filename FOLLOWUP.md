@@ -594,3 +594,36 @@ Not done because Browser Run covers normal dev and production.
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
 server, but a card only needs the dark-plus token colours. If the Worker bundle
 needs to shrink further, a small Nomen-specific tokenizer could replace it.
+
+## Bundle macOS GUI builds into `.app`
+
+Recorded 2026-11-12. A `nomen build` output is a bare executable
+(`build/main`), so the Dock hover label is the binary's filename — "main".
+The label is not a runtime property: `NSProcessInfo.setProcessName:` has no
+effect, and the LaunchServices SPI `_LSSetApplicationInformationItem` +
+`_kLSDisplayNameKey` (Avalonia/WebKit's workaround) reports success and
+changes what `_LSCopyApplicationInformationItem` returns, yet the Dock still
+shows the executable name for an unbundled process. `lsappinfo setinfo
+--name` behaves the same way. macOS resolves the hover label from the bundle
+at launch, not from live process state.
+
+Emit a minimal bundle for macOS `run`/`build` instead:
+
+- `build/<Name>.app/Contents/MacOS/<Name>` — the linked binary.
+- `Contents/Info.plist` — `CFBundleExecutable`, `CFBundleIdentifier`,
+  `CFBundleName`, `CFBundleDisplayName`, `CFBundlePackageType` (`APPL`),
+  `CFBundleShortVersionString`, `CFBundleVersion`, `CFBundleIconFile`,
+  `NSHighResolutionCapable`, `LSMinimumSystemVersion`.
+- `Contents/Resources/<Name>.icns` — generated from
+  `core/assets/nomen.png` (or a project icon); the runtime
+  `setApplicationIconImage:` normalisation stays for custom `set_icon` art.
+
+Name the bundle from `package.jsonc` (`name`), and keep the folder name and
+both plist names identical — the Dock has historically preferred the folder
+name over the plist keys. `nomen run` should exec the inner
+`Contents/MacOS/<Name>` binary (not `open -W`) so stdout, exit codes and
+Ctrl-C keep working. Tests stay on bare executables.
+
+This gives the *app* name, not the live window title. Renaming/re-execing a
+bundle at startup to track the title is possible but not worth the complexity
+and double-launch.
