@@ -1390,7 +1390,7 @@ match result {
 }
 ```
 
-Only `error` enums may join a set. Member enums are carried by value, so keep heap-owning members (`mv error` with string payloads) to single-error signatures for now.
+Only `error` enums may join a set. A heap-owning member (`mv error` with string payloads) transfers its ownership into the set: a bare local donor moves (it is invalid afterwards), a fresh construction is claimed, and a bare field read is rejected — construct fresh or `mv` the field out with a swap.
 
 ### Anonymous Error Sets
 

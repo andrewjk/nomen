@@ -206,10 +206,12 @@ built over the enum mono, `Result_int__AnonEnum_…`), member-directed
 lifting, the ambiguity rule, and propagation widening on both backends
 (the fail path writes the outer Result tag + the origin-tagged member
 value into the sret buffer; payload copies are aggregate-sized, not
-word-sized). Limits recorded: an enum-typed payload copies bitwise, so a
-VARIABLE donor of an mv member enum aliases (the pre-existing enum-payload
-ownership hole — FOLLOWUP.md); anonymous error sets (`! [.notfound]`) and
-the flat arms remain later work.
+word-sized). Enum-typed payloads follow the owning-payload contract: a bare
+local donor MOVES into the case (the build suppresses its scope-exit
+reclaim), a fresh construction transfers, a bare field read is rejected
+(construct fresh or `mv` the field out), and borrowed arguments error —
+`enforce_case_payload_ownership` classifies `is_owning` enums like owning
+structs. Anonymous error sets (`! [.notfound]`) joined later (stage 5b).
 
 ## Staging
 

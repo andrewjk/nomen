@@ -219,14 +219,18 @@ export function enforce_case_payload_ownership(
 		const case_param = case_params[i];
 		if (!case_param?.type.name || case_param.type.is_array) continue;
 		// An OWNING payload slot: a class/trait reference (the tagged union
-		// stores the pointer) or a mv-STRUCT value (the payload owns its
-		// heap state). A borrowed argument would leave two owners — a double
-		// free — so it is rejected here, mirroring mv-field stores.
+		// stores the pointer), a mv-STRUCT value, or a mv-ENUM value (the
+		// payload owns its heap state — the Result/composed-set fail slots are
+		// enum-typed, so this is the common shape). A borrowed argument would
+		// leave two owners — a double free — so it is rejected here,
+		// mirroring mv-field stores.
 		const payload_struct = status.structs.find((s) => s.name === case_param.type.name);
+		const payload_enum = status.enums.find((e) => e.name === case_param.type.name);
 		const is_ref_payload =
 			!!payload_struct?.is_class ||
 			!!status.traits.find((t) => t.name === case_param.type.name) ||
-			!!payload_struct?.is_owning;
+			!!payload_struct?.is_owning ||
+			!!payload_enum?.is_owning;
 		if (!is_ref_payload) continue;
 		const arg = args[i];
 		if (arg.node_type === "value" && (arg as import("../../nodes/ValueNode.ts").default).is_moved) {

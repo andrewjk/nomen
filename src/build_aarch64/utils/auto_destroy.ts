@@ -803,8 +803,10 @@ export function emit_enum_payload_frees_at(
 			emit_asm(status, `cmp x9, x10\n`);
 			emit_asm(status, `b.ne ${skip}\n`);
 			// x13 parks the payload ptr so `base_reg` stays valid until its
-			// spill (the caller may pass x0 as the base).
-			if (!p_struct) {
+			// spill (the caller may pass x0 as the base). A nested ENUM
+			// payload must NOT be pre-loaded: the recursion needs the base
+			// register intact to address the inline blob.
+			if (!p_struct && !p_enum) {
 				emit_asm(status, `ldr x13, ${payload_addr}\n`);
 			}
 			emit_asm(status, `str ${base_reg}, [sp, #-16]!\n`);

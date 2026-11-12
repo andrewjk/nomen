@@ -1378,6 +1378,145 @@ pub func main = () {
 	});
 });
 
+describe("errors: enum-payload ownership", () => {
+	test("a mv-enum variable donor transfers through the lifted fail wrap", async () => {
+		const input = `
+mv error ParseError {
+	case syntax(string message)
+}
+
+func first = (out ParseError) {
+	return .syntax("boom")
+}
+
+func wrap = (out int ! ParseError) {
+	var e = first()
+	return e
+}
+
+var r = wrap()
+match r {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .syntax(message) -> Console.write("syntax: \\{message}\\n")
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_donor_lift", "syntax: boom\n");
+	});
+
+	test("a composed-set variable donor lifts through its origin tag", async () => {
+		const input = `
+mv error LoadError {
+	case timeout(string where)
+}
+
+error ParseError {
+	case syntax
+}
+
+func wrap = (out int ! LoadError, ParseError) {
+	var e = LoadError.timeout("db")
+	return e
+}
+
+var r = wrap()
+match r {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout(where) -> Console.write("timeout: \\{where}\\n")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("syntax\\n")
+				}
+			}
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_donor_composed", "timeout: db\n");
+	});
+
+	test("an explicit .fail donor transfers", async () => {
+		const input = `
+mv error ParseError {
+	case syntax(string message)
+}
+
+func wrap = (out Result<int, ParseError>) {
+	var e = ParseError.syntax("boom")
+	return .fail(e)
+}
+
+var r = wrap()
+match r {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .syntax(message) -> Console.write("syntax: \\{message}\\n")
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_donor_explicit", "syntax: boom\n");
+	});
+
+	test("a user mv enum carrying an mv-enum payload transfers it", async () => {
+		const input = `
+mv error ParseError {
+	case syntax(string message)
+}
+
+mv enum Wrapper {
+	case err(ParseError p)
+}
+
+func wrap = (out Wrapper) {
+	var e = ParseError.syntax("boom")
+	return Wrapper.err(e)
+}
+
+var w = wrap()
+match w {
+	case .err(p) {
+		match p {
+			case .syntax(message) -> Console.write("wrapped: \\{message}\\n")
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_donor_user", "wrapped: boom\n");
+	});
+
+	test("a field-read donor is rejected", () => {
+		const input = `
+mv error ParseError {
+	case syntax(string message)
+}
+
+mv struct Holder {
+	var ParseError err
+}
+
+func make = (out Result<int, ParseError>) {
+	var h = Holder(ParseError.syntax("x"))
+	return .fail(h.err)
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.map((e) => e.message)).toContain(
+			"cannot pass a field read to case '.fail' — the case payload takes ownership; construct a fresh instance or mv the field out with a swap",
+		);
+	});
+});
+
 describe("nullable chaining (`?.`)", () => {
 	test("a missed chain falls back through `??`", async () => {
 		const input = `
