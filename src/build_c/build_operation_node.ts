@@ -127,21 +127,33 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		} else {
 			status.code += `_rv_${id} = ${rv_mono}_fail_init(_pb_${id}._data._fail.${fail_field}); `;
 		}
-		if (node.in_flight_binding) {
-			const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
-			for (const frame of frames) {
-				const di = frame.findIndex((d) => d.name === node.in_flight_binding);
-				if (di !== -1) {
-					const [decl] = frame.splice(di, 1);
-					emit_nursery_joins_on_return_c(status);
-					reclaim_all_c_scopes(status);
-					frame.splice(di, 0, decl);
-					break;
-				}
+		// Bindings that hold nothing yet must not be freed on the fail path:
+		// the checker-stamped in-flight binding (a user `var x = ...!`) and
+		// any HOISTED temp whose initializer IS this p! node (the lift's
+		// `_param_N = <p!>` arg hoist — its declaration is registered before
+		// the initializer builds).
+		const in_flight = (d: { name: string; value?: BaseNode | null }) =>
+			d.name === node.in_flight_binding || d.value === node;
+		const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
+		const spliced: {
+			frame: (typeof frames)[number];
+			index: number;
+			decl: (typeof frames)[number][number];
+		}[] = [];
+		for (const frame of frames) {
+			let di = frame.findIndex((d) => in_flight(d));
+			while (di !== -1) {
+				const [decl] = frame.splice(di, 1);
+				spliced.push({ frame, index: di, decl });
+				di = frame.findIndex((d) => in_flight(d));
 			}
-		} else {
-			emit_nursery_joins_on_return_c(status);
-			reclaim_all_c_scopes(status);
+		}
+		emit_nursery_joins_on_return_c(status);
+		reclaim_all_c_scopes(status);
+		// Restore the bookings (descending index order keeps positions valid)
+		// so the ok path's scope-exit free still covers them.
+		for (const { frame, index, decl } of spliced.reverse()) {
+			frame.splice(index, 0, decl);
 		}
 		status.code += `return _rv_${id}; } `;
 		if (!node.coalesce_ok_field) {

@@ -26,12 +26,15 @@ initialized and restores it for the ok path's scope-exit free; aarch64 tag
 stores are 64-bit per the enum convention (a 32-bit store lets stack garbage
 ride the tag word into every downstream comparison). `resolve_linked_types`
 pulls the Result template for a `word ! word` token sandwich — the desugar
-introduces the dependency after the scan. Composition (`T ! E1 ! E2`,
-tag-by-origin), flat match arms, and nullable chaining remain designed but
-staged (below). One pre-existing aarch64 teardown gap surfaced by the new
-tests — interpolated strings through chained enum-with-data returns — is
-recorded in FOLLOWUP.md; the errors tests keep payload-free chains until it
-lands.
+introduces the dependency after the scan. Composition (`T ! E1, E2`,
+tag-by-origin), flat match arms, nullable chaining, and unit results landed
+in the follow-up tranches recorded below. The teardown gap the new tests
+surfaced — interpolated strings through chained enum-with-data returns, and
+nested enum payloads — was fixed on both backends: the p! initializer marks
+its binding heap-owned (aarch64 `last_result_is_heap`), the fail-path
+reclaim skips hoisted temps whose initializer is the in-flight p!, and the
+enum-payload walks recurse into enum-typed payloads (`free_payloads`
+families and the aarch64 `emit_enum_payload_frees_at` walk).
 
 ## The problem
 

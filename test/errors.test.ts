@@ -487,14 +487,14 @@ error FetchError {
 	case notfound
 }
 
-func load = (string path, out int ! FetchError) {
+func load = (string path, out string ! FetchError) {
 	if path == "" {
 		return .notfound
 	}
-	return 5
+	return "data for \\{path}"
 }
 
-func outer = (string path, out int ! FetchError) {
+func outer = (string path, out string ! FetchError) {
 	return load(path)!
 }
 
@@ -1095,11 +1095,8 @@ Console.write("\\{describe("")}\\n")
 		await build_and_check_output(input, "errors_anon_flat", "ok 7\nmissing\n");
 	});
 
-	test("payload-carrying anonymous error sets parse and lift", () => {
-		// Runtime teardown of a nested enum payload is the FOLLOWUP.md gap —
-		// this pins the syntax/lifting surface.
-		const input = `import System
-
+	test("payload-carrying anonymous error sets match with bindings", async () => {
+		const input = `
 func parse = (string text, out int ! [.syntax(string)]) {
 	if text == "" {
 		return .syntax("empty input")
@@ -1107,20 +1104,19 @@ func parse = (string text, out int ! [.syntax(string)]) {
 	return 1
 }
 
-pub func main = () {
-	var bad = parse("")
-	match bad {
-		case .ok(_) -> Console.write("unexpected")
-		case .fail(err) {
-			match err {
-				case .syntax(message) -> Console.write("syntax: \\{message}")
-			}
+var bad = parse("")
+match bad {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .syntax(message) -> Console.write("syntax: \\{message}\\n")
 		}
 	}
 }
 `;
-		const parsed = parse(input, core, undefined, { allow_internal: true });
-		expect(parsed.errors).toEqual([]);
+		// The nested enum payload (Result -> anon error set -> string) is
+		// reclaimed by the recursive per-backend walks.
+		await build_and_check_output(input, "errors_anon_payload", "syntax: empty input\n");
 	});
 
 	test("the original success-enum + anonymous-error shape", () => {

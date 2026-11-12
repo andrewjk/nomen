@@ -153,11 +153,22 @@ function build_tagged_union_enum(
 					// nested owned fields recursively — the same treatment a
 					// struct local gets at scope exit (emit_struct_destroys).
 					const p_struct = enum_payload_destroy_struct(p, status);
-					if (!p_struct) continue;
-					const saved = begin_code_scratch(status);
-					emit_struct_destroys(status, p_struct, `v->_data._${c.name}.${p.name}`);
-					const captured = end_code_scratch(status, saved);
-					if (captured.trim()) stmts.push(captured.trim());
+					if (p_struct) {
+						const saved = begin_code_scratch(status);
+						emit_struct_destroys(status, p_struct, `v->_data._${c.name}.${p.name}`);
+						const captured = end_code_scratch(status, saved);
+						if (captured.trim()) stmts.push(captured.trim());
+						continue;
+					}
+					// A nested ENUM-with-data payload owns its own payloads —
+					// walk it recursively through its free_payloads helper (the
+					// blob lives inline in the union).
+					const p_enum = p.type.name
+						? status.enums.find((e) => e.name === p.type.name && e.has_associated_data)
+						: undefined;
+					if (p_enum) {
+						stmts.push(`${p_enum.name}_free_payloads(&v->_data._${c.name}.${p.name});`);
+					}
 				}
 			}
 			if (!stmts.length) continue;

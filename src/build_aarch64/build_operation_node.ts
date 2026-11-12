@@ -1458,7 +1458,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		emit_nursery_joins_on_return_a64(status);
 		const finalized = status.moved ?? new Set<string>();
 		for (const decl of all_scope_frames(status).flat()) {
+			// The in-flight binding (a user `var x = ...!`) and any HOISTED
+			// temp whose initializer IS this p! node hold nothing yet.
 			if (node.in_flight_binding && decl.name === node.in_flight_binding) continue;
+			if ((decl as { value?: unknown }).value === node) continue;
 			if (finalized.has(decl.name)) {
 				emit_moved_local_cleanup(status, decl);
 				continue;
@@ -1490,6 +1493,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				emit_asm(status, `add x0, x9, #${ok_off}\n`);
 			} else {
 				emit_asm(status, `ldr x0, [x9, #${ok_off}]\n`);
+			}
+			// The propagated value is an OWNED string (the producer transfers,
+			// the alias arm dups) — report it so a declaration initializer
+			// marks the binding heap-owned and the scope-exit free fires.
+			if (is_string) {
+				status.last_result_is_heap = true;
 			}
 		}
 		emit_asm(status, `${done_label}:\n`);

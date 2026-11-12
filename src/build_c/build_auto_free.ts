@@ -60,10 +60,19 @@ function emit_enum_payload_reclaim(
 		status.code += `${guard} { free(${cname}._data._${c.name}.${p.name}.ptr); }\n`;
 	} else {
 		const p_struct = enum_payload_destroy_struct(p, status);
-		if (!p_struct) return;
-		status.code += `${guard} {\n`;
-		emit_struct_destroys(status, p_struct, `${cname}._data._${c.name}.${p.name}`);
-		status.code += `}\n`;
+		if (p_struct) {
+			status.code += `${guard} {\n`;
+			emit_struct_destroys(status, p_struct, `${cname}._data._${c.name}.${p.name}`);
+			status.code += `}\n`;
+			return;
+		}
+		// A nested ENUM-with-data payload: walk it through its own
+		// free_payloads helper (the blob lives inline in the union).
+		const p_enum = p.type.name
+			? status.enums.find((e) => e.name === p.type.name && e.has_associated_data)
+			: undefined;
+		if (!p_enum) return;
+		status.code += `${guard} { ${p_enum.name}_free_payloads(&${cname}._data._${c.name}.${p.name}); }\n`;
 	}
 }
 
@@ -517,7 +526,9 @@ export function free_scoped_declarations(
 						(p) =>
 							p.type.name === "string" ||
 							payload_is_reference(p.type, status) ||
-							!!enum_payload_destroy_struct(p, status),
+							!!enum_payload_destroy_struct(p, status) ||
+							// A nested enum-with-data payload owns its own payloads.
+							!!status.enums.find((e) => e.name === p.type.name && e.has_associated_data),
 					),
 				);
 				if (payload_cases.length) {

@@ -761,12 +761,22 @@ export function emit_enum_payload_frees_at(
 ) {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node?.has_associated_data) return;
+	// A nested enum-with-data payload owns whatever ITS payloads own — it is
+	// an aggregate slot walked recursively below (payload-free nested enums
+	// make the recursion a no-op).
+	const is_enum_payload = (p: { type: Type }): boolean =>
+		!!p.type.name &&
+		!p.type.is_array &&
+		!p.type.is_ref &&
+		!p.type.is_view &&
+		!!status.enums.find((e) => e.name === p.type.name && e.has_associated_data);
 	const owning_cases = enum_node.cases.filter((c) =>
 		c.params.some(
 			(p) =>
 				p.type.name === "string" ||
 				enum_payload_is_reference(p, status) ||
-				!!enum_payload_destroy_struct(p, status),
+				!!enum_payload_destroy_struct(p, status) ||
+				is_enum_payload(p),
 		),
 	);
 	if (!owning_cases.length) return;
@@ -779,7 +789,8 @@ export function emit_enum_payload_frees_at(
 		for (const p of c.params) {
 			const is_ref = enum_payload_is_reference(p, status);
 			const p_struct = is_ref ? undefined : enum_payload_destroy_struct(p, status);
-			if (p.type.name !== "string" && !is_ref && !p_struct) continue;
+			const p_enum = is_ref || p_struct || !is_enum_payload(p) ? undefined : p.type.name;
+			if (p.type.name !== "string" && !is_ref && !p_struct && !p_enum) continue;
 			// Tag VALUE = declaration index (case monos carry the base tag).
 			const case_index = c.tag_index ?? enum_node.cases.indexOf(c);
 			const payload_off = get_enum_payload_offset(enum_name, c.name, p.name, status);
@@ -814,6 +825,12 @@ export function emit_enum_payload_frees_at(
 				emit_asm(status, `add x13, ${base_reg}, #${base_offset + payload_off}\n`);
 				emit_asm(status, `mov x0, x13\n`);
 				emit_asm(status, `bl ${p_struct.name}_destroy\n`);
+			} else if (p_enum) {
+				// A nested ENUM-with-data payload: the blob lives inline — walk
+				// it recursively at its payload offset (its own tag-guarded
+				// payload frees run there).
+				emit_asm(status, `add x13, ${base_reg}, #${base_offset + payload_off}\n`);
+				emit_enum_payload_frees_at(status, p_enum, "x13", 0);
 			} else {
 				emit_asm(status, `mov x0, x13\n`);
 				emit_free(status);

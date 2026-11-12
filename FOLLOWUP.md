@@ -628,65 +628,6 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## aarch64: interpolated strings through chained enum-with-data returns leak (or stale-free) in the audit
-
-Recorded 2026-11-12, out of the ERRORS_PLAN stage-3 work (the propagation
-tests tripped it; the C backend is fully balanced on the same programs).
-
-A success payload that is an INTERPOLATED string, returned through a lifted
-`.ok(...)` construction across a sret call into a caller-local enum-with-data
-binding, is not reclaimed exactly once on aarch64: depending on the frame
-layout the run reports either `LEAK: 1 allocation(s)` or
-`AUDIT-STALE-FREE: 1 pointer(s)`. Minimal shape (no errors-plan machinery —
-plain `enum`, explicit `.ok(...)`:
-
-```
-enum FetchError {
-	case notfound
-}
-
-func load = (string path, out Result<string, FetchError>) {
-	if path == "" {
-		return .fail(.notfound)
-	}
-	return .ok("contents of \{path}")
-}
-
-func load_and_wrap = (string path, out Result<string, FetchError>) {
-	var r = load(path)
-	var body = match r {
-		case .ok(b) -> b
-		case .fail(_) -> "none"
-	}
-	return .ok("[\{body}]")
-}
-
-var ok = load_and_wrap("config.txt")
-match ok {
-	case .ok(body) -> Console.write("\{body}\n")
-	case .fail(_) -> Console.write("unexpected\n")
-}
-```
-
-Single-function shapes (`var result = fetch(...)` + match) audit clean, and
-the C backend handles the chained shape byte-balanced — so the gap is in the
-aarch64 teardown of an enum-with-data LOCAL whose payload crossed a
-function-sret boundary (the match's owned-scrutinee temp frees its own copy;
-the caller's local slot payload appears to be neither transferred into it nor
-destroyed). Fix direction: in the aarch64 destroy walk for enum-with-data
-locals, follow the same ownership the C `free_payloads` walk applies
-(payload strdup'd by the ctor → owned by the last holder). Until then,
-aarch64 runtime tests that assert audit balance should keep interpolated
-success payloads out of chained lifted returns (the errors tests do this via
-payload-free chains; the `!!` single-call shapes audit clean).
-
-The same family shows up for NESTED enum payloads: an anonymous error set
-with a heap payload (`out int ! [.syntax(string)]`) stores the string inside
-the generated error enum inside the Result; the match binds it fine, but the
-aarch64 scope-exit walk misses the inner payload (one leaked allocation at
-exit). Payload-free anonymous sets audit clean; the payload case is pinned
-at the parse/check level until the enum-payload teardown lands.
-
 ## Enum-typed payloads copy bitwise — a variable donor aliases
 
 Recorded 2026-11-12, surfacing with ERRORS_PLAN composition (the check is
