@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import build from "../src/build.ts";
 import parse from "../src/parse.ts";
 import build_and_check_output from "./build_and_check_output.ts";
 import { compile_module, core } from "./spec/_helpers.ts";
@@ -1377,6 +1378,137 @@ pub func main = () {
 				11,
 				10,
 			),
+		]);
+	});
+});
+
+describe("nullable chaining (`?.`)", () => {
+	test("a missed chain falls back through `??`", async () => {
+		const input = `
+mv struct Profile {
+	var string nickname
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile("ada")
+	}
+	return null
+}
+
+func label = (int id, out string) {
+	var p = find(id)
+	return p?.nickname ?? "anonymous"
+}
+
+Console.write("\\{label(1)}\\n")
+Console.write("\\{label(2)}\\n")
+`;
+		await build_and_check_output(input, "nullable_chain_coalesce", "ada\nanonymous\n");
+	});
+
+	test("chains test through `!= null` and `== null`", async () => {
+		const input = `
+struct Profile {
+	var int score
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(5)
+	}
+	return null
+}
+
+func has = (int id, out bool) {
+	var p = find(id)
+	if p?.score != null {
+		return true
+	}
+	return p?.score == null
+}
+
+Console.write("\\{has(1)}\\n")
+Console.write("\\{has(2)}\\n")
+`;
+		// The chain's nullness is the TARGET's nullness here (the score field
+		// is a plain int, so its own null test is always true when `p` exists).
+		await build_and_check_output(input, "nullable_chain_test", "true\ntrue\n");
+	});
+
+	test("multi-hop chains test every hop", async () => {
+		const input = `
+struct Inner {
+	var int value
+}
+
+struct Outer {
+	var Inner next
+}
+
+func find = (int id, out Outer?) {
+	if id == 1 {
+		return Outer(Inner(9))
+	}
+	return null
+}
+
+func read = (int id, out int) {
+	var o = find(id)
+	if o?.next != null {
+		return 1
+	}
+	return 0
+}
+
+func read_value = (int id, out int) {
+	var o = find(id)
+	if o?.next?.value != null {
+		return 9
+	}
+	return 0
+}
+
+Console.write("\\{read(1)} \\{read(2)}\\n")
+Console.write("\\{read_value(1)} \\{read_value(2)}\\n")
+`;
+		await build_and_check_output(input, "nullable_chain_hops", "1 0\n9 0\n");
+	});
+
+	test("a naked chain is rejected at build with the consumer forms", () => {
+		const input = `
+struct Profile {
+	var int score
+}
+
+func read = (out int?) {
+	var Profile? p = null
+	return p?.score
+}
+`;
+		const parsed = parse(`import System\n${input}`, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([]);
+		const built = build(parsed.root, { arch: "c", audit: true });
+		expect((built.errors ?? []).map((e) => e.message)).toEqual([
+			"a nullable chain must be consumed — coalesce it ('.?chain ?? fallback') or test it ('.?chain != null')",
+		]);
+	});
+
+	test("`?.` on a non-nullable target suggests `.`", () => {
+		const input = `import System
+
+struct Profile {
+	var int score
+}
+
+pub func main = () {
+	var p = Profile(1)
+	var x = p?.score ?? 0
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(input, "'?.' needs a nullable target — 'Profile' is not nullable; use '.'", 9, 10),
 		]);
 	});
 });

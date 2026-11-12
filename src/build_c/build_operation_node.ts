@@ -1,8 +1,10 @@
+import flatten_null_chain from "../build_common/null_chain.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_nursery_joins_on_return_c } from "./build_async_block_node.ts";
@@ -14,6 +16,29 @@ import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg, is_view_value } from "./utils/view_value.ts";
+
+/** Ensure the flattened chain's hop nodes carry their nullable types (the
+ *  checker stamps the VALUE path; hops reuse those nodes, but a bare base
+ *  value keeps its binding type). */
+function emit_chain_tests(hops: BaseNode[], status: BuildStatus): string {
+	const parts: string[] = [];
+	for (const hop of hops) {
+		const t = type_from_value_node(hop);
+		// Only NULLABLE hops carry a condition: a non-nullable member's chain
+		// result is null exactly when an earlier hop is, already tested.
+		if (!t?.is_nullable) continue;
+		if (t.name === "string") {
+			// In-band null: the fat ptr half.
+			const saved = begin_code_scratch(status);
+			build_node(hop, status);
+			const expr = end_code_scratch(status, saved);
+			parts.push(`(${expr}.ptr != 0)`);
+		} else {
+			parts.push(`(${build_nullable_has(hop, status)})`);
+		}
+	}
+	return parts.join(" && ");
+}
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
 	// Resolve a deferred == / != operator (set during generic-body checking
@@ -167,6 +192,36 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `); })`;
 		}
 	} else if (node.op === "??") {
+		// Nullable chaining (ERRORS_PLAN): `a?.b ?? fallback`. The chain's
+		// nullness is consumed here — evaluate it once inside an if/else
+		// (lazy fallback), per-arm ownership like `??` (string arms dup).
+		const flat_chain = flatten_null_chain(node.left_value, (t, f) => {
+			const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+			return st?.fields.find((fld) => fld.name === f)?.type;
+		});
+		if (flat_chain) {
+			const t = node.type;
+			const id = ns_tmp_counter++;
+			const is_str = t?.name === "string";
+			const is_struct = !!t?.name && !!status.structs.find((st) => st.name === t.name);
+			const c_t = is_str
+				? "nomen_string"
+				: is_struct
+					? `struct ${t!.name}`
+					: c_type(t?.name || "long");
+			status.code += `({ ${c_t} _nsc_${id}; if (`;
+			status.code += emit_chain_tests(flat_chain.hops, status);
+			status.code += `) { _nsc_${id} = `;
+			if (is_str) status.code += `nomen_str_dup(`;
+			build_node(flat_chain.value, status);
+			if (is_str) status.code += `)`;
+			status.code += `; } else { _nsc_${id} = `;
+			if (is_str) status.code += `nomen_str_dup(`;
+			build_node(node.right_value, status);
+			if (is_str) status.code += `)`;
+			status.code += `; } _nsc_${id}; })`;
+			return;
+		}
 		// `nullable ?? fallback`. For a nullable struct, the flag is `<expr>_has`.
 		const left_type = type_from_value_node(node.left_value);
 		if (left_type?.is_nullable && left_type.name === "string") {
@@ -256,6 +311,29 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `)`;
 		}
 	} else if ((node.op === "==" || node.op === "!=") && is_null_comparison(node)) {
+		// Nullable chaining (ERRORS_PLAN): `a?.b != null` is "every hop is
+		// non-null"; `== null` is its negation.
+		const chain_side = flatten_null_chain(node.left_value, (t, f) => {
+			const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+			return st?.fields.find((fld) => fld.name === f)?.type;
+		})
+			? node.left_value
+			: flatten_null_chain(node.right_value, (t, f) => {
+						const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+						return st?.fields.find((fld) => fld.name === f)?.type;
+				  })
+				? node.right_value
+				: undefined;
+		if (chain_side) {
+			const flat = flatten_null_chain(chain_side, (t, f) => {
+				const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+				return st?.fields.find((fld) => fld.name === f)?.type;
+			})!;
+			status.code += node.op === "==" ? `(!(` : `((`;
+			status.code += emit_chain_tests(flat.hops, status);
+			status.code += `))`;
+			return;
+		}
 		// `x == null` / `x != null` against a nullable struct lowers to its
 		// companion `_has` flag rather than comparing the struct value to 0.
 		const left_is_nullable_string =

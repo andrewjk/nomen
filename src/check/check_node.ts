@@ -20,6 +20,7 @@ import IfElseNode from "../nodes/IfElseNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
@@ -49,6 +50,7 @@ import check_if_else_node from "./check_if_else_node.ts";
 import check_index_node from "./check_index_node.ts";
 import check_let_node from "./check_let_node.ts";
 import check_match_node from "./check_match_node.ts";
+import check_null_access_node from "./check_null_access_node.ts";
 import check_operation_node from "./check_operation_node.ts";
 import check_range_node from "./check_range_node.ts";
 import check_return_node from "./check_return_node.ts";
@@ -195,6 +197,10 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 		}
 		case "index": {
 			result = check_index_node(node as IndexNode, status);
+			break;
+		}
+		case "null_access": {
+			result = check_null_access_node(node as NullAccessNode, status);
 			break;
 		}
 		case "unsafe": {

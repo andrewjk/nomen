@@ -153,6 +153,40 @@ var int? x = 5
 const y = x + 1          // OK, y = 6
 ```
 
+### Nullable Chaining
+
+`a?.b` reads a member only when the nullable target holds a value: the result is the member's type made nullable — null when the target is null, the member otherwise. Chains repeat the operator (`a?.b?.c`) or continue with a plain `.` (`a?.b.c`, guarded by the `?.` hop).
+
+A chain's nullness is consumed where it is produced — v1 supports the two consumer forms:
+
+```
+struct Profile {
+    var int score
+}
+
+func find = (int id, out Profile?) {
+    if id == 1 {
+        return Profile(7)
+    }
+    return null
+}
+
+func describe = (int id, out string) {
+    var p = find(id)
+    if p?.score != null {
+        return "found"
+    }
+    return "missing"
+}
+
+func score_or = (int id, out int) {
+    var p = find(id)
+    return p?.score ?? 0
+}
+```
+
+In practice: `chain ?? fallback` picks the member or the fallback (evaluated lazily, once), and `chain != null` / `chain == null` test the whole chain (every nullable hop). The target must be nullable (`?.` on a non-nullable value is an error pointing at `.`), the chain must bottom out at a name or field path, and a chain in any other position (a declaration initializer, a return, an argument) is rejected with the consumer forms named.
+
 ### Constraints
 
 Constraints are compile-time assertions on parameters, fields, and variables. They use `:` after the name followed by a boolean expression. When the value is a compile-time constant, the constraint is evaluated at compile time and violations produce errors.

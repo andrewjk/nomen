@@ -39,4 +39,5 @@ export type NodeType =
 	| "raw"
 	| "anon_struct"
 	| "index"
+	| "null_access"
 	| "unsafe";

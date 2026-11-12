@@ -52,6 +52,7 @@ const PREFIX_POSITIONS = new Set([
 	"&&",
 	"||",
 	"??",
+	"?.",
 	"!!",
 	"+=",
 	"-=",

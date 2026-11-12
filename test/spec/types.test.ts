@@ -360,3 +360,34 @@ const range = 0..10
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("spec: nullable chaining", () => {
+	test("chains consume through ?? and null tests", () => {
+		const input = `
+struct Profile {
+	var int score
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(7)
+	}
+	return null
+}
+
+func describe = (int id, out string) {
+	var p = find(id)
+	if p?.score != null {
+		return "found"
+	}
+	return "missing"
+}
+
+func score_or = (int id, out int) {
+	var p = find(id)
+	return p?.score ?? 0
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+});

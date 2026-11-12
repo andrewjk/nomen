@@ -249,8 +249,19 @@ the flat arms remain later work.
   functions only. One gap fixed en route: the statement-start postfix loop
   was missing the `!` case, so a standalone `f()!` statement parsed as two
   statements.
-- **Deferred** — nullable chaining (`?.` does not exist today; prerequisite
-  for the `fetch(...)!.body !! ""` shape), assignment-position lifting.
+- **Stage 5d (done, consumed-only)** — nullable chaining (`a?.b`,
+  `a?.b?.c`, `a?.b.c`): a missed target yields null. Because nullable
+  values are per-slot (in-band strings, companion `_has` flags), a chain's
+  nullness is consumed where it is produced in v1 — `chain ?? fallback`
+  (lazy, single evaluation) and `chain == / != null` (the combined hop
+  test). The checker types the chain (field type + nullable), enforces a
+  nullable target and a name/field-path base, and the builders derive the
+  hop tests + the guarded value path from `flatten_null_chain`
+  (`src/build_common/null_chain.ts`). Unsupported positions (declaration /
+  return values, arguments, method-call chains) are recorded in
+  FOLLOWUP.md with the extension point (the nullable-call flag protocol).
+- **Deferred** — assignment-position lifting (see below), nullable
+  EXPRESSION values (the general (value, flag) carrier).
 
 ## Checker rules
 

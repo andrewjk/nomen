@@ -1,3 +1,4 @@
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -8,6 +9,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import GroupedNode from "../nodes/GroupedNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import { is_operation_node } from "../nodes/is_node_type.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode, { type Operator } from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import type Type from "../nodes/Type.ts";
@@ -306,6 +308,16 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				accept(".", status);
 				const access = new AccessNode(node.start, node, parse_access(value, status));
 				node = access;
+				break;
+			}
+			case "?.": {
+				// ERRORS_PLAN nullable chaining: `a?.b` — the member access
+				// short-circuits on a null target. An ordinary `.` after it
+				// continues the value path; another `?.` adds a hop.
+				accept("?.", status);
+				const field_start = get_index(status);
+				const field_name = consume(status);
+				node = new NullAccessNode(node.start, node, new AccessFieldNode(field_start, field_name));
 				break;
 			}
 			case "[": {

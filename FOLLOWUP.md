@@ -702,3 +702,31 @@ string pointer in two owners — double free at both destroys.
 same treatment (transfer the donor via `move_param_indices` semantics) or a
 deep copy through the enum's `_copy`. Until then: temp donors audit clean;
 avoid returning mv-enum variables through lifted/composed results.
+
+## `?.` v1 scope: consumed-only chains
+
+Recorded 2026-11-12, ERRORS_PLAN nullable chaining (`docs/ERRORS_PLAN.md`
+Deferred). The operator landed for the two consumer forms — `chain ??
+fallback` and `chain == / != null` — because the language's nullable
+values are per-slot (in-band for strings, companion `_has` flags for
+scalars/structs), so a general nullable EXPRESSION result has no carrier.
+
+Deliberately unsupported (each needs the nullable-expression protocol or a
+site-specific lowering):
+
+- A chain as a declaration/return/assignment value (`var x = a?.b`) — the
+  build rejects it with the consumer guidance.
+- A chain as a call ARGUMENT.
+- Method-call chains (`a?.m(args)`) and chains through calls (`f()?.x`) —
+  the base must be a name/field path (no double evaluation).
+- A chain whose final member is itself a nullable field read without `?.`
+  is SOUND (the field's own flag becomes a hop via the flatten), but is not
+  documented yet.
+
+The lowering reuses existing machinery: `flatten_null_chain`
+(`src/build_common/null_chain.ts`) turns the chain into hop tests + a plain
+access path; both backends emit the `??` as one lazy if/else expression
+(string arms dup for ownership) and the comparisons as the combined hop
+test. When v1 needs to grow, the nullable-call `current_nullable_call_flag`
+protocol is the extension point (a chain would become a flag-writing
+producer at consumer sites).

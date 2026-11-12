@@ -429,6 +429,13 @@ function expr(ctx: LowerCtx, n: BaseNode | null | undefined): NirExpr {
 				otherwise: m.else_branch ? block(ctx, m.else_branch.statements) : null,
 			};
 		}
+		case "null_access": {
+			// ERRORS_PLAN: `a?.b` lowers as a wrap of its target — the reads
+			// ride the IR, and the CONSUMER (`??` or a null comparison) emits
+			// the chain's hop tests + guarded value path itself.
+			const na = n as import("../nodes/NullAccessNode.ts").default;
+			return { kind: "wrap", node: n, inner: na.target ? expr(ctx, na.target) : null };
+		}
 		case "spawn": {
 			// `var t = spawn f(x)` — a task handle is a VALUE. The wrapped call
 			// rides whole (its facts carry the arg reads for liveness).

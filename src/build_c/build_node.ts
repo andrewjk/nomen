@@ -271,6 +271,19 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			}
 			break;
 		}
+		case "null_access": {
+			// ERRORS_PLAN: a nullable chain's nullness must be consumed —
+			// only `??` and `== / != null` lower chains (they build the hop
+			// tests themselves); reaching the generic dispatch means the
+			// chain sits in an unsupported position.
+			if (!status.build_errors) status.build_errors = [];
+			status.build_errors.push({
+				message:
+					"a nullable chain must be consumed — coalesce it ('.?chain ?? fallback') or test it ('.?chain != null')",
+				start: node.start,
+			});
+			break;
+		}
 		case "index": {
 			build_index_node(node as IndexNode, status);
 			break;

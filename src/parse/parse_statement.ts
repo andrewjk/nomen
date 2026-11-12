@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -7,6 +8,7 @@ import GroupedNode from "../nodes/GroupedNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import NestedBlockNode from "../nodes/NestedBlockNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import UnsafeBlockNode from "../nodes/UnsafeBlockNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -401,6 +403,15 @@ function parse_statement_start(status: ParseStatus) {
 			case ".": {
 				accept(".", status);
 				node = new AccessNode(node.start, node, parse_access(value, status));
+				break;
+			}
+			case "?.": {
+				// ERRORS_PLAN nullable chaining at statement start — mirrors
+				// parse_expression's postfix case.
+				accept("?.", status);
+				const field_start = get_index(status);
+				const field_name = consume(status);
+				node = new NullAccessNode(node.start, node, new AccessFieldNode(field_start, field_name));
 				break;
 			}
 			case "[": {

@@ -1,6 +1,7 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import flatten_null_chain from "../build_common/null_chain.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
@@ -1187,6 +1188,37 @@ function build_operator_operand(node: BaseNode, target_reg: string, status: Buil
 	build_operand(node, target_reg, status);
 }
 
+/** Emit a nullable-chain hop's null indicator into `x1` (nonzero = non-null):
+ *  the in-band ptr half for strings, the `_has` companion word otherwise. */
+function load_null_hop(hop: BaseNode, _status: BuildStatus): boolean {
+	const t = type_from_value_node(hop);
+	// Only NULLABLE hops carry a condition (a non-nullable member's chain
+	// result is null exactly when an earlier hop is, already tested).
+	if (!t?.is_nullable) return false;
+	return true;
+}
+function emit_null_hop(hop: BaseNode, status: BuildStatus) {
+	const t = type_from_value_node(hop);
+	if (t?.is_nullable && t.name === "string") {
+		build_operand(hop, "x1", status);
+		ensure_newline(status);
+	} else {
+		load_nullable_has(hop, "x1", status);
+	}
+}
+
+/** Branch to `fail_label` when the chain has a null hop (all hops tested in
+ *  order; hop paths are pure, so re-reading them is safe). */
+function emit_null_hop_tests(hops: BaseNode[], fail_label: string, status: BuildStatus) {
+	for (const hop of hops) {
+		if (!load_null_hop(hop, status)) continue;
+		emit_null_hop(hop, status);
+		ensure_newline(status);
+		emit_asm(status, `cmp x1, #0\n`);
+		emit_asm(status, `b.eq ${fail_label}\n`);
+	}
+}
+
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
 	// Resolve a deferred == / != operator (set during generic-body checking
 	// when the operands were unresolved type params) against the now-concrete
@@ -1468,6 +1500,47 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	// the left is null. This matters when the fallback allocates (e.g.
 	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.
 	if (node.op === "??") {
+		// Nullable chaining (ERRORS_PLAN): `a?.b ?? fallback` — test the
+		// chain's hops, build the guarded value path or the fallback (lazy)
+		// into a slot, then yield it. Strings ride the (x0, x1) pair slot.
+		const flat_chain = flatten_null_chain(node.left_value, (t, f) => {
+			const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+			return st?.fields.find((fld) => fld.name === f)?.type;
+		});
+		if (flat_chain) {
+			const is_str = node.type?.name === "string";
+			const slot = allocate_stack_space(status, is_str ? 16 : 8);
+			const fallback_label = `.Lnull_chain_fb_${coalesce_counter++}`;
+			const done_label = `.Lnull_chain_done_${coalesce_counter++}`;
+			emit_null_hop_tests(flat_chain.hops, fallback_label, status);
+			build_operand(flat_chain.value, "x0", status);
+			ensure_newline(status);
+			if (is_str) {
+				emit_strdup(status);
+				ensure_newline(status);
+				emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
+			} else {
+				emit_asm(status, `str x0, [x29, #${slot}]\n`);
+			}
+			emit_asm(status, `b ${done_label}\n`);
+			emit_asm(status, `${fallback_label}:\n`);
+			build_operand(node.right_value, "x0", status);
+			ensure_newline(status);
+			if (is_str) {
+				emit_strdup(status);
+				ensure_newline(status);
+				emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
+			} else {
+				emit_asm(status, `str x0, [x29, #${slot}]\n`);
+			}
+			emit_asm(status, `${done_label}:\n`);
+			if (is_str) {
+				emit_asm(status, `ldp x0, x1, [x29, #${slot}]\n`);
+			} else {
+				emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+			}
+			return;
+		}
 		// Nullable struct/scalar `??` checks the `_has` flag instead of the
 		// value. The left operand's value (struct address or scalar) must
 		// survive across the flag load and be the result when non-null.
@@ -1526,6 +1599,41 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		return;
 	}
 
+	// Nullable chaining (ERRORS_PLAN): `a?.b != null` is "every hop is
+	// non-null"; `== null` is its negation.
+	if (
+		(node.op === "==" || node.op === "!=") &&
+		is_null_literal(node.left_value) !== is_null_literal(node.right_value)
+	) {
+		const chain_side = flatten_null_chain(node.left_value, (t, f) => {
+			const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+			return st?.fields.find((fld) => fld.name === f)?.type;
+		})
+			? node.left_value
+			: flatten_null_chain(node.right_value, (t, f) => {
+						const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+						return st?.fields.find((fld) => fld.name === f)?.type;
+				  })
+				? node.right_value
+				: undefined;
+		if (chain_side) {
+			const flat = flatten_null_chain(chain_side, (t, f) => {
+				const st = status.structs.findLast((s) => s.name === t && !s.is_generic);
+				return st?.fields.find((fld) => fld.name === f)?.type;
+			})!;
+			const null_label = `.Lnull_cmp_null_${coalesce_counter++}`;
+			const done_label = `.Lnull_cmp_done_${coalesce_counter++}`;
+			emit_asm(status, `mov x0, #1\n`);
+			emit_null_hop_tests(flat.hops, null_label, status);
+			emit_asm(status, `b ${done_label}\n`);
+			emit_asm(status, `${null_label}:\n`);
+			emit_asm(status, `mov x0, #0\n`);
+			emit_asm(status, `${done_label}:\n`);
+			emit_asm(status, `cmp x0, #0\n`);
+			emit_asm(status, `cset x0, ${node.op === "==" ? "eq" : "ne"}\n`);
+			return;
+		}
+	}
 	// `x == null` / `x != null` against a nullable struct or nullable scalar:
 	// compare its companion `_has` flag rather than the value (0/false are
 	// real scalar values, so an in-band compare would conflate them).

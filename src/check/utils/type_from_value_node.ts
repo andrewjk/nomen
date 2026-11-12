@@ -61,6 +61,9 @@ export default function type_from_value_node(node: BaseNode, status: CheckStatus
 		case "if": {
 			return (node as IfElseNode).return_type;
 		}
+		case "null_access": {
+			return (node as import("../../nodes/NullAccessNode.ts").default).type;
+		}
 		case "cast": {
 			return (node as CastNode).target_type;
 		}
