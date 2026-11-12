@@ -232,20 +232,28 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const left_type = type_from_value_node(node.left_value);
 		if (left_type?.is_nullable && left_type.name === "string") {
 			// Nullable string: null is the in-band {NULL, 0} fat zero — the
-			// null test is `left.ptr != 0`. Evaluate the left once. The
-			// CHOSEN branch is dup'd into an independently owned copy: the
-			// result feeds consumers that free it (interpolation args, let
-			// bindings, return-boundary ownership), and yielding the payload
-			// or the fallback directly would free the left's own buffer at
-			// its scope exit (alias → double free) or rodata (the
-			// `nullable ?? "literal"` SIGABRT). nomen_str_dup is the prelude
-			// helper (null-safe) so both arms are one expression.
-			status.code += `({ nomen_string _nss_${ns_tmp_counter} = `;
+			// null test is `left.ptr != 0`. Evaluate the left once. An ALIAS
+			// arm (a variable/field read, a literal) is dup'd into an
+			// independently owned copy: the result feeds consumers that free
+			// it (interpolation args, let bindings, return-boundary
+			// ownership), and yielding the payload or the fallback directly
+			// would free the left's own buffer at its scope exit (alias →
+			// double free) or rodata (the `nullable ?? "literal"` SIGABRT).
+			// A PRODUCER arm (a call — the call strdup's every string return,
+			// so its buffer is fresh and unaliased) yields DIRECTLY: dup'ing
+			// a fresh buffer leaks the original. Per-arm ownership mirrors
+			// the chain `??` paths and `!!`. nomen_str_dup is the prelude
+			// helper (null-safe) so the arms stay one expression.
+			const id = ns_tmp_counter;
+			ns_tmp_counter += 1;
+			const left_is_producer = is_owned_heap_temp(node.left_value, status);
+			const right_is_producer = is_owned_heap_temp(node.right_value, status);
+			status.code += `({ nomen_string _nss_${id} = `;
 			build_node(node.left_value, status);
-			status.code += `; _nss_${ns_tmp_counter}.ptr ? nomen_str_dup(_nss_${ns_tmp_counter}) : nomen_str_dup(`;
+			status.code += `; _nss_${id}.ptr ? ${left_is_producer ? "" : "nomen_str_dup("}_nss_${id}${left_is_producer ? "" : ")"}`;
+			status.code += ` : ${right_is_producer ? "" : "nomen_str_dup("}(`;
 			build_node(node.right_value, status);
-			status.code += `); })`;
-			ns_tmp_counter++;
+			status.code += `)${right_is_producer ? "" : ")"}; })`;
 		} else if (is_nullable_scalar_type(left_type, status)) {
 			// Nullable scalar (`int? ?? fb`): the flag is `<expr>_has`. A
 			// nullable scalar CALL on the LHS must be materialised ONCE (the

@@ -589,31 +589,20 @@ a screenshot error), but it could use Fira Code without a browser:
 
 Not done because Browser Run covers normal dev and production.
 
-## `?.` nullable-value residuals (pre-existing `??` corners)
+## `??` on a non-nullable string left fails to compile on C
 
-Recorded 2026-11-12 while closing the "`?.` v1 scope" follow-up (chains as
-values landed — see docs/ERRORS_PLAN.md Stage 5d). Two adjacent shapes in
-the `??` lowerings are still unsound; both predate the change and are
-deliberately not fixed inline:
-
-- **`f() ?? "fb"` with a nullable-string-returning `f` leaks the call's
-  fresh buffer.** The nullable-string `??` path dup's BOTH arms
-  unconditionally (`_nss.ptr ? nomen_str_dup(_nss) : nomen_str_dup(fb)`);
-  a producer left (a call) transfers its buffer into the temp, the dup
-  copies it, and the original is never freed — one leak per call (audit
-  verified on `main`). The chain-`??` paths now dup per-arm (a producer
-  arm yields directly) — extend that producer test to the non-chain
-  nullable-call path on both backends, or classify the call left as a
-  transfer like `!!` does.
-- **`nullableStruct.field ?? fb` reads the field raw.** `y.v` where `y` is
-  a nullable struct local types as the FIELD type (non-nullable), so the
-  `??` misses both flagged paths: on aarch64 it compares `v` against 0 and
-  hands back garbage when `y` is null (receipt: `val_of(0)?.v` correct,
-  `var y = val_of(0); y.v ?? 0` garbage); in C the generic `??` emits a
-  struct value as a condition. The sound spelling is the chain form
-  (`val_of(0)?.v ?? 0`) — supporting the field spelling means treating a
-  field access through a flagged-nullable base as a one-hop chain in the
-  `??` operand typing.
+Recorded 2026-11-13 while closing the "`?.` nullable-value residuals"
+follow-up (scratch test found it). `lit ?? "fb"` where `lit` is a NON-nullable
+`string` types fine (the checker allows `??` on any string left; the result is
+the left's type), but the C backend's GENERIC `??` path emits `lit ? lit : fb`
+— a `nomen_string` struct used as a condition — and clang rejects it
+(`used type 'nomen_string' where arithmetic or pointer type is required`).
+aarch64 compiles the same shape as `cmp x0, #0` on the ptr half (always
+non-null, yields the left). The shape is degenerate — a non-nullable left has
+no null to coalesce, so the fallback can never run — but the divergence is
+real: reject it in the checker ("'??' needs a nullable left") or lower the
+generic string path through the ptr half. The nullable-left paths (the audit
+families) are unaffected.
 
 ## Share-card tokenizer: replace Shiki on the server
 

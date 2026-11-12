@@ -1606,6 +1606,46 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			emit_asm(status, `${done_label}:\n`);
 			return;
 		}
+		// Nullable STRING `??`: null is the in-band fat zero — the null test
+		// is the ptr half (the pair rides x0/x1). Per-arm ownership (mirrors
+		// the chain `??` path and `!!`): a PRODUCER arm yields DIRECTLY —
+		// dup'ing a fresh buffer leaks the original; an alias arm (a
+		// variable/field read, a literal) is strdup'd into an independently
+		// owned copy. The producer test is the backend's owned-temp
+		// classifier (heap_returning_functions / owned_return / interpolation
+		// shapes): a plain free function returning a literal hands back a
+		// RODATA pair (this backend's borrow-return normalization only fires
+		// for methods/closures/heap-classified callees), so a node_type-only
+		// call test would alias rodata into a heap-marked binding and free it
+		// at scope exit. The result is owned on every arm, so the declaration
+		// initializer records the binding heap-owned and the scope-exit free
+		// fires (check_heap keys on the flag) — the same reporting the chain
+		// path does.
+		if (left_t?.is_nullable && left_t.name === "string") {
+			const slot = allocate_stack_space(status, 16);
+			const have_label = `.Lcoalesce_have_${coalesce_counter++}`;
+			const done_label = `.Lcoalesce_done_${coalesce_counter++}`;
+			const left_is_producer = is_owned_heap_temp(node.left_value, status);
+			const right_is_producer = is_owned_heap_temp(node.right_value, status);
+			build_operand(node.left_value, "x0", status);
+			ensure_newline(status);
+			emit_asm(status, `cmp x0, #0\n`);
+			emit_asm(status, `b.eq ${done_label}\n`);
+			if (!left_is_producer) emit_strdup(status);
+			ensure_newline(status);
+			emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
+			emit_asm(status, `b ${have_label}\n`);
+			emit_asm(status, `${done_label}:\n`);
+			build_operand(node.right_value, "x0", status);
+			ensure_newline(status);
+			if (!right_is_producer) emit_strdup(status);
+			ensure_newline(status);
+			emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
+			emit_asm(status, `${have_label}:\n`);
+			emit_asm(status, `ldp x0, x1, [x29, #${slot}]\n`);
+			status.last_result_is_heap = true;
+			return;
+		}
 		build_operand(node.left_value, "x0", status);
 		ensure_newline(status);
 		emit_asm(status, `cmp x0, #0\n`);

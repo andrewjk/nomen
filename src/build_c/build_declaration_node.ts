@@ -1481,6 +1481,25 @@ export default function build_declaration_node(
 					if (!status.heap_strings) status.heap_strings = new Set();
 					status.heap_strings.add(safe_name);
 				} else if (
+					node.type.name === "string" &&
+					!node.type.is_view &&
+					!node.type.is_array &&
+					node.value?.node_type === "op" &&
+					(node.value as OperationNode).op === "??"
+				) {
+					// `var s = p ?? "fb"` (nullable coalesce, no chain): the
+					// coalesce is an OWNED string by construction — a
+					// producer arm (a call) transfers its fresh buffer, an
+					// alias arm (a variable read, a literal) is dup'd into an
+					// independently owned copy, on both arms. Emit as-is and
+					// record the binding as heap-owned, mirroring the `!!`
+					// shape above: the opaque statement expression already
+					// yields exactly one owner, and dup'ing it here would
+					// leak the producer arm's transferred buffer.
+					emit_init_value(node.value, nir_init, status);
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(safe_name);
+				} else if (
 					node.declaration === "var" &&
 					node.type.name === "string" &&
 					!node.type.is_view &&

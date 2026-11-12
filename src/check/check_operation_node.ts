@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { has_null_chain } from "../build_common/null_chain.ts";
+import { is_nullable_flagged_type } from "../build_common/nullable_scalar.ts";
 import { get_built_in_type, is_negatable_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -9,6 +10,7 @@ import BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -261,6 +263,22 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	} else if (!check_node(op.left_value, status)) {
 		status.allow_null_value = old_allow_null;
 		return false;
+	}
+
+	// ERRORS_PLAN (`??` corner): `y.v ?? fb` — a field access whose BASE is a
+	// flagged nullable (a `T?` struct/scalar local or param) types as the
+	// FIELD type, so the coalesce would test the raw field bytes and hand
+	// back garbage when the base is null (the base's own `_has` flag never
+	// consulted; audit receipt: `var y = val_of(0); y.v ?? 0` on aarch64
+	// prints field garbage, and the C build emits the struct value as the
+	// condition). Rewrite the operand to the chain spelling's node shape
+	// (`y?.v`) so both backends lower it through the chain `??` path — the
+	// exact lowering the explicit spelling gets. Only pure field reads
+	// rewrite (a call base would be re-read by the chain's hop tests; the
+	// `?.` spelling hoists those into a temp instead, so spell those as
+	// chains).
+	if (is_null_coalesce) {
+		rewrite_flagged_nullable_field_coalesce(op, status);
 	}
 
 	const left_type = type_from_value_node(op.left_value, status);
@@ -890,4 +908,68 @@ function replace_with_call(target: OperationNode, source: FunctionCallNode): voi
 	(target as any).variadic_param_name = source.variadic_param_name;
 	(target as any).variadic_param_index = source.variadic_param_index;
 	(target as any).resolved_function = source.resolved_function;
+}
+
+/**
+ * Rewrite `y.f1.f2 ?? fb` — a pure field chain rooted at a FLAGGED nullable
+ * base (a `T?` struct/scalar binding; string/func null is in-band and reads
+ * its zero, so those keep the plain form) — into the chain spelling's node
+ * shape (`y?.f1.f2`), reusing the checked access nodes so every stamp rides.
+ * The backends then take the chain `??` path: hop tests consult the base's
+ * own `_has` flag instead of testing the raw field bytes, which is the
+ * documented sound spelling. No-ops on every other shape (a non-nullable or
+ * in-band base, a method-call step, a call base — the chain's hop tests
+ * re-read the base, and a call would run twice; spell those `f()?.v`, whose
+ * checker hoists the call into a temp).
+ */
+function rewrite_flagged_nullable_field_coalesce(op: OperationNode, status: CheckStatus): void {
+	let cursor: BaseNode = op.left_value;
+	while (cursor.node_type === "grouped") {
+		cursor = (cursor as unknown as { value: BaseNode }).value;
+	}
+	const steps: AccessFieldNode[] = [];
+	while (
+		cursor.node_type === "access" &&
+		(cursor as AccessNode).access.node_type === "access_field"
+	) {
+		const an = cursor as AccessNode;
+		steps.unshift(an.access as AccessFieldNode);
+		cursor = an.target;
+	}
+	while (cursor.node_type === "grouped") {
+		cursor = (cursor as unknown as { value: BaseNode }).value;
+	}
+	if (!steps.length) return;
+	// The base must be a re-readable path (the flatten's hop tests re-read
+	// it): a value binding, or a pure field chain onto one.
+	const readable = (n: BaseNode): boolean =>
+		n.node_type === "value" ||
+		(n.node_type === "access" &&
+			(n as AccessNode).access.node_type === "access_field" &&
+			readable((n as AccessNode).target));
+	if (!readable(cursor)) return;
+	const base_type = type_from_value_node(cursor, status);
+	if (!is_nullable_flagged_type(base_type, status)) return;
+	// The chain result is the final member's type made nullable — the shape
+	// check_null_access_node stamps for the explicit `?.` spelling, so the
+	// coalesce's typing (`??` yields the member type, null stripped) is
+	// unchanged.
+	const na = new NullAccessNode(op.left_value.start, cursor, steps[0]);
+	let value: BaseNode = na;
+	for (let i = 1; i < steps.length; i++) {
+		value = new AccessNode(steps[i].start, value, steps[i]);
+	}
+	const final_field = steps[steps.length - 1];
+	if (!final_field.type?.name) return;
+	const chain_t = new Type(
+		final_field.type.name,
+		final_field.type.is_static,
+		final_field.type.is_array,
+		final_field.type.length,
+	);
+	chain_t.type_args = final_field.type.type_args;
+	chain_t.is_ref = final_field.type.is_ref;
+	chain_t.is_nullable = true;
+	na.type = chain_t;
+	op.left_value = value;
 }

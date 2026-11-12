@@ -123,10 +123,99 @@ Console.write("\\{a ?? "none"}\\n")
 var b = nick_of(2)
 Console.write("\\{b ?? "none"}\\n")
 `;
-		// The result is consumed through a local (an owned pair either way);
-		// the `f() ?? fb` spelling on a nullable-string CALL leaks on main
-		// (FOLLOWUP) — this test pins the transfer-into-local shape.
+		// The result is consumed through a local (an owned pair either way).
 		await build_and_check_output(input, "null_chain_return_string", "ada\nnone\n");
+	});
+
+	test("a nullable-string call coalesces without leaking (producer arms transfer)", async () => {
+		const input = `
+import System
+
+func f = (out string?) {
+	return "hello"
+}
+
+func g = (out string) {
+	return "fresh"
+}
+
+pub func main = (Init init) {
+	var s = f() ?? "fb"
+	Console.write("s=\\{s}\\n")
+	var string? p = null
+	var t = p ?? g()
+	Console.write("t=\\{t}\\n")
+	var string? lit = "lit"
+	Console.write("\\{lit ?? "none"}\\n")
+}
+`;
+		// Audit-on: the call left transfers its fresh buffer (dup'ing it would
+		// leak the original — the pre-`?.`-v2 `??` shape), the producer
+		// fallback transfers too, and the alias arm is dup'd. Every arm yields
+		// exactly one owner (FOLLOWUP "`?.` nullable-value residuals").
+		await build_and_check_output(
+			input,
+			"null_chain_call_coalesce",
+			"s=hello\nt=fresh\nlit\n",
+			true,
+		);
+	});
+
+	test("a field read on a nullable base coalesces like the chain spelling", async () => {
+		const input = `
+import System
+
+struct Val {
+	var int v
+}
+
+func val_of = (int x, out Val?) {
+	if x > 0 {
+		return Val(x)
+	}
+	return null
+}
+
+pub func main = (Init init) {
+	var y = val_of(0)
+	Console.write("\\{y.v ?? 0}\\n")
+	var z = val_of(7)
+	Console.write("\\{z.v ?? 0}\\n")
+	var t = y.v ?? -1
+	Console.write("\\{t}\\n")
+}
+`;
+		// The plain field spelling used to type as the FIELD type, so the `??`
+		// tested the raw field bytes and handed back garbage when the base was
+		// null (receipt: `val_of(0)?.v` correct, `var y = val_of(0); y.v ?? 0`
+		// garbage on aarch64). The checker now rewrites it to the chain
+		// spelling's node shape — the base's `_has` flag joins the test.
+		await build_and_check_output(input, "null_chain_field_coalesce", "0\n7\n-1\n", true);
+	});
+
+	test("a string field read on a nullable base coalesces (owned on every arm)", async () => {
+		const input = `
+import System
+
+mv struct Rec {
+	var string name
+}
+
+func rec = (int pick, out Rec?) {
+	if pick == 1 {
+		return Rec("ada")
+	}
+	return null
+}
+
+pub func main = (Init init) {
+	var r = rec(0)
+	Console.write("\\{r.name ?? "none"}\\n")
+	r = rec(1)
+	Console.write("\\{r.name ?? "none"}\\n")
+}
+`;
+		await build_and_check_output(input, "null_chain_field_coalesce_string", "none\nada\n", true);
 	});
 
 	test("a chain passes a nullable argument (the flag rides the companion param)", async () => {

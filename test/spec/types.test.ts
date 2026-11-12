@@ -469,4 +469,26 @@ pub func main = () {
 			errors.some((e) => e.message.includes("a nullable chain cannot be a '??' fallback")),
 		).toBe(true);
 	});
+
+	test("a field read on a nullable base coalesces like the chain spelling", () => {
+		const input = `
+struct Profile {
+	var int score
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(7)
+	}
+	return null
+}
+
+pub func main = () {
+	var p = find(1)
+	var a = p.score ?? 0
+	var b = p?.score ?? 0
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
 });
