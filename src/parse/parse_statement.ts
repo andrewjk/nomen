@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
@@ -407,11 +408,24 @@ function parse_statement_start(status: ParseStatus) {
 			}
 			case "?.": {
 				// ERRORS_PLAN nullable chaining at statement start — mirrors
-				// parse_expression's postfix case.
+				// parse_expression's postfix case (a `name(` member is a
+				// method-call hop).
 				accept("?.", status);
 				const field_start = get_index(status);
 				const field_name = consume(status);
-				node = new NullAccessNode(node.start, node, new AccessFieldNode(field_start, field_name));
+				let access: AccessFieldNode | AccessFunctionCallNode;
+				if (peek_current(status) === "(") {
+					accept("(", status);
+					const func = new AccessFunctionCallNode(field_start, field_name);
+					if (peek_current(status) !== ")") {
+						parse_function_call_parameter(func, status);
+					}
+					expect(")", status);
+					access = func;
+				} else {
+					access = new AccessFieldNode(field_start, field_name);
+				}
+				node = new NullAccessNode(node.start, node, access);
 				break;
 			}
 			case "[": {

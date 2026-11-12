@@ -254,19 +254,32 @@ structs. Anonymous error sets (`! [.notfound]`) joined later (stage 5b).
   functions only. One gap fixed en route: the statement-start postfix loop
   was missing the `!` case, so a standalone `f()!` statement parsed as two
   statements.
-- **Stage 5d (done, consumed-only)** — nullable chaining (`a?.b`,
-  `a?.b?.c`, `a?.b.c`): a missed target yields null. Because nullable
+- **Stage 5d (done)** — nullable chaining (`a?.b`, `a?.b?.c`, `a?.b.c`,
+  `a?.m(args)`, `f()?.x`): a missed target yields null. Because nullable
   values are per-slot (in-band strings, companion `_has` flags), a chain's
-  nullness is consumed where it is produced in v1 — `chain ?? fallback`
-  (lazy, single evaluation) and `chain == / != null` (the combined hop
-  test). The checker types the chain (field type + nullable), enforces a
-  nullable target and a name/field-path base, and the builders derive the
-  hop tests + the guarded value path from `flatten_null_chain`
-  (`src/build_common/null_chain.ts`). Unsupported positions (declaration /
-  return values, arguments, method-call chains) are recorded in
-  FOLLOWUP.md with the extension point (the nullable-call flag protocol).
-- **Deferred** — assignment-position lifting (see below), nullable
-  EXPRESSION values (the general (value, flag) carrier).
+  nullness rides the same carriers a nullable call result uses, so a chain
+  lowers anywhere a nullable value is consumed. The coalesce/test forms
+  came first (`chain ?? fallback` — lazy, single evaluation; `chain == /
+!= null` — the combined hop test); the value forms followed: declaration
+  and assignment initializers (the chain writes the companion flag through
+  the `current_nullable_call_flag` protocol on C, straight slot stores on
+  aarch64), returns (the hidden `_ret_has` out-param), and arguments
+  (the checker hoists the chain into a `_param_N` temp whose flag rides
+  the companion parameter). Method-call hops check the guarded call as an
+  ordinary access and keep the checked node on the chain; bases that would
+  be evaluated once per hop test (a call base, a call inside the base
+  path, or a method hop with further steps) hoist into `_chain_N` temps.
+  The checker rejects a nullable chain as a `??` FALLBACK (the fallback
+  slot has no carrier for the chain's nullness) — spell the coalesce on
+  the chain itself (`x ?? (b?.c ?? fb)`). A chain whose final member is
+  itself a nullable field read with a plain `.` is sound: the field's own
+  flag becomes one more hop in `flatten_null_chain`
+  (`src/build_common/null_chain.ts`).
+- **Deferred** — assignment-position lifting (see below). (The general
+  nullable-expression carrier is no longer deferred for chains: a chain
+  lowers as a nullable value in the per-slot carriers — Stage 5d above.
+  What remains general-expression-position is a chain as a `??` FALLBACK,
+  rejected with guidance.)
 
 ## Checker rules
 

@@ -9,6 +9,7 @@ import ctor_return_owned_string_fields from "../build_common/ctor_return_owned.t
 import { struct_needs_auto_destroy } from "../build_common/destroy_analysis.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { has_null_chain } from "../build_common/null_chain.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
@@ -61,18 +62,34 @@ function emit_return_value(
 	// return (`return five`): the value must be the function's closure
 	// DESCRIPTOR (CLOSURE.md), not its raw code address. The checker stamps
 	// resolved_function on the value node (check_value_node).
-	if (value.node_type === "value" && status.function_return_type?.name === "func") {
-		const resolved = (value as unknown as { resolved_function?: FunctionNode }).resolved_function;
-		if (resolved) {
-			status.code += materialize_func_value(resolved, status);
-			return;
-		}
+	const resolved_func =
+		value.node_type === "value" && status.function_return_type?.name === "func"
+			? (value as unknown as { resolved_function?: FunctionNode }).resolved_function
+			: undefined;
+	if (resolved_func) {
+		status.code += materialize_func_value(resolved_func, status);
+		return;
+	}
+	// A nullable CHAIN value (`return p?.score`): the chain's
+	// statement-expression writes the hidden `_ret_has` out-param from its
+	// own hop tests — the flag protocol points it at the caller's out-param
+	// for BOTH the AST and the NIR seam (the chain node routes back to
+	// build_node from either).
+	const chain_returns_nullable =
+		has_null_chain(value) &&
+		!!status.nullable_ret_has_param &&
+		(is_nullable_struct_type(status.function_return_type, status) ||
+			is_nullable_scalar_type(status.function_return_type, status));
+	const old_chain_flag = status.current_nullable_call_flag;
+	if (chain_returns_nullable) {
+		status.current_nullable_call_flag = `(*${status.nullable_ret_has_param})`;
 	}
 	if (nir_value && nir_value.node === value) {
 		emit_expr_from_nir(nir_value, status);
-		return;
+	} else {
+		build_node(value, status);
 	}
-	build_node(value, status);
+	status.current_nullable_call_flag = old_chain_flag;
 }
 
 export default function build_return_node(

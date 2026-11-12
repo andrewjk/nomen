@@ -155,9 +155,7 @@ const y = x + 1          // OK, y = 6
 
 ### Nullable Chaining
 
-`a?.b` reads a member only when the nullable target holds a value: the result is the member's type made nullable — null when the target is null, the member otherwise. Chains repeat the operator (`a?.b?.c`) or continue with a plain `.` (`a?.b.c`, guarded by the `?.` hop).
-
-A chain's nullness is consumed where it is produced — v1 supports the two consumer forms:
+`a?.b` reads a member only when the nullable target holds a value: the result is the member's type made nullable — null when the target is null, the member otherwise. Chains repeat the operator (`a?.b?.c`), continue with a plain `.` (`a?.b.c`, guarded by the `?.` hop), end in a method call (`a?.m(args)` — the call runs only on the non-null path), or start at a call (`f()?.x` — the base is evaluated once, into a hidden local). A nullable chain is a nullable VALUE: it lowers anywhere a nullable value is consumed, in the language's per-slot carriers (in-band for strings, the companion `_has` flag for scalars and structs).
 
 ```
 struct Profile {
@@ -183,9 +181,20 @@ func score_or = (int id, out int) {
     var p = find(id)
     return p?.score ?? 0
 }
+
+func score_of = (int id, out int?) {
+    var p = find(id)
+    return p?.score
+}
+
+pub func main = () {
+    var p = find(1)
+    var s = p?.score          // a chain initializes a `int?` local
+    Console.write("\{score_of(2) ?? -1}")   // a chain returns through `int?`
+}
 ```
 
-In practice: `chain ?? fallback` picks the member or the fallback (evaluated lazily, once), and `chain != null` / `chain == null` test the whole chain (every nullable hop). The target must be nullable (`?.` on a non-nullable value is an error pointing at `.`), the chain must bottom out at a name or field path, and a chain in any other position (a declaration initializer, a return, an argument) is rejected with the consumer forms named.
+In practice: `chain ?? fallback` picks the member or the fallback (evaluated lazily, once), and `chain != null` / `chain == null` test the whole chain (every nullable hop — including a final member that is itself a nullable field read with a plain `.`, whose own flag joins the tests). `?.` on a non-nullable value is an error pointing at `.`. A chain whose member path contains a call hoists the base into a hidden local so every hop test reads a pure path (no double evaluation); a nullable chain cannot be a `??` FALLBACK (`x ?? a?.b` is rejected — coalesce the chain first, `x ?? (a?.b ?? fb)`), because the fallback slot has no carrier for the chain's nullness.
 
 ### Constraints
 

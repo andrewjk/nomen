@@ -589,6 +589,32 @@ a screenshot error), but it could use Fira Code without a browser:
 
 Not done because Browser Run covers normal dev and production.
 
+## `?.` nullable-value residuals (pre-existing `??` corners)
+
+Recorded 2026-11-12 while closing the "`?.` v1 scope" follow-up (chains as
+values landed — see docs/ERRORS_PLAN.md Stage 5d). Two adjacent shapes in
+the `??` lowerings are still unsound; both predate the change and are
+deliberately not fixed inline:
+
+- **`f() ?? "fb"` with a nullable-string-returning `f` leaks the call's
+  fresh buffer.** The nullable-string `??` path dup's BOTH arms
+  unconditionally (`_nss.ptr ? nomen_str_dup(_nss) : nomen_str_dup(fb)`);
+  a producer left (a call) transfers its buffer into the temp, the dup
+  copies it, and the original is never freed — one leak per call (audit
+  verified on `main`). The chain-`??` paths now dup per-arm (a producer
+  arm yields directly) — extend that producer test to the non-chain
+  nullable-call path on both backends, or classify the call left as a
+  transfer like `!!` does.
+- **`nullableStruct.field ?? fb` reads the field raw.** `y.v` where `y` is
+  a nullable struct local types as the FIELD type (non-nullable), so the
+  `??` misses both flagged paths: on aarch64 it compares `v` against 0 and
+  hands back garbage when `y` is null (receipt: `val_of(0)?.v` correct,
+  `var y = val_of(0); y.v ?? 0` garbage); in C the generic `??` emits a
+  struct value as a condition. The sound spelling is the chain form
+  (`val_of(0)?.v ?? 0`) — supporting the field spelling means treating a
+  field access through a flagged-nullable base as a one-hop chain in the
+  `??` operand typing.
+
 ## Share-card tokenizer: replace Shiki on the server
 
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
@@ -627,31 +653,3 @@ Ctrl-C keep working. Tests stay on bare executables.
 This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
-
-## `?.` v1 scope: consumed-only chains
-
-Recorded 2026-11-12, ERRORS_PLAN nullable chaining (`docs/ERRORS_PLAN.md`
-Deferred). The operator landed for the two consumer forms — `chain ??
-fallback` and `chain == / != null` — because the language's nullable
-values are per-slot (in-band for strings, companion `_has` flags for
-scalars/structs), so a general nullable EXPRESSION result has no carrier.
-
-Deliberately unsupported (each needs the nullable-expression protocol or a
-site-specific lowering):
-
-- A chain as a declaration/return/assignment value (`var x = a?.b`) — the
-  build rejects it with the consumer guidance.
-- A chain as a call ARGUMENT.
-- Method-call chains (`a?.m(args)`) and chains through calls (`f()?.x`) —
-  the base must be a name/field path (no double evaluation).
-- A chain whose final member is itself a nullable field read without `?.`
-  is SOUND (the field's own flag becomes a hop via the flatten), but is not
-  documented yet.
-
-The lowering reuses existing machinery: `flatten_null_chain`
-(`src/build_common/null_chain.ts`) turns the chain into hop tests + a plain
-access path; both backends emit the `??` as one lazy if/else expression
-(string arms dup for ownership) and the comparisons as the combined hop
-test. When v1 needs to grow, the nullable-call `current_nullable_call_flag`
-protocol is the extension point (a chain would become a flag-writing
-producer at consumer sites).

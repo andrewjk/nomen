@@ -30,6 +30,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -40,6 +41,7 @@ import {
 } from "./build_access_node.ts";
 import { build_constructor_params, is_magic_spawn_ctor } from "./build_declaration_node.ts";
 import build_node from "./build_node.ts";
+import { emit_null_chain_value_a64, has_null_chain_a64 } from "./build_null_chain_value.ts";
 import { is_owned_heap_temp, load_nullable_has } from "./build_operation_node.ts";
 import {
 	build_float_tree,
@@ -616,6 +618,21 @@ function build_nullable_struct_assignment(
 			}
 			emit_asm(status, `ldr x9, [x0, #${is_scalar ? 8 : get_struct_size(type_name, status)}]\n`);
 			emit_var_store(status, "x9", flag_name, 8);
+			return;
+		}
+		// A nullable CHAIN RHS (`s = p?.score`): the chain lowerer writes the
+		// guarded value (or the null flag) straight into the slot from its
+		// own hop tests.
+		if (has_null_chain_a64(node.right_value)) {
+			if (reclaimable) {
+				emit_recorded_field_reclaim_for_slot(status, name, type_name);
+			}
+			emit_displaced_destroy();
+			retarget_records();
+			emit_null_chain_value_a64(node.right_value as NullAccessNode, status, {
+				kind: "local",
+				name,
+			});
 			return;
 		}
 		if (rhs_is_field_read) {

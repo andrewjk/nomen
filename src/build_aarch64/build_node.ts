@@ -17,6 +17,7 @@ import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import MatchNode from "../nodes/MatchNode.ts";
 import NestedBlockNode from "../nodes/NestedBlockNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import PanicNode from "../nodes/PanicNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
@@ -46,6 +47,7 @@ import build_let_node from "./build_let_node.ts";
 import build_magic_ctor_node from "./build_magic_ctor.ts";
 import build_match_node from "./build_match_node.ts";
 import build_nested_block_node from "./build_nested_block_node.ts";
+import { emit_null_chain_value_a64 } from "./build_null_chain_value.ts";
 import build_operation_node from "./build_operation_node.ts";
 import build_panic_node from "./build_panic_node.ts";
 import build_range_node from "./build_range_node.ts";
@@ -342,16 +344,14 @@ export default function build_node(node: BaseNode, status: BuildStatus, with_sem
 			break;
 		}
 		case "null_access": {
-			// ERRORS_PLAN: a nullable chain's nullness must be consumed —
-			// only `??` and `== / != null` lower chains (they build the hop
-			// tests themselves); reaching the generic dispatch means the
-			// chain sits in an unsupported position.
-			if (!status.build_errors) status.build_errors = [];
-			status.build_errors.push({
-				message:
-					"a nullable chain must be consumed — coalesce it ('.?chain ?? fallback') or test it ('.?chain != null')",
-				start: node.start,
-			});
+			// ERRORS_PLAN: a nullable chain lowers as a nullable VALUE — hop
+			// tests branch over the guarded value path or the null carrier
+			// (in-band string null; the `_has` flag companion for
+			// scalars/structs, left as a temp whose address lands in x0).
+			// The `??` / `== null` consumers flatten the chain themselves and
+			// never reach this dispatch.
+			emit_null_chain_value_a64(node as NullAccessNode, status, { kind: "expression" });
+			with_semicolon = false;
 			break;
 		}
 		case "index": {

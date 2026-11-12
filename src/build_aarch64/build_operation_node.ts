@@ -1209,7 +1209,7 @@ function emit_null_hop(hop: BaseNode, status: BuildStatus) {
 
 /** Branch to `fail_label` when the chain has a null hop (all hops tested in
  *  order; hop paths are pure, so re-reading them is safe). */
-function emit_null_hop_tests(hops: BaseNode[], fail_label: string, status: BuildStatus) {
+export function emit_null_hop_tests(hops: BaseNode[], fail_label: string, status: BuildStatus) {
 	for (const hop of hops) {
 		if (!load_null_hop(hop, status)) continue;
 		emit_null_hop(hop, status);
@@ -1521,32 +1521,41 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			const slot = allocate_stack_space(status, is_str ? 16 : 8);
 			const fallback_label = `.Lnull_chain_fb_${coalesce_counter++}`;
 			const done_label = `.Lnull_chain_done_${coalesce_counter++}`;
-			emit_null_hop_tests(flat_chain.hops, fallback_label, status);
-			build_operand(flat_chain.value, "x0", status);
-			ensure_newline(status);
-			if (is_str) {
-				emit_strdup(status);
+			// Per-arm ownership (mirrors `!!`): a PRODUCER arm (a call) yields
+			// its fresh buffer directly; an alias arm (a variable/field read,
+			// a literal) is strdup'd into an independently owned copy.
+			const value_is_producer =
+				flat_chain.value.node_type === "func_call" ||
+				(flat_chain.value.node_type === "access" &&
+					(flat_chain.value as AccessNode).access.node_type === "access_func");
+			const right_is_producer =
+				node.right_value.node_type === "func_call" ||
+				(node.right_value.node_type === "access" &&
+					(node.right_value as AccessNode).access.node_type === "access_func");
+			const emit_arm = (arm: BaseNode, producer: boolean) => {
+				build_operand(arm, "x0", status);
 				ensure_newline(status);
-				emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
-			} else {
-				emit_asm(status, `str x0, [x29, #${slot}]\n`);
-			}
+				if (is_str && !producer) emit_strdup(status);
+				ensure_newline(status);
+				if (is_str) {
+					emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
+				} else {
+					emit_asm(status, `str x0, [x29, #${slot}]\n`);
+				}
+			};
+			emit_null_hop_tests(flat_chain.hops, fallback_label, status);
+			emit_arm(flat_chain.value, value_is_producer);
 			emit_asm(status, `b ${done_label}\n`);
 			emit_asm(status, `${fallback_label}:\n`);
-			build_operand(node.right_value, "x0", status);
-			ensure_newline(status);
-			if (is_str) {
-				emit_strdup(status);
-				ensure_newline(status);
-				emit_asm(status, `stp x0, x1, [x29, #${slot}]\n`);
-			} else {
-				emit_asm(status, `str x0, [x29, #${slot}]\n`);
-			}
+			emit_arm(node.right_value, right_is_producer);
 			emit_asm(status, `${done_label}:\n`);
 			if (is_str) {
 				emit_asm(status, `ldp x0, x1, [x29, #${slot}]\n`);
 			} else {
 				emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+			}
+			if (is_str) {
+				status.last_result_is_heap = true;
 			}
 			return;
 		}

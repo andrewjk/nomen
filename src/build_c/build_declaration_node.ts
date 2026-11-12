@@ -21,6 +21,7 @@ import {
 	in_place_field_path_root_struct_name,
 } from "../build_common/in_place_push.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
+import { has_null_chain } from "../build_common/null_chain.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
@@ -1218,11 +1219,16 @@ export default function build_declaration_node(
 				// status.current_nullable_call_flag so
 				// build_function_call_node forwards `&<flag>` and the
 				// callee writes the real null/non-null bit into it. Skip
-				// the unconditional `<flag> = 1` otherwise.
+				// the unconditional `<flag> = 1` otherwise. A nullable
+				// CHAIN initializer (`var s = p?.score`) uses the same
+				// protocol: the chain's statement-expression writes the
+				// flag from its own hop tests.
 				const call_ret = call_result_type(node.value);
 				const value_is_nullable_call =
-					!!call_ret &&
-					(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret, status));
+					(!!call_ret &&
+						(is_nullable_struct_type(call_ret, status) ||
+							is_nullable_scalar_type(call_ret, status))) ||
+					has_null_chain(node.value);
 				status.code += `;\n${safe_name} = `;
 				if (value_is_nullable_call) {
 					const old = status.current_nullable_call_flag;
@@ -1454,6 +1460,23 @@ export default function build_declaration_node(
 					// free fires). No extra strdup: the opaque statement
 					// expression already yields exactly one owner, and the
 					// generic string shapes above cannot classify it.
+					emit_init_value(node.value, nir_init, status);
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(safe_name);
+				} else if (
+					node.type.name === "string" &&
+					!node.type.is_view &&
+					!node.type.is_array &&
+					has_null_chain(node.value)
+				) {
+					// `var s = p?.nickname` (nullable chaining): the chain is
+					// an OWNED-or-NULL string by construction — the guarded
+					// value arm strdup's (a producer transfers), the null arm
+					// is the fat zero pair (a valid free no-op). Emit as-is
+					// and record the binding as heap-owned, mirroring the
+					// `!!` shape: the opaque statement expression already
+					// yields exactly one owner, and the generic string shapes
+					// above cannot classify it.
 					emit_init_value(node.value, nir_init, status);
 					if (!status.heap_strings) status.heap_strings = new Set();
 					status.heap_strings.add(safe_name);

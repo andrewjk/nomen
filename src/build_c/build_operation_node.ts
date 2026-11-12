@@ -9,6 +9,7 @@ import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { emit_nursery_joins_on_return_c } from "./build_async_block_node.ts";
 import build_node from "./build_node.ts";
+import { emit_chain_tests } from "./build_null_chain_value.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
@@ -16,29 +17,6 @@ import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg, is_view_value } from "./utils/view_value.ts";
-
-/** Ensure the flattened chain's hop nodes carry their nullable types (the
- *  checker stamps the VALUE path; hops reuse those nodes, but a bare base
- *  value keeps its binding type). */
-function emit_chain_tests(hops: BaseNode[], status: BuildStatus): string {
-	const parts: string[] = [];
-	for (const hop of hops) {
-		const t = type_from_value_node(hop);
-		// Only NULLABLE hops carry a condition: a non-nullable member's chain
-		// result is null exactly when an earlier hop is, already tested.
-		if (!t?.is_nullable) continue;
-		if (t.name === "string") {
-			// In-band null: the fat ptr half.
-			const saved = begin_code_scratch(status);
-			build_node(hop, status);
-			const expr = end_code_scratch(status, saved);
-			parts.push(`(${expr}.ptr != 0)`);
-		} else {
-			parts.push(`(${build_nullable_has(hop, status)})`);
-		}
-	}
-	return parts.join(" && ");
-}
 
 export default function build_operation_node(node: OperationNode, status: BuildStatus) {
 	// Resolve a deferred == / != operator (set during generic-body checking
@@ -215,22 +193,38 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			const t = node.type;
 			const id = ns_tmp_counter++;
 			const is_str = t?.name === "string";
-			const is_struct = !!t?.name && !!status.structs.find((st) => st.name === t.name);
+			const is_struct =
+				!!t?.name &&
+				!!status.structs.find(
+					(st) => st.name === t.name && !st.is_simple_type && !st.is_class && !st.is_generic,
+				);
 			const c_t = is_str
 				? "nomen_string"
 				: is_struct
 					? `struct ${t!.name}`
 					: c_type(t?.name || "long");
+			// Per-arm ownership (mirrors `!!`): a PRODUCER arm (a call — the
+			// call temp's fresh buffer transfers to the consumer) yields
+			// directly; an alias arm (a variable/field read, a literal)
+			// strdup's into an independently owned copy.
+			const value_is_producer =
+				flat_chain.value.node_type === "func_call" ||
+				(flat_chain.value.node_type === "access" &&
+					(flat_chain.value as AccessNode).access.node_type === "access_func");
+			const right_is_producer =
+				node.right_value.node_type === "func_call" ||
+				(node.right_value.node_type === "access" &&
+					(node.right_value as AccessNode).access.node_type === "access_func");
 			status.code += `({ ${c_t} _nsc_${id}; if (`;
 			status.code += emit_chain_tests(flat_chain.hops, status);
 			status.code += `) { _nsc_${id} = `;
-			if (is_str) status.code += `nomen_str_dup(`;
+			if (is_str && !value_is_producer) status.code += `nomen_str_dup(`;
 			build_node(flat_chain.value, status);
-			if (is_str) status.code += `)`;
+			if (is_str && !value_is_producer) status.code += `)`;
 			status.code += `; } else { _nsc_${id} = `;
-			if (is_str) status.code += `nomen_str_dup(`;
+			if (is_str && !right_is_producer) status.code += `nomen_str_dup(`;
 			build_node(node.right_value, status);
-			if (is_str) status.code += `)`;
+			if (is_str && !right_is_producer) status.code += `)`;
 			status.code += `; } _nsc_${id}; })`;
 			return;
 		}

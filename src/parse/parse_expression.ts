@@ -1,4 +1,5 @@
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import AnonStructNode from "../nodes/AnonStructNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -313,11 +314,25 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case "?.": {
 				// ERRORS_PLAN nullable chaining: `a?.b` — the member access
 				// short-circuits on a null target. An ordinary `.` after it
-				// continues the value path; another `?.` adds a hop.
+				// continues the value path; another `?.` adds a hop. A
+				// METHOD call hop (`a?.m(args)`) parses the same way — the
+				// `?.` member is an AccessFunctionCallNode when `(` follows.
 				accept("?.", status);
 				const field_start = get_index(status);
 				const field_name = consume(status);
-				node = new NullAccessNode(node.start, node, new AccessFieldNode(field_start, field_name));
+				let access: AccessFieldNode | AccessFunctionCallNode;
+				if (peek_current(status) === "(") {
+					accept("(", status);
+					const func = new AccessFunctionCallNode(field_start, field_name);
+					if (peek_current(status) !== ")") {
+						parse_function_call_parameter(func, status);
+					}
+					expect(")", status);
+					access = func;
+				} else {
+					access = new AccessFieldNode(field_start, field_name);
+				}
+				node = new NullAccessNode(node.start, node, access);
 				break;
 			}
 			case "[": {

@@ -390,4 +390,83 @@ func score_or = (int id, out int) {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("chains are nullable values in declaration/return/argument positions", () => {
+		const input = `
+struct Profile {
+	var int score
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(7)
+	}
+	return null
+}
+
+func score_of = (int id, out int?) {
+	var p = find(id)
+	return p?.score
+}
+
+func show = (int? s) {}
+
+pub func main = () {
+	var p = find(1)
+	var s = p?.score
+	show(score_of(2))
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("method-call hops and call bases evaluate once", () => {
+		const input = `
+struct Profile {
+	var int score
+	func double = (self, out int) {
+		return self.score * 2
+	}
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(7)
+	}
+	return null
+}
+
+pub func main = () {
+	var p = find(1)
+	var d = p?.double()
+	var v = find(1)?.score
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("a nullable chain cannot be a ?? fallback", () => {
+		const input = `
+struct Profile {
+	var int score
+}
+
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(7)
+	}
+	return null
+}
+
+pub func main = () {
+	var p = find(1)
+	var int? x = null
+	var y = x ?? p?.score
+}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) => e.message.includes("a nullable chain cannot be a '??' fallback")),
+		).toBe(true);
+	});
 });

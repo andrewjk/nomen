@@ -45,6 +45,7 @@ import CastNode from "../nodes/CastNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import RangeNode from "../nodes/RangeNode.ts";
 import Type from "../nodes/Type.ts";
@@ -54,6 +55,7 @@ import build_array_values_node, { resolve_static_value } from "./build_array_val
 import { emit_swap_value, get_source_address } from "./build_assignment_node.ts";
 import { build_in_place_donor_declaration } from "./build_in_place_push.ts";
 import build_node from "./build_node.ts";
+import { has_null_chain_a64, emit_null_chain_value_a64 } from "./build_null_chain_value.ts";
 import { load_nullable_has } from "./build_operation_node.ts";
 import {
 	build_float_tree,
@@ -1565,6 +1567,16 @@ export default function build_declaration_node(
 			}
 			const init_value = node.value!;
 			const init_type = call_result_type(init_value) ?? type_from_value_node(init_value);
+			// A nullable CHAIN initializer (`var int? s = p?.score`): the chain
+			// lowerer writes the value and the companion flag straight into
+			// the local's combined slot from its own hop tests.
+			if (has_null_chain_a64(init_value)) {
+				emit_null_chain_value_a64(init_value as NullAccessNode, status, {
+					kind: "local",
+					name: node.name,
+				});
+				return;
+			}
 			const value_is_nullable_call =
 				init_value.node_type === "func_call" && is_nullable_scalar_type(init_type, status);
 			// A nullable-scalar-returning METHOD call (`obj.find()`) leaves the
@@ -3169,6 +3181,16 @@ export default function build_declaration_node(
 				// copy — skip the generic struct-value copy path below (it would
 				// try to copy bytes from the `null` literal).
 				if (is_null_init) {
+					return;
+				}
+				// A nullable CHAIN initializer (`var h? = mk()?.field`): the
+				// chain lowerer writes the guarded value (or the null flag)
+				// straight into the local's combined slot.
+				if (node.value && has_null_chain_a64(node.value)) {
+					emit_null_chain_value_a64(node.value as NullAccessNode, status, {
+						kind: "local",
+						name: node.name,
+					});
 					return;
 				}
 			}

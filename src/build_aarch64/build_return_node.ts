@@ -30,6 +30,7 @@ import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
+import NullAccessNode from "../nodes/NullAccessNode.ts";
 import ReturnNode from "../nodes/ReturnNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { resolve_static_value } from "./build_array_values_node.ts";
@@ -39,6 +40,7 @@ import { emit_string_array_labels, resolve_array_element } from "./build_declara
 import { build_constructor_params, is_magic_spawn_ctor } from "./build_declaration_node.ts";
 import { emit_struct_address } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
+import { emit_null_chain_value_a64, has_null_chain_a64 } from "./build_null_chain_value.ts";
 import { build_operand, load_nullable_has } from "./build_operation_node.ts";
 import { emit_typed_store } from "./build_struct_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
@@ -228,6 +230,39 @@ export default function build_return_node(
 			// The `List<Own>.at()` pure borrow is not destroyed — the load
 			// aliased destroy-worthy state the slot owns (see
 			// is_pure_borrow_element_load).
+			if (is_pure_borrow_element_load(decl, status)) continue;
+			emit_destroy_for_decl(
+				status,
+				decl.name,
+				decl.type.name,
+				undefined,
+				decl.type.type_args,
+				decl.type.is_nullable,
+			);
+		}
+		emit_heap_slots_cleanup_for_return(status);
+		emit_asm(status, `b ${status.function_return_label}\n`);
+		return;
+	}
+
+	// A nullable CHAIN return (`return p?.score` / `return h?.val`): the
+	// chain lowerer writes the guarded value + the `_has` flag straight into
+	// the caller's sret buffer, then the destroy walk runs and the return
+	// epilogue branches (the same shape the `return null` path uses).
+	if (
+		(returns_nullable_struct || returns_nullable_scalar) &&
+		node.value &&
+		has_null_chain_a64(node.value)
+	) {
+		emit_null_chain_value_a64(node.value as NullAccessNode, status, { kind: "sret" });
+		emit_nursery_joins_on_return_a64(status);
+		const chain_finalized = status.moved ?? new Set<string>();
+		for (const decl of all_scope_frames(status).flat()) {
+			if (chain_finalized.has(decl.name)) {
+				emit_moved_local_cleanup(status, decl);
+				continue;
+			}
+			if (is_field_struct_borrow(decl)) continue;
 			if (is_pure_borrow_element_load(decl, status)) continue;
 			emit_destroy_for_decl(
 				status,

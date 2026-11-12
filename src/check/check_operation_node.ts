@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
+import { has_null_chain } from "../build_common/null_chain.ts";
 import { get_built_in_type, is_negatable_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -517,6 +518,18 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			break;
 		}
 		case "??": {
+			// A nullable CHAIN as the fallback needs the (value, flag) carrier
+			// the fallback slot does not have: the coalesce would drop the
+			// chain's nullness on the taken path. Spell the coalesce on the
+			// chain itself (`x ?? (b?.c ?? fb)`).
+			if (has_null_chain(op.right_value)) {
+				add_error(
+					status,
+					`a nullable chain cannot be a '??' fallback — coalesce the chain first ('x ?? (b?.c ?? fb)')`,
+					op.start,
+				);
+				return false;
+			}
 			const result_type = new Type(
 				left_type.name,
 				left_type.is_static,

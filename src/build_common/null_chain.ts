@@ -10,7 +10,8 @@ import ValueNode from "../nodes/ValueNode.ts";
 export type FieldResolver = (type_name: string, field_name: string) => Type | undefined;
 
 /**
- * Flatten a nullable chain (`a?.b`, `a?.b?.c`, `a?.b.c`) into the pieces the
+ * Flatten a nullable chain (`a?.b`, `a?.b?.c`, `a?.b.c`, `a?.m(args)`,
+ * `f()?.x` — after the checker hoisted the call base) into the pieces the
  * checkers and builders need:
  *
  * - `hops` — one entry per conditional step, each a plain access-path
@@ -19,10 +20,11 @@ export type FieldResolver = (type_name: string, field_name: string) => Type | un
  *   for scalars and inline structs); a non-nullable hop adds none — its
  *   chain result is null exactly when an earlier hop is.
  * - `value` — the guarded VALUE path, an ordinary (non-null) access chain
- *   (`a.b.c`) built only when every hop is non-null. Plain access nodes —
- *   already understood by both backends — so the chain needs no bespoke
- *   field emission. With a `resolve_field` callback the synthesized steps
- *   carry their field types (hops derive their null tests from them).
+ *   (`a.b.c`) or the checked method call (`a.m(args)`) built only when
+ *   every hop is non-null. Plain access nodes — already understood by both
+ *   backends — so the chain needs no bespoke field emission. With a
+ *   `resolve_field` callback the synthesized steps carry their field types
+ *   (hops derive their null tests from them).
  *
  * Returns undefined when the chain has no `?.` step (nothing to flatten).
  */
@@ -55,6 +57,11 @@ export default function flatten_null_chain(
 		return new AccessNode(start, target, new AccessFieldNode(start, field, step_type));
 	};
 	const walk = (node: BaseNode): { hops: BaseNode[]; value: BaseNode } | undefined => {
+		if (node.node_type === "grouped") {
+			// A grouped chain `(a?.b)`: flatten its inner chain — the hop
+			// tests and the value path are unchanged.
+			return walk((node as unknown as { value: BaseNode }).value);
+		}
 		if (node.node_type === "null_access") {
 			const na = node as NullAccessNode;
 			const inner = walk(na.target);
@@ -63,14 +70,14 @@ export default function flatten_null_chain(
 				const hop = na.target;
 				return {
 					hops: [hop],
-					value: step(na.start, hop, na.access.name),
+					value: chain_value_step(na, hop),
 				};
 			}
 			// A chained hop: the test applies to the member path the inner
 			// chain produced, and the value continues from the same path.
 			return {
 				hops: [...inner.hops, inner.value],
-				value: step(na.start, inner.value, na.access.name),
+				value: chain_value_step(na, inner.value),
 			};
 		}
 		if (node.node_type === "access") {
@@ -89,8 +96,30 @@ export default function flatten_null_chain(
 		// walk before a `?.` step exists.
 		return undefined;
 	};
+	// The chain's value path for one `?.` step: a synthesized field read, or
+	// the CHECKED method call (`a?.m(args)` — the checker keeps the checked
+	// `AccessNode` on the node so its stamps ride along).
+	const chain_value_step = (na: NullAccessNode, base_path: BaseNode): BaseNode => {
+		if (na.access.node_type === "access_func") {
+			return na.call ?? new AccessNode(na.start, base_path, na.access);
+		}
+		return step(na.start, base_path, na.access.name);
+	};
 	const result = walk(expr);
 	if (!result?.hops.length) return undefined;
+	// A chain whose FINAL member is itself a flagged nullable (`a?.b.c`, c
+	// a nullable scalar/struct): the field's own `_has` flag becomes one
+	// more hop — the chain result is null exactly when an earlier hop OR
+	// the member itself is. (Strings carry null IN BAND, so a nullable
+	// string member rides the value pair and needs no test.)
+	const final_t = type_of(result.value);
+	if (
+		final_t?.is_nullable &&
+		final_t.name !== "string" &&
+		result.hops[result.hops.length - 1] !== result.value
+	) {
+		result.hops.push(result.value);
+	}
 	return result;
 }
 

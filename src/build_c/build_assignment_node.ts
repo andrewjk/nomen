@@ -19,6 +19,7 @@ import {
 	mono_type_name,
 	resolve_struct_type,
 } from "../build_common/mono_name.ts";
+import { has_null_chain } from "../build_common/null_chain.ts";
 import { call_result_type, is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import {
@@ -208,10 +209,15 @@ export default function build_assignment_node(
 			// null/non-null bit (a null result must land as null) — the
 			// hardcoded `= 1` below is only for values that are NOT already
 			// nullable. A nullable VARIABLE/FIELD RHS forwards its own flag.
+			// A nullable CHAIN RHS (`s = p?.score`) uses the same protocol:
+			// the chain's statement-expression writes the flag from its own
+			// hop tests.
 			const call_ret = call_result_type(node.right_value);
 			const value_is_nullable_call =
-				!!call_ret &&
-				(is_nullable_struct_type(call_ret, status) || is_nullable_scalar_type(call_ret, status));
+				(!!call_ret &&
+					(is_nullable_struct_type(call_ret, status) ||
+						is_nullable_scalar_type(call_ret, status))) ||
+				has_null_chain(node.right_value);
 			if (value_is_nullable_call) {
 				const old = status.current_nullable_call_flag;
 				status.current_nullable_call_flag = flag;

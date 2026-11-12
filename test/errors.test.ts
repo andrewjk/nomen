@@ -1610,23 +1610,41 @@ Console.write("\\{read_value(1)} \\{read_value(2)}\\n")
 		await build_and_check_output(input, "nullable_chain_hops", "1 0\n9 0\n");
 	});
 
-	test("a naked chain is rejected at build with the consumer forms", () => {
+	test("a chain lowers as a value in every consuming position", () => {
 		const input = `
 struct Profile {
 	var int score
 }
 
+func find = (int id, out Profile?) {
+	if id == 1 {
+		return Profile(5)
+	}
+	return null
+}
+
 func read = (out int?) {
-	var Profile? p = null
+	var p = find(1)
 	return p?.score
+}
+
+pub func main = () {
+	var p = find(1)
+	var s = p?.score
+	if s != null {
+		Console.write("hit\\n")
+	}
+	var Profile? q = null
+	var t = read()
+	if t == null {
+		Console.write("miss\\n")
+	}
 }
 `;
 		const parsed = parse(`import System\n${input}`, core, undefined, { allow_internal: true });
 		expect(parsed.errors).toEqual([]);
 		const built = build(parsed.root, { arch: "c", audit: true });
-		expect((built.errors ?? []).map((e) => e.message)).toEqual([
-			"a nullable chain must be consumed — coalesce it ('.?chain ?? fallback') or test it ('.?chain != null')",
-		]);
+		expect(built.errors ?? []).toEqual([]);
 	});
 
 	test("`?.` on a non-nullable target suggests `.`", () => {
