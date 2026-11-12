@@ -589,6 +589,22 @@ a screenshot error), but it could use Fira Code without a browser:
 
 Not done because Browser Run covers normal dev and production.
 
+## Assignment-position lifting for `T ! E` bindings
+
+Recorded 2026-11-13 from docs/ERRORS_PLAN.md's deferred item, when the plan
+retired into docs/ERRORS.md — the plan's only open work. `var r = 0`
+against a declared `int ! FileError` BINDING does not lift: only return
+position lifts (the checker's bare-return lifting), and `expr!` propagates
+from declaration initializers. Assignment lifting would apply the same
+resolution order (as-is, then `T`, then `E`) to plain assignments against a
+`!`-declared binding, so a result variable can be built up incrementally
+without a match at every step. No in v1: no real consumer. Open design
+questions when someone wants it: does the binding itself carry the set
+(making every read of it checked-discarding), or does only the assignment
+lift (the binding types `T`, checked-ness discharges at the lift)? And does
+`r = expr!` compose with the in-flight-binding machinery the initializers
+use?
+
 ## Share-card tokenizer: replace Shiki on the server
 
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
