@@ -190,9 +190,11 @@ anonymous-enum identity rule gives structural equality for free).
   construction, no per-case rebuild. Error-set widening is scoped to the
   E slot: a callee's error enum must be one of the enclosing set's members
   (or the whole set, for pass-through).
-- **Matching is two-level** in v1: `case .LoadError(err)` binds the whole
-  member enum, then an inner `match err` resolves its cases. The flat
-  qualified arms (`case LoadError.timeout`) are checker sugar — stage 5.
+- **Matching is flat** (stage 5): `case LoadError.timeout` addresses one
+  case of one member, `case LoadError(err)` binds the whole member enum,
+  and an unqualified `case .timeout` resolves across the members (ambiguous
+  = force-specify). The checker lowers these into generated nested matches
+  the builders already understand — branches are moved, never cloned.
 
 Implemented (stage 4 core, 2026-11-12): the comma grammar (greedy member
 list in the `!` clause — inner commas belong to the set), the composed
@@ -219,8 +221,13 @@ the flat arms remain later work.
 - **Stage 4 (v1, comma syntax)** — composition (`T ! E1, E2` per the
   section above) with member-directed lifting, the ambiguity rule, and
   error-set widening — done.
-- **Stage 5** — flat match arms (`case .notfound` through the `.fail`
-  wrapper) as checker sugar.
+- **Stage 5 (done)** — flat match arms: `.notfound` through the `.fail`
+  wrapper, `case LoadError.timeout`, and `case E(err)` whole-member binds,
+  lowered by the checker into nested matches
+  (`check/utils/flat_error_arms.ts`); mixing with an explicit `.fail` arm
+  is rejected, and per-member exhaustiveness falls out of the generated
+  matches. One parser addition: `Enum(bindings)` patterns (uppercase head +
+  parens).
 - **Deferred** — nullable chaining (`?.` does not exist today; prerequisite
   for the `fetch(...)!.body !! ""` shape), anonymous error enums,
   assignment-position lifting.
@@ -233,8 +240,12 @@ Each is one clear error:
   enum: "declare it `error enum` or spell Result<T, Direction>".
 - **Every set member** — the same gate applies to each name in
   `T ! E1, E2`; a non-error member names itself.
-- **Ambiguous shorthand** — `.timeout` declared by several set members:
-  qualify the origin (`LoadError.timeout`).
+- **Ambiguous shorthand** — `.timeout` declared by several set members
+  (return position and flat match arms alike): spell the origin
+  (`LoadError.timeout`).
+- **Flat-arm mixing** — a `.fail(err)` arm and flat error arms in one match
+  compete for the outer tag: rejected; likewise `case E(err)` and
+  `case E.case` arms for the same origin.
 - **`!!` type shape** — left not a Result, or right not `T`: name both types.
 - **Propagation context** — `expr!` in a function not declared `! E`, or
   whose error enum is neither the enclosing set nor one of its members:

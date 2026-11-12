@@ -192,4 +192,62 @@ match result {
 `;
 		expect(compile_module(body)).toEqual([]);
 	});
+
+	test("flat error arms resolve through the fail wrapper", () => {
+		const body = `
+error FetchError {
+	case notfound
+	case offline
+}
+
+func fetch = (string url, out int ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return 7
+}
+
+var label = match fetch("u") {
+	case .ok(value) -> "ok"
+	case .notfound -> "missing"
+	case .offline -> "offline"
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
+
+	test("composed flat arms may name the origin", () => {
+		const body = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+	case corrupt
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 7
+}
+
+func describe = (string path, out string) {
+	return match load(path) {
+		case .ok(value) -> "ok"
+		case LoadError.timeout -> "timeout"
+		case LoadError.offline -> "offline"
+		case ParseError.syntax -> "syntax"
+		case ParseError.corrupt -> "corrupt"
+	}
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
 });

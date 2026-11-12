@@ -10,6 +10,7 @@ import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import block_always_returns from "./utils/always_returns.ts";
 import clone_status from "./utils/clone_status.ts";
+import rewrite_flat_error_arms from "./utils/flat_error_arms.ts";
 import { intersect_moved_variables, outer_scope_moved } from "./utils/moved_variables.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -18,6 +19,12 @@ export default function check_match_node(match_node: MatchNode, status: CheckSta
 	check_node(match_node.value, status);
 	const match_type = type_from_value_node(match_node.value, status);
 	match_node.value_type = match_type.name;
+
+	// ERRORS_PLAN stage 5: flat error arms (`.notfound`, `LoadError.timeout`,
+	// `LoadError(err)`) lower into the nested matches the builders already
+	// understand. Runs before the arm loop so the synthesized structure is
+	// what gets checked (and exhaustiveness applies per level).
+	rewrite_flat_error_arms(match_node, match_type, status);
 
 	// The scrutinee's pending hoisted temps (an argument hoisted out of the
 	// match value — `_param_0 = [1, 2, 3]`) belong to the STATEMENT this

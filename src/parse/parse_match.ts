@@ -87,6 +87,14 @@ function parse_match_case_pattern(status: ParseStatus): { value: BaseNode; param
 		const target = new ValueNode(start, enum_name);
 		const access = new AccessFieldNode(start, case_name);
 		value = new AccessNode(start, target, access);
+	} else if (first && /^[A-Z]/.test(first) && status.tokens[status.i + 1]?.value === "(") {
+		// `Enum(bindings)` — bind the WHOLE enum value (ERRORS_PLAN stage 5:
+		// a flat error arm binding its member error, e.g. `case LoadError(err)`
+		// in a composed-set match). The checker resolves the type-named head
+		// against the matched Result's error side; without the rewrite it is
+		// an ordinary unknown-value pattern.
+		const enum_name = consume(status);
+		value = new ValueNode(start, enum_name);
 	} else {
 		value = parse_expression(status);
 	}

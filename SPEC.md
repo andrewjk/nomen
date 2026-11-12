@@ -1324,6 +1324,46 @@ match result {
 
 Only `error` enums may join a set. Member enums are carried by value, so keep heap-owning members (`mv error` with string payloads) to single-error signatures for now.
 
+### Flat Error Arms
+
+A match over a result may address the error side directly instead of matching `.fail(err)` and nesting. A shorthand case resolves through the error side of the result — a case declared by several set members is the force-specify error:
+
+```
+error FetchError {
+    case notfound
+    case offline
+}
+
+func fetch = (string url, out int ! FetchError) {
+    if url == "" {
+        return .notfound
+    }
+    return 7
+}
+
+var label = match fetch("u") {
+    case .ok(value) -> "ok"
+    case .notfound -> "missing"
+    case .offline -> "offline"
+}
+```
+
+In a composed set, arms may name the origin: `LoadError.timeout` is one case of one member, and `LoadError(err)` binds the whole member error (the inner match then resolves its cases):
+
+```
+func describe = (string path, out string) {
+    return match load(path) {
+        case .ok(value) -> "ok"
+        case LoadError.timeout -> "timeout"
+        case LoadError.offline -> "offline"
+        case ParseError.syntax -> "syntax"
+        case ParseError.corrupt -> "corrupt"
+    }
+}
+```
+
+The lowered form is ordinary matches, so the usual rules apply: the generated per-member matches must be exhaustive (cover every case, or bind the whole member with `case E(err)`), a `.fail(err)` arm cannot be combined with flat arms in the same match, and binding a whole member (`case E(err)`) excludes per-case arms for that member.
+
 ## Bitsets
 
 Bitsets are used to define a restricted set of options that can be combined using bitwise operators:

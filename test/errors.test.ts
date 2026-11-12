@@ -811,3 +811,230 @@ func f = (out int ! LoadError, Direction) {
 		]);
 	});
 });
+
+describe("errors: flat match arms", () => {
+	test("error cases match directly through the fail wrapper", async () => {
+		const input = `
+error FetchError {
+	case notfound
+	case offline
+}
+
+func fetch = (string url, out int ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	if url == "/offline" {
+		return .offline
+	}
+	return 7
+}
+
+func describe = (string url, out string) {
+	return match fetch(url) {
+		case .ok(value) -> "ok \\{value}"
+		case .notfound -> "missing"
+		case .offline -> "offline"
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("")}\\n")
+Console.write("\\{describe("/offline")}\\n")
+`;
+		await build_and_check_output(input, "errors_flat_single", "ok 7\nmissing\noffline\n");
+	});
+
+	test("composed sets match by origin, flat and whole-member", async () => {
+		const input = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+	case corrupt
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 42
+}
+
+func describe = (string path, out string) {
+	return match load(path) {
+		case .ok(value) -> "ok \\{value}"
+		case LoadError.timeout -> "load: timeout"
+		case LoadError(err) {
+			match err {
+				case .timeout -> "unreachable"
+				case .offline -> "load: offline"
+			}
+		}
+		case ParseError.syntax -> "parse: syntax"
+		case ParseError(err) {
+			match err {
+				case .syntax(_) -> "unreachable"
+				case .corrupt -> "parse: corrupt"
+			}
+		}
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("/slow")}\\n")
+Console.write("\\{describe("/bad")}\\n")
+`;
+		// `LoadError.timeout` and `LoadError(err)` mix for one origin — the
+		// mixing rule rejects it, so this test is parse-level only.
+		const parsed = parse(`import System\n${input}`, core, undefined, { allow_internal: true });
+		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+
+	test("composed flat arms run by origin", async () => {
+		const input = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+	case corrupt
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 42
+}
+
+func describe = (string path, out string) {
+	return match load(path) {
+		case .ok(value) -> "ok \\{value}"
+		case LoadError.timeout -> "load: timeout"
+		case LoadError.offline -> "load: offline"
+		case ParseError.syntax -> "parse: syntax"
+		case ParseError.corrupt -> "parse: corrupt"
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("/slow")}\\n")
+Console.write("\\{describe("/bad")}\\n")
+`;
+		await build_and_check_output(
+			input,
+			"errors_flat_composed",
+			"ok 42\nload: timeout\nparse: syntax\n",
+		);
+	});
+
+	test("an unqualified case resolves across the set when unique", async () => {
+		const input = `
+error LoadError {
+	case timeout
+}
+
+error ParseError {
+	case syntax
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/bad" {
+		return .syntax
+	}
+	return 1
+}
+
+func describe = (string path, out string) {
+	return match load(path) {
+		case .ok(value) -> "ok \\{value}"
+		case .timeout -> "timeout"
+		case .syntax -> "syntax"
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("/bad")}\\n")
+`;
+		await build_and_check_output(input, "errors_flat_unique", "ok 1\nsyntax\n");
+	});
+
+	test("an ambiguous flat arm names the origins", () => {
+		const input = `import System
+
+error LoadError {
+	case timeout
+}
+
+error ParseError {
+	case timeout
+}
+
+func load = (out int ! LoadError, ParseError) {
+	return 1
+}
+
+pub func main = () {
+	var label = match load() {
+		case .ok(_) -> "ok"
+		case .timeout -> "timeout"
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"case '.timeout' is ambiguous in the error set (LoadError, ParseError) — spell the origin (`LoadError.timeout`)",
+				18,
+				8,
+			),
+		]);
+	});
+
+	test("mixing a .fail arm with flat arms is rejected", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (out int ! FetchError) {
+	return 1
+}
+
+pub func main = () {
+	var label = match fetch() {
+		case .ok(_) -> "ok"
+		case .fail(err) {
+			match err {
+				case .notfound -> "missing"
+			}
+		}
+		case .notfound -> "missing"
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"cannot mix flat error arms with a '.fail' arm — bind the error with 'case .fail(err)' or list the flat cases",
+				12,
+				14,
+			),
+		]);
+	});
+});
