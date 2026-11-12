@@ -234,11 +234,15 @@ export default function parse_type(status: ParseStatus): Type {
 		if (result.name !== "void") func_type.func_return_type = result;
 		return func_type;
 	}
-	// ERRORS_PLAN: `T ! E` — the result-type form. Pure sugar over the core
-	// generic: the type becomes `Result<T, E>`, with `is_result_form`
-	// marking the `!` spelling (parse_function reads it on the `out` slot
-	// to enable bare-return lifting; elsewhere it is inert). The E gate
-	// (only `error` enums after `!`) is enforced at check time.
+	// ERRORS_PLAN: `T ! E` — the result-type form, or a composed set
+	// `T ! E1, E2, ...` (comma-separated like a trait list). Pure sugar over
+	// the core generic: the type becomes `Result<T, E>` — for a SET, the E
+	// slot is ONE anonymous enum over the whole member enums (tagged by
+	// origin, cases named by member type name; the anon-enum machinery sorts
+	// cases canonically, so `! A, B` ≡ `! B, A`). `is_result_form` marks the
+	// `!` spelling (parse_function reads it on the `out` slot to enable
+	// bare-return lifting and to stamp the member list; elsewhere it is
+	// inert). The E gate (error enums only) is enforced at check time.
 	if (accept("!", status)) {
 		const bang_start = type.start ?? get_index(status);
 		if (type.name === "void") {
@@ -254,10 +258,28 @@ export default function parse_type(status: ParseStatus): Type {
 				bang_start,
 			);
 		}
-		const err_type = parse_type(status);
+		const err_types: Type[] = [parse_type(status)];
+		while (accept(",", status)) {
+			const member = parse_type(status);
+			if (err_types.some((t) => t.name === member.name)) {
+				add_error(
+					status,
+					`Duplicate error type: ${member.name}`,
+					member.start ?? get_index(status),
+				);
+			}
+			err_types.push(member);
+		}
 		const result_type = new Type("Result");
 		result_type.start = bang_start;
-		result_type.type_args = [type, err_type];
+		if (err_types.length === 1) {
+			result_type.type_args = [type, err_types[0]];
+		} else {
+			const composed = new Type("anon_enum");
+			composed.start = bang_start;
+			composed.enum_cases = err_types.map((m) => ({ name: m.name, types: [m] }));
+			result_type.type_args = [type, composed];
+		}
 		result_type.is_result_form = true;
 		return result_type;
 	}

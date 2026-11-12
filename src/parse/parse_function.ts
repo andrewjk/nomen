@@ -243,11 +243,18 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			func.return_type = parse_func_type(status);
 		} else {
 			func.return_type = parse_type(status);
-			// ERRORS_PLAN: the `!` form (`out string ! FetchError`) — strip
-			// the parse marker and record it on the function: bare returns
-			// lift into the Result cases, and the E gate runs at check time.
+			// ERRORS_PLAN: the `!` form (`out string ! FetchError`, or the
+			// composed `out string ! E1, E2`) — strip the parse marker,
+			// record it on the function, and stamp the error set (the raw
+			// member types; the composed E slot is one anon enum over them).
 			if (func.return_type.is_result_form) {
 				func.returns_result = true;
+				const err_slot = func.return_type.type_args?.[1];
+				if (err_slot?.name === "anon_enum" && err_slot.enum_cases?.length) {
+					func.result_error_types = err_slot.enum_cases.map((c) => c.types[0]);
+				} else if (err_slot) {
+					func.result_error_types = [err_slot];
+				}
 				func.return_type.is_result_form = undefined;
 			}
 			reject_void_type(func.return_type, status, func.return_type_start);

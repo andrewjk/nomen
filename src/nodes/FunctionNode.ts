@@ -124,12 +124,20 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * (`out string ! FetchError`). Set by parse_function; gates (a) the
 	 * bare-return LIFT in check_return_node (`return expr` becomes
 	 * `Result.ok(expr)` / `Result.fail(expr)` by the value's type, with
-	 * shorthand cases resolving against the error enum first) and (b) the
-	 * checker gate that only `error` enums may appear after `!`. An
-	 * explicit `out Result<T, E>` does NOT set this — the `!` spelling
-	 * means "this function deals in results".
+	 * shorthand cases resolving against the error enum first), (b) the
+	 * checker gate that only `error` enums may appear after `!`, and
+	 * (c) composition set widening for postfix `!`. An explicit
+	 * `out Result<T, E>` does NOT set this — the `!` spelling means
+	 * "this function deals in results".
 	 */
 	returns_result?: boolean;
+	/**
+	 * ERRORS_PLAN: the error set as written after `!` — one entry for the
+	 * single form, several for a composed set (`out T ! E1, E2`). Raw parse
+	 * types (pre-materialization), used by the E gate, the return lifting,
+	 * and postfix `!` widening.
+	 */
+	result_error_types?: Type[];
 
 	constructor(
 		start: number,

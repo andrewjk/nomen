@@ -1266,7 +1266,63 @@ var doubled = load_and_double("config.txt") !! 0
 Console.write("\{doubled}")
 ```
 
-The enclosing function must itself be `!`-declared with the same error enum — `'!' propagates to the caller` is the error otherwise. Composition of several error sets (`T ! E1 ! E2`) is staged future work (see docs/ERRORS_PLAN.md).
+The enclosing function must itself be `!`-declared with the same error enum — `'!' propagates to the caller` is the error otherwise. In a composed set, a member error widens through its origin tag (see below).
+
+### Composed Error Sets
+
+The error side may list several error enums, comma-separated — the same shape as a trait list:
+
+```
+error LoadError {
+    case timeout
+    case offline
+}
+
+error ParseError {
+    case syntax
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+    if path == "/slow" {
+        return .timeout
+    }
+    if path == "/bad" {
+        return .syntax
+    }
+    return 7
+}
+```
+
+The set composes by origin: the result's error side is one generated enum whose cases carry the whole member enums (generated tags, never spelled in source), so identical sets are identical types regardless of order. A shorthand return resolves through the members — a case declared by several members is the force-specify error (qualify the origin). Postfix `!` widens a member's error into the enclosing set:
+
+```
+func load_all = (string path, out int ! LoadError, ParseError) {
+    var value = load(path)!
+    return value
+}
+
+var result = load_all("/slow")
+match result {
+    case .ok(value) -> Console.write("\{value}")
+    case .fail(err) {
+        match err {
+            case .LoadError(e) {
+                match e {
+                    case .timeout -> Console.write("timeout")
+                    case .offline -> Console.write("offline")
+                }
+            }
+            case .ParseError(e) {
+                match e {
+                    case .syntax -> Console.write("syntax")
+                }
+            }
+        }
+    }
+}
+```
+
+Only `error` enums may join a set. Member enums are carried by value, so keep heap-owning members (`mv error` with string payloads) to single-error signatures for now.
 
 ## Bitsets
 

@@ -51,6 +51,20 @@ export default class OperationNode extends BaseNode {
 	 */
 	propagate_fail_field?: string;
 	/**
+	 * ERRORS_PLAN (postfix `!` inside a composed set): when the operand's
+	 * error enum is one of the enclosing `T ! E1, E2` members, the fail
+	 * value is wrapped through that member's origin tag — `mono`/`case`/
+	 * `field` name the composed enum's case, and `outer_mono`/`outer_field`
+	 * the enclosing Result's fail slot the composed value lands in.
+	 */
+	propagate_into?: {
+		mono: string;
+		case: string;
+		field: string;
+		outer_mono: string;
+		outer_field: string;
+	};
+	/**
 	 * ERRORS_PLAN (postfix `!`): the declaration being initialized when this
 	 * node is evaluated (`var body = load(p)!` → `"body"`), stamped by the
 	 * checker. The fail path returns before the binding is assigned, so the

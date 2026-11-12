@@ -679,3 +679,19 @@ locals, follow the same ownership the C `free_payloads` walk applies
 aarch64 runtime tests that assert audit balance should keep interpolated
 success payloads out of chained lifted returns (the errors tests do this via
 payload-free chains; the `!!` single-call shapes audit clean).
+
+## Enum-typed payloads copy bitwise — a variable donor aliases
+
+Recorded 2026-11-12, surfacing with ERRORS_PLAN composition (the check is
+pre-existing; the composed origin tags make the shape routine).
+
+`Result<T, E>`'s fail payload and the composed set's origin tags are
+enum-typed slots, and the ctors copy those payloads bitwise
+(`r._data._fail.err = err;`), as does the composed wrap. An anonymous TEMP
+donor is sound (nothing else frees it), but a VARIABLE donor of an
+mv error enum (`var e = ParseError.syntax("x"); return e`) leaves the same
+string pointer in two owners — double free at both destroys.
+`enforce_case_payload_ownership` covers structs/traits only; enums need the
+same treatment (transfer the donor via `move_param_indices` semantics) or a
+deep copy through the enum's `_copy`. Until then: temp donors audit clean;
+avoid returning mv-enum variables through lifted/composed results.

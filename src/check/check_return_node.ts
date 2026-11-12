@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import type ReturningNode from "../nodes/ReturningNode.ts";
@@ -61,15 +62,19 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 		return;
 	}
 
-	// ERRORS_PLAN: bare-return lifting for the `T ! E` result form. The
-	// function's return type is the `Result<T, E>` mono; shorthand cases
-	// resolve against the ERROR ENUM first when they name no Result case
-	// (`return .notfound` is `Result.fail(.notfound)`). The pre-wrap
-	// exploits the shorthand-call branch's per-argument expected type:
-	// checking `.fail(<shorthand>)` resolves the inner case against the
-	// fail payload (E) with zero new resolution machinery. Non-shorthand
-	// values lift by their checked type — the post-check wrap below.
+	// ERRORS_PLAN: bare-return lifting for the `T ! E` result form (single)
+	// and the composed `T ! E1, E2` set. Shorthand cases resolve against the
+	// ERROR SET first when they name no Result case (`return .notfound` is
+	// `Result.fail(.notfound)`; in a composed set the single member declaring
+	// the case supplies the tag, and a case declared by several members is
+	// ambiguous). The pre-wrap exploits the shorthand-call branch's
+	// per-argument expected type recursively: checking `.fail(.LoadError(
+	// <shorthand>))` resolves each layer against its payload type with zero
+	// new resolution machinery. Non-shorthand values lift by their checked
+	// type — the post-check wrap below.
 	const fn = func as FunctionNode | null;
+	const fn_members = fn?.result_error_types ?? [];
+	const fn_composed = fn_members.length > 1;
 	if (fn?.returns_result && fn.return_type.name && fn.return_type.name !== "?") {
 		const shorthand = ret.value.node_type === "value" ? (ret.value as ValueNode) : undefined;
 		if (
@@ -82,12 +87,21 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
 			const on_result = !!result_enum?.cases.some((c) => c.name === case_name);
 			if (result_enum?.template_name === "Result" && !on_result) {
-				const fail_case = result_enum.cases.find((c) => c.name === "fail");
-				const err_enum = fail_case
-					? status.enums.find((e) => e.name === fail_case.params[0]?.type.name)
-					: undefined;
-				if (err_enum?.cases.some((c) => c.name === case_name)) {
-					ret.value = new FunctionCallNode(ret.value.start, ".fail", undefined, [ret.value]);
+				const owners = fn_members.filter((m) =>
+					status.enums.findLast((e) => e.name === m.name)?.cases.some((c) => c.name === case_name),
+				);
+				if (owners.length > 1) {
+					add_error(
+						status,
+						`case '.${case_name}' is ambiguous in the error set (${owners.map((o) => o.name).join(", ")}) — qualify the origin (\`${owners[0].name}.${case_name}\`)`,
+						shorthand.start,
+					);
+				}
+				if (owners.length >= 1) {
+					const fail_value = fn_composed
+						? new FunctionCallNode(shorthand.start, `.${owners[0].name}`, undefined, [ret.value])
+						: ret.value;
+					ret.value = new FunctionCallNode(shorthand.start, ".fail", undefined, [fail_value]);
 				}
 			}
 		}
@@ -316,12 +330,13 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	}
 
 	// ERRORS_PLAN post-check wrap: a bare, non-shorthand value lifts by its
-	// checked type — T into the ok case, E into the fail case, an explicit
-	// Result passes through. The synthesized ctor call carries the same
-	// checked state the shorthand-call branch stamps (mangled name, mono
-	// type, is_static, is_enum_shorthand) plus the payload-contract
-	// helpers, so both backends build it exactly like a user-written
-	// `.ok(...)` / `.fail(...)`.
+	// checked type — T into the ok case, the error value into the fail case
+	// (for a composed set: a member enum wraps through its origin tag, the
+	// whole composed value passes into the fail slot), an explicit Result
+	// passes through. The synthesized ctor calls carry the same checked
+	// state the shorthand-call branch stamps (mangled name, mono type,
+	// is_static, is_enum_shorthand) plus the payload-contract helpers, so
+	// every backend builds them exactly like user-written cases.
 	if (fn?.returns_result && ret.value && fn.return_type.name && fn.return_type.name !== "?") {
 		const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
 		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
@@ -330,34 +345,80 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			const value_name = mono_type_name(ret.type);
 			const ok_name = mono_type_name(ok_case.params[0].type);
 			const fail_name = mono_type_name(fail_case.params[0].type);
-			let wrap_case: "ok" | "fail" | undefined;
-			if (ret.type.name === fn.return_type.name) {
-				wrap_case = undefined; // already a Result — explicit pass-through
-			} else if (value_name === ok_name) {
-				wrap_case = "ok";
-			} else if (value_name === fail_name) {
-				wrap_case = "fail";
-			}
-			if (wrap_case) {
-				const enum_case = wrap_case === "ok" ? ok_case : fail_case;
-				const wrap = new FunctionCallNode(
-					ret.value.start,
-					`${result_enum.name}_${wrap_case}`,
-					new Type(result_enum.name),
-					[ret.value],
+			const make_case_call = (
+				mono: string,
+				case_name: string,
+				enum_case: { params: Array<import("../nodes/ParameterNode.ts").default> },
+				args: BaseNode[],
+				start: number,
+			): FunctionCallNode => {
+				const call = new FunctionCallNode(
+					start,
+					`${mono}_${case_name}`,
+					new Type(mono),
+					args,
 					true,
 				);
-				wrap.is_enum_shorthand = true;
-				enforce_case_payload_ownership(wrap_case, enum_case.params, wrap.params, wrap, status);
-				stamp_in_place_enum_payloads(enum_case, wrap.params, wrap, status);
+				call.is_enum_shorthand = true;
+				enforce_case_payload_ownership(case_name, enum_case.params, call.params, call, status);
+				stamp_in_place_enum_payloads(enum_case, call.params, call, status);
 				hoist_case_string_arg_temp(
 					enum_case.params,
-					wrap.params,
+					call.params,
 					status,
-					wrap.in_place_payload_indices,
+					call.in_place_payload_indices,
 				);
-				ret.value = wrap;
-				ret.type = wrap.type;
+				return call;
+			};
+			if (ret.type.name === fn.return_type.name) {
+				// Already a Result — explicit pass-through.
+			} else if (value_name === ok_name) {
+				const wrapped = make_case_call(
+					result_enum.name,
+					"ok",
+					ok_case,
+					[ret.value],
+					ret.value.start,
+				);
+				ret.value = wrapped;
+				ret.type = wrapped.type;
+			} else if (value_name === fail_name) {
+				// The whole E value (the single member enum / the composed set).
+				const wrapped = make_case_call(
+					result_enum.name,
+					"fail",
+					fail_case,
+					[ret.value],
+					ret.value.start,
+				);
+				ret.value = wrapped;
+				ret.type = wrapped.type;
+			} else if (fn_composed) {
+				// One of the composed set's member enums — wrap it through its
+				// origin tag, then into the Result's fail case.
+				const member = fn_members.find((m) => mono_type_name(m) === value_name);
+				const composed_enum = member
+					? status.enums.findLast((e) => e.name === fail_name)
+					: undefined;
+				const composed_case = member && composed_enum?.cases.find((c) => c.name === member.name);
+				if (member && composed_enum && composed_case) {
+					const inner = make_case_call(
+						composed_enum.name,
+						member.name,
+						composed_case,
+						[ret.value],
+						ret.value.start,
+					);
+					const wrapped = make_case_call(
+						result_enum.name,
+						"fail",
+						fail_case,
+						[inner],
+						ret.value.start,
+					);
+					ret.value = wrapped;
+					ret.type = wrapped.type;
+				}
 			}
 		}
 	}

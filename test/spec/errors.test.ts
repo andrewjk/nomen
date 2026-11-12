@@ -119,4 +119,77 @@ Console.write("\\{doubled}")
 `;
 		expect(compile_module(body)).toEqual([]);
 	});
+
+	test("a composed error set declares and lifts by origin", () => {
+		const body = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 7
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
+
+	test("postfix ! widens a member error into the enclosing set", () => {
+		const body = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 7
+}
+
+func load_all = (string path, out int ! LoadError, ParseError) {
+	var value = load(path)!
+	return value
+}
+
+var result = load_all("/slow")
+match result {
+	case .ok(value) -> Console.write("\\{value}")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout -> Console.write("timeout")
+					case .offline -> Console.write("offline")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("syntax")
+				}
+			}
+		}
+	}
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
 });

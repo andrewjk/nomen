@@ -551,3 +551,263 @@ pub func main = () {
 		expect(parsed.errors).toEqual([]);
 	});
 });
+
+describe("errors: composed error sets", () => {
+	test("out T ! E1, E2 declares and matches by origin", async () => {
+		const input = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+	case corrupt
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 42
+}
+
+var ok = load("/ok")
+match ok {
+	case .ok(value) -> Console.write("ok \\{value}\\n")
+	case .fail(_) -> Console.write("unexpected\\n")
+}
+var slow = load("/slow")
+match slow {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout -> Console.write("load: timeout\\n")
+					case .offline -> Console.write("load: offline\\n")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("parse: syntax\\n")
+					case .corrupt -> Console.write("parse: corrupt\\n")
+				}
+			}
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_compose", "ok 42\nload: timeout\n");
+	});
+
+	test("a member enum value lifts through its origin tag", async () => {
+		const input = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+}
+
+func failed = (out int ! LoadError, ParseError) {
+	var err = LoadError.offline
+	return err
+}
+
+var result = failed()
+match result {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout -> Console.write("timeout\\n")
+					case .offline -> Console.write("offline\\n")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("syntax\\n")
+				}
+			}
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_compose_value", "offline\n");
+	});
+
+	test("postfix ! widens a member error into the enclosing set", async () => {
+		const input = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+}
+
+func load = (string path, out int ! LoadError) {
+	if path == "/slow" {
+		return .timeout
+	}
+	return 7
+}
+
+func load_all = (string path, out int ! LoadError, ParseError) {
+	var value = load(path)!
+	return value
+}
+
+var result = load_all("/slow")
+match result {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout -> Console.write("widened: timeout\\n")
+					case .offline -> Console.write("offline\\n")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("syntax\\n")
+				}
+			}
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_compose_widen", "widened: timeout\n");
+	});
+
+	test("the set is order-insensitive", async () => {
+		const input = `
+error LoadError {
+	case timeout
+}
+
+error ParseError {
+	case syntax
+}
+
+func first = (out int ! LoadError, ParseError) {
+	return .syntax
+}
+
+func second = (out int ! ParseError, LoadError) {
+	return first()!
+}
+
+var result = second()
+match result {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout -> Console.write("timeout\\n")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("order-insensitive\\n")
+				}
+			}
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_compose_order", "order-insensitive\n");
+	});
+
+	test("an ambiguous shorthand return names the members", () => {
+		const input = `import System
+
+error LoadError {
+	case timeout
+}
+
+error ParseError {
+	case timeout
+}
+
+func f = (out int ! LoadError, ParseError) {
+	return .timeout
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"case '.timeout' is ambiguous in the error set (LoadError, ParseError) — qualify the origin (`LoadError.timeout`)",
+				12,
+				9,
+			),
+		]);
+	});
+
+	test("a non-member error cannot propagate into the set", () => {
+		const input = `import System
+
+error LoadError {
+	case timeout
+}
+
+error OtherError {
+	case boom
+}
+
+func other = (out int ! OtherError) {
+	return .boom
+}
+
+func combo = (out int ! LoadError) {
+	return other()!
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'!' propagates 'OtherError' but the enclosing function expects 'LoadError'",
+				16,
+				9,
+			),
+		]);
+	});
+
+	test("every set member must be an error enum", () => {
+		const input = `import System
+
+enum Direction {
+	case north
+}
+
+error LoadError {
+	case timeout
+}
+
+func f = (out int ! LoadError, Direction) {
+	return 0
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'!' requires an error enum — 'Direction' is not declared with 'error'; declare it `error Direction` or spell Result<T, Direction> explicitly",
+				11,
+				15,
+			),
+		]);
+	});
+});

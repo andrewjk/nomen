@@ -11,6 +11,7 @@ import check_block_node from "./check_block_node.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_function_parameter_node from "./check_function_parameter_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { materialize_anon_enum_type } from "./utils/anon_enum.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 import { collect_rebound_names } from "./utils/devirtualize.ts";
@@ -210,6 +211,15 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	}
 
 	if (func.return_type.name) {
+		// ERRORS_PLAN composed sets: the `! E1, E2` E slot is an anonymous
+		// enum Type. Materialize it to its generated mono BEFORE the
+		// signature is validated — check_type_exists triggers the generic's
+		// monomorphization, so doing it after would create the Result mono
+		// over the raw "anon_enum" placeholder.
+		const err_slot_pre = func.return_type.type_args?.[1];
+		if (err_slot_pre?.name === "anon_enum" && err_slot_pre.enum_cases?.length) {
+			func.return_type.type_args![1] = materialize_anon_enum_type(err_slot_pre, function_status);
+		}
 		if (!check_type_exists(func.return_type, function_status, func.return_type_start!)) {
 			func.return_type = new Type("?");
 		} else {
@@ -242,19 +252,16 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		// never be monomorphized, leaving the signature referencing a bare
 		// incomplete struct. Materialize it here.
 		instantiate_generic_type(func.return_type, function_status);
-		// ERRORS_PLAN gate: only `error` enums may follow `!`. Runs after
-		// materialization — which consumes the parsed type_args — so the E
-		// type is read from the mono's fail-case payload instead.
-		if (func.returns_result && func.return_type.name !== "?") {
-			const result_enum = function_status.enums.findLast((e) => e.name === func.return_type.name);
-			const fail_case = result_enum?.cases.find((c) => c.name === "fail");
-			const err_name = fail_case?.params[0]?.type.name;
-			if (result_enum?.template_name === "Result" && err_name) {
-				const err_enum = function_status.enums.findLast((e) => e.name === err_name);
+		// ERRORS_PLAN gate: only `error` enums may follow `!` — every member
+		// of the set (a single `T ! E` or a composed `T ! E1, E2`).
+		if (func.returns_result && func.result_error_types?.length) {
+			for (const member of func.result_error_types) {
+				if (!member.name || member.name === "?") continue;
+				const err_enum = function_status.enums.findLast((e) => e.name === member.name);
 				if (!err_enum?.is_error) {
 					add_error(
 						function_status,
-						`'!' requires an error enum — '${err_name}' is not declared with 'error'; declare it \`error ${err_name}\` or spell Result<T, ${err_name}> explicitly`,
+						`'!' requires an error enum — '${member.name}' is not declared with 'error'; declare it \`error ${member.name}\` or spell Result<T, ${member.name}> explicitly`,
 						func.return_type_start ?? func.start,
 					);
 				}

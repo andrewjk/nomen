@@ -86,13 +86,41 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		const enclosing_fail = enclosing_enum?.cases.find((c) => c.name === "fail");
 		if (enclosing_fail && enclosing_enum?.template_name === "Result") {
 			const declared_err = enclosing_fail.params[0].type;
-			if (mono_type_name(fail_case.params[0].type) !== mono_type_name(declared_err)) {
-				add_error(
-					status,
-					`'!' propagates '${fail_case.params[0].type.name}' but the enclosing function declares '${declared_err.name}' — the error enums must match`,
-					op.start,
-				);
-				return false;
+			const operand_err = fail_case.params[0].type;
+			if (mono_type_name(operand_err) !== mono_type_name(declared_err)) {
+				// Composition widening: the operand's error enum must be one
+				// of the enclosing set's members — the fail value wraps
+				// through that member's origin tag (stamped for the
+				// backends). Exact matches above ride the plain move/copy.
+				const members = enclosing.result_error_types ?? [];
+				const member =
+					members.length > 1
+						? members.find((m) => mono_type_name(m) === mono_type_name(operand_err))
+						: undefined;
+				const declared_enum = status.enums.findLast((e) => e.name === declared_err.name);
+				const member_case = member
+					? declared_enum?.cases.find((c) => c.name === member.name)
+					: undefined;
+				if (member && declared_enum && member_case?.params[0]) {
+					op.propagate_into = {
+						mono: declared_enum.name,
+						case: member.name,
+						field: member_case.params[0].name,
+						outer_mono: enclosing_enum.name,
+						outer_field: enclosing_fail.params[0].name,
+					};
+				} else {
+					const expected =
+						members.length > 1
+							? `one of the set's error enums (${members.map((m) => m.name).join(", ")})`
+							: `'${declared_err.name}'`;
+					add_error(
+						status,
+						`'!' propagates '${operand_err.name}' but the enclosing function expects ${expected}`,
+						op.start,
+					);
+					return false;
+				}
 			}
 		}
 		const propagated = new Type(

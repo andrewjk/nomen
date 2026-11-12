@@ -83,8 +83,17 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const is_string = node.type?.name === "string";
 		status.code += `({ struct ${mono} _pb_${id} = `;
 		build_node(node.left_value, status);
-		status.code += `; if (_pb_${id}.tag != ${mono}_ok) { struct ${mono} _rv_${id}; `;
-		if (left_is_producer) {
+		const rv_mono = status.function_return_type?.name ?? mono;
+		status.code += `; if (_pb_${id}.tag != ${mono}_ok) { struct ${rv_mono} _rv_${id}; `;
+		if (node.propagate_into) {
+			// Composed set widening: build the member's origin-tagged value in
+			// a temp, then land it in the RETURN Result's fail slot (the outer
+			// tag is the enclosing enum's `fail`, never the inner anon tag).
+			const pi = node.propagate_into;
+			status.code += `struct ${pi.mono} _av_${id}; `;
+			status.code += `_av_${id}.tag = ${pi.mono}_${pi.case}; _av_${id}._data._${pi.case}.${pi.field} = _pb_${id}._data._fail.${fail_field}; `;
+			status.code += `_rv_${id}.tag = ${pi.outer_mono}_fail; _rv_${id}._data._fail.${pi.outer_field} = _av_${id}; `;
+		} else if (left_is_producer) {
 			// The temp owns the payload — move the bytes (fail_init would
 			// strdup and orphan the temp's copy).
 			status.code += `_rv_${id}.tag = ${mono}_fail; _rv_${id}._data._fail.${fail_field} = _pb_${id}._data._fail.${fail_field}; `;

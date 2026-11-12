@@ -18,6 +18,7 @@ import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { materialize_anon_enum_type } from "./utils/anon_enum.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
@@ -492,6 +493,14 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					// types (`out Result<int, string>`) are instantiated here
 					// for the same reason — the annotation is rewritten to the
 					// mono name, which callers match against.
+					// ERRORS_PLAN composed sets: the `! E1, E2` E slot is an
+					// anonymous enum — materialize it BEFORE the signature so
+					// the Result mono is created over the enum mono rather
+					// than the raw placeholder.
+					const err_slot = func.return_type?.type_args?.[1];
+					if (err_slot?.name === "anon_enum" && err_slot.enum_cases?.length) {
+						func.return_type.type_args![1] = materialize_anon_enum_type(err_slot, status);
+					}
 					func.return_type = materialize_type(func.return_type, status);
 					instantiate_generic_type(func.return_type, status);
 					// Gather-time parallel-length strip (see

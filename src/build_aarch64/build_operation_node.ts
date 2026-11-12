@@ -40,6 +40,7 @@ import { emit_pair_load_x29, emit_pair_store_x29 } from "./utils/string_pair.ts"
 import {
 	get_enum_case_index,
 	get_enum_payload_offset,
+	get_enum_size,
 	get_enum_sret_size,
 	get_field_has_offset,
 	get_struct_size,
@@ -1360,10 +1361,46 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// [x0]` in the inline ctor, and the match's 64-bit `ldr x9, [x0]`
 		// tag reads) keeps the padding half zero; a 32-bit store would let
 		// stack garbage leak into every tag comparison downstream.
+		const pi = node.propagate_into;
+		const payload_name = fail_case?.params[0]?.type.name;
+		// Payload copy width: one word for scalars, the full aggregate size
+		// for struct/enum payloads (an enum payload is at least tag + union —
+		// a single-word copy truncates it). Enum sizes come from the enum
+		// layout (get_struct_size does not know enum monos).
+		const payload_enum = payload_name
+			? status.enums.find((e) => e.name === payload_name)
+			: undefined;
+		const payload_struct =
+			!payload_enum && payload_name
+				? status.structs.find((s) => s.name === payload_name && !s.is_simple_type)
+				: undefined;
+		const payload_size = payload_enum
+			? get_enum_size(payload_enum.name, status)
+			: payload_struct
+				? get_struct_size(payload_struct.name, status)
+				: 8;
+		const payload_words = Math.ceil(payload_size / 8);
+		const outer_tag = pi ? get_enum_case_index(pi.outer_mono, "fail", status) : fail_tag;
+		const outer_off = pi
+			? get_enum_payload_offset(pi.outer_mono, "fail", pi.outer_field, status)
+			: fail_off;
 		emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset ?? 0}]\n`);
-		emit_asm(status, `mov x10, #${fail_tag}\n`);
+		emit_asm(status, `mov x10, #${outer_tag}\n`);
 		emit_asm(status, `str x10, [x8]\n`);
-		if (has_fail_payload) {
+		if (pi) {
+			// Composed set widening: the origin-tagged member value narrates
+			// into the RETURN Result's fail slot — anon tag at +0 of the
+			// payload, member bytes at the anon case's payload offset.
+			const anon_tag = get_enum_case_index(pi.mono, pi.case, status);
+			const anon_off = get_enum_payload_offset(pi.mono, pi.case, pi.field, status);
+			emit_asm(status, `mov x10, #${anon_tag}\n`);
+			emit_asm(status, `str x10, [x8, #${outer_off}]\n`);
+			emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
+			for (let i = 0; i < payload_words; i++) {
+				emit_asm(status, `ldr x2, [x9, #${fail_off + i * 8}]\n`);
+				emit_asm(status, `str x2, [x8, #${outer_off + anon_off + i * 8}]\n`);
+			}
+		} else if (has_fail_payload) {
 			emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
 			if (fail_string_payload) {
 				emit_asm(status, `ldp x0, x1, [x9, #${fail_off}]\n`);
@@ -1374,8 +1411,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				ensure_newline(status);
 				emit_asm(status, `stp x0, x1, [x8, #${fail_off}]\n`);
 			} else {
-				emit_asm(status, `ldr x2, [x9, #${fail_off}]\n`);
-				emit_asm(status, `str x2, [x8, #${fail_off}]\n`);
+				for (let i = 0; i < payload_words; i++) {
+					emit_asm(status, `ldr x2, [x9, #${fail_off + i * 8}]\n`);
+					emit_asm(status, `str x2, [x8, #${fail_off + i * 8}]\n`);
+				}
 			}
 		}
 		// The destroy-walking early return (the generic return epilogue's

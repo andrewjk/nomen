@@ -137,7 +137,8 @@ the payload returns from the enclosing function through its normal
 early-return machinery (the same destroy-walking epilogue a `return` uses);
 on the ok case the value is `T` and flows into the enclosing expression.
 The enclosing function must itself be `!`-declared with the **same** error
-enum in v1 — error-set widening is composition machinery, staged below.
+enum — or, in a composed set, with a set containing the operand's error enum
+(it widens through its origin tag; see Composition below).
 
 ### Matching
 
@@ -158,45 +159,52 @@ match fetch(url) {
 The flat surface — `case .notfound` arms resolving through the `.fail`
 wrapper — is checker sugar, staged below.
 
-## Composition: `T ! E1 ! E2` (designed, staged)
+## Composition: `T ! E1, E2`
 
-Chained error sets compose **by origin, not by case union**. `T ! E1 ! E2`
-desugars to `Result<T, Composed>` where the E slot is an anonymous enum whose
-cases carry the whole named enums — `[.e1(LoadError), .e2(ParseError)]`,
-canonical generic tags never spelled in source, members sorted by name so
-`! LoadError ! ParseError` ≡ `! ParseError ! LoadError` (riding the existing
-order-insensitive anonymous-enum identity rule).
-
-Matching uses qualified arms:
+Error sets spell as a comma-separated list — the trait-list shape, not
+stacked `!`s:
 
 ```
-match load_and_parse(path) {
-    case .ok(obj) { ... }
-    case LoadError.timeout { ... }
-    case ParseError.timeout { ... }      // collisions cannot exist:
-    case ParseError.syntax(msg) { ... }  //   the cases live in different tags
-    case LoadError(err) { ... }          // bind the whole error
+func load_and_parse = (string path, out string ! LoadError, ParseError) {
+    var body = load(path)!
+    return parse(body)!
 }
 ```
 
-- **Collisions stop being a concept.** The entire merge/rename problem is
-  deleted: `.timeout` in both enums coexists because the cases live in
-  different wrapper tags. Provenance is structural, not spelling.
-- **The ambiguity rule** (the flat-surface force-specify): an unqualified
-  `case .timeout` against a composed type is a compile error — "ambiguous
-  between LoadError and ParseError — spell the origin: `case LoadError.
-timeout`". When it resolves uniquely through one tag, plain shorthand
-  works (single `T ! E` keeps today's `case .notfound` shorthand unchanged).
-- **Propagation wraps whole values.** `return load(path)!` inside the
-  composed function re-tags the entire `LoadError` — no per-case rebuild,
-  no named→anonymous conversion machinery.
-- Only `error` enums may join a chain; anonymous error sets
-  (`! [.notfound]`) are a later maybe.
+The set composes **by origin, not by case union**. `T ! E1, E2` desugars to
+`Result<T, Composed>` where the E slot is ONE anonymous enum whose cases
+carry the whole member enums — `[.LoadError(LoadError),
+.ParseError(ParseError)]`, generated tags never spelled in source, cases
+canonically sorted by member name so `! A, B` ≡ `! B, A` (the existing
+anonymous-enum identity rule gives structural equality for free).
 
-This needs: the type-grammar fold (checker-level, both members' case sets are
-statically known), the qualified-arm lowering (the checker synthesizes
-outer-tag + inner-case checks; no nested-patterns feature required), and the
-ambiguity resolver. Deliberately NOT in v1.
+- **Collisions stop being a concept.** `.timeout` in both enums coexists —
+  the cases live in different origin tags. Provenance is structural.
+- **Lifting resolves by origin.** `return <value>` lifts: `T` to `.ok`, a
+  member enum value to that member's tag, an explicit Result through. A
+  shorthand return (`.timeout`) resolves through the members: exactly one
+  declaring it wraps through that origin; several is the force-specify
+  error — qualify the origin (`LoadError.timeout`).
+- **Propagation wraps whole values.** `return load(path)!` inside the
+  composed function re-tags the entire `LoadError` — one origin-tag
+  construction, no per-case rebuild. Error-set widening is scoped to the
+  E slot: a callee's error enum must be one of the enclosing set's members
+  (or the whole set, for pass-through).
+- **Matching is two-level** in v1: `case .LoadError(err)` binds the whole
+  member enum, then an inner `match err` resolves its cases. The flat
+  qualified arms (`case LoadError.timeout`) are checker sugar — stage 5.
+
+Implemented (stage 4 core, 2026-11-12): the comma grammar (greedy member
+list in the `!` clause — inner commas belong to the set), the composed
+anonymous enum (materialized before the signature so the Result mono is
+built over the enum mono, `Result_int__AnonEnum_…`), member-directed
+lifting, the ambiguity rule, and propagation widening on both backends
+(the fail path writes the outer Result tag + the origin-tagged member
+value into the sret buffer; payload copies are aggregate-sized, not
+word-sized). Limits recorded: an enum-typed payload copies bitwise, so a
+VARIABLE donor of an mv member enum aliases (the pre-existing enum-payload
+ownership hole — FOLLOWUP.md); anonymous error sets (`! [.notfound]`) and
+the flat arms remain later work.
 
 ## Staging
 
@@ -208,8 +216,9 @@ ambiguity resolver. Deliberately NOT in v1.
   checker, C scratch lowering, aarch64 lowering).
 - **Stage 3 (v1)** — postfix `!` propagation (return statements and
   declaration initializers/assignments; both backends).
-- **Stage 4** — composition: `T ! E1 ! E2` per the section above, plus
-  error-set widening (subset coercion scoped to the E slot).
+- **Stage 4 (v1, comma syntax)** — composition (`T ! E1, E2` per the
+  section above) with member-directed lifting, the ambiguity rule, and
+  error-set widening — done.
 - **Stage 5** — flat match arms (`case .notfound` through the `.fail`
   wrapper) as checker sugar.
 - **Deferred** — nullable chaining (`?.` does not exist today; prerequisite
@@ -222,9 +231,14 @@ Each is one clear error:
 
 - **E must be an error enum** — `T ! Direction` where `Direction` is a plain
   enum: "declare it `error enum` or spell Result<T, Direction>".
+- **Every set member** — the same gate applies to each name in
+  `T ! E1, E2`; a non-error member names itself.
+- **Ambiguous shorthand** — `.timeout` declared by several set members:
+  qualify the origin (`LoadError.timeout`).
 - **`!!` type shape** — left not a Result, or right not `T`: name both types.
 - **Propagation context** — `expr!` in a function not declared `! E`, or
-  whose error enum differs: name the enclosing signature's expectation.
+  whose error enum is neither the enclosing set nor one of its members:
+  name the enclosing signature's expectation.
 - **Always-checked** — statement-position discard of an error enum or a
   `T ! E` result is the existing checked-enum error; `var _ =` and `!!` are
   the deliberate forms.
