@@ -11,6 +11,56 @@
 
 
 
+
+## 0.12.0
+<sub>2026-11-12</sub>
+
+-  *(minor)* - JavaScript backend
+-  *(minor)* - Enums, match, switch in JS backend
+-  *(minor)* - Generics and closures in JS backend
+-  *(minor)* - Library containers in JS backend
+-  *(minor)* - Option, Result, tuples, string methods in JS
+-  *(minor)* - Format patterns in JS backend
+-  *(minor)* - ref params and for-ref in JS backend
+-  *(minor)* - Bitsets in JS backend
+-  *(minor)* - Traits and dynamic dispatch in JS backend
+-  *(minor)* - Set, Array.with, int lengths in JS backend
+-  *(minor)* - Lower System library code on demand in JS
+-  *(minor)* - int.parse, Random, Time in JS backend
+-  *(minor)* - Casts, destructuring, function shapes in JS
+-  *(minor)* - User and library #init constructors in JS
+-  *(minor)* - Value-struct copy semantics in JS
+-  *(minor)* - Array concat, Utf8 and misc ops in JS
+-  *(minor)* - Views and array slices in JS backend
+-  *(minor)* - nomen --arch js and JS backend docs
+-  *(minor)* - Browser JS target and a Nomen REPL site
+-  *(minor)* - JS backend supports Buffer-backed containers and skips unavailable library features
+-  *(minor)* - JS backend: synchronous concurrency fallback
+-  *(minor)*
+  Warn on redundant type annotations: declarations whose annotation repeats what the initializer infers (constructor calls with fully-written generic args, self-describing literals) now warn under nomen check with a quick fix; nomen format already removes them
+-  *(minor)*
+  GUI lifetime follows the macOS convention: the process stays alive after the last window closes (Window.keep_alive); Window.quit() quits the app, Window.close() closes one window; manual-loop apps call Window.keep_alive
+-  *(minor)*
+  GUI app menu bar with Quit (⌘Q) and Dock-click reopen: the menu bar installs with every app, Quit unwinds main cleanly, and closing the last window then clicking the Dock reopens it
+-  *(minor)*
+  GUI apps default to the Nomen logo as their Dock icon (embedded from core/assets); Window.set_icon(png) replaces it app-wide; embed_file is binary-safe
+-  *(patch)* - Fix enum printing, for-update, char arithmetic in JS
+-  *(patch)* - 64-bit int wrapping in the JS backend
+-  *(patch)* - Hoisted temps in condition-position calls (JS)
+-  *(patch)* - List-of-struct iteration in the JS backend
+-  *(patch)* - Primitive hash() in the JS backend
+-  *(patch)* - Enum payload copy semantics in the JS backend
+-  *(patch)* - Inline hoisted temps in the JS backend
+-  *(patch)*
+  mark_library_nodes walks every node, so declarations inside closures held by expressions (a lambda in a declaration value or a call argument) stamp as library — the GUI lint no longer false-positives on System code
+-  *(patch)*
+  Match and if/else arm clones no longer capture the scrutinee condition's hoisted argument temps, and nested if-expressions in branch values emit valid C
+-  *(patch)* - Remove the orphaned emphasis tokenizer symbols (ziglings-era): nothing emits them
+-  *(patch)*
+  aarch64: stop emitting the tail branch-to-next before each return label — debug output matches release and the release text passes converge
+-  *(patch)*
+  Lay runtime Dock icons out on the macOS app-icon grid (824/1024 squircle) so any set_icon art is sized and shaped like native icons
+
 ## 0.11.0
 <sub>2026-11-11</sub>
 
