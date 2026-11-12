@@ -5,9 +5,11 @@ import { is_scalar_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
@@ -405,6 +407,36 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			status.expected_type = decl.type;
 			const result = check_node(decl.value, status);
 			status.expected_type = old_expected_type;
+
+			// ERRORS_PLAN: a postfix `!` anywhere in the initializer RETURNS
+			// from the enclosing function BEFORE this binding is assigned —
+			// stamp the binding's name on each node so both backends' fail
+			// paths skip the (still empty) slot in their reclaim walks. The
+			// walk stops at nested funcs: a p! inside a lambda returns from
+			// the lambda, not from this declaration's scope.
+			{
+				const stamp_in_flight = (n: BaseNode | undefined): void => {
+					if (!n || typeof n !== "object") return;
+					if (n.node_type === "func") return;
+					if (n.node_type === "op" && (n as unknown as OperationNode).op === "p!") {
+						(n as unknown as OperationNode).in_flight_binding = decl.name;
+					}
+					for (const key of Object.keys(n as unknown as Record<string, unknown>)) {
+						if (key === "parent" || key === "scope") continue;
+						const v = (n as unknown as Record<string, unknown>)[key];
+						if (Array.isArray(v)) {
+							for (const item of v) {
+								if (item && typeof item === "object" && "node_type" in (item as object)) {
+									stamp_in_flight(item as BaseNode);
+								}
+							}
+						} else if (v && typeof v === "object" && "node_type" in (v as object)) {
+							stamp_in_flight(v as BaseNode);
+						}
+					}
+				};
+				stamp_in_flight(decl.value);
+			}
 
 			// A destructuring temp (`_tuple_dst_N = pairs.at(i)`) byte-copies
 			// an ARRAY ELEMENT: its owning fields are still owned by the array

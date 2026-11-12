@@ -11,6 +11,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	const op = node.op;
 	if (op === "u-") return `(-${expr(node.left_value, status)})`;
 	if (op === "!") return `(!${expr(node.left_value, status)})`;
+	// ERRORS_PLAN: postfix `!` propagation needs an early function return
+	// from inside an expression — the JS expression model has no statement
+	// seam for that. Degrade via the documented skip path (the program keeps
+	// running; the expression evaluates to the zero value) until a
+	// function-wrapper/exception mechanism lands.
+	if (op === "p!") return `__skip("postfix ! propagation")`;
 
 	let left = expr(node.left_value, status);
 	let right = expr(node.right_value, status);
@@ -18,6 +24,16 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	const left_kind = kind_of(node.left_value);
 	const right_kind = kind_of(node.right_value);
 	const arithmetic = ["+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^"].includes(op);
+
+	// `result !! fallback` (ERRORS_PLAN): enum values are plain objects
+	// (`{ $tag, <param>: value, … }`), so the coalesce is a tag test. The
+	// left expression is evaluated once via an IIFE-local (JS evaluates
+	// `??` operands lazily; `!!` mirrors the native backends' single
+	// evaluation discipline).
+	if (op === "!!") {
+		const field = node.coalesce_ok_field || "value";
+		return `((__rco => __rco.$tag === 0 ? __rco.${field} : ${right})(${left}))`;
+	}
 
 	// Char operands in an int operation are byte values in Nomen (C promotes
 	// a char to int); JS chars are one-character strings.

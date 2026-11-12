@@ -246,9 +246,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		// materialization — which consumes the parsed type_args — so the E
 		// type is read from the mono's fail-case payload instead.
 		if (func.returns_result && func.return_type.name !== "?") {
-			const result_enum = function_status.enums.findLast(
-				(e) => e.name === func.return_type.name,
-			);
+			const result_enum = function_status.enums.findLast((e) => e.name === func.return_type.name);
 			const fail_case = result_enum?.cases.find((c) => c.name === "fail");
 			const err_name = fail_case?.params[0]?.type.name;
 			if (result_enum?.template_name === "Result" && err_name) {

@@ -1167,6 +1167,107 @@ try_it()  // error: value of checked enum Attempt is discarded
 
 `checked` composes with visibility and generics (`pub checked enum Result<T, E>`), and carries across monomorphized instantiations (`Result<int, string>` stays checked).
 
+## Errors
+
+Fallible functions declare `out T ! E`; callers handle, pass on, or discard at the point of encounter. There is no throwing and no handling "somewhere up the chain" — the semantics are exactly the checked-enum machinery: `T ! E` is the type `Result<T, E>`, and an `error` enum is an always-checked enum.
+
+### Error Enums
+
+The `error` keyword declares an error enum — the third specialized declaration next to `enum` and `bitset`. An error enum IS an enum: cases, payloads, `match`, and `.case` shorthand all work unchanged. The keyword adds two semantics: it is always `checked` (a statement-position discard is a compile error, `var _ =` is the deliberate discard), and it is the only kind of type that may appear after `!`.
+
+```
+error FetchError {
+    case notfound
+}
+
+func fetch = (string url, out Result<int, FetchError>) {
+    return .fail(.notfound)
+}
+
+var _ = fetch("u")   // deliberate discard
+```
+
+A case payload that owns heap memory takes the `mv` spelling, exactly like a plain enum:
+
+```
+mv error ParseError {
+    case syntax(string message)
+}
+```
+
+`error` is a reserved word. A plain enum after `!` is a compile error: declare it `error`, or spell `Result<T, Direction>` explicitly.
+
+### The `T ! E` Result Form
+
+In a function's `out` position, `T ! E` is sugar for `Result<T, E>`:
+
+```
+error FetchError {
+    case notfound
+}
+
+func fetch = (string url, out int ! FetchError) {
+    if url == "" {
+        return .notfound
+    }
+    return 7
+}
+```
+
+A function declared with `!` LIFTS bare returns: a value of `T` becomes `Result.ok(value)`, a value or `.case` shorthand of `E` becomes `Result.fail(value)`, and an explicit `Result` value passes through. Resolution order: as-is, then `T`, then `E`. An explicit `out Result<T, E>` keeps today's explicit behavior — only the `!` spelling lifts.
+
+Callers handle the result with the ordinary enum machinery:
+
+```
+var result = fetch("u")
+match result {
+    case .ok(value) -> Console.write("\{value}")
+    case .fail(err) {
+        match err {
+            case .notfound -> Console.write("missing")
+        }
+    }
+}
+```
+
+### The `!!` Result Coalesce
+
+`a !! b` is the result-flavored sibling of `??`: `a` must be a `Result<T, E>`, `b` must be `T`, and the result is `T`. Consuming the `Result` discharges the checked rule by construction:
+
+```
+var body = fetch("example.com") !! 0
+Console.write("\{body}")
+```
+
+A non-result left operand, or a fallback of the wrong type, is a compile error.
+
+### Postfix `!` — Propagate
+
+`expr!` evaluates `expr` (a `Result<T, E>`); on the fail case the enclosing function returns the error — the same early return a `return` emits — and on the ok case the value is `T`:
+
+```
+func load = (string path, out int ! FetchError) {
+    if path == "" {
+        return .notfound
+    }
+    return 7
+}
+
+func load_and_double = (string path, out int ! FetchError) {
+    var value = load(path)!
+    return value * 2
+}
+
+func outer = (string path, out int ! FetchError) {
+    return load(path)!
+}
+
+var doubled = load_and_double("config.txt") !! 0
+Console.write("\{doubled}")
+```
+
+The enclosing function must itself be `!`-declared with the same error enum — `'!' propagates to the caller` is the error otherwise. Composition of several error sets (`T ! E1 ! E2`) is staged future work (see docs/ERRORS_PLAN.md).
+
 ## Bitsets
 
 Bitsets are used to define a restricted set of options that can be combined using bitwise operators:

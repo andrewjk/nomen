@@ -1432,6 +1432,23 @@ export default function build_declaration_node(
 					if (!status.heap_strings) status.heap_strings = new Set();
 					status.heap_strings.add(safe_name);
 				} else if (
+					node.type.name === "string" &&
+					!node.type.is_view &&
+					!node.type.is_array &&
+					node.value?.node_type === "op" &&
+					(node.value as OperationNode).op === "!!"
+				) {
+					// `var s = r !! "fb"` (ERRORS_PLAN): the coalesce is an
+					// OWNED fresh string by construction — the alias arms
+					// strdup, the producer arms transfer — so emit it as-is
+					// and record the binding as heap-owned (the scope-exit
+					// free fires). No extra strdup: the opaque statement
+					// expression already yields exactly one owner, and the
+					// generic string shapes above cannot classify it.
+					emit_init_value(node.value, nir_init, status);
+					if (!status.heap_strings) status.heap_strings = new Set();
+					status.heap_strings.add(safe_name);
+				} else if (
 					node.declaration === "var" &&
 					node.type.name === "string" &&
 					!node.type.is_view &&

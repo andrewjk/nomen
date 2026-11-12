@@ -50,6 +50,7 @@ const CONTINUES_LINE = new Set([
 	"&&",
 	"||",
 	"??",
+	"!!",
 	"+=",
 	"-=",
 	"*=",

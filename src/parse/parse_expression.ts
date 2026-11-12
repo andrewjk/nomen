@@ -320,6 +320,17 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 				node = new IndexNode(node.start, node, index);
 				break;
 			}
+			case "!": {
+				// ERRORS_PLAN: postfix `!` — propagate. `fetch(u)!` evaluates
+				// the Result once; the fail case RETURNS from the enclosing
+				// function with the error, the ok case yields the success
+				// value into the enclosing expression. (A lone `!` token —
+				// `!=` and `!!` lex as compounds, so this case only fires on
+				// the true postfix form.)
+				accept("!", status);
+				node = new OperationNode(node.start, "p!", node, node);
+				break;
+			}
 			case "(": {
 				accept("(", status);
 				// Convert `Array(...)` calls into ArrayValuesNode (array literal)
@@ -418,7 +429,8 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			case "&":
 			case "|":
 			case "^":
-			case "??": {
+			case "??":
+			case "!!": {
 				consume(status);
 
 				// TODO: Proper order of operations
@@ -516,7 +528,8 @@ function operator_precedence(op: string) {
 		case "||": {
 			return 12;
 		}
-		case "??": {
+		case "??":
+		case "!!": {
 			return 13;
 		}
 		case "=":

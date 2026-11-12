@@ -13,11 +13,25 @@ this file used to hold are folded into the sections below).
 
 **Stages 1–3 implemented (2026-11-12).** Stage 1: the `error` keyword (always
 checked, `!`-gated), the `T ! E` type form desugaring to `Result<T, E>` with
-bare-return lifting, the `Result.error` → `Result.fail` rename, and `error`
-joining the reserved words. Stage 2: the `!!` result-coalesce operator on both
-backends. Stage 3: postfix `!` propagation. Composed chains (`T ! E1 ! E2`,
+bare-return lifting (shorthand cases pre-wrapped into `.fail(...)` so the
+standard per-argument expected-type machinery resolves them against the error
+enum), the `Result.error` → `Result.fail` rename, and `error` joining the
+reserved words. Stage 2: the `!!` result-coalesce operator on both native
+backends plus JS. Stage 3: postfix `!` propagation — return statements and
+declaration initializers, both native backends; the JS backend degrades via
+the documented skip path (its expression model has no statement seam for an
+early return). Both backends stamp the in-flight binding (checker-side
+`in_flight_binding`) so the fail path's destroy walk skips the slot being
+initialized and restores it for the ok path's scope-exit free; aarch64 tag
+stores are 64-bit per the enum convention (a 32-bit store lets stack garbage
+ride the tag word into every downstream comparison). `resolve_linked_types`
+pulls the Result template for a `word ! word` token sandwich — the desugar
+introduces the dependency after the scan. Composition (`T ! E1 ! E2`,
 tag-by-origin), flat match arms, and nullable chaining remain designed but
-staged (below).
+staged (below). One pre-existing aarch64 teardown gap surfaced by the new
+tests — interpolated strings through chained enum-with-data returns — is
+recorded in FOLLOWUP.md; the errors tests keep payload-free chains until it
+lands.
 
 ## The problem
 
@@ -103,7 +117,8 @@ const body = fetch("https://example.com") !! ""
 ```
 
 `a !! b`: `a` must be `Result<T, E>`, `b` must be `T`, the result is `T`.
-Eager, like `??`. Consuming the `Result` discharges the checked rule by
+Lazy on both arms, like `??` (a fallback that allocates pays only when the
+fail case fires). Consuming the `Result` discharges the checked rule by
 construction. `!!` joins `COMPOUND_SYMBOLS`, which retires literal
 double-negation (`!!x` becomes a parse error) — an acceptable, recorded
 trade; `!` remains unary logical-not everywhere else.

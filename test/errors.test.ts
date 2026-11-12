@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vite-plus/test";
 
 import parse from "../src/parse.ts";
-import test_error from "./test_error.ts";
 import build_and_check_output from "./build_and_check_output.ts";
 import { compile_module, core } from "./spec/_helpers.ts";
+import test_error from "./test_error.ts";
 
 describe("errors: the `error` declaration", () => {
 	test("an error enum declares and matches like an enum", async () => {
@@ -278,5 +278,276 @@ func fetch = (out Result<string, FetchError>) {
 `;
 		const parsed = parse(input, core, undefined, { allow_internal: true });
 		expect(parsed.errors.length).toBeGreaterThan(0);
+	});
+});
+
+describe("errors: the `!!` result coalesce", () => {
+	test("the ok path yields the payload, the fail path the fallback", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func fetch = (string url, out string ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return "body of \\{url}"
+}
+
+var ok_body = fetch("example.com") !! "fallback"
+Console.write("\\{ok_body}\\n")
+var failed = fetch("") !! "fallback"
+Console.write("\\{failed}\\n")
+`;
+		await build_and_check_output(input, "errors_coalesce", "body of example.com\nfallback\n");
+	});
+
+	test("the fallback may be any T expression, including a call", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func fetch = (string url, out int ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return 7
+}
+
+func default_size = (out int) {
+	return 42
+}
+
+Console.write("\\{fetch("u") !! 0}\\n")
+Console.write("\\{fetch("") !! default_size()}\\n")
+`;
+		await build_and_check_output(input, "errors_coalesce_call", "7\n42\n");
+	});
+
+	test("every string ownership shape stays balanced under the audit", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func fetch = (string url, out string ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return "body of \\{url}"
+}
+
+func other_string = (out string) {
+	return "from call"
+}
+
+var stored = fetch("u")
+var from_var = stored !! "var fallback"
+Console.write("\\{from_var}\\n")
+Console.write("\\{stored !! other_string()}\\n")
+Console.write("\\{stored !! "lit"}\\n")
+Console.write("\\{fetch("v") !! "lit"}\\n")
+Console.write("\\{fetch("") !! "lit"}\\n")
+`;
+		await build_and_check_output(
+			input,
+			"errors_coalesce_ownership",
+			"body of u\nbody of u\nbody of u\nbody of v\nlit\n",
+		);
+	});
+
+	test("the same coalesce runs on the JS backend", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func fetch = (string url, out string ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return "body"
+}
+
+Console.write("\\{fetch("a") !! "fb"}\\n")
+Console.write("\\{fetch("") !! "fb"}\\n")
+`;
+		await build_and_check_output(input, "errors_coalesce_js", "body\nfb\n", false, {
+			js: true,
+		});
+	});
+
+	test("`!!` rejects a non-result left operand", () => {
+		const input = `import System
+
+pub func main = () {
+	var x = 5 !! 0
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'!!' needs a 'T ! E' result on the left — 'int' is not a result type",
+				4,
+				10,
+			),
+		]);
+	});
+
+	test("`!!` rejects a fallback of the wrong type", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (string u, out string ! FetchError) {
+	return u
+}
+
+pub func main = () {
+	var s = fetch("u") !! 0
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"the '!!' fallback must be the result's success type ('string') — got 'int'",
+				12,
+				24,
+			),
+		]);
+	});
+});
+
+describe("errors: postfix `!` propagation", () => {
+	test("the fail case returns from the enclosing function, the ok case yields", async () => {
+		const input = `
+error FetchError {
+	case notfound
+	case denied
+}
+
+func load = (string path, out int ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+	if path == "/private" {
+		return .denied
+	}
+	return 7
+}
+
+func load_and_double = (string path, out int ! FetchError) {
+	var value = load(path)!
+	return value * 2
+}
+
+var ok = load_and_double("config.txt")
+match ok {
+	case .ok(value) -> Console.write("\\{value}\\n")
+	case .fail(_) -> Console.write("unexpected\\n")
+}
+var failed = load_and_double("")
+match failed {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("propagated: notfound\\n")
+			case .denied -> Console.write("propagated: denied\\n")
+		}
+	}
+}
+var denied = load_and_double("/private")
+match denied {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("wrong arm\\n")
+			case .denied -> Console.write("propagated: denied\\n")
+		}
+	}
+}
+`;
+		await build_and_check_output(
+			input,
+			"errors_propagate",
+			"14\npropagated: notfound\npropagated: denied\n",
+		);
+	});
+
+	test("a return-position propagation composes call chains", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func load = (string path, out int ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+	return 5
+}
+
+func outer = (string path, out int ! FetchError) {
+	return load(path)!
+}
+
+var result = outer("")
+match result {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("chain propagated\\n")
+		}
+	}
+}
+`;
+		await build_and_check_output(input, "errors_propagate_return", "chain propagated\n");
+	});
+
+	test("`!` outside a fallible function is an error", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func load = (out Result<int, FetchError>) {
+	return .ok(1)
+}
+
+pub func main = () {
+	var x = load()!
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'!' propagates to the caller — the enclosing function must declare a '!' result type",
+				12,
+				10,
+			),
+		]);
+	});
+
+	test("`!` on a non-result value is an error", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+pub func main = () {
+	var x = 5
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([]);
 	});
 });

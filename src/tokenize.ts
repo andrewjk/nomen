@@ -14,6 +14,10 @@ export const COMPOUND_SYMBOLS = [
 	"||",
 	// Null coalescing
 	"??",
+	// Result coalescing (ERRORS_PLAN): `result !! fallback` — the `T ! E`
+	// sibling of `??`. Retires literal double-negation (`!!x` no longer
+	// lexes as two `!` tokens); `!` stays unary logical-not everywhere else.
+	"!!",
 	// Assignment
 	"+=",
 	"-=",

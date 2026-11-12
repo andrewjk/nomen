@@ -87,9 +87,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 					? status.enums.find((e) => e.name === fail_case.params[0]?.type.name)
 					: undefined;
 				if (err_enum?.cases.some((c) => c.name === case_name)) {
-					ret.value = new FunctionCallNode(ret.value.start, ".fail", undefined, [
-						ret.value,
-					]);
+					ret.value = new FunctionCallNode(ret.value.start, ".fail", undefined, [ret.value]);
 				}
 			}
 		}

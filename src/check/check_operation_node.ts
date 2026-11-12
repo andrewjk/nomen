@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import { mono_type_name } from "../build_common/mono_name.ts";
 import { get_built_in_type, is_negatable_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
@@ -42,6 +43,70 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			return false;
 		}
 		op.type = new Type("bool");
+		return true;
+	}
+
+	// ERRORS_PLAN: postfix `!` — propagate. `expr!` must be a `Result<T, E>`
+	// value; on the fail case the ENCLOSING function returns the error, so
+	// that function must itself be `!`-declared with the same error enum
+	// (error-set widening is composition machinery, staged). The ok case
+	// yields T into the enclosing expression.
+	if (op.op === "p!") {
+		if (!check_node(op.left_value, status)) {
+			return false;
+		}
+		const left_type = type_from_value_node(op.left_value, status);
+		const result_enum = status.enums.findLast((e) => e.name === left_type.name);
+		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
+		const fail_case = result_enum?.cases.find((c) => c.name === "fail");
+		if (result_enum?.template_name !== "Result" || !ok_case?.params[0] || !fail_case?.params[0]) {
+			add_error(
+				status,
+				`'!' propagates a 'T ! E' result — '${left_type.name || "value"}' is not a result type`,
+				op.start,
+			);
+			return false;
+		}
+		let enclosing: FunctionNode | null = null;
+		for (let i = status.stack.length - 1; i >= 0; i--) {
+			if (status.stack[i].node_type === "func") {
+				enclosing = status.stack[i] as FunctionNode;
+				break;
+			}
+		}
+		if (!enclosing?.returns_result) {
+			add_error(
+				status,
+				`'!' propagates to the caller — the enclosing function must declare a '!' result type`,
+				op.start,
+			);
+			return false;
+		}
+		const enclosing_enum = status.enums.findLast((e) => e.name === enclosing.return_type.name);
+		const enclosing_fail = enclosing_enum?.cases.find((c) => c.name === "fail");
+		if (enclosing_fail && enclosing_enum?.template_name === "Result") {
+			const declared_err = enclosing_fail.params[0].type;
+			if (mono_type_name(fail_case.params[0].type) !== mono_type_name(declared_err)) {
+				add_error(
+					status,
+					`'!' propagates '${fail_case.params[0].type.name}' but the enclosing function declares '${declared_err.name}' — the error enums must match`,
+					op.start,
+				);
+				return false;
+			}
+		}
+		const propagated = new Type(
+			ok_case.params[0].type.name,
+			ok_case.params[0].type.is_static,
+			ok_case.params[0].type.is_array,
+			ok_case.params[0].type.length,
+		);
+		propagated.type_args = ok_case.params[0].type.type_args;
+		propagated.is_ref = ok_case.params[0].type.is_ref;
+		propagated.is_nullable = ok_case.params[0].type.is_nullable;
+		op.type = propagated;
+		op.coalesce_ok_field = ok_case.params[0].name;
+		op.propagate_fail_field = fail_case.params[0].name;
 		return true;
 	}
 
@@ -154,6 +219,57 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	}
 
 	const left_type = type_from_value_node(op.left_value, status);
+
+	// ERRORS_PLAN: `result !! fallback` — the result coalesce. The left must
+	// be a `Result<T, E>` value (the `T ! E` mono or an explicit Result);
+	// the right must be T (and becomes its expected type), and the result
+	// is T. Consuming the Result discharges the checked rule by
+	// construction.
+	if (op.op === "!!") {
+		const result_enum = status.enums.findLast((e) => e.name === left_type.name);
+		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
+		if (result_enum?.template_name !== "Result" || !ok_case?.params[0]) {
+			add_error(
+				status,
+				`'!!' needs a 'T ! E' result on the left — '${left_type.name || "value"}' is not a result type`,
+				op.start,
+			);
+			status.allow_null_value = old_allow_null;
+			return false;
+		}
+		const success_type = ok_case.params[0].type;
+		const saved_expected = status.expected_type;
+		status.expected_type = success_type;
+		const right_ok = check_node(op.right_value, status);
+		status.expected_type = saved_expected;
+		if (!right_ok) {
+			status.allow_null_value = old_allow_null;
+			return false;
+		}
+		const fallback_type = type_from_value_node(op.right_value, status);
+		if (mono_type_name(fallback_type) !== mono_type_name(success_type)) {
+			add_error(
+				status,
+				`the '!!' fallback must be the result's success type ('${success_type.name}') — got '${fallback_type.name || "value"}'`,
+				op.right_value.start,
+			);
+			status.allow_null_value = old_allow_null;
+			return false;
+		}
+		const coalesced = new Type(
+			success_type.name,
+			success_type.is_static,
+			success_type.is_array,
+			success_type.length,
+		);
+		coalesced.type_args = success_type.type_args;
+		coalesced.is_ref = success_type.is_ref;
+		coalesced.is_nullable = success_type.is_nullable;
+		op.type = coalesced;
+		op.coalesce_ok_field = ok_case.params[0].name;
+		status.allow_null_value = old_allow_null;
+		return true;
+	}
 
 	const old_expected_type = status.expected_type;
 	// Tuple concatenation: the right operand keeps its own shape — a tuple

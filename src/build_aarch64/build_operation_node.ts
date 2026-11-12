@@ -21,14 +21,25 @@ import ValueNode from "../nodes/ValueNode.ts";
 import { parse_raw_directives } from "../raw_directives.ts";
 import { emit_address_of, emit_direct_field_load } from "./build_access_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
+import { emit_nursery_joins_on_return_a64 } from "./build_async_block_node.ts";
 import build_node from "./build_node.ts";
 import { slp_pair_enabled } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free } from "./utils/audit.ts";
+import { emit_free, emit_strdup } from "./utils/audit.ts";
+import {
+	all_scope_frames,
+	emit_destroy_for_decl,
+	emit_heap_slots_cleanup_for_return,
+	emit_moved_local_cleanup,
+	is_field_struct_borrow,
+} from "./utils/auto_destroy.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
+import { find_enum_for_case } from "./utils/enum_case.ts";
 import { allocate_stack_space, emit_var_address, emit_var_load } from "./utils/stack_var.ts";
 import { emit_pair_load_x29, emit_pair_store_x29 } from "./utils/string_pair.ts";
 import {
+	get_enum_case_index,
+	get_enum_payload_offset,
 	get_enum_sret_size,
 	get_field_has_offset,
 	get_struct_size,
@@ -1230,6 +1241,179 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		} else {
 			emit_asm(status, `neg x0, x0\n`);
 		}
+		return;
+	}
+
+	// `!!` (result coalescing, ERRORS_PLAN): evaluate the Result once, pick
+	// the ok payload or the fallback. The Result value builds as an ADDRESS
+	// in x0 (call temps and struct locals alike); the tag word sits at +0
+	// and the payload at its layout offset. The spilled base pointer is
+	// RELOADED after the right operand's build (a call in the fallback
+	// clobbers every caller-saved register). A string payload loads as the
+	// (ptr, len) pair; a struct payload yields its address; anything else
+	// loads the slot.
+	if (node.op === "!!") {
+		const left_type = type_from_value_node(node.left_value);
+		const mono = left_type?.name ?? "";
+		const found = find_enum_for_case(`${mono}_ok`, status);
+		const ok_case = found?.enum_node.cases.find((c) => c.name === "ok");
+		const field = node.coalesce_ok_field || ok_case?.params[0]?.name || "value";
+		const tag_index = found ? get_enum_case_index(mono, "ok", status) : 0;
+		const payload_off = get_enum_payload_offset(mono, "ok", field, status);
+		// String ownership mirrors the C backend (audit-verified shapes in
+		// test/errors.test.ts): a PRODUCER arm (a call) transfers its fresh
+		// buffer; a variable read or a literal aliases its owner or rodata,
+		// so the pair is strdup'd into an independently owned copy.
+		const left_is_producer =
+			node.left_value.node_type === "func_call" ||
+			(node.left_value.node_type === "access" &&
+				(node as { access?: { node_type: string } }).access?.node_type === "access_func");
+		const right_is_producer =
+			node.right_value.node_type === "func_call" ||
+			(node.right_value.node_type === "access" &&
+				(node as { access?: { node_type: string } }).access?.node_type === "access_func");
+		const is_string = node.type?.name === "string";
+		build_operand(node.left_value, "x0", status);
+		ensure_newline(status);
+		const spill = allocate_stack_space(status, 8);
+		emit_asm(status, `str x0, [x29, #${spill}]\n`);
+		emit_asm(status, `ldr w9, [x0]\n`);
+		emit_asm(status, `cmp w9, #${tag_index}\n`);
+		const have_label = `.Lrcoalesce_have_${coalesce_counter++}`;
+		const done_label = `.Lrcoalesce_done_${coalesce_counter++}`;
+		emit_asm(status, `b.eq ${have_label}\n`);
+		build_operand(node.right_value, "x0", status);
+		ensure_newline(status);
+		if (is_string && !right_is_producer) {
+			emit_strdup(status);
+			ensure_newline(status);
+		}
+		emit_asm(status, `b ${done_label}\n`);
+		emit_asm(status, `${have_label}:\n`);
+		emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
+		if (is_string) {
+			emit_asm(status, `ldp x0, x1, [x9, #${payload_off}]\n`);
+			if (!left_is_producer) {
+				// ptr in x0, len rides x1 across the strdup (emit_strdup's ABI)
+				emit_strdup(status);
+			}
+		} else if (node.type?.is_array || (node.type && !is_scalar_type(node.type.name))) {
+			emit_asm(status, `add x0, x9, #${payload_off}\n`);
+		} else {
+			emit_asm(status, `ldr x0, [x9, #${payload_off}]\n`);
+		}
+		emit_asm(status, `${done_label}:\n`);
+		// The coalesce yields an OWNED string on every arm (the alias arms
+		// strdup, the producer arms transfer) — report it so a declaration
+		// initializer marks the binding heap-owned and the scope-exit free
+		// fires (check_heap).
+		if (is_string) {
+			status.last_result_is_heap = true;
+		}
+		return;
+	}
+
+	// `!` postfix (ERRORS_PLAN): evaluate the Result once, then either
+	// RETURN the error from the enclosing function or yield the ok payload.
+	// Enum-with-data returns ride sret (the caller's x8 buffer, saved at
+	// [x29, return_buffer_stack_offset]) — the fail path writes the fail
+	// Result straight into that buffer (producer arms move the payload
+	// bytes; alias arms strdup strings), runs the destroy-walking early
+	// return (skipping the binding being initialized — its slot is empty),
+	// and branches to the return label. The ok path yields the payload with
+	// the `!!` ownership rules.
+	if (node.op === "p!") {
+		const left_type = type_from_value_node(node.left_value);
+		const mono = left_type?.name ?? "";
+		const found = find_enum_for_case(`${mono}_ok`, status);
+		const enum_node = found?.enum_node;
+		const ok_case = enum_node?.cases.find((c) => c.name === "ok");
+		const fail_case = enum_node?.cases.find((c) => c.name === "fail");
+		const ok_field = node.coalesce_ok_field || ok_case?.params[0]?.name || "value";
+		const fail_field = node.propagate_fail_field || fail_case?.params[0]?.name || "err";
+		const ok_tag = found ? get_enum_case_index(mono, "ok", status) : 0;
+		const fail_tag = found ? get_enum_case_index(mono, "fail", status) : 1;
+		const ok_off = get_enum_payload_offset(mono, "ok", ok_field, status);
+		const has_fail_payload = !!fail_case?.params.length;
+		const fail_off = has_fail_payload
+			? get_enum_payload_offset(mono, "fail", fail_field, status)
+			: 0;
+		const left_is_producer =
+			node.left_value.node_type === "func_call" ||
+			(node.left_value.node_type === "access" &&
+				(node as unknown as { access?: { node_type: string } }).access?.node_type ===
+					"access_func");
+		const is_string = node.type?.name === "string";
+		const fail_string_payload = fail_case?.params[0]?.type.name === "string";
+
+		build_operand(node.left_value, "x0", status);
+		ensure_newline(status);
+		const spill = allocate_stack_space(status, 8);
+		emit_asm(status, `str x0, [x29, #${spill}]\n`);
+		emit_asm(status, `ldr w9, [x0]\n`);
+		emit_asm(status, `cmp w9, #${ok_tag}\n`);
+		const have_label = `.Lrprop_have_${coalesce_counter++}`;
+		const done_label = `.Lrprop_done_${coalesce_counter++}`;
+		emit_asm(status, `b.eq ${have_label}\n`);
+		// FAIL: write the fail Result into the caller's sret buffer. The tag
+		// store is 64-bit — the enum convention (`mov x1, #idx; str x1,
+		// [x0]` in the inline ctor, and the match's 64-bit `ldr x9, [x0]`
+		// tag reads) keeps the padding half zero; a 32-bit store would let
+		// stack garbage leak into every tag comparison downstream.
+		emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset ?? 0}]\n`);
+		emit_asm(status, `mov x10, #${fail_tag}\n`);
+		emit_asm(status, `str x10, [x8]\n`);
+		if (has_fail_payload) {
+			emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
+			if (fail_string_payload) {
+				emit_asm(status, `ldp x0, x1, [x9, #${fail_off}]\n`);
+				if (!left_is_producer) {
+					// The alias arm strdups (ptr in x0, len rides x1).
+					emit_strdup(status);
+				}
+				ensure_newline(status);
+				emit_asm(status, `stp x0, x1, [x8, #${fail_off}]\n`);
+			} else {
+				emit_asm(status, `ldr x2, [x9, #${fail_off}]\n`);
+				emit_asm(status, `str x2, [x8, #${fail_off}]\n`);
+			}
+		}
+		// The destroy-walking early return (the generic return epilogue's
+		// walk), skipping the binding being initialized.
+		emit_nursery_joins_on_return_a64(status);
+		const finalized = status.moved ?? new Set<string>();
+		for (const decl of all_scope_frames(status).flat()) {
+			if (node.in_flight_binding && decl.name === node.in_flight_binding) continue;
+			if (finalized.has(decl.name)) {
+				emit_moved_local_cleanup(status, decl);
+				continue;
+			}
+			if (is_field_struct_borrow(decl)) continue;
+			emit_destroy_for_decl(
+				status,
+				decl.name,
+				decl.type.name,
+				undefined,
+				decl.type.type_args,
+				decl.type.is_nullable,
+			);
+		}
+		emit_heap_slots_cleanup_for_return(status);
+		emit_asm(status, `b ${status.function_return_label}\n`);
+		// OK: yield the payload.
+		emit_asm(status, `${have_label}:\n`);
+		emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
+		if (is_string) {
+			emit_asm(status, `ldp x0, x1, [x9, #${ok_off}]\n`);
+			if (!left_is_producer) {
+				emit_strdup(status);
+			}
+		} else if (node.type?.is_array || (node.type && !is_scalar_type(node.type.name))) {
+			emit_asm(status, `add x0, x9, #${ok_off}\n`);
+		} else {
+			emit_asm(status, `ldr x0, [x9, #${ok_off}]\n`);
+		}
+		emit_asm(status, `${done_label}:\n`);
 		return;
 	}
 

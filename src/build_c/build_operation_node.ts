@@ -5,8 +5,10 @@ import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
+import { emit_nursery_joins_on_return_c } from "./build_async_block_node.ts";
 import build_node from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
+import { reclaim_all_c_scopes } from "./utils/c_scope.ts";
 import c_type from "./utils/c_type.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
 import { enum_with_data_side, static_enum_case } from "./utils/enum_eq.ts";
@@ -57,6 +59,99 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// are needed.
 		status.code += `-`;
 		build_node(node.right_value, status);
+	} else if (node.op === "p!") {
+		// Postfix `!` (ERRORS_PLAN): evaluate the Result once into a
+		// statement-expression temp; the FAIL case returns from the
+		// enclosing function with the error payload — the same
+		// destroy-walking early return a `return` emits (the binding being
+		// initialized holds nothing yet, so its slot is spliced out of the
+		// reclaim and restored for the ok path's scope-exit free); the OK
+		// case yields the payload. Ownership per arm mirrors `!!`:
+		// producer arms transfer their fresh buffers, alias arms (a
+		// variable read) strdup strings.
+		const left_type = type_from_value_node(node.left_value);
+		const mono = left_type?.name ?? "";
+		const id = ns_tmp_counter;
+		ns_tmp_counter += 1;
+		const ok_field = node.coalesce_ok_field || "value";
+		const fail_field = node.propagate_fail_field || "err";
+		const left_is_producer =
+			node.left_value.node_type === "func_call" ||
+			(node.left_value.node_type === "access" &&
+				(node as unknown as { access?: { node_type: string } }).access?.node_type ===
+					"access_func");
+		const is_string = node.type?.name === "string";
+		status.code += `({ struct ${mono} _pb_${id} = `;
+		build_node(node.left_value, status);
+		status.code += `; if (_pb_${id}.tag != ${mono}_ok) { struct ${mono} _rv_${id}; `;
+		if (left_is_producer) {
+			// The temp owns the payload — move the bytes (fail_init would
+			// strdup and orphan the temp's copy).
+			status.code += `_rv_${id}.tag = ${mono}_fail; _rv_${id}._data._fail.${fail_field} = _pb_${id}._data._fail.${fail_field}; `;
+		} else {
+			status.code += `_rv_${id} = ${mono}_fail_init(_pb_${id}._data._fail.${fail_field}); `;
+		}
+		if (node.in_flight_binding) {
+			const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
+			for (const frame of frames) {
+				const di = frame.findIndex((d) => d.name === node.in_flight_binding);
+				if (di !== -1) {
+					const [decl] = frame.splice(di, 1);
+					emit_nursery_joins_on_return_c(status);
+					reclaim_all_c_scopes(status);
+					frame.splice(di, 0, decl);
+					break;
+				}
+			}
+		} else {
+			emit_nursery_joins_on_return_c(status);
+			reclaim_all_c_scopes(status);
+		}
+		status.code += `return _rv_${id}; } `;
+		if (is_string && !left_is_producer) {
+			status.code += `nomen_str_dup(_pb_${id}._data._ok.${ok_field}); })`;
+		} else {
+			status.code += `_pb_${id}._data._ok.${ok_field}; })`;
+		}
+	} else if (node.op === "!!") {
+		// `result !! fallback` (ERRORS_PLAN): evaluate the Result once into
+		// a statement-expression temp, then pick the ok payload or the
+		// fallback. Ownership per string arm (the audit runtime verifies
+		// every shape in test/errors.test.ts): a PRODUCER arm (a call — the
+		// call temp's fresh buffer transfers to the consumer) yields
+		// directly; a variable read or a literal aliases its owner or
+		// rodata, so it is dup'd into an independently owned copy
+		// (nomen_str_dup, the `??` convention). Non-string payloads ride
+		// ordinary value semantics (scalars copy; struct payloads alias
+		// exactly like assignment).
+		const left_type = type_from_value_node(node.left_value);
+		const mono = left_type?.name ?? "";
+		const id = ns_tmp_counter;
+		ns_tmp_counter += 1;
+		const field = node.coalesce_ok_field || "value";
+		const tag_const = `${mono}_ok`;
+		const left_is_producer =
+			node.left_value.node_type === "func_call" ||
+			(node.left_value.node_type === "access" &&
+				(node as { access?: { node_type: string } }).access?.node_type === "access_func");
+		const right_is_producer =
+			node.right_value.node_type === "func_call" ||
+			(node.right_value.node_type === "access" &&
+				(node as { access?: { node_type: string } }).access?.node_type === "access_func");
+		if (node.type?.name === "string") {
+			status.code += `({ struct ${mono} _rco_${id} = `;
+			build_node(node.left_value, status);
+			status.code += `; _rco_${id}.tag == ${tag_const} ? ${left_is_producer ? "" : "nomen_str_dup("}_rco_${id}._data._ok.${field}${left_is_producer ? "" : ")"}`;
+			status.code += ` : ${right_is_producer ? "" : "nomen_str_dup("}(`;
+			build_node(node.right_value, status);
+			status.code += `)${right_is_producer ? "" : ")"}; })`;
+		} else {
+			status.code += `({ struct ${mono} _rco_${id} = `;
+			build_node(node.left_value, status);
+			status.code += `; _rco_${id}.tag == ${tag_const} ? _rco_${id}._data._ok.${field} : (`;
+			build_node(node.right_value, status);
+			status.code += `); })`;
+		}
 	} else if (node.op === "??") {
 		// `nullable ?? fallback`. For a nullable struct, the flag is `<expr>_has`.
 		const left_type = type_from_value_node(node.left_value);

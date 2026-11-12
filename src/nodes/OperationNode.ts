@@ -29,7 +29,9 @@ export type Operator =
 	| "&&"
 	| "||"
 	| "??"
+	| "!!"
 	| "!"
+	| "p!"
 	| "u-";
 
 export default class OperationNode extends BaseNode {
@@ -37,6 +39,25 @@ export default class OperationNode extends BaseNode {
 	left_value: BaseNode;
 	right_value: BaseNode;
 	type: Type;
+	/**
+	 * ERRORS_PLAN (`!!`): the ok-case payload's field name (`value` — the
+	 * core Result template's spelling), stamped by the checker so the
+	 * backends lower `_data._ok.<field>` without re-resolving the mono.
+	 */
+	coalesce_ok_field?: string;
+	/**
+	 * ERRORS_PLAN (postfix `!`): the fail-case payload's field name (`err`),
+	 * stamped by the checker for the early-return lowering.
+	 */
+	propagate_fail_field?: string;
+	/**
+	 * ERRORS_PLAN (postfix `!`): the declaration being initialized when this
+	 * node is evaluated (`var body = load(p)!` → `"body"`), stamped by the
+	 * checker. The fail path returns before the binding is assigned, so the
+	 * backends skip its (still empty) slot in the fail-path reclaim — and
+	 * restore it for the ok path's scope-exit free.
+	 */
+	in_flight_binding?: string;
 	operator_func?: {
 		struct_name: string;
 		func_name: string;
