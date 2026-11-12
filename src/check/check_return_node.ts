@@ -16,6 +16,11 @@ import check_func_argument_signature from "./utils/check_func_argument_signature
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
 import {
+	enforce_case_payload_ownership,
+	hoist_case_string_arg_temp,
+	stamp_in_place_enum_payloads,
+} from "./utils/enum_mono.ts";
+import {
 	borrowed_param_transfer_error,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
@@ -54,6 +59,40 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 		}
 		ret.type = new Type("void");
 		return;
+	}
+
+	// ERRORS_PLAN: bare-return lifting for the `T ! E` result form. The
+	// function's return type is the `Result<T, E>` mono; shorthand cases
+	// resolve against the ERROR ENUM first when they name no Result case
+	// (`return .notfound` is `Result.fail(.notfound)`). The pre-wrap
+	// exploits the shorthand-call branch's per-argument expected type:
+	// checking `.fail(<shorthand>)` resolves the inner case against the
+	// fail payload (E) with zero new resolution machinery. Non-shorthand
+	// values lift by their checked type — the post-check wrap below.
+	const fn = func as FunctionNode | null;
+	if (fn?.returns_result && fn.return_type.name && fn.return_type.name !== "?") {
+		const shorthand = ret.value.node_type === "value" ? (ret.value as ValueNode) : undefined;
+		if (
+			shorthand &&
+			shorthand.value.startsWith(".") &&
+			shorthand.value.length > 1 &&
+			!shorthand.value.startsWith("..")
+		) {
+			const case_name = shorthand.value.substring(1);
+			const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
+			const on_result = !!result_enum?.cases.some((c) => c.name === case_name);
+			if (result_enum?.template_name === "Result" && !on_result) {
+				const fail_case = result_enum.cases.find((c) => c.name === "fail");
+				const err_enum = fail_case
+					? status.enums.find((e) => e.name === fail_case.params[0]?.type.name)
+					: undefined;
+				if (err_enum?.cases.some((c) => c.name === case_name)) {
+					ret.value = new FunctionCallNode(ret.value.start, ".fail", undefined, [
+						ret.value,
+					]);
+				}
+			}
+		}
 	}
 
 	// Views are second-class across calls (SPEC Slicing): a struct with
@@ -275,6 +314,53 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 				`cannot return '${ret.type.name}' — its 'view' field(s) borrow from this scope`,
 				ret.value.start,
 			);
+		}
+	}
+
+	// ERRORS_PLAN post-check wrap: a bare, non-shorthand value lifts by its
+	// checked type — T into the ok case, E into the fail case, an explicit
+	// Result passes through. The synthesized ctor call carries the same
+	// checked state the shorthand-call branch stamps (mangled name, mono
+	// type, is_static, is_enum_shorthand) plus the payload-contract
+	// helpers, so both backends build it exactly like a user-written
+	// `.ok(...)` / `.fail(...)`.
+	if (fn?.returns_result && ret.value && fn.return_type.name && fn.return_type.name !== "?") {
+		const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
+		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
+		const fail_case = result_enum?.cases.find((c) => c.name === "fail");
+		if (result_enum?.template_name === "Result" && ok_case?.params[0] && fail_case?.params[0]) {
+			const value_name = mono_type_name(ret.type);
+			const ok_name = mono_type_name(ok_case.params[0].type);
+			const fail_name = mono_type_name(fail_case.params[0].type);
+			let wrap_case: "ok" | "fail" | undefined;
+			if (ret.type.name === fn.return_type.name) {
+				wrap_case = undefined; // already a Result — explicit pass-through
+			} else if (value_name === ok_name) {
+				wrap_case = "ok";
+			} else if (value_name === fail_name) {
+				wrap_case = "fail";
+			}
+			if (wrap_case) {
+				const enum_case = wrap_case === "ok" ? ok_case : fail_case;
+				const wrap = new FunctionCallNode(
+					ret.value.start,
+					`${result_enum.name}_${wrap_case}`,
+					new Type(result_enum.name),
+					[ret.value],
+					true,
+				);
+				wrap.is_enum_shorthand = true;
+				enforce_case_payload_ownership(wrap_case, enum_case.params, wrap.params, wrap, status);
+				stamp_in_place_enum_payloads(enum_case, wrap.params, wrap, status);
+				hoist_case_string_arg_temp(
+					enum_case.params,
+					wrap.params,
+					status,
+					wrap.in_place_payload_indices,
+				);
+				ret.value = wrap;
+				ret.type = wrap.type;
+			}
 		}
 	}
 

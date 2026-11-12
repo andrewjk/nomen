@@ -119,6 +119,17 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * bounds to the caller's LHS variable.
 	 */
 	return_constraint?: BaseNode;
+	/**
+	 * ERRORS_PLAN: the return type was written with the `!` form
+	 * (`out string ! FetchError`). Set by parse_function; gates (a) the
+	 * bare-return LIFT in check_return_node (`return expr` becomes
+	 * `Result.ok(expr)` / `Result.fail(expr)` by the value's type, with
+	 * shorthand cases resolving against the error enum first) and (b) the
+	 * checker gate that only `error` enums may appear after `!`. An
+	 * explicit `out Result<T, E>` does NOT set this — the `!` spelling
+	 * means "this function deals in results".
+	 */
+	returns_result?: boolean;
 
 	constructor(
 		start: number,

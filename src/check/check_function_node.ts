@@ -242,6 +242,26 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		// never be monomorphized, leaving the signature referencing a bare
 		// incomplete struct. Materialize it here.
 		instantiate_generic_type(func.return_type, function_status);
+		// ERRORS_PLAN gate: only `error` enums may follow `!`. Runs after
+		// materialization — which consumes the parsed type_args — so the E
+		// type is read from the mono's fail-case payload instead.
+		if (func.returns_result && func.return_type.name !== "?") {
+			const result_enum = function_status.enums.findLast(
+				(e) => e.name === func.return_type.name,
+			);
+			const fail_case = result_enum?.cases.find((c) => c.name === "fail");
+			const err_name = fail_case?.params[0]?.type.name;
+			if (result_enum?.template_name === "Result" && err_name) {
+				const err_enum = function_status.enums.findLast((e) => e.name === err_name);
+				if (!err_enum?.is_error) {
+					add_error(
+						function_status,
+						`'!' requires an error enum — '${err_name}' is not declared with 'error'; declare it \`error ${err_name}\` or spell Result<T, ${err_name}> explicitly`,
+						func.return_type_start ?? func.start,
+					);
+				}
+			}
+		}
 		// Views are second-class across calls (SPEC Slicing): no function or
 		// method may DECLARE a return type that carries `view` fields. The
 		// caller's binding cannot be pinned to the bundle's sources across

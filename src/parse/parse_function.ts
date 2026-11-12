@@ -243,6 +243,13 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 			func.return_type = parse_func_type(status);
 		} else {
 			func.return_type = parse_type(status);
+			// ERRORS_PLAN: the `!` form (`out string ! FetchError`) — strip
+			// the parse marker and record it on the function: bare returns
+			// lift into the Result cases, and the E gate runs at check time.
+			if (func.return_type.is_result_form) {
+				func.returns_result = true;
+				func.return_type.is_result_form = undefined;
+			}
 			reject_void_type(func.return_type, status, func.return_type_start);
 		}
 		func.returns_move = returns_move;

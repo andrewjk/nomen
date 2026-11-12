@@ -112,6 +112,7 @@ export function monomorphize_enum(
 	// kept so diagnostics can render `Result<int, string>` instead of the
 	// monomorphized spelling.
 	mono.checked = generic_enum.checked;
+	mono.is_error = generic_enum.is_error;
 	mono.template_name = generic_enum.name;
 	mono.template_args = flat_args.map(clone_type);
 	// NOTE: deliberately NOT inheriting is_library. A mono enum is

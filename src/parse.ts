@@ -288,6 +288,22 @@ export function resolve_linked_types(source: string, library: Library, file_path
 		} else if (library.functions.has(token.value) && !user_declared_funcs.has(token.value)) {
 			needed.add(token.value);
 		} else if (
+			token.value === "!" &&
+			i > 0 &&
+			i < tokens.length - 1 &&
+			/^\w+$/.test(tokens[i - 1].value) &&
+			/^\w+$/.test(tokens[i + 1].value)
+		) {
+			// ERRORS_PLAN: the `T ! E` result form (and the postfix `!`
+			// propagation) desugars to the core `Result` generic at PARSE
+			// time — after this scan — so the source never names `Result`
+			// as a token. A `!` sandwiched between two words is that form
+			// (prefix `!x` sits behind an operator or `(`; `!=` lexes as
+			// one compound), and pulling the Result template for a stray
+			// lookalike is harmless: the generic registers, its monos only
+			// materialize on use.
+			needed.add("Result");
+		} else if (
 			token.value.length > 1 &&
 			token.value.startsWith(":") &&
 			!token.value.startsWith("::")

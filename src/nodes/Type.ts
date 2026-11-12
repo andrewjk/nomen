@@ -66,6 +66,16 @@ export default class Type {
 	 */
 	is_const_ref?: boolean;
 
+	/**
+	 * ERRORS_PLAN: the type was written with the `!` result form
+	 * (`out string ! FetchError`) rather than spelled `Result<string,
+	 * FetchError>`. Pure sugar — the type IS `Result<T, E>` — but
+	 * parse_function reads (and strips) the marker on the `out` slot to
+	 * set `FunctionNode.returns_result`, which enables bare-return
+	 * lifting. Inert everywhere else.
+	 */
+	is_result_form?: boolean;
+
 	length?: BaseNode;
 	is_return_type?: boolean;
 	is_nullable?: boolean;

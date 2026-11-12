@@ -234,6 +234,33 @@ export default function parse_type(status: ParseStatus): Type {
 		if (result.name !== "void") func_type.func_return_type = result;
 		return func_type;
 	}
+	// ERRORS_PLAN: `T ! E` — the result-type form. Pure sugar over the core
+	// generic: the type becomes `Result<T, E>`, with `is_result_form`
+	// marking the `!` spelling (parse_function reads it on the `out` slot
+	// to enable bare-return lifting; elsewhere it is inert). The E gate
+	// (only `error` enums after `!`) is enforced at check time.
+	if (accept("!", status)) {
+		const bang_start = type.start ?? get_index(status);
+		if (type.name === "void") {
+			add_error(
+				status,
+				`'void' cannot be a '!' result type — spell the success type instead`,
+				bang_start,
+			);
+		} else if (type.name === "Result") {
+			add_error(
+				status,
+				`a '!' result cannot wrap another result — spell Result<Result<T, E>, E2> explicitly if that is meant`,
+				bang_start,
+			);
+		}
+		const err_type = parse_type(status);
+		const result_type = new Type("Result");
+		result_type.start = bang_start;
+		result_type.type_args = [type, err_type];
+		result_type.is_result_form = true;
+		return result_type;
+	}
 	return type;
 }
 
