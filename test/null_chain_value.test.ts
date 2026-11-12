@@ -449,4 +449,32 @@ pub func main = () {
 			"a nullable chain cannot be a '??' fallback — coalesce the chain first ('x ?? (b?.c ?? fb)')",
 		]);
 	});
+
+	test("`??` on a non-nullable left is an error (the fallback could never run)", () => {
+		const input = `import System
+
+pub func main = () {
+	var string lit = "lit"
+	var s = lit ?? "none"
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors.map((e) => e.message)).toEqual([
+			"'??' needs a nullable left — 'string' is not nullable; the fallback could never run",
+		]);
+	});
+
+	test("`??` on a non-nullable scalar left is the same error", () => {
+		const input = `import System
+
+pub func main = () {
+	var int x = 5
+	var y = x ?? 10
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors.map((e) => e.message)).toEqual([
+			"'??' needs a nullable left — 'int' is not nullable; the fallback could never run",
+		]);
+	});
 });

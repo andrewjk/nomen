@@ -589,21 +589,6 @@ a screenshot error), but it could use Fira Code without a browser:
 
 Not done because Browser Run covers normal dev and production.
 
-## `??` on a non-nullable string left fails to compile on C
-
-Recorded 2026-11-13 while closing the "`?.` nullable-value residuals"
-follow-up (scratch test found it). `lit ?? "fb"` where `lit` is a NON-nullable
-`string` types fine (the checker allows `??` on any string left; the result is
-the left's type), but the C backend's GENERIC `??` path emits `lit ? lit : fb`
-— a `nomen_string` struct used as a condition — and clang rejects it
-(`used type 'nomen_string' where arithmetic or pointer type is required`).
-aarch64 compiles the same shape as `cmp x0, #0` on the ptr half (always
-non-null, yields the left). The shape is degenerate — a non-nullable left has
-no null to coalesce, so the fallback can never run — but the divergence is
-real: reject it in the checker ("'??' needs a nullable left") or lower the
-generic string path through the ptr half. The nullable-left paths (the audit
-families) are unaffected.
-
 ## Share-card tokenizer: replace Shiki on the server
 
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the

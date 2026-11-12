@@ -491,4 +491,15 @@ pub func main = () {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("`??` on a non-nullable left is an error", () => {
+		const input = `
+pub func main = () {
+	var string lit = "lit"
+	var s = lit ?? "none"
+}
+`;
+		const errors = compile_module(input);
+		expect(errors.some((e) => e.message.includes("'??' needs a nullable left"))).toBe(true);
+	});
 });

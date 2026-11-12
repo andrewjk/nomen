@@ -38,6 +38,7 @@ import { is_owning_struct_type } from "./utils/ownership.ts";
 import { maybe_mark_borrow_to_string_operand } from "./utils/string_mutation_scan.ts";
 import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
+import type_name from "./utils/type_name.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
 export default function check_operation_node(op: OperationNode, status: CheckStatus): boolean {
@@ -536,6 +537,28 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			break;
 		}
 		case "??": {
+			// `??` coalesces NULL: a non-nullable left has no null to replace,
+			// so the fallback is dead code — and the generic lowering tests
+			// the left's raw bytes as the condition (a struct left is a C
+			// compile error; a string left reads past its meaning). Every
+			// accepted left carries nullness: the in-band fat zero (a
+			// `string?`), the `_has` companion (scalars, inline structs,
+			// simple enums/bitsets), the in-band pointer (func/class), or a
+			// nullable chain (whose hop tests consume the nullness here).
+			// Mirrors the `?.` rule ("needs a nullable target"); a plain
+			// field read on a nullable base is rewritten to the chain shape
+			// above, so it arrives here nullable too. A chain whose final
+			// steps are plain `.` reads stamps the WRAPPER as the member
+			// type (`mk(7)?.inner.value` types `int`), so the chain test is
+			// structural, not type-driven.
+			if (!left_type.is_nullable && !has_null_chain(op.left_value)) {
+				add_error(
+					status,
+					`'??' needs a nullable left — '${type_name(left_type)}' is not nullable; the fallback could never run`,
+					op.start,
+				);
+				return false;
+			}
 			// A nullable CHAIN as the fallback needs the (value, flag) carrier
 			// the fallback slot does not have: the coalesce would drop the
 			// chain's nullness on the taken path. Spell the coalesce on the
