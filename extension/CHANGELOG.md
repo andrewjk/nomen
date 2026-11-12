@@ -12,6 +12,17 @@
 
 
 
+
+## 0.13.0
+<sub>2026-11-12</sub>
+
+-  *(minor)*
+  Errors: the T ! E result form — error enums, bare-return lifting, the !! coalesce, postfix ! propagation, composed error sets (T ! E1, E2), and nullable chaining (a?.b)
+-  *(minor)*
+  Nullable chaining grows into a value: chains lower in declaration, assignment, return, and argument positions (flag-writing producer per backend), plus method-call hops (a?.m(args)), call bases (f()?.x) hoisted for single evaluation, and the final-nullable-member hop; spec + ERRORS_PLAN updated
+-  *(patch)* - Fix: nullable `??` corners — call-left leak, `y.v` field spelling
+-  *(patch)* - Fix: reject ?? on a non-nullable left
+
 ## 0.12.0
 <sub>2026-11-12</sub>
 
