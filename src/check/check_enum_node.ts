@@ -7,6 +7,14 @@ import { struct_has_view_fields } from "./utils/view_fields.ts";
 export default function check_enum_node(node: EnumNode, status: CheckStatus) {
 	node.is_generic = node.type_params.length > 0;
 
+	// ERRORS_PLAN: an `error` enum is always `checked` — no opt-out. Stamping
+	// the existing flag here means the entire discard machinery (statement
+	// rejection, mono inheritance via enum_mono, display names) applies
+	// unchanged; `is_error` additionally gates the `T ! E` result form.
+	if (node.is_error) {
+		node.checked = true;
+	}
+
 	// STRUCT_PLAN_3 B1 full cutover — a generated anonymous enum cannot be
 	// spelled `mv`; re-derive its ownership at statement-check time
 	// (mirrors the tuple/anon-struct re-derive in check_struct_node).

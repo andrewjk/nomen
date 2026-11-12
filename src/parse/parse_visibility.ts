@@ -44,13 +44,13 @@ export default function parse_visibility(
 			// `mv` is a type-declaration keyword, parse the type
 			// declaration; otherwise `mv` is the transfer binding prefix.
 			const kind = status.tokens[status.i + 2]?.value;
-			if (kind === "struct" || kind === "enum") {
+			if (kind === "struct" || kind === "enum" || kind === "error") {
 				consume(status); // the visibility — parse_* takes it as a param
 				consume(status); // mv
 				if (kind === "struct") {
 					parse_struct(visibility, status, true);
 				} else {
-					parse_enum(visibility, status, true);
+					parse_enum(visibility, status, true, kind === "error");
 				}
 				break;
 			}
@@ -85,6 +85,12 @@ export default function parse_visibility(
 		}
 		case "enum": {
 			parse_enum(visibility, status);
+			break;
+		}
+		case "error": {
+			// ERRORS_PLAN: `<visibility> error FetchError { ... }` — an
+			// always-checked, `!`-eligible enum declaration.
+			parse_enum(visibility, status, false, true);
 			break;
 		}
 		case "checked": {

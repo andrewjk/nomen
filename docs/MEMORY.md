@@ -436,7 +436,7 @@ an enum's payload:
 
 - Enum case definitions accept only `Type name` payload fields — no `ref`
   modifier (`src/parse/parse_enum.ts`).
-- `match` case bindings (`case .error(code)`) are **by-value copies** of the
+- `match` case bindings (`case .fail(code)`) are **by-value copies** of the
   payload bytes into a fresh local, not aliases into the enum's storage
   (`src/build_c/build_match_node.ts`, `src/build_aarch64/build_access_node.ts`).
   The parser accepts only bare identifiers as bindings — there is no `ref`

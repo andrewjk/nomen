@@ -21,20 +21,20 @@
  *	var Http h = Http()
  *	match h.get("http://example.com/") {
  *		case .ok(body) -> Console.write(body)
- *		case .error(e) -> Console.write("request failed")
+ *		case .fail(e) -> Console.write("request failed")
  *	}
  *	var int code = h.status
  **/
 pub struct Http {
 	// HTTP status code from the most recent request (e.g. 200). 0 when the
-	// request failed (the `error` side of the get/post Result says why).
+	// request failed (the `fail` side of the get/post Result says why).
 	pub var status = 0
 
 	// Internal failure code from the most recent request: 0 = success,
 	// 1 = DNS resolution, 2 = socket creation, 3 = connect, 6 = send failed.
 	// Mirrors Tcp's codes on the connect path; the Result-returning wrappers
 	// map it to HttpError.
-	var error = 0
+	var last_error = 0
 
 	// Maps the raw failure code to its HttpError case.
 	func error_of = (int err, out HttpError) {
@@ -56,7 +56,7 @@ pub struct Http {
 	// Shared socket round-trip used by get/post. `method` is the request
 	// method string ("GET" / "POST"); a leading 'P' selects POST semantics
 	// (sends `body` and the Content-* headers). Sets self->status (0 on
-	// failure) and self->error, and returns the response body (empty string
+	// failure) and self->last_error, and returns the response body (empty string
 	// on failure).
 	func raw_exchange = (ref self {}, string method, string url, string body, mv out string) {
 		// Parse the URL: [http://]host[:port][/path]
@@ -91,7 +91,7 @@ pub struct Http {
 		var Tcp conn = Tcp.connect(host, port)
 		if conn.fd < 0 {
 			self.status = 0
-			self.error = conn.error
+			self.last_error = conn.last_error
 			return ""
 		}
 
@@ -113,7 +113,7 @@ pub struct Http {
 		if !sent {
 			conn.close()
 			self.status = 0
-			self.error = 6
+			self.last_error = 6
 			return ""
 		}
 
@@ -125,7 +125,7 @@ pub struct Http {
 		var string wire = conn.recv_all()
 		conn.close()
 
-		self.error = 0
+		self.last_error = 0
 		// Status line: "HTTP/1.x NNN ..." — the code lives at bytes 9..12.
 		if wire.starts_with("HTTP/") && wire.length >= 12 {
 			var string code_text = wire.substring(9, 12)
@@ -144,23 +144,23 @@ pub struct Http {
 
 	// Issue a GET request to `url`. `.ok(body)` with the response body and
 	// `self.status` set to the response's status code, or
-	// `.error(HttpError)` (`status` is 0).
+	// `.fail(HttpError)` (`status` is 0).
 	pub func get = (ref self {}, string url, out Result<string, HttpError>) {
 		const string response = self.raw_exchange("GET", url, "")
-		if self.error == 0 {
+		if self.last_error == 0 {
 			return Result.ok(response)
 		}
-		return Result.error(Http.error_of(self.error))
+		return Result.fail(Http.error_of(self.last_error))
 	}
 
 	// Issue a POST request to `url` with `body` as the payload.
 	// `.ok(body)` with the response body and `self.status` set to the
-	// response's status code, or `.error(HttpError)` (`status` is 0).
+	// response's status code, or `.fail(HttpError)` (`status` is 0).
 	pub func post = (ref self {}, string url, string body, out Result<string, HttpError>) {
 		const string response = self.raw_exchange("POST", url, body)
-		if self.error == 0 {
+		if self.last_error == 0 {
 			return Result.ok(response)
 		}
-		return Result.error(Http.error_of(self.error))
+		return Result.fail(Http.error_of(self.last_error))
 	}
 }

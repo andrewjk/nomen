@@ -15,6 +15,7 @@ export default function parse_enum(
 	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
 	is_owning = false,
+	is_error = false,
 ) {
 	const start = get_index(status);
 	accept(visibility, status);
@@ -23,10 +24,18 @@ export default function parse_enum(
 	// (`pub checked enum Result<T, E> { ... }`). Contextual: only consumed when
 	// it appears in this position, so `checked` remains usable as a name.
 	const checked = accept("checked", status);
-	accept("enum", status);
+	// The kind keyword: `enum`, or `error` (ERRORS_PLAN — the third
+	// specialized declaration; `error FetchError { ... }`). `checked error`
+	// is redundant (error enums are always checked) and is not routed.
+	if (is_error) {
+		consume(status); // the `error` keyword
+	} else {
+		accept("enum", status);
+	}
 	const name = consume_name(status);
 	const node = new EnumNode(start, visibility, name);
 	node.checked = checked;
+	if (is_error) node.is_error = true;
 	if (is_owning) node.is_owning = true;
 
 	// Generic type parameters: `enum Result<T, E> { ... }`

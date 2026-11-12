@@ -43,9 +43,9 @@ pub func main = (Init init) {
 					Console.write(total.to_string())
 					Console.write("\n")
 				}
-				case .error(e) { panic("read failed") }
+				case .fail(e) { panic("read failed") }
 			}
 		}
-		case .error(e) { panic("open failed") }
+		case .fail(e) { panic("open failed") }
 	}
 }

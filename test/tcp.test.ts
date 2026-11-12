@@ -59,7 +59,7 @@ import System
 pub func main = () {
 	var Tcp client = Tcp.connect("127.0.0.1", 1)
 	if client.fd < 0 {
-		Console.write_line("connect error \\{client.error}")
+		Console.write_line("connect error \\{client.last_error}")
 	}
 }
 `;
@@ -109,7 +109,7 @@ func server_loop = (ref Tcp server, int n) {
 func client = (int id, Channel done) {
 	var Tcp c = Tcp.connect("127.0.0.1", 18100)
 	if c.fd < 0 {
-		Console.write_line("client \\{id} connect err \\{c.error}")
+		Console.write_line("client \\{id} connect err \\{c.last_error}")
 		done.send(0)
 		return
 	}
@@ -167,7 +167,7 @@ import System
 pub func main = () {
 	var Tcp client = Tcp.connect("127.0.0.1", 1)
 	if client.fd < 0 {
-		Console.write_line("connect error \\{client.error}")
+		Console.write_line("connect error \\{client.last_error}")
 	}
 }
 `;

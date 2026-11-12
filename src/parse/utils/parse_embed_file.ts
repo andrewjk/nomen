@@ -57,7 +57,9 @@ export default function parse_embed_file(status: ParseStatus): ValueNode {
 	} catch (cause) {
 		const idx = status.tokens.findIndex((t) => t.value === "#embed_file" && t.i === start);
 		const near = status.tokens.slice(Math.max(0, idx - 2), idx + 4).map((t) => t.value);
-		console.log(`[embed-debug] tokens near: ${JSON.stringify(near)} embed_root=${JSON.stringify(status.embed_root)}`);
+		console.log(
+			`[embed-debug] tokens near: ${JSON.stringify(near)} embed_root=${JSON.stringify(status.embed_root)}`,
+		);
 		add_error(status, `#embed_file could not read '${rel_path}' (resolved '${full}')`, start);
 		return new ValueNode(start, '""');
 	}

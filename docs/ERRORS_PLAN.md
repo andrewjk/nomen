@@ -84,7 +84,7 @@ A function declared with `!` **lifts** bare returns:
 
 - `return expr` where `expr : T` → `Result.ok(expr)`
 - `return expr` where `expr : E` → `Result.fail(expr)` — so `return
-  .notfound` works; the shorthand resolves against the error enum
+.notfound` works; the shorthand resolves against the error enum
 - `return expr` where `expr` is already a `Result` (explicit `.ok(...)` /
   `.fail(...)`) passes through unchanged
 
@@ -170,7 +170,7 @@ match load_and_parse(path) {
 - **The ambiguity rule** (the flat-surface force-specify): an unqualified
   `case .timeout` against a composed type is a compile error — "ambiguous
   between LoadError and ParseError — spell the origin: `case LoadError.
-  timeout`". When it resolves uniquely through one tag, plain shorthand
+timeout`". When it resolves uniquely through one tag, plain shorthand
   works (single `T ! E` keeps today's `case .notfound` shorthand unchanged).
 - **Propagation wraps whole values.** `return load(path)!` inside the
   composed function re-tags the entire `LoadError` — no per-case rebuild,

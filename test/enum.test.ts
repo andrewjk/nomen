@@ -41,10 +41,10 @@ Console.write("\\{d}")
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-var result = Result.error(42)
+var result = Result.fail(42)
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "enum_associated", "1");
@@ -362,11 +362,11 @@ Console.write("\\{b.a}")
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-var Result r = Result.error(42)
-if r == Result.error(5) {
+var Result r = Result.fail(42)
+if r == Result.fail(5) {
   Console.write("error")
 } else {
   Console.write("other")
@@ -379,10 +379,10 @@ if r == Result.error(5) {
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-var Result r = Result.error(42)
+var Result r = Result.fail(42)
 if r == Result.ok {
   Console.write("ok")
 } else {
@@ -396,11 +396,11 @@ if r == Result.ok {
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
 var Result r = Result.ok
-if r != Result.error(1) {
+if r != Result.fail(1) {
   Console.write("not error")
 } else {
   Console.write("error")
@@ -413,10 +413,10 @@ if r != Result.error(1) {
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-if Result.error(1) == Result.error(2) {
+if Result.fail(1) == Result.fail(2) {
   Console.write("same case")
 } else {
   Console.write("different")
@@ -429,11 +429,11 @@ if Result.error(1) == Result.error(2) {
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-var Result r = Result.error(7)
-if r == .error(0) {
+var Result r = Result.fail(7)
+if r == .fail(0) {
   Console.write("error")
 } else {
   Console.write("other")
@@ -446,11 +446,11 @@ if r == .error(0) {
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-var Result a = Result.error(1)
-var Result b = Result.error(2)
+var Result a = Result.fail(1)
+var Result b = Result.fail(2)
 var Result c = Result.ok
 if a == b {
   Console.write("ab same")
@@ -466,10 +466,10 @@ if a != c {
 		const input = `
 enum Result {
   case ok
-  case error(int code)
+  case fail(int code)
 }
 
-var Result r = Result.error(42)
+var Result r = Result.fail(42)
 if Result.ok == r {
   Console.write("ok")
 } else {

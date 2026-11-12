@@ -2,8 +2,8 @@
 
 ## `checked enum Result<T, E>`
 
-A generic result type with an `ok(T value)` success case and an
-`error(E error)` failure case. Monomorphized per concrete type-argument pair
+A generic result type with an `ok(T value)` success case and a
+`fail(E err)` failure case. Monomorphized per concrete type-argument pair
 (e.g. `Result<int, string>`).
 
 `Result` is declared `checked`: a statement-position call that returns a
@@ -12,12 +12,12 @@ deliberately with `var _ = f.close()`, or handle both cases with `match`.
 
 ```
 func parse_age = (string s, out Result<int, string>) {
-    return .error("not a number")
+    return .fail("not a number")
 }
 
 const result = parse_age("x")
 match result {
     case .ok(age) -> Console.write("\\{age}")
-    case .error(msg) -> Console.write("error: \\{msg}")
+    case .fail(msg) -> Console.write("error: \\{msg}")
 }
 ```

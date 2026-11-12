@@ -10,7 +10,7 @@ pub func test_file_read = (ref Tester t) {
 	var read = File.read_all("fileio_corpus.txt")
 	var len = match read {
 		case .ok(text) -> text.length
-		case .error(_) -> -1
+		case .fail(_) -> -1
 	}
 	t.expect(len == 22, "fixture corpus length")
 }

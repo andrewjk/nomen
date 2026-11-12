@@ -5,7 +5,7 @@
  *	var Result<string, FileError> body = File.read_all("out.txt")
  *	match body {
  *		case .ok(text) -> Console.write(text)
- *		case .error(e) -> Console.write("failed")
+ *		case .fail(e) -> Console.write("failed")
  *	}
  *
  * Cases map from the underlying errno: `not_found` (ENOENT), `access_denied`

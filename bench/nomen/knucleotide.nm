@@ -272,9 +272,9 @@ pub func main = (Init init) {
 					write_count(ref data, n, "GGTATTTTAATT")
 					write_count(ref data, n, "GGTATTTTAATTTATAGT")
 				}
-				case .error(e) { panic("read failed") }
+				case .fail(e) { panic("read failed") }
 			}
 		}
-		case .error(e) { panic("open failed") }
+		case .fail(e) { panic("open failed") }
 	}
 }

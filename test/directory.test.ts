@@ -31,7 +31,7 @@ if Directory.exists("dir_exists_test") {
 		const input = `
 match Directory.list("dir_no_such_xyz_123") {
 	case .ok(names) { Console.write("content?!") }
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .not_found -> Console.write("empty")
 		} else -> Console.write("other")
@@ -47,7 +47,7 @@ var _ = Directory.create("dir_list_test")
 var _ = File.write_all("dir_list_test/only.txt", "x")
 match Directory.list("dir_list_test") {
 	case .ok(names) { Console.write(names) }
-	case .error(e) { Console.write("list failed") }
+	case .fail(e) { Console.write("list failed") }
 }
 `;
 		for (const arch of ARCHITECTURES) {

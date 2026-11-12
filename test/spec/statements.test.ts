@@ -111,12 +111,12 @@ match flag {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(10)
+const result = Result.fail(10)
 const message = match result {
     case .ok -> "it's ok"
-    case .error(code) -> "error \\{code} encountered"
+    case .fail(code) -> "error \\{code} encountered"
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -126,12 +126,12 @@ const message = match result {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(10)
+const result = Result.fail(10)
 const message = match result {
     case Result.ok -> "it's ok"
-    case Result.error(code) -> "error \\{code} encountered"
+    case Result.fail(code) -> "error \\{code} encountered"
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -173,11 +173,11 @@ const label = match n {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(10)
+const result = Result.fail(10)
 const message = match result {
-    case .error(code) -> "error \\{code}"
+    case .fail(code) -> "error \\{code}"
 } else -> "unknown"
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -202,12 +202,12 @@ const label = match event {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 const code = 99
-const result = Result.error(5)
+const result = Result.fail(5)
 const message = match result {
-    case .error(code) -> "inner code is \\{code}"
+    case .fail(code) -> "inner code is \\{code}"
     case .ok -> "ok"
 }
 `;
@@ -231,11 +231,11 @@ const sum = match p {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 func describe = (Result r, out string) => match r {
     case .ok -> "ok"
-    case .error(code) -> "error \\{code}"
+    case .fail(code) -> "error \\{code}"
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -245,12 +245,12 @@ func describe = (Result r, out string) => match r {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 func code_of = (Result r, out int) {
     return match r {
         case .ok -> 0
-        case .error(code) => code
+        case .fail(code) => code
     }
 }
 `;
@@ -341,12 +341,12 @@ const bv = match b {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 func report = (int c, out string) => "code is \\{c}"
-const result = Result.error(3)
+const result = Result.fail(3)
 const msg = match result {
-    case .error(code) -> report(code)
+    case .fail(code) -> report(code)
     case .ok -> "ok"
 }
 `;
@@ -357,13 +357,13 @@ const msg = match result {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 var Result result = Result.ok
-result = Result.error(8)
+result = Result.fail(8)
 const message = match result {
     case .ok -> "ok"
-    case .error(code) -> "error \\{code}"
+    case .fail(code) -> "error \\{code}"
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -373,12 +373,12 @@ const message = match result {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(2)
+const result = Result.fail(2)
 const outer = match result {
-    case .error(code) -> match result {
-        case .error(c) -> c
+    case .fail(code) -> match result {
+        case .fail(c) -> c
         case .ok -> 0
     }
     case .ok -> 0
@@ -391,9 +391,9 @@ const outer = match result {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(10)
+const result = Result.fail(10)
 const message = match result {
     case .ok -> "ok"
 }
@@ -406,12 +406,12 @@ const message = match result {
 		const input = `
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(10)
+const result = Result.fail(10)
 const message = match result {
     case .ok -> "ok"
-    case .error(a, b) -> "two"
+    case .fail(a, b) -> "two"
 }
 `;
 		const errors = compile_module(input);

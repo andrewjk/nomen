@@ -127,13 +127,13 @@ describe("generic enums", () => {
 	test("core Result shorthand", async () => {
 		const input = `
 func parse_age = (string s, out Result<int, string>) {
-    return .error("not a number")
+    return .fail("not a number")
 }
 
 const result = parse_age("x")
 match result {
     case .ok(age) -> Console.write("\\{age}\\n")
-    case .error(msg) -> Console.write("error: \\{msg}\\n")
+    case .fail(msg) -> Console.write("error: \\{msg}\\n")
 }
 `;
 		await build_and_check_output(input, "generic_enum_result", "error: not a number\n");
@@ -167,14 +167,14 @@ match found {
 	test("two monomorphizations of the same generic enum", async () => {
 		const input = `
 var Result<int, string> ri = .ok(1)
-var Result<bool, int> rb = .error(3)
+var Result<bool, int> rb = .fail(3)
 match ri {
     case .ok(n) -> Console.write("i\\{n}\\n")
-    case .error(s) -> Console.write(s)
+    case .fail(s) -> Console.write(s)
 }
 match rb {
     case .ok(b) -> Console.write("ok\\n")
-    case .error(c) -> Console.write("e\\{c}\\n")
+    case .fail(c) -> Console.write("e\\{c}\\n")
 }
 `;
 		await build_and_check_output(input, "generic_enum_two_monos", "i1\ne3\n");

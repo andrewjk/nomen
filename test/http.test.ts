@@ -20,7 +20,7 @@ match h.get("http://127.0.0.1:1/") {
 	case .ok(body) {
 		Console.write(body)
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .dns -> Console.write("dns ")
 			case .socket -> Console.write("socket ")
@@ -32,7 +32,7 @@ match h.post("http://127.0.0.1:1/", "hello=world") {
 	case .ok(body) {
 		Console.write(body)
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("post failed")
 	}
 }
@@ -49,7 +49,7 @@ match h.get("http://127.0.0.1:1/") {
 	case .ok(body) {
 		Console.write("body?! ")
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .connect -> Console.write("connect ")
 		} else -> Console.write("other ")
@@ -59,7 +59,7 @@ match h.post("http://127.0.0.1:1/", "hello=world") {
 	case .ok(body) {
 		Console.write("body?!")
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .connect -> Console.write("connect")
 		} else -> Console.write("other")
@@ -104,7 +104,7 @@ pub func main = () {
 			case .ok(body) {
 				Console.write_line(body)
 			}
-			case .error(e) {
+			case .fail(e) {
 				Console.write_line("error")
 			}
 		}
@@ -165,7 +165,7 @@ pub func main = () {
 			case .ok(body) {
 				Console.write_line(body)
 			}
-			case .error(e) {
+			case .fail(e) {
 				Console.write_line("error")
 			}
 		}

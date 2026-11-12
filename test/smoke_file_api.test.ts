@@ -11,7 +11,7 @@ match w.open("smoke.txt", "w") {
 		var _ = w.writeLine("world")
 		var _ = w.close()
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -25,17 +25,17 @@ match r.open("smoke.txt", "r") {
 					case .ok(b) {
 						Console.write("\\{a}|\\{b}")
 					}
-					case .error(e) {
+					case .fail(e) {
 						Console.write("read failed")
 					}
 				}
 			}
-			case .error(e) {
+			case .fail(e) {
 				Console.write("read failed")
 			}
 		}
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -50,7 +50,7 @@ match f.open("no_such_smoke.txt", "r") {
 	case .ok(did) {
 		Console.write("opened?!")
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .not_found -> Console.write("not_found")
 			case .access_denied -> Console.write("access_denied")
@@ -64,7 +64,7 @@ match f.readAll() {
 	case .ok(text) {
 		Console.write("read?!")
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .not_open -> Console.write("not_open")
 			case .not_found -> Console.write("not_found")
@@ -85,7 +85,7 @@ match File.read_all("smoke_static.txt") {
 	case .ok(body) {
 		Console.write(body)
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("read_all failed")
 	}
 }
@@ -98,7 +98,7 @@ if File.exists("smoke_static.txt") {
 				Console.write("gone")
 			}
 		}
-		case .error(e) {
+		case .fail(e) {
 			Console.write("delete failed")
 		}
 	}
@@ -120,7 +120,7 @@ match Directory.create("smoke_dir") {
 			case .ok(names) {
 				Console.write(names.length.to_string())
 			}
-			case .error(e) {
+			case .fail(e) {
 				Console.write("list failed")
 			}
 		}
@@ -130,7 +130,7 @@ match Directory.create("smoke_dir") {
 				case .ok(did2) {
 					Console.write("removed")
 				}
-			case .error(e) {
+			case .fail(e) {
 				match e {
 					case .not_empty -> Console.write("not_empty")
 					case .not_found -> Console.write("not_found")
@@ -141,7 +141,7 @@ match Directory.create("smoke_dir") {
 			}
 		}
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("create failed")
 	}
 }

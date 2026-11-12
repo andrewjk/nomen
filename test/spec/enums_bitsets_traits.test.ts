@@ -55,9 +55,9 @@ if dir == .north {
 		const input = `
 pub enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(5)
+const result = Result.fail(5)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -79,18 +79,18 @@ describe("spec: checked enums", () => {
 		const input = `
 pub checked enum Attempt {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 
 func try_it = (out Attempt) {
-    return Attempt.error(5)
+    return Attempt.fail(5)
 }
 
 var _ = try_it()
 const r = try_it()
 match try_it() {
     case .ok -> Console.write("ok")
-    case .error(code) -> Console.write("error \\{code}")
+    case .fail(code) -> Console.write("error \\{code}")
 }
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -100,11 +100,11 @@ match try_it() {
 		const input = `
 pub checked enum Attempt {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 
 func try_it = (out Attempt) {
-    return Attempt.error(5)
+    return Attempt.fail(5)
 }
 
 try_it()
@@ -119,11 +119,11 @@ try_it()
 		const input = `
 pub enum Attempt {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 
 func try_it = (out Attempt) {
-    return Attempt.error(5)
+    return Attempt.fail(5)
 }
 
 try_it()

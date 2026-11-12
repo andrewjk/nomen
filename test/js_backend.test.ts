@@ -506,7 +506,7 @@ func half = (int n, out Result<int, string>) {
 	if n % 2 == 0 {
 		return Result.ok(n / 2)
 	}
-	return Result.error("odd")
+	return Result.fail("odd")
 }
 var int[] xs = [3, 8, 1]
 match find(xs, 8) {
@@ -516,7 +516,7 @@ match find(xs, 8) {
 Console.write(" ")
 match half(8) {
 	case .ok(v) -> Console.write("ok \\{v}")
-	case .error(e) -> Console.write("err \\{e}")
+	case .fail(e) -> Console.write("err \\{e}")
 }
 Console.write("\\n")
 `,

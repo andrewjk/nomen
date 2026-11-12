@@ -12,7 +12,7 @@ match w.open("filetest_wl.txt", "w") {
 		var _ = w.writeLine("world")
 		var _ = w.close()
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -26,17 +26,17 @@ match r.open("filetest_wl.txt", "r") {
 					case .ok(b) {
 						Console.write("\\{a}|\\{b}")
 					}
-					case .error(e2) {
+					case .fail(e2) {
 						Console.write("read failed")
 					}
 				}
 			}
-			case .error(e1) {
+			case .fail(e1) {
 				Console.write("read failed")
 			}
 		}
 	}
-	case .error(e0) {
+	case .fail(e0) {
 		Console.write("open failed")
 	}
 }
@@ -52,7 +52,7 @@ match w.open("filetest_all.txt", "w") {
 		var _ = w.writeAll("nomen file io")
 		var _ = w.close()
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -64,12 +64,12 @@ match r.open("filetest_all.txt", "r") {
 			case .ok(content) {
 				Console.write(content)
 			}
-			case .error(e2) {
+			case .fail(e2) {
 				Console.write("read failed")
 			}
 		}
 	}
-	case .error(e1) {
+	case .fail(e1) {
 		Console.write("open failed")
 	}
 }
@@ -85,7 +85,7 @@ match w.open("filetest_eof.txt", "w") {
 		var _ = w.writeAll("x")
 		var _ = w.close()
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -99,12 +99,12 @@ match r.open("filetest_eof.txt", "r") {
 					Console.write("done")
 				}
 			}
-			case .error(e2) {
+			case .fail(e2) {
 				Console.write("read failed")
 			}
 		}
 	}
-	case .error(e1) {
+	case .fail(e1) {
 		Console.write("open failed")
 	}
 }
@@ -120,7 +120,7 @@ match w.open("filetest_chunk.txt", "w") {
 		var _ = w.writeChunk("abcdef", 6)
 		var _ = w.close()
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -132,12 +132,12 @@ match r.open("filetest_chunk.txt", "r") {
 			case .ok(part) {
 				Console.write(part)
 			}
-			case .error(e2) {
+			case .fail(e2) {
 				Console.write("read failed")
 			}
 		}
 	}
-	case .error(e1) {
+	case .fail(e1) {
 		Console.write("open failed")
 	}
 }
@@ -155,12 +155,12 @@ match File.write_all("filetest_static.txt", "static io") {
 			case .ok(body) {
 				Console.write(body)
 			}
-			case .error(e2) {
+			case .fail(e2) {
 				Console.write("read_all failed")
 			}
 		}
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("write_all failed")
 	}
 }
@@ -195,7 +195,7 @@ match File.delete("filetest_delete.txt") {
 			Console.write("gone")
 		}
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("delete failed")
 	}
 }
@@ -210,7 +210,7 @@ match f.open("filetest_no_such_xyz.txt", "r") {
 	case .ok(did) {
 		Console.write("opened?!")
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .not_found -> Console.write("not_found ")
 		} else -> Console.write("other ")
@@ -220,7 +220,7 @@ match f.readAll() {
 	case .ok(text) {
 		Console.write("read?!")
 	}
-	case .error(e2) {
+	case .fail(e2) {
 		match e2 {
 			case .not_open -> Console.write("not_open")
 		} else -> Console.write("other")
@@ -236,7 +236,7 @@ match File.read_all("filetest_no_such_xyz.txt") {
 	case .ok(body) {
 		Console.write("content?!")
 	}
-	case .error(e) {
+	case .fail(e) {
 		match e {
 			case .not_found -> Console.write("empty")
 		} else -> Console.write("other")

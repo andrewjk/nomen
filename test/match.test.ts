@@ -396,21 +396,21 @@ Console.write("\\{area}")
 		const input = `
 mv enum Result {
   case ok(int value)
-  case error(string message)
+  case fail(string message)
 }
 
 var Result r = .ok(5)
 const m = match r {
 	case .ok(n) -> "ok \\{n}"
-	case .error(e) -> "err \\{e}"
+	case .fail(e) -> "err \\{e}"
 }
 Console.write(m)
 Console.write("\\n")
 
-var Result r2 = .error("bad")
+var Result r2 = .fail("bad")
 const m2 = match r2 {
 	case .ok(n) -> "ok \\{n}"
-	case .error(e) -> "err \\{e}"
+	case .fail(e) -> "err \\{e}"
 }
 Console.write(m2)
 Console.write("\\n")
@@ -422,13 +422,13 @@ Console.write("\\n")
 		const input = `
 mv enum Result {
   case ok(int value)
-  case error(string message)
+  case fail(string message)
 }
 
 var Result r = .ok(5)
 const m = match r {
 	case .ok(n) -> "ok \\{n} \\{n + 1}"
-	case .error(e) -> "err \\{e}"
+	case .fail(e) -> "err \\{e}"
 }
 Console.write(m)
 Console.write("\\n")
@@ -462,19 +462,19 @@ Console.write("\\n")
 		const input = `
 mv enum Result {
   case ok(int value)
-  case error(string message)
+  case fail(string message)
 }
 
 func describe = (Result r, out string) {
     return match r {
         case .ok(n) -> "ok \\{n}"
-        case .error(e) -> "err \\{e}"
+        case .fail(e) -> "err \\{e}"
     }
 }
 
 Console.write(describe(.ok(7)))
 Console.write("\\n")
-Console.write(describe(.error("nope")))
+Console.write(describe(.fail("nope")))
 Console.write("\\n")
 `;
 		await build_and_check_output(input, "match_return_interp", "ok 7\nerr nope\n");
@@ -490,21 +490,21 @@ Console.write("\\n")
 		const input = `
 mv enum Result {
   case ok(int value)
-  case error(string message)
+  case fail(string message)
 }
 
 var Result r = .ok(5)
 const m = match r {
 	case .ok(n) -> "ok \\{n}"
-	case .error -> "err"
+	case .fail -> "err"
 }
 Console.write(m)
 Console.write("\\n")
 
-var Result r2 = .error("bad")
+var Result r2 = .fail("bad")
 const m2 = match r2 {
 	case .ok(n) -> "ok \\{n}"
-	case .error -> "err"
+	case .fail -> "err"
 }
 Console.write(m2)
 Console.write("\\n")
@@ -519,20 +519,20 @@ Console.write("\\n")
 		const input = `
 mv enum Result {
   case ok(int value)
-  case error(string message)
+  case fail(string message)
 }
 
 var Result r = .ok(5)
 const m = match r {
-	case .error -> "err"
+	case .fail -> "err"
 	case .ok(n) -> "ok \\{n}"
 }
 Console.write(m)
 Console.write("\\n")
 
-var Result r2 = .error("bad")
+var Result r2 = .fail("bad")
 const m2 = match r2 {
-	case .error -> "err"
+	case .fail -> "err"
 	case .ok(n) -> "ok \\{n}"
 }
 Console.write(m2)
@@ -549,19 +549,19 @@ Console.write("\\n")
 		const input = `
 mv enum Result {
   case ok(int value)
-  case error(string message)
+  case fail(string message)
 }
 
 func describe = (Result r, out string) {
     return match r {
         case .ok(n) -> "ok \\{n}"
-        case .error -> "err"
+        case .fail -> "err"
     }
 }
 
 Console.write(describe(.ok(7)))
 Console.write("\\n")
-Console.write(describe(.error("nope")))
+Console.write(describe(.fail("nope")))
 Console.write("\\n")
 `;
 		await build_and_check_output(input, "match_return_mixed", "ok 7\nerr\n");

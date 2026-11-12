@@ -35,11 +35,11 @@ pub mv struct Tcp {
 	// The underlying file descriptor, -1 when closed/failed.
 	pub var int fd = -1
 	// 0 = ok; 1 = DNS, 2 = socket, 3 = connect, 4 = listen, 5 = closed.
-	pub var error = 0
+	pub var last_error = 0
 
 	pub func #init = (self, int handle) {
 		self.fd = handle
-		self.error = 0
+		self.last_error = 0
 	}
 
 	pub func #destroy = () {
@@ -73,7 +73,7 @@ pub mv struct Tcp {
 		var int handle = Tcp.listen_fd(port, backlog)
 		var t = Tcp(handle)
 		if handle < 0 {
-			t.error = 4
+			t.last_error = 4
 		}
 		return t
 	}
@@ -85,26 +85,26 @@ pub mv struct Tcp {
 		var int handle = Tcp.accept_fd(self.fd)
 		var t = Tcp(handle)
 		if handle < 0 {
-			t.error = 5
+			t.last_error = 5
 		}
 		return t
 	}
 
 	// ---- connecting ----
 
-	// Connect to `host`:`port`. Check `fd >= 0` (or `error == 0`) for success.
+	// Connect to `host`:`port`. Check `fd >= 0` (or `last_error == 0`) for success.
 	pub func connect = (string host, int port, mv out Tcp) {
 		var int handle = Tcp.socket_fd()
 		if handle < 0 {
 			var bad = Tcp(-1)
-			bad.error = 2
+			bad.last_error = 2
 			return bad
 		}
 		var int err = Tcp.connect_to(handle, host, port)
 		if err != 0 {
 			Tcp.close_fd(handle)
 			var bad = Tcp(-1)
-			bad.error = err
+			bad.last_error = err
 			return bad
 		}
 		return Tcp(handle)

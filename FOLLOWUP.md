@@ -208,7 +208,6 @@ Fiber-specific (embedded/no-heap path); `Spawnable<T>`'s surface remains
 
 ## aarch64 code-quality notes
 
-
 ### Post-processing passes dominate large builds
 
 On a synthetic 1609-function corpus, ~15 s of an ~18.8 s build phase is
@@ -477,6 +476,7 @@ calls. What remains is gated, recorded so the next request lands here:
   is per-pointer (all-or-nothing), not per-field-disjoint, and aarch64 has
   no per-instruction aliasing hints. Parked until a backend that can
   express it exists.
+
 ## Context measurement hazard: agent/background shells are not the interactive baseline
 
 Recorded 2026-11-03 (full story: docs/scratch/ALLOCATOR_PLAN.md). The same
@@ -624,6 +624,6 @@ name over the plist keys. `nomen run` should exec the inner
 `Contents/MacOS/<Name>` binary (not `open -W`) so stdout, exit codes and
 Ctrl-C keep working. Tests stay on bare executables.
 
-This gives the *app* name, not the live window title. Renaming/re-execing a
+This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.

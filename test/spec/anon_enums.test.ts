@@ -5,14 +5,14 @@ import { compile_main, compile_module } from "./_helpers.ts";
 describe("spec: anonymous enums", () => {
 	test("parse and return", () => {
 		const input = `
-func parse_age = (string s, out [.ok(int), .error(string)]) {
-    return .error("not a number")
+func parse_age = (string s, out [.ok(int), .fail(string)]) {
+    return .fail("not a number")
 }
 
-var [.ok(int), .error(string)] result = .ok(42)
+var [.ok(int), .fail(string)] result = .ok(42)
 match result {
     case .ok(age) -> Console.write("\\{age}")
-    case .error(msg) -> Console.write("error \\{msg}")
+    case .fail(msg) -> Console.write("error \\{msg}")
 }
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -38,13 +38,13 @@ describe("spec: generic enums", () => {
 		const input = `
 pub enum Result<T, E> {
     case ok(T value)
-    case error(E error)
+    case fail(E err)
 }
 
-const Result<int, string> result = .error("not a number")
+const Result<int, string> result = .fail("not a number")
 match result {
     case .ok(age) -> Console.write("\\{age}")
-    case .error(msg) -> Console.write("error \\{msg}")
+    case .fail(msg) -> Console.write("error \\{msg}")
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -81,7 +81,7 @@ match found {
 	test("core Result is checked: discard is an error, binding is a use", () => {
 		const fallible = `
 func try_it = (out Result<int, string>) {
-    return Result.error("no")
+    return Result.fail("no")
 }
 `;
 		const ok = compile_main(`${fallible}

@@ -8,17 +8,17 @@ describe("checked enums", () => {
 		const input = `
 pub checked enum A {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 checked enum B {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 checked pub enum C {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func use = (out A) {
@@ -34,14 +34,14 @@ var _ = use()
 		const input = `
 pub checked enum Attempt {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func try_it = (int n, out Attempt) {
 	if n > 0 {
 		return Attempt.ok
 	}
-	return Attempt.error(n)
+	return Attempt.fail(n)
 }
 
 var _ = try_it(1)
@@ -50,7 +50,7 @@ match try_it(3) {
 	case .ok {
 		Console.write("ok")
 	}
-	case .error(code) {
+	case .fail(code) {
 		Console.write("error \\{code}")
 	}
 }
@@ -62,11 +62,11 @@ match try_it(3) {
 		const input = `
 pub checked enum Attempt {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func try_it = (out Attempt) {
-	return Attempt.error(5)
+	return Attempt.fail(5)
 }
 
 try_it()
@@ -81,11 +81,11 @@ try_it()
 		const input = `
 pub checked enum Attempt {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func attempt = (out Attempt) {
-	return Attempt.error(5)
+	return Attempt.fail(5)
 }
 
 attempt()
@@ -100,11 +100,11 @@ attempt()
 		const input = `
 pub checked enum Attempt {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func try_it = (out Attempt) {
-	return Attempt.error(5)
+	return Attempt.fail(5)
 }
 
 let try_it()
@@ -119,11 +119,11 @@ let try_it()
 		const input = `
 pub enum Attempt {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func try_it = (out Attempt) {
-	return Attempt.error(5)
+	return Attempt.fail(5)
 }
 
 try_it()
@@ -140,7 +140,7 @@ match w.open("strict_enum_file.txt", "w") {
 		var _ = w.writeAll("strict")
 		var _ = w.close()
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("open failed")
 	}
 }
@@ -151,7 +151,7 @@ match r.readAll() {
 	case .ok(text) {
 		Console.write(text)
 	}
-	case .error(e) {
+	case .fail(e) {
 		Console.write("read failed")
 	}
 }
@@ -163,7 +163,7 @@ var _ = r.close()
 	test("core Result mono discard error names the generic spelling", () => {
 		const input = `
 func try_it = (out Result<int, string>) {
-	return Result.error("no")
+	return Result.fail("no")
 }
 
 try_it()
@@ -180,7 +180,7 @@ try_it()
 		const input = `
 pub checked enum Attempt {
 	case ok
-	case error(int code)
+	case fail(int code)
 }
 
 func try_it = (out Attempt) {

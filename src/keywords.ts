@@ -15,6 +15,11 @@ export const KEYWORDS = new Set([
 	"class",
 	"trait",
 	"enum",
+	// `error` doubles as the error-enum declaration keyword
+	// (`error FetchError { ... }`) — the third specialized declaration next to
+	// `enum` and `bitset`. Reserved: a case payload or field named `error`
+	// would be ambiguous with the declaration form.
+	"error",
 	"bitset",
 	"extend",
 	"func",

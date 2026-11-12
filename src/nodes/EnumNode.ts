@@ -23,6 +23,16 @@ export default class EnumNode extends BaseNode {
 	 * monomorphized instantiations by `monomorphize_enum`.
 	 */
 	checked?: boolean;
+	/**
+	 * True when declared with the `error` keyword (`error FetchError { ... }`)
+	 * — the third specialized declaration next to `enum` and `bitset`. An
+	 * error enum IS an enum (cases, payloads, match, shorthand all inherited);
+	 * the keyword adds exactly two semantics: always `checked` (stamped below
+	 * in check_enum_node — no opt-out), and `!`-eligible (only error enums may
+	 * appear after `!` in a `T ! E` result type). Copied onto monomorphized
+	 * instantiations by `monomorphize_enum` alongside `checked`.
+	 */
+	is_error?: boolean;
 	/** Set on monomorphized instantiations: the generic template's name. */
 	template_name?: string;
 	/** Set on monomorphized instantiations: the concrete type args. */

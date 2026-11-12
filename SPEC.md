@@ -19,7 +19,7 @@ The following words are reserved by the language and cannot be used as
 variable, parameter, field, type, or enum case names:
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `else`
-`enum` `foreign` `extend` `for` `func` `if` `import` `internal` `let`
+`enum` `error` `foreign` `extend` `for` `func` `if` `import` `internal` `let`
 `match` `mv` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
 `return` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
 `while`
@@ -1080,10 +1080,10 @@ Enum cases can contain information:
 ```
 pub enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 
-const result = Result.error(5)
+const result = Result.fail(5)
 ```
 
 Enum cases can have multiple fields:
@@ -1104,13 +1104,13 @@ Enums can declare type parameters. Case payloads may use them; each concrete ins
 ```
 pub enum Result<T, E> {
     case ok(T value)
-    case error(E error)
+    case fail(E err)
 }
 
-const Result<int, string> result = .error("not a number")
+const Result<int, string> result = .fail("not a number")
 match result {
     case .ok(age) -> Console.write("\{age}")
-    case .error(msg) -> Console.write("error \{msg}")
+    case .fail(msg) -> Console.write("error \{msg}")
 }
 ```
 
@@ -1126,7 +1126,7 @@ The core library ships two generic enums. `Result` is declared `checked`:
 ```
 pub checked enum Result<T, E> {
     case ok(T value)
-    case error(E error)
+    case fail(E err)
 }
 
 pub enum Option<T> {
@@ -1144,18 +1144,18 @@ An enum declared with the `checked` modifier may not have its values silently di
 ```
 pub checked enum Attempt {
     case ok
-    case error(int code)
+    case fail(int code)
 }
 
 func try_it = (out Attempt) {
-    return Attempt.error(5)
+    return Attempt.fail(5)
 }
 
 var _ = try_it()      // explicit discard
 const r = try_it()    // bound: a use
 match try_it() {
     case .ok -> Console.write("ok")
-    case .error(code) -> Console.write("error \{code}")
+    case .fail(code) -> Console.write("error \{code}")
 }
 ```
 
@@ -1911,12 +1911,12 @@ Match with enums and associated data:
 ```
 enum Result {
     case ok
-    case error(int code)
+    case fail(int code)
 }
-const result = Result.error(10)
+const result = Result.fail(10)
 const message = match result {
     case .ok -> "it's ok"
-    case .error(code) -> "error \{code} encountered"
+    case .fail(code) -> "error \{code} encountered"
 }
 ```
 

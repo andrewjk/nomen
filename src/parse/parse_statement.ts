@@ -86,15 +86,22 @@ export default function parse_statement(status: ParseStatus) {
 						parse_enum(default_visibility(status), status, true);
 						break;
 					}
+					if (kind === "error") {
+						// `mv error E { ... }` — an owning error enum (mv payload
+						// rules apply per the enum verifier).
+						consume(status);
+						parse_enum(default_visibility(status), status, true, true);
+						break;
+					}
 					if (kind === "pub" || kind === "private" || kind === "internal") {
 						const kind2 = status.tokens[status.i + 2]?.value;
-						if (kind2 === "struct" || kind2 === "enum") {
+						if (kind2 === "struct" || kind2 === "enum" || kind2 === "error") {
 							consume(status); // mv
 							consume(status); // visibility
 							if (kind2 === "struct") {
 								parse_struct(kind as "pub" | "private" | "internal", status, true);
 							} else {
-								parse_enum(kind as "pub" | "private" | "internal", status, true);
+								parse_enum(kind as "pub" | "private" | "internal", status, true, kind2 === "error");
 							}
 							break;
 						}
@@ -125,6 +132,12 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "enum": {
 				parse_enum(default_visibility(status), status);
+				break;
+			}
+			case "error": {
+				// ERRORS_PLAN: `error FetchError { ... }` — an always-checked,
+				// `!`-eligible enum declaration.
+				parse_enum(default_visibility(status), status, false, true);
 				break;
 			}
 			case "checked": {

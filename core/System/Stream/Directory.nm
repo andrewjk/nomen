@@ -9,7 +9,7 @@
  *	var Result<string, DirectoryError> names = Directory.list("scratch")
  *	match names {
  *		case .ok(text) -> Console.write(text)
- *		case .error(e) -> Console.write("failed")
+ *		case .fail(e) -> Console.write("failed")
  *	}
  **/
 pub struct Directory {
@@ -61,13 +61,13 @@ pub struct Directory {
 	}
 
 	// (static) Create a directory at `path`. `.ok(true)`, or
-	// `.error(DirectoryError)` (`already_exists` when it is already there).
+	// `.fail(DirectoryError)` (`already_exists` when it is already there).
 	pub func create = (string path, out Result<bool, DirectoryError>) {
 		const int err = Directory.raw_create(path)
 		if err == 0 {
 			return Result.ok(true)
 		}
-		return Result.error(Directory.error_of(err))
+		return Result.fail(Directory.error_of(err))
 	}
 
 	// (static) Remove the (empty) directory at `path`; returns errno (0 on
@@ -93,13 +93,13 @@ pub struct Directory {
 	}
 
 	// (static) Remove the (empty) directory at `path`. `.ok(true)`, or
-	// `.error(DirectoryError)` (`not_empty` when it still has entries).
+	// `.fail(DirectoryError)` (`not_empty` when it still has entries).
 	pub func remove = (string path, out Result<bool, DirectoryError>) {
 		const int err = Directory.raw_remove(path)
 		if err == 0 {
 			return Result.ok(true)
 		}
-		return Result.error(Directory.error_of(err))
+		return Result.fail(Directory.error_of(err))
 	}
 
 	// (static) Whether a directory exists at `path`. A missing directory is
@@ -125,13 +125,13 @@ pub struct Directory {
 
 	// (static) The directory's entry names as a single newline-separated
 	// string (the `.` and `..` entries are skipped). `.ok(text)`, or
-	// `.error(DirectoryError)` when the directory cannot be opened.
+	// `.fail(DirectoryError)` when the directory cannot be opened.
 	//
 	// The whole operation is one raw body per backend: the listing must be
 	// built and any open failure mapped to its errno inside a single
 	// opendir/closedir lifetime, so the Result is constructed directly in
 	// `#arch` code. Case ordinals mirrored below come from
-	// System/Result.nm (ok=0, error=1) and DirectoryError.nm (not_found=0,
+	// System/Result.nm (ok=0, fail=1) and DirectoryError.nm (not_found=0,
 	// access_denied=1, already_exists=2, not_empty=3, other=4).
 	//
 	// On macOS/iOS the entry length is read from `dirent.d_namlen`, so the
@@ -153,7 +153,7 @@ pub struct Directory {
 			if (e == ENOENT) de = 0;
 			else if (e == EACCES) de = 1;
 			r.tag = 1;
-			r._data._error.error = (DirectoryError)de;
+			r._data._fail.err = (DirectoryError)de;
 			return r;
 		}
 		int cap = 4096;
@@ -210,7 +210,7 @@ pub struct Directory {
 		mov x9, #1
 		.Ldir_list_emap:
 		mov x10, #1
-		str x10, [sp, #8]      // tag = error
+		str x10, [sp, #8]      // tag = fail
 		str x9, [sp, #16]      // payload = DirectoryError ordinal
 		b .Ldir_list_ret
 		.Ldir_list_opened:
@@ -296,6 +296,6 @@ pub struct Directory {
 		add sp, sp, #80
 		b .return_Directory_list
 		```
-		return Result.error(DirectoryError.other)
+		return Result.fail(DirectoryError.other)
 	}
 }

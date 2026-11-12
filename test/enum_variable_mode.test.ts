@@ -285,12 +285,12 @@ import System
 
 pub checked enum Result<T, E> {
 	case ok(T value)
-	case error(E message)
+	case fail(E message)
 }
 
 func parse = (string raw, out Result<int, string>) {
 	if raw == "bad" {
-		return .error("nope".copy())
+		return .fail("nope".copy())
 	}
 	return .ok(11)
 }
