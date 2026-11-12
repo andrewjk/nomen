@@ -1324,6 +1324,35 @@ match result {
 
 Only `error` enums may join a set. Member enums are carried by value, so keep heap-owning members (`mv error` with string payloads) to single-error signatures for now.
 
+### Anonymous Error Sets
+
+The error side may be an inline anonymous enum — cases with optional payload TYPES, exactly like the standalone anonymous-enum form:
+
+```
+func fetch = (string url, out int ! [.notfound, .offline]) {
+    if url == "" {
+        return .notfound
+    }
+    if url == "/offline" {
+        return .offline
+    }
+    return 7
+}
+
+var result = fetch("")
+match result {
+    case .ok(value) -> Console.write("\{value}")
+    case .fail(err) {
+        match err {
+            case .notfound -> Console.write("missing")
+            case .offline -> Console.write("offline")
+        }
+    }
+}
+```
+
+The generated enum is the error enum itself, so bare returns and flat error arms resolve exactly as they do for a named `error` enum. It cannot join a composed set — name the enum instead. A success-side anonymous enum (`out [.ok, .redirect] ! E`) matches through `.ok(value)` (`.ok` stays the Result's case).
+
 ### Flat Error Arms
 
 A match over a result may address the error side directly instead of matching `.fail(err)` and nesting. A shorthand case resolves through the error side of the result — a case declared by several set members is the force-specify error:

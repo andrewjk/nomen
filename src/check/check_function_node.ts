@@ -211,14 +211,42 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	}
 
 	if (func.return_type.name) {
-		// ERRORS_PLAN composed sets: the `! E1, E2` E slot is an anonymous
-		// enum Type. Materialize it to its generated mono BEFORE the
-		// signature is validated — check_type_exists triggers the generic's
-		// monomorphization, so doing it after would create the Result mono
-		// over the raw "anon_enum" placeholder.
-		const err_slot_pre = func.return_type.type_args?.[1];
-		if (err_slot_pre?.name === "anon_enum" && err_slot_pre.enum_cases?.length) {
-			func.return_type.type_args![1] = materialize_anon_enum_type(err_slot_pre, function_status);
+		// ERRORS_PLAN composed sets / anonymous error sets: the `! E1, E2`
+		// (composed) and `! [.case, ...]` (anonymous) forms put an anonymous
+		// enum in a result slot (the success side may be one too, e.g.
+		// `out [.ok, .redirect] ! [.notfound]`). Materialize every anonymous
+		// argument BEFORE the signature is validated — check_type_exists
+		// triggers the generic's monomorphization, so doing it after would
+		// create the Result mono over the raw "anon_enum" placeholders.
+		const raw_err_slot = func.return_type.type_args?.[1];
+		for (let arg_i = 0; arg_i < (func.return_type.type_args?.length ?? 0); arg_i++) {
+			const arg = func.return_type.type_args![arg_i];
+			if (arg?.name === "anon_enum" && arg.enum_cases?.length) {
+				func.return_type.type_args![arg_i] = materialize_anon_enum_type(arg, function_status);
+			}
+		}
+		if (raw_err_slot?.name === "anon_enum" && raw_err_slot.enum_cases?.length) {
+			const materialized = func.return_type.type_args![1];
+			// The generated enum must resolve as the error side: a composed
+			// set is a composition over NAMED members (the gate checks each),
+			// while an anonymous error set IS an error enum — stamp it so the
+			// `!`-gate and the flat-arm rewrite accept it.
+			const generated =
+				materialized.name !== "anon_enum"
+					? function_status.enums.findLast((e) => e.name === materialized.name)
+					: undefined;
+			if (generated) {
+				if (raw_err_slot.is_composed_error_set) {
+					generated.is_composed_error_set = true;
+				} else {
+					generated.is_error = true;
+				}
+			}
+			// Parse stamped the RAW anon object as the member; point it at the
+			// materialized type (lifting and widening resolve members by name).
+			if (func.result_error_types?.length === 1 && func.result_error_types[0] === raw_err_slot) {
+				func.result_error_types = [materialized];
+			}
 		}
 		if (!check_type_exists(func.return_type, function_status, func.return_type_start!)) {
 			func.return_type = new Type("?");

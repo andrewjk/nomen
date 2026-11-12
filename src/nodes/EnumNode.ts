@@ -33,6 +33,14 @@ export default class EnumNode extends BaseNode {
 	 * instantiations by `monomorphize_enum` alongside `checked`.
 	 */
 	is_error?: boolean;
+	/**
+	 * ERRORS_PLAN composed sets: set on the GENERATED anon enum that fills
+	 * the E slot of a `T ! E1, E2` result — its cases carry whole member
+	 * enums, tagged by origin. Distinguishes it from an anonymous error set
+	 * (`T ! [.notfound, ...]`), where the generated anon enum IS the error
+	 * enum (`is_error` is stamped instead).
+	 */
+	is_composed_error_set?: boolean;
 	/** Set on monomorphized instantiations: the generic template's name. */
 	template_name?: string;
 	/** Set on monomorphized instantiations: the concrete type args. */

@@ -17,7 +17,7 @@ import get_index from "./utils/get_index.ts";
 import parse_qualified_name from "./utils/parse_qualified_name.ts";
 import peek_current from "./utils/peek_current.ts";
 
-export default function parse_type(status: ParseStatus): Type {
+function parse_type_base(status: ParseStatus): Type {
 	// Tuple type: `[T1, T2, ...]`
 	if (peek_current(status) === "[") {
 		const start = get_index(status);
@@ -234,55 +234,6 @@ export default function parse_type(status: ParseStatus): Type {
 		if (result.name !== "void") func_type.func_return_type = result;
 		return func_type;
 	}
-	// ERRORS_PLAN: `T ! E` — the result-type form, or a composed set
-	// `T ! E1, E2, ...` (comma-separated like a trait list). Pure sugar over
-	// the core generic: the type becomes `Result<T, E>` — for a SET, the E
-	// slot is ONE anonymous enum over the whole member enums (tagged by
-	// origin, cases named by member type name; the anon-enum machinery sorts
-	// cases canonically, so `! A, B` ≡ `! B, A`). `is_result_form` marks the
-	// `!` spelling (parse_function reads it on the `out` slot to enable
-	// bare-return lifting and to stamp the member list; elsewhere it is
-	// inert). The E gate (error enums only) is enforced at check time.
-	if (accept("!", status)) {
-		const bang_start = type.start ?? get_index(status);
-		if (type.name === "void") {
-			add_error(
-				status,
-				`'void' cannot be a '!' result type — spell the success type instead`,
-				bang_start,
-			);
-		} else if (type.name === "Result") {
-			add_error(
-				status,
-				`a '!' result cannot wrap another result — spell Result<Result<T, E>, E2> explicitly if that is meant`,
-				bang_start,
-			);
-		}
-		const err_types: Type[] = [parse_type(status)];
-		while (accept(",", status)) {
-			const member = parse_type(status);
-			if (err_types.some((t) => t.name === member.name)) {
-				add_error(
-					status,
-					`Duplicate error type: ${member.name}`,
-					member.start ?? get_index(status),
-				);
-			}
-			err_types.push(member);
-		}
-		const result_type = new Type("Result");
-		result_type.start = bang_start;
-		if (err_types.length === 1) {
-			result_type.type_args = [type, err_types[0]];
-		} else {
-			const composed = new Type("anon_enum");
-			composed.start = bang_start;
-			composed.enum_cases = err_types.map((m) => ({ name: m.name, types: [m] }));
-			result_type.type_args = [type, composed];
-		}
-		result_type.is_result_form = true;
-		return result_type;
-	}
 	return type;
 }
 
@@ -390,4 +341,83 @@ function parse_anon_enum_case(cases: { name: string; types: Type[] }[], status: 
 		add_error(status, `Duplicate enum case: ${name}`, start);
 	}
 	cases.push({ name, types });
+}
+
+/**
+ * Type entry point. Parses the base shape, then applies the ERRORS_PLAN
+ * result suffix — `T ! E` (a result), `T ! E1, E2` (a composed set), or
+ * `T ! [.case, ...]` (an anonymous error set). The wrapper form matters:
+ * tuples and anonymous enums return early from the base parser, so a
+ * `[T1, T2] ! E` success type would otherwise leave the `!` dangling.
+ */
+export default function parse_type(status: ParseStatus): Type {
+	const type = parse_type_base(status);
+	return apply_result_suffix(type, status);
+}
+
+function apply_result_suffix(type: Type, status: ParseStatus): Type {
+	// ERRORS_PLAN: `T ! E` — the result-type form, or a composed set
+	// `T ! E1, E2, ...` (comma-separated like a trait list). Pure sugar over
+	// the core generic: the type becomes `Result<T, E>` — for a SET, the E
+	// slot is ONE anonymous enum over the whole member enums (tagged by
+	// origin, cases named by member type name; the anon-enum machinery sorts
+	// cases canonically, so `! A, B` ≡ `! B, A`). `is_result_form` marks the
+	// `!` spelling (parse_function reads it on the `out` slot to enable
+	// bare-return lifting and to stamp the member list; elsewhere it is
+	// inert). The E gate (error enums only) is enforced at check time.
+	if (accept("!", status)) {
+		const bang_start = type.start ?? get_index(status);
+		if (type.name === "void") {
+			add_error(
+				status,
+				`'void' cannot be a '!' result type — spell the success type instead`,
+				bang_start,
+			);
+		} else if (type.name === "Result") {
+			add_error(
+				status,
+				`a '!' result cannot wrap another result — spell Result<Result<T, E>, E2> explicitly if that is meant`,
+				bang_start,
+			);
+		}
+		const err_types: Type[] = [parse_type(status)];
+		while (accept(",", status)) {
+			const member = parse_type(status);
+			if (err_types.some((t) => t.name === member.name)) {
+				add_error(
+					status,
+					`Duplicate error type: ${member.name}`,
+					member.start ?? get_index(status),
+				);
+			}
+			err_types.push(member);
+		}
+		const result_type = new Type("Result");
+		result_type.start = bang_start;
+		if (err_types.length === 1) {
+			// A single anonymous enum member (`! [.notfound, .network]`) IS
+			// the error enum — it materializes to its generated mono like any
+			// anonymous enum. No marker: the checker treats an unmarked anon
+			// E slot as an anonymous error set.
+			result_type.type_args = [type, err_types[0]];
+		} else {
+			for (const member of err_types) {
+				if (member.name === "anon_enum") {
+					add_error(
+						status,
+						`an anonymous error set cannot join a composed set — name the error enum instead`,
+						member.start ?? bang_start,
+					);
+				}
+			}
+			const composed = new Type("anon_enum");
+			composed.start = bang_start;
+			composed.enum_cases = err_types.map((m) => ({ name: m.name, types: [m] }));
+			composed.is_composed_error_set = true;
+			result_type.type_args = [type, composed];
+		}
+		result_type.is_result_form = true;
+		return result_type;
+	}
+	return type;
 }

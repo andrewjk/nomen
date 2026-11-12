@@ -75,34 +75,56 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	const fn = func as FunctionNode | null;
 	const fn_members = fn?.result_error_types ?? [];
 	const fn_composed = fn_members.length > 1;
-	if (fn?.returns_result && fn.return_type.name && fn.return_type.name !== "?") {
-		const shorthand = ret.value.node_type === "value" ? (ret.value as ValueNode) : undefined;
+	// `.case` shorthand and `.case(args)` payload shorthand both arrive as a
+	// dotted head — a bare ValueNode or a FunctionCallNode's name.
+	const shorthand_case = (node: BaseNode): { name: string; start: number } | undefined => {
+		const head =
+			node.node_type === "value"
+				? (node as ValueNode).value
+				: node.node_type === "func_call"
+					? (node as FunctionCallNode).name
+					: "";
 		if (
-			shorthand &&
-			shorthand.value.startsWith(".") &&
-			shorthand.value.length > 1 &&
-			!shorthand.value.startsWith("..")
+			typeof head === "string" &&
+			head.startsWith(".") &&
+			head.length > 1 &&
+			!head.startsWith("..")
 		) {
-			const case_name = shorthand.value.substring(1);
-			const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
-			const on_result = !!result_enum?.cases.some((c) => c.name === case_name);
-			if (result_enum?.template_name === "Result" && !on_result) {
-				const owners = fn_members.filter((m) =>
-					status.enums.findLast((e) => e.name === m.name)?.cases.some((c) => c.name === case_name),
+			return { name: head.substring(1), start: node.start };
+		}
+		return undefined;
+	};
+	const shorthand = shorthand_case(ret.value);
+	if (fn?.returns_result && fn.return_type.name && fn.return_type.name !== "?" && shorthand) {
+		const case_name = shorthand.name;
+		const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
+		const on_result = !!result_enum?.cases.some((c) => c.name === case_name);
+		if (result_enum?.template_name === "Result" && !on_result) {
+			const owners = fn_members.filter((m) =>
+				status.enums.findLast((e) => e.name === m.name)?.cases.some((c) => c.name === case_name),
+			);
+			// The SUCCESS side may itself be an enum (an anonymous success
+			// enum, `out [.ok, .redirect] ! E`): a shorthand naming one of its
+			// cases lifts through `.ok(...)` the same way.
+			const ok_case = result_enum.cases.find((c) => c.name === "ok");
+			const ok_enum = ok_case?.params[0]
+				? status.enums.findLast((e) => e.name === ok_case.params[0].type.name)
+				: undefined;
+			const on_ok = !!ok_enum?.cases.some((c) => c.name === case_name);
+			if (owners.length > 1) {
+				add_error(
+					status,
+					`case '.${case_name}' is ambiguous in the error set (${owners.map((o) => o.name).join(", ")}) — qualify the origin (\`${owners[0].name}.${case_name}\`)`,
+					shorthand.start,
 				);
-				if (owners.length > 1) {
-					add_error(
-						status,
-						`case '.${case_name}' is ambiguous in the error set (${owners.map((o) => o.name).join(", ")}) — qualify the origin (\`${owners[0].name}.${case_name}\`)`,
-						shorthand.start,
-					);
-				}
-				if (owners.length >= 1) {
-					const fail_value = fn_composed
-						? new FunctionCallNode(shorthand.start, `.${owners[0].name}`, undefined, [ret.value])
-						: ret.value;
-					ret.value = new FunctionCallNode(shorthand.start, ".fail", undefined, [fail_value]);
-				}
+			}
+			if (owners.length >= 1) {
+				const fail_value = fn_composed
+					? new FunctionCallNode(shorthand.start, `.${owners[0].name}`, undefined, [ret.value])
+					: ret.value;
+				ret.value = new FunctionCallNode(shorthand.start, ".fail", undefined, [fail_value]);
+			} else if (on_ok) {
+				ret.value = new FunctionCallNode(shorthand.start, ".ok", undefined, [ret.value]);
 			}
 		}
 	}

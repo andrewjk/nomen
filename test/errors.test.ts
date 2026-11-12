@@ -1038,3 +1038,140 @@ pub func main = () {
 		]);
 	});
 });
+
+describe("errors: anonymous error sets", () => {
+	test("an inline error enum declares and matches like a named one", async () => {
+		const input = `
+func fetch = (string url, out int ! [.notfound, .offline]) {
+	if url == "" {
+		return .notfound
+	}
+	if url == "/offline" {
+		return .offline
+	}
+	return 7
+}
+
+var missing = fetch("")
+match missing {
+	case .ok(_) -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("missing\\n")
+			case .offline -> Console.write("offline\\n")
+		}
+	}
+}
+var ok = fetch("a")
+match ok {
+	case .ok(value) -> Console.write("ok \\{value}\\n")
+	case .fail(_) -> Console.write("unexpected\\n")
+}
+`;
+		await build_and_check_output(input, "errors_anon_set", "missing\nok 7\n");
+	});
+
+	test("flat arms resolve through an anonymous error set", async () => {
+		const input = `
+func fetch = (string url, out int ! [.notfound, .offline]) {
+	if url == "" {
+		return .notfound
+	}
+	return 7
+}
+
+func describe = (string url, out string) {
+	return match fetch(url) {
+		case .ok(value) -> "ok \\{value}"
+		case .notfound -> "missing"
+		case .offline -> "offline"
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("")}\\n")
+`;
+		await build_and_check_output(input, "errors_anon_flat", "ok 7\nmissing\n");
+	});
+
+	test("payload-carrying anonymous error sets parse and lift", () => {
+		// Runtime teardown of a nested enum payload is the FOLLOWUP.md gap —
+		// this pins the syntax/lifting surface.
+		const input = `import System
+
+func parse = (string text, out int ! [.syntax(string)]) {
+	if text == "" {
+		return .syntax("empty input")
+	}
+	return 1
+}
+
+pub func main = () {
+	var bad = parse("")
+	match bad {
+		case .ok(_) -> Console.write("unexpected")
+		case .fail(err) {
+			match err {
+				case .syntax(message) -> Console.write("syntax: \\{message}")
+			}
+		}
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("the original success-enum + anonymous-error shape", () => {
+		const input = `import System
+
+func fetch = (bool redirect, out [.ok, .redirect] ! [.notfound]) {
+	if redirect {
+		return .redirect
+	}
+	return .notfound
+}
+
+pub func main = () {
+	var result = fetch(true)
+	match result {
+		case .ok(value) {
+			match value {
+				case .ok -> Console.write("ok")
+				case .redirect -> Console.write("redirect")
+			}
+		}
+		case .fail(err) {
+			match err {
+				case .notfound -> Console.write("missing")
+			}
+		}
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("an anonymous error set cannot join a composed set", () => {
+		const input = `import System
+
+error LoadError {
+	case timeout
+}
+
+func load = (out int ! LoadError, [.notfound]) {
+	return 1
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"an anonymous error set cannot join a composed set — name the error enum instead",
+				7,
+				18,
+			),
+		]);
+	});
+});

@@ -228,9 +228,17 @@ the flat arms remain later work.
   is rejected, and per-member exhaustiveness falls out of the generated
   matches. One parser addition: `Enum(bindings)` patterns (uppercase head +
   parens).
+- **Stage 5b (done)** — anonymous error sets (`T ! [.case, ...]`): the E
+  slot is an inline anonymous enum that IS the error enum (stamped
+  `is_error`; bare returns, flat arms, and the anonymous call shorthand all
+  resolve through it). The success side may be an anonymous enum too
+  (`out [.ok, .redirect] ! E`); success-side enums match through
+  `.ok(value)` — `.ok` stays the Result's case. Anonymous sets cannot join
+  a composed set. The top-level `parse_type` is a wrapper over the base
+  parser so the suffix applies after early-returning shapes (tuples /
+  anonymous enums), and the link scan pulls Result for `!` before `[`.
 - **Deferred** — nullable chaining (`?.` does not exist today; prerequisite
-  for the `fetch(...)!.body !! ""` shape), anonymous error enums,
-  assignment-position lifting.
+  for the `fetch(...)!.body !! ""` shape), assignment-position lifting.
 
 ## Checker rules
 

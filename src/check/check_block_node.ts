@@ -493,13 +493,40 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					// types (`out Result<int, string>`) are instantiated here
 					// for the same reason — the annotation is rewritten to the
 					// mono name, which callers match against.
-					// ERRORS_PLAN composed sets: the `! E1, E2` E slot is an
-					// anonymous enum — materialize it BEFORE the signature so
-					// the Result mono is created over the enum mono rather
-					// than the raw placeholder.
-					const err_slot = func.return_type?.type_args?.[1];
-					if (err_slot?.name === "anon_enum" && err_slot.enum_cases?.length) {
-						func.return_type.type_args![1] = materialize_anon_enum_type(err_slot, status);
+					// ERRORS_PLAN composed sets / anonymous error sets: the
+					// `! E1, E2` and `! [.case, ...]` forms put an anonymous
+					// enum in a result slot (the success side may be one too,
+					// e.g. `out [.ok, .redirect] ! [.notfound]`). Materialize
+					// every anonymous argument BEFORE the signature so the
+					// Result mono is created over the enum monos rather than
+					// the raw placeholders, and stamp the E-side generated
+					// node as the error side (composed vs anonymous).
+					const raw_err_slot = func.return_type?.type_args?.[1];
+					for (let arg_i = 0; arg_i < (func.return_type?.type_args?.length ?? 0); arg_i++) {
+						const arg = func.return_type!.type_args![arg_i];
+						if (arg?.name === "anon_enum" && arg.enum_cases?.length) {
+							func.return_type!.type_args![arg_i] = materialize_anon_enum_type(arg, status);
+						}
+					}
+					if (raw_err_slot?.name === "anon_enum" && raw_err_slot.enum_cases?.length) {
+						const materialized = func.return_type.type_args![1];
+						const generated =
+							materialized.name !== "anon_enum"
+								? status.enums.findLast((e) => e.name === materialized.name)
+								: undefined;
+						if (generated) {
+							if (raw_err_slot.is_composed_error_set) {
+								generated.is_composed_error_set = true;
+							} else {
+								generated.is_error = true;
+							}
+						}
+						if (
+							func.result_error_types?.length === 1 &&
+							func.result_error_types[0] === raw_err_slot
+						) {
+							func.result_error_types = [materialized];
+						}
 					}
 					func.return_type = materialize_type(func.return_type, status);
 					instantiate_generic_type(func.return_type, status);

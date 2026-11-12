@@ -13,6 +13,7 @@ type MatchCase = MatchNode["cases"][number];
 type EnumLike = {
 	name: string;
 	source_name?: string;
+	is_composed_error_set?: boolean;
 	cases: { name: string; params: { name: string; type: Type }[] }[];
 };
 
@@ -60,9 +61,10 @@ export default function rewrite_flat_error_arms(
 		| undefined;
 	if (!error_enum) return;
 
-	// The error side: one named enum (single `T ! E`) or the generated
-	// origin-tagged enum of a composed set (`T ! E1, E2`).
-	const composed = error_enum.name.startsWith("_AnonEnum_");
+	// The error side: one named enum or anonymous error enum (single
+	// `T ! E` / `T ! [.case, ...]`), or the generated origin-tagged enum of
+	// a composed set (`T ! E1, E2`).
+	const composed = error_enum.is_composed_error_set === true;
 	const owners: { key: string; enum: EnumLike }[] = composed
 		? error_enum.cases
 				.map((c) => {

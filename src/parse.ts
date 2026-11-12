@@ -291,17 +291,18 @@ export function resolve_linked_types(source: string, library: Library, file_path
 			token.value === "!" &&
 			i > 0 &&
 			i < tokens.length - 1 &&
-			/^\w+$/.test(tokens[i - 1].value) &&
-			/^\w+$/.test(tokens[i + 1].value)
+			(/^\w+$/.test(tokens[i - 1].value) || tokens[i - 1].value === "]") &&
+			(/^\w+$/.test(tokens[i + 1].value) || tokens[i + 1].value === "[")
 		) {
-			// ERRORS_PLAN: the `T ! E` result form (and the postfix `!`
-			// propagation) desugars to the core `Result` generic at PARSE
-			// time — after this scan — so the source never names `Result`
-			// as a token. A `!` sandwiched between two words is that form
-			// (prefix `!x` sits behind an operator or `(`; `!=` lexes as
-			// one compound), and pulling the Result template for a stray
-			// lookalike is harmless: the generic registers, its monos only
-			// materialize on use.
+			// ERRORS_PLAN: the `T ! E` result form, the composed `T ! E1, E2`
+			// set, and the anonymous error set `T ! [.case]` desugar to the
+			// core `Result` generic at PARSE time — after this scan — so the
+			// source never names `Result` as a token. A `!` between two words
+			// or brackets is that form (the `]` case covers a tuple /
+			// anonymous-enum success type; prefix `!x` sits behind an
+			// operator or `(`; `!=` lexes as one compound), and pulling the
+			// Result template for a stray lookalike is harmless: the generic
+			// registers, its monos only materialize on use.
 			needed.add("Result");
 		} else if (
 			token.value.length > 1 &&

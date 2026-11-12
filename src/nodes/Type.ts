@@ -76,6 +76,15 @@ export default class Type {
 	 */
 	is_result_form?: boolean;
 
+	/**
+	 * ERRORS_PLAN composed sets: set on the generated anon-enum Type that
+	 * occupies the E slot of a `T ! E1, E2` result. Distinguishes it from an
+	 * ANONYMOUS ERROR SET (`T ! [.notfound, ...]`), which is also an anon
+	 * enum in the E slot but IS the error enum itself rather than a
+	 * composition over named members.
+	 */
+	is_composed_error_set?: boolean;
+
 	length?: BaseNode;
 	is_return_type?: boolean;
 	is_nullable?: boolean;

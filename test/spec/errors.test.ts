@@ -250,4 +250,30 @@ func describe = (string path, out string) {
 `;
 		expect(compile_module(body)).toEqual([]);
 	});
+
+	test("an anonymous error set declares and lifts", () => {
+		const body = `
+func fetch = (string url, out int ! [.notfound, .offline]) {
+	if url == "" {
+		return .notfound
+	}
+	if url == "/offline" {
+		return .offline
+	}
+	return 7
+}
+
+var result = fetch("")
+match result {
+	case .ok(value) -> Console.write("\\{value}")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("missing")
+			case .offline -> Console.write("offline")
+		}
+	}
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
 });

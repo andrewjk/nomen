@@ -680,6 +680,13 @@ aarch64 runtime tests that assert audit balance should keep interpolated
 success payloads out of chained lifted returns (the errors tests do this via
 payload-free chains; the `!!` single-call shapes audit clean).
 
+The same family shows up for NESTED enum payloads: an anonymous error set
+with a heap payload (`out int ! [.syntax(string)]`) stores the string inside
+the generated error enum inside the Result; the match binds it fine, but the
+aarch64 scope-exit walk misses the inner payload (one leaked allocation at
+exit). Payload-free anonymous sets audit clean; the payload case is pinned
+at the parse/check level until the enum-payload teardown lands.
+
 ## Enum-typed payloads copy bitwise — a variable donor aliases
 
 Recorded 2026-11-12, surfacing with ERRORS_PLAN composition (the check is
