@@ -14,6 +14,11 @@ export default function check_missing_return(func: FunctionNode, status: ParseSt
 	if (!func.return_type.name || func.has_return) {
 		return;
 	}
+	// ERRORS_PLAN: a unit-result function (`out ! E`) falls through as
+	// SUCCESS — no explicit return is required.
+	if (func.unit_result) {
+		return;
+	}
 	const is_raw_only =
 		func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
 	if (is_raw_only) {

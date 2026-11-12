@@ -1143,6 +1143,15 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// A `var _ = <expr>` discard of a VOID expression (a value-less result
+	// propagation such as `close()!`) has nothing to bind — emit the
+	// expression as a statement.
+	if (node.type?.name === "void" && node.value) {
+		build_node(node.value, status);
+		status.code += "\n";
+		return;
+	}
+
 	// A declaration with no name, type, or value is an internal-invariant
 	// violation: the checker stamps every declaration it passes through. The
 	// historic Init-main desugar residue routed a block/func-shaped node

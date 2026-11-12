@@ -218,7 +218,8 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		// argument BEFORE the signature is validated — check_type_exists
 		// triggers the generic's monomorphization, so doing it after would
 		// create the Result mono over the raw "anon_enum" placeholders.
-		const raw_err_slot = func.return_type.type_args?.[1];
+		const err_index = func.unit_result ? 0 : 1;
+		const raw_err_slot = func.return_type.type_args?.[err_index];
 		for (let arg_i = 0; arg_i < (func.return_type.type_args?.length ?? 0); arg_i++) {
 			const arg = func.return_type.type_args![arg_i];
 			if (arg?.name === "anon_enum" && arg.enum_cases?.length) {
@@ -321,6 +322,16 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	// An foreign has no body to check: the backends synthesize the
 	// marshalling adapter from the signature alone.
 	if (func.is_foreign) return;
+
+	// ERRORS_PLAN: a unit-result function (`out ! E`) falls through as
+	// SUCCESS. Append a bare `return` so the ordinary return builders emit
+	// the ok case and the destroy walk (an explicit trailing `return` in the
+	// source is equivalent; an always-returning body just gets a harmless
+	// unreachable one).
+	if (func.returns_result && func.unit_result && func.has_body) {
+		func.statements.push(new ReturnNode(func.start + 1, null));
+		func.has_return = true;
+	}
 
 	// Devirtualization scan (PERF_PLAN item 11): one pass over the body for
 	// every name this function REBINDS (assignment / swap / `ref` argument —

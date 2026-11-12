@@ -302,8 +302,9 @@ export function resolve_linked_types(source: string, library: Library, file_path
 			// anonymous-enum success type; prefix `!x` sits behind an
 			// operator or `(`; `!=` lexes as one compound), and pulling the
 			// Result template for a stray lookalike is harmless: the generic
-			// registers, its monos only materialize on use.
-			needed.add("Result");
+			// registers, its monos only materialize on use. Directly after
+			// `out` it is the UNIT form (`out ! E`) — pull `UnitResult`.
+			needed.add(tokens[i - 1].value === "out" ? "UnitResult" : "Result");
 		} else if (
 			token.value.length > 1 &&
 			token.value.startsWith(":") &&

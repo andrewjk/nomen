@@ -132,6 +132,13 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 */
 	returns_result?: boolean;
 	/**
+	 * ERRORS_PLAN: the function was declared with the UNIT result form
+	 * (`out ! E`) — it returns nothing but may fail. Desugars to the core
+	 * `UnitResult<E>`; the checker/builder treat fall-through and a bare
+	 * `return` as success. Set by parse_function alongside returns_result.
+	 */
+	unit_result?: boolean;
+	/**
 	 * ERRORS_PLAN: the error set as written after `!` — one entry for the
 	 * single form, several for a composed set (`out T ! E1, E2`). Raw parse
 	 * types (pre-materialization), used by the E gate, the return lifting,

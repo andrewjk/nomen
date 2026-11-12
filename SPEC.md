@@ -1230,6 +1230,40 @@ match result {
 }
 ```
 
+### Unit Results (`out ! E`)
+
+A function that returns nothing but may fail declares `out ! E` — no success type, no new keyword. It desugars to the core `UnitResult<E>` (the `Result` shape with a payload-less `ok`), so checked-discard, matching, flat error arms, and `error`-set composition all apply:
+
+```
+error FetchError {
+    case notfound
+}
+
+func close = (string path, out ! FetchError) {
+    if path == "" {
+        return .notfound
+    }
+    // falls through: success
+}
+
+func describe = (string path, out string) {
+    return match close(path) {
+        case .ok -> "closed"
+        case .notfound -> "missing"
+    }
+}
+```
+
+Falling off the end and a bare `return` are success; `return .case` or an error value is failure; an explicit `.ok`/`.fail` passes through. A plain value returned from a unit-result function is evaluated and discarded — the natural spelling for propagation:
+
+```
+func cleanup = (string path, out ! FetchError) {
+    close(path)!        // propagate; success yields nothing
+}
+```
+
+`var _ = close(path)` is the deliberate discard. `!!` has no success value to coalesce, so it is rejected with the discard forms named.
+
 ### The `!!` Result Coalesce
 
 `a !! b` is the result-flavored sibling of `??`: `a` must be a `Result<T, E>`, `b` must be `T`, and the result is `T`. Consuming the `Result` discharges the checked rule by construction:

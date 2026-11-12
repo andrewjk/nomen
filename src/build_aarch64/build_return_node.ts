@@ -39,7 +39,7 @@ import { emit_string_array_labels, resolve_array_element } from "./build_declara
 import { build_constructor_params, is_magic_spawn_ctor } from "./build_declaration_node.ts";
 import { emit_struct_address } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
-import { load_nullable_has } from "./build_operation_node.ts";
+import { build_operand, load_nullable_has } from "./build_operation_node.ts";
 import { emit_typed_store } from "./build_struct_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
@@ -70,6 +70,7 @@ import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
+	get_enum_case_index,
 	get_enum_sret_size,
 	get_field_offset,
 	get_struct_size,
@@ -239,6 +240,53 @@ export default function build_return_node(
 		}
 		emit_heap_slots_cleanup_for_return(status);
 		emit_asm(status, `b ${status.function_return_label}\n`);
+		return;
+	}
+
+	// ERRORS_PLAN unit result (`out ! E`): a bare `return` and fall-through
+	// are success (the checker appends a trailing bare return); a
+	// `return <value>` (unit_discard — `return load(p)!`) evaluates the
+	// expression for its effects. Both write the ok tag into the caller's
+	// sret buffer, run the destroy walk, and branch to the return label. An
+	// explicit `.ok`/`.fail` value is a UnitResult and rides the ordinary
+	// value path below.
+	const unit_ret_enum = status.function_return_type?.name
+		? status.enums.find((e) => e.name === status.function_return_type!.name)
+		: undefined;
+	const unit_ok_return = () => {
+		emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset ?? 0}]\n`);
+		emit_asm(status, `mov x10, #${get_enum_case_index(unit_ret_enum!.name, "ok", status)}\n`);
+		emit_asm(status, `str x10, [x8]\n`);
+		emit_nursery_joins_on_return_a64(status);
+		const unit_finalized = status.moved ?? new Set<string>();
+		for (const decl of all_scope_frames(status).flat()) {
+			if (unit_finalized.has(decl.name)) {
+				emit_moved_local_cleanup(status, decl);
+				continue;
+			}
+			if (is_field_struct_borrow(decl)) continue;
+			emit_destroy_for_decl(
+				status,
+				decl.name,
+				decl.type.name,
+				undefined,
+				decl.type.type_args,
+				decl.type.is_nullable,
+			);
+		}
+		emit_heap_slots_cleanup_for_return(status);
+		emit_asm(status, `mov x0, #0\n`);
+		emit_asm(status, `b ${status.function_return_label}\n`);
+	};
+	if (unit_ret_enum?.template_name === "UnitResult" && node.unit_discard && node.value) {
+		build_operand(node.value, "x0", status);
+		ensure_newline(status);
+		unit_ok_return();
+		return;
+	}
+	if (unit_ret_enum?.template_name === "UnitResult" && !node.value) {
+		// Bare `return` in a unit-result function: success.
+		unit_ok_return();
 		return;
 	}
 

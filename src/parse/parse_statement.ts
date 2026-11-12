@@ -7,6 +7,7 @@ import GroupedNode from "../nodes/GroupedNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import LetNode from "../nodes/LetNode.ts";
 import NestedBlockNode from "../nodes/NestedBlockNode.ts";
+import OperationNode from "../nodes/OperationNode.ts";
 import UnsafeBlockNode from "../nodes/UnsafeBlockNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_access from "./parse_access.ts";
@@ -423,6 +424,15 @@ function parse_statement_start(status: ParseStatus) {
 				}
 				expect(")", status);
 				node = func;
+				break;
+			}
+			case "!": {
+				// ERRORS_PLAN: postfix `!` propagation at statement position
+				// (`close(path)!`) — this statement-start postfix loop is
+				// separate from parse_expression's; the case must exist in
+				// both.
+				accept("!", status);
+				node = new OperationNode(node.start, "p!", node, node);
 				break;
 			}
 			case "=": {

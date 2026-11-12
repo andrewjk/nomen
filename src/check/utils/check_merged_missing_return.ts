@@ -18,6 +18,11 @@ export default function check_merged_missing_return(func: FunctionNode, status: 
 	if (!func.return_type.name || func.has_return || func.is_arrow_body || !func.has_body) {
 		return;
 	}
+	// ERRORS_PLAN: a unit-result function (`out ! E`) falls through as
+	// SUCCESS — no explicit return is required.
+	if (func.unit_result) {
+		return;
+	}
 	const is_raw_only =
 		func.statements.length > 0 && func.statements.every((s) => s.node_type === "raw");
 	if (is_raw_only) {

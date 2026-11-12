@@ -258,7 +258,7 @@ func close = (out void ! FetchError) {
 		expect(parsed.errors).toEqual([
 			test_error(
 				input,
-				"'void' cannot be a '!' result type — spell the success type instead",
+				"'void' cannot be a '!' success type — spell the unit result form `out ! E` instead",
 				7,
 				19,
 			),
@@ -1170,7 +1170,212 @@ func load = (out int ! LoadError, [.notfound]) {
 				input,
 				"an anonymous error set cannot join a composed set — name the error enum instead",
 				7,
-				18,
+				46,
+			),
+		]);
+	});
+});
+
+describe("errors: the unit result form (`out ! E`)", () => {
+	test("a unit result returns nothing and falls through as success", async () => {
+		const input = `
+error FetchError {
+	case notfound
+	case denied
+}
+
+func close = (string path, out ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+	if path == "/private" {
+		return .denied
+	}
+	// falls through: success
+}
+
+func describe = (string path, out string) {
+	return match close(path) {
+		case .ok -> "closed"
+		case .notfound -> "missing"
+		case .denied -> "denied"
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("")}\\n")
+Console.write("\\{describe("/private")}\\n")
+`;
+		await build_and_check_output(input, "errors_unit", "closed\nmissing\ndenied\n");
+	});
+
+	test("bare return and explicit .ok are success", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func step = (int n, out ! FetchError) {
+	if n == 0 {
+		return
+	}
+	if n < 0 {
+		return .notfound
+	}
+	return .ok
+}
+
+func describe = (int n, out string) {
+	return match step(n) {
+		case .ok -> "ok"
+		case .notfound -> "notfound"
+	}
+}
+
+Console.write("\\{describe(1)}\\n")
+Console.write("\\{describe(0)}\\n")
+Console.write("\\{describe(-1)}\\n")
+`;
+		await build_and_check_output(input, "errors_unit_returns", "ok\nok\nnotfound\n");
+	});
+
+	test("value-less propagation chains through unit functions", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func close = (string path, out ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+}
+
+func cleanup = (string path, out ! FetchError) {
+	close(path)!
+	var _ = close(path)!
+}
+
+var result = cleanup("")
+match result {
+	case .ok -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("propagated\\n")
+		}
+	}
+}
+var done = cleanup("a")
+match done {
+	case .ok -> Console.write("ok\\n")
+	case .fail(_) -> Console.write("unexpected fail\\n")
+}
+`;
+		await build_and_check_output(input, "errors_unit_propagate", "propagated\nok\n");
+	});
+
+	test("a value result propagates into a unit function, discarding the payload", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func fetch = (string path, out int ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+	return 7
+}
+
+func consume = (string path, out ! FetchError) {
+	return fetch(path)!
+}
+
+var bad = consume("")
+match bad {
+	case .ok -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("propagated value error\\n")
+		}
+	}
+}
+var good = consume("a")
+match good {
+	case .ok -> Console.write("ok\\n")
+	case .fail(_) -> Console.write("unexpected fail\\n")
+}
+`;
+		await build_and_check_output(input, "errors_unit_discard", "propagated value error\nok\n");
+	});
+
+	test("a composed unit set widens", async () => {
+		const input = `
+error LoadError {
+	case timeout
+}
+
+error ParseError {
+	case syntax
+}
+
+func load = (string path, out ! LoadError) {
+	if path == "" {
+		return .timeout
+	}
+}
+
+func load_all = (string path, out ! LoadError, ParseError) {
+	load(path)!
+}
+
+var result = load_all("")
+match result {
+	case .ok -> Console.write("unexpected\\n")
+	case LoadError.timeout -> Console.write("widened\\n")
+	case ParseError.syntax -> Console.write("unreachable\\n")
+}
+`;
+		await build_and_check_output(input, "errors_unit_compose", "widened\n");
+	});
+
+	test("`var _ =` discards a unit result deliberately", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func close = (out ! FetchError) {
+	return .notfound
+}
+
+var _ = close()
+Console.write("discarded\\n")
+`;
+		await build_and_check_output(input, "errors_unit_discard_ok", "discarded\n");
+	});
+
+	test("`!!` on a unit result names the discard forms", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func close = (out ! FetchError) {
+}
+
+pub func main = () {
+	var x = close() !! 0
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"a '!' unit result has no success value — discard it with 'var _ =' or propagate with '!'",
+				11,
+				10,
 			),
 		]);
 	});

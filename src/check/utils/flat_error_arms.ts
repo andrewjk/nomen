@@ -53,7 +53,9 @@ export default function rewrite_flat_error_arms(
 	status: CheckStatus,
 ): void {
 	const result_enum = status.enums.findLast((e) => e.name === match_type.name);
-	if (result_enum?.template_name !== "Result") return;
+	const result_like =
+		result_enum?.template_name === "Result" || result_enum?.template_name === "UnitResult";
+	if (!result_like) return;
 	const fail_case = result_enum.cases.find((c) => c.name === "fail");
 	if (!fail_case?.params[0]) return;
 	const error_enum = status.enums.findLast((e) => e.name === fail_case.params[0].type.name) as

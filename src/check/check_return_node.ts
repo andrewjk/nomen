@@ -55,6 +55,13 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	}
 
 	if (!ret.value) {
+		// ERRORS_PLAN: `return` in a unit-result function (`out ! E`) is
+		// SUCCESS — the builder constructs the ok case.
+		const bare_fn = func as FunctionNode | null;
+		if (bare_fn?.returns_result && bare_fn.unit_result && bare_fn.return_type.name) {
+			ret.type = bare_fn.return_type;
+			return;
+		}
 		if (func && !func.return_type.name) {
 			func.return_type = new Type("void");
 		}
@@ -98,8 +105,10 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	if (fn?.returns_result && fn.return_type.name && fn.return_type.name !== "?" && shorthand) {
 		const case_name = shorthand.name;
 		const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
+		const is_result_like =
+			result_enum?.template_name === "Result" || result_enum?.template_name === "UnitResult";
 		const on_result = !!result_enum?.cases.some((c) => c.name === case_name);
-		if (result_enum?.template_name === "Result" && !on_result) {
+		if (is_result_like && !on_result) {
 			const owners = fn_members.filter((m) =>
 				status.enums.findLast((e) => e.name === m.name)?.cases.some((c) => c.name === case_name),
 			);
@@ -363,9 +372,12 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 		const result_enum = status.enums.findLast((e) => e.name === fn.return_type.name);
 		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
 		const fail_case = result_enum?.cases.find((c) => c.name === "fail");
-		if (result_enum?.template_name === "Result" && ok_case?.params[0] && fail_case?.params[0]) {
+		const is_result_like =
+			result_enum?.template_name === "Result" || result_enum?.template_name === "UnitResult";
+		if (is_result_like && fail_case?.params[0]) {
 			const value_name = mono_type_name(ret.type);
-			const ok_name = mono_type_name(ok_case.params[0].type);
+			const has_ok_payload = !!ok_case?.params[0];
+			const ok_name = has_ok_payload ? mono_type_name(ok_case.params[0].type) : undefined;
 			const fail_name = mono_type_name(fail_case.params[0].type);
 			const make_case_call = (
 				mono: string,
@@ -394,7 +406,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			};
 			if (ret.type.name === fn.return_type.name) {
 				// Already a Result — explicit pass-through.
-			} else if (value_name === ok_name) {
+			} else if (has_ok_payload && value_name === ok_name) {
 				const wrapped = make_case_call(
 					result_enum.name,
 					"ok",
@@ -441,6 +453,13 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 					ret.value = wrapped;
 					ret.type = wrapped.type;
 				}
+			} else if (fn.unit_result) {
+				// `out ! E` with a plain value (e.g. `return load(path)!`):
+				// the function has no success slot, so the value is evaluated
+				// and DISCARDED, then the call succeeds — the natural spelling
+				// for "propagate the error, forget the payload".
+				ret.unit_discard = true;
+				ret.type = fn.return_type;
 			}
 		}
 	}
@@ -508,7 +527,10 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 			check_func_argument_signature(sig, ret.value, status, ret.value.start);
 			move_closure_source(ret.value, status);
 		} else if (func.return_type.name) {
-			if (func.return_type.name !== "?") {
+			if (ret.unit_discard) {
+				// `return <value>` in a unit-result function: the value was
+				// evaluated for effect (stamped above) — no type comparison.
+			} else if (func.return_type.name !== "?") {
 				const return_type = type_from_value_node(ret.value, status);
 				const return_value = value_from_value_node(ret.value);
 				const error_pos = ret.value.node_type === "grouped" ? ret.start + 2 : ret.value.start;

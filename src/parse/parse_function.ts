@@ -8,7 +8,7 @@ import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
-import parse_type from "./parse_type.ts";
+import parse_type, { make_result_type, parse_error_set } from "./parse_type.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import check_missing_return from "./utils/check_missing_return.ts";
@@ -241,28 +241,42 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		if (at_func_type(status)) {
 			consume(status);
 			func.return_type = parse_func_type(status);
+		} else if (peek_current(status) === "!") {
+			// ERRORS_PLAN: the UNIT result form — `out ! E` (also `out !
+			// E1, E2` / `out ! [.case]`): a function that returns nothing but
+			// may fail. Desugars to the core `UnitResult<E>`; the same
+			// error-set stamping and lifting as `T ! E` apply.
+			const bang_start = get_index(status);
+			consume(status); // the `!`
+			func.return_type = make_result_type(
+				undefined,
+				parse_error_set(status, bang_start),
+				bang_start,
+			);
 		} else {
 			func.return_type = parse_type(status);
-			// ERRORS_PLAN: the `!` form (`out string ! FetchError`, or the
-			// composed `out string ! E1, E2`) — strip the parse marker,
-			// record it on the function, and stamp the error set: the raw
-			// member types for a composed set, or the error enum itself
-			// (including an anonymous error set, `out T ! [.notfound]`).
-			if (func.return_type.is_result_form) {
-				func.returns_result = true;
-				const err_slot = func.return_type.type_args?.[1];
-				if (
-					err_slot?.name === "anon_enum" &&
-					err_slot.enum_cases?.length &&
-					err_slot.is_composed_error_set
-				) {
-					func.result_error_types = err_slot.enum_cases.map((c) => c.types[0]);
-				} else if (err_slot) {
-					func.result_error_types = [err_slot];
-				}
-				func.return_type.is_result_form = undefined;
-			}
 			reject_void_type(func.return_type, status, func.return_type_start);
+		}
+		// ERRORS_PLAN: the `!` form (`out string ! FetchError`, the composed
+		// `out string ! E1, E2`, or the unit `out ! E`) — strip the parse
+		// marker, record it on the function, and stamp the error set: the raw
+		// member types for a composed set, or the error enum itself
+		// (including an anonymous error set, `out T ! [.notfound]`).
+		if (func.return_type.is_result_form) {
+			func.returns_result = true;
+			const unit = func.return_type.name === "UnitResult";
+			if (unit) func.unit_result = true;
+			const err_slot = func.return_type.type_args?.[unit ? 0 : 1];
+			if (
+				err_slot?.name === "anon_enum" &&
+				err_slot.enum_cases?.length &&
+				err_slot.is_composed_error_set
+			) {
+				func.result_error_types = err_slot.enum_cases.map((c) => c.types[0]);
+			} else if (err_slot) {
+				func.result_error_types = [err_slot];
+			}
+			func.return_type.is_result_form = undefined;
 		}
 		func.returns_move = returns_move;
 

@@ -370,7 +370,7 @@ function apply_result_suffix(type: Type, status: ParseStatus): Type {
 		if (type.name === "void") {
 			add_error(
 				status,
-				`'void' cannot be a '!' result type — spell the success type instead`,
+				`'void' cannot be a '!' success type — spell the unit result form \`out ! E\` instead`,
 				bang_start,
 			);
 		} else if (type.name === "Result") {
@@ -380,44 +380,59 @@ function apply_result_suffix(type: Type, status: ParseStatus): Type {
 				bang_start,
 			);
 		}
-		const err_types: Type[] = [parse_type(status)];
-		while (accept(",", status)) {
-			const member = parse_type(status);
-			if (err_types.some((t) => t.name === member.name)) {
-				add_error(
-					status,
-					`Duplicate error type: ${member.name}`,
-					member.start ?? get_index(status),
-				);
-			}
-			err_types.push(member);
-		}
-		const result_type = new Type("Result");
-		result_type.start = bang_start;
-		if (err_types.length === 1) {
-			// A single anonymous enum member (`! [.notfound, .network]`) IS
-			// the error enum — it materializes to its generated mono like any
-			// anonymous enum. No marker: the checker treats an unmarked anon
-			// E slot as an anonymous error set.
-			result_type.type_args = [type, err_types[0]];
-		} else {
-			for (const member of err_types) {
-				if (member.name === "anon_enum") {
-					add_error(
-						status,
-						`an anonymous error set cannot join a composed set — name the error enum instead`,
-						member.start ?? bang_start,
-					);
-				}
-			}
-			const composed = new Type("anon_enum");
-			composed.start = bang_start;
-			composed.enum_cases = err_types.map((m) => ({ name: m.name, types: [m] }));
-			composed.is_composed_error_set = true;
-			result_type.type_args = [type, composed];
-		}
-		result_type.is_result_form = true;
-		return result_type;
+		const err_slot = parse_error_set(status);
+		return make_result_type(type, err_slot, bang_start);
 	}
 	return type;
+}
+
+/**
+ * Parse the error side of a `!` form: one enum, a comma-separated composed
+ * set, or an anonymous error set (`[.case, ...]`). Returns the E-slot type —
+ * the named/anon enum itself for a single member, or the generated
+ * origin-tagged anon enum for a composed set.
+ */
+export function parse_error_set(status: ParseStatus, bang_start?: number): Type {
+	const err_types: Type[] = [parse_type(status)];
+	while (accept(",", status)) {
+		const member = parse_type(status);
+		if (err_types.some((t) => t.name === member.name)) {
+			add_error(status, `Duplicate error type: ${member.name}`, member.start ?? get_index(status));
+		}
+		err_types.push(member);
+	}
+	if (err_types.length === 1) {
+		// A single anonymous enum member (`! [.notfound, .network]`) IS the
+		// error enum — it materializes to its generated mono like any
+		// anonymous enum. No marker: the checker treats an unmarked anon E
+		// slot as an anonymous error set.
+		return err_types[0];
+	}
+	for (const member of err_types) {
+		if (member.name === "anon_enum") {
+			add_error(
+				status,
+				`an anonymous error set cannot join a composed set — name the error enum instead`,
+				member.start ?? bang_start ?? get_index(status),
+			);
+		}
+	}
+	const composed = new Type("anon_enum");
+	composed.start = bang_start ?? get_index(status);
+	composed.enum_cases = err_types.map((m) => ({ name: m.name, types: [m] }));
+	composed.is_composed_error_set = true;
+	return composed;
+}
+
+/**
+ * Build the result type for the `!` forms: `Result<T, E>` for `T ! E`, and
+ * `UnitResult<E>` for the unit form (`out ! E`) — a function that returns
+ * nothing but may fail.
+ */
+export function make_result_type(ok_type: Type | undefined, err_type: Type, start: number): Type {
+	const result_type = new Type(ok_type ? "Result" : "UnitResult");
+	result_type.start = start;
+	result_type.type_args = ok_type ? [ok_type, err_type] : [err_type];
+	result_type.is_result_form = true;
+	return result_type;
 }

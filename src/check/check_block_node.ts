@@ -354,7 +354,7 @@ function discarded_class_result_type(
 		child.node_type === "access"
 			? ((child as AccessNode).access as { type?: Type })?.type
 			: (child as { type?: Type }).type;
-	if (!t?.name) return undefined;
+	if (!t?.name || t.name === "void") return undefined;
 	const struct = status.structs.find((s) => s.name === t.name);
 	const is_class = !!struct?.is_class;
 	const is_owning =
@@ -501,7 +501,8 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					// Result mono is created over the enum monos rather than
 					// the raw placeholders, and stamp the E-side generated
 					// node as the error side (composed vs anonymous).
-					const raw_err_slot = func.return_type?.type_args?.[1];
+					const err_index = func.unit_result ? 0 : 1;
+					const raw_err_slot = func.return_type?.type_args?.[err_index];
 					for (let arg_i = 0; arg_i < (func.return_type?.type_args?.length ?? 0); arg_i++) {
 						const arg = func.return_type!.type_args![arg_i];
 						if (arg?.name === "anon_enum" && arg.enum_cases?.length) {
@@ -509,7 +510,7 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 						}
 					}
 					if (raw_err_slot?.name === "anon_enum" && raw_err_slot.enum_cases?.length) {
-						const materialized = func.return_type.type_args![1];
+						const materialized = func.return_type.type_args![err_index];
 						const generated =
 							materialized.name !== "anon_enum"
 								? status.enums.findLast((e) => e.name === materialized.name)

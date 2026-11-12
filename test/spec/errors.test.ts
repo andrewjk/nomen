@@ -276,4 +276,47 @@ match result {
 `;
 		expect(compile_module(body)).toEqual([]);
 	});
+
+	test("the unit result form declares, falls through, and matches flat", () => {
+		const body = `
+error FetchError {
+	case notfound
+}
+
+func close = (string path, out ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+	// falls through: success
+}
+
+func describe = (string path, out string) {
+	return match close(path) {
+		case .ok -> "closed"
+		case .notfound -> "missing"
+	}
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
+
+	test("a unit-result function propagates with postfix !", () => {
+		const body = `
+error FetchError {
+	case notfound
+}
+
+func close = (string path, out ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+}
+
+func cleanup = (string path, out ! FetchError) {
+	close(path)!        // propagate; success yields nothing
+	var _ = close(path)
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
 });

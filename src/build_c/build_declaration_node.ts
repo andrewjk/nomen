@@ -116,6 +116,15 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// A `var _ = <expr>` discard of a VOID expression (a value-less result
+	// propagation such as `close()!`) has nothing to bind — emit the
+	// expression as a statement.
+	if (node.type?.name === "void" && node.value) {
+		build_node(node.value, status);
+		status.code += "\n";
+		return;
+	}
+
 	// In-place push, donor form: the checker stamped this binding because the
 	// immediately following statement is `items.push(mv <name>)` and the
 	// binding has no other use — construct the initializer's result directly

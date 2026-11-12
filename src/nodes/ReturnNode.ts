@@ -7,6 +7,13 @@ export default class ReturnNode extends BaseNode {
 
 	from_inline?: boolean;
 	/**
+	 * ERRORS_PLAN: the return value is DISCARDED — `out ! E` has no success
+	 * slot, so `return <value>` evaluates the expression and succeeds (the
+	 * spelling for `return load(path)!`). Stamped by check_return_node; the
+	 * builders emit the value as a statement and return the ok case.
+	 */
+	unit_discard?: boolean;
+	/**
 	 * Return-side NRVO: this return's value is a binding that
 	 * constructs directly in the caller's sret buffer (see
 	 * `DeclarationNode.nrvo_sret`) — the return copies nothing. Stamped by

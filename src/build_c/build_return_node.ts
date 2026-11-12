@@ -118,7 +118,39 @@ export default function build_return_node(
 		const forwarded_flag = nullable_flag_expr_of_value(node.value, status);
 		status.code += `*${ret_has} = ${forwarded_flag ?? "1"};\n`;
 	}
+	// ERRORS_PLAN unit result (`out ! E`): there is no success VALUE. A bare
+	// `return` is success; a `return <value>` in a unit-result function
+	// (unit_discard — `return load(p)!`) evaluates the expression for its
+	// effects. Both construct the ok case. (The checker appends a trailing
+	// bare return to unit-result bodies, so fall-through succeeds through
+	// this same path.)
+	const unit_ret_enum = status.function_return_type?.name
+		? status.enums.find((e) => e.name === status.function_return_type!.name)
+		: undefined;
+	const unit_ok_return = () => {
+		emit_nursery_joins_on_return_c(status);
+		reclaim_all_c_scopes(status);
+		// Braced: sibling returns in the same C block each declare
+		// `_return_val` (a bare `return` and an explicit `.ok` return).
+		status.code += `{ struct ${unit_ret_enum!.name} _return_val = ${unit_ret_enum!.name}_ok_init();\n`;
+		status.code += `return _return_val; }\n`;
+	};
+	if (unit_ret_enum?.template_name === "UnitResult" && node.unit_discard && node.value) {
+		// `return <value>` in a unit-result function: evaluate for effect,
+		// then succeed. (An explicit `.ok`/`.fail` value is a UnitResult
+		// itself and rides the ordinary value path below.)
+		emit_allocations(node.value, status);
+		emit_return_value(node.value, nir_value, status);
+		status.code += `;\n`;
+		unit_ok_return();
+		return;
+	}
+
 	if (!node.value) {
+		if (unit_ret_enum?.template_name === "UnitResult") {
+			unit_ok_return();
+			return;
+		}
 		emit_nursery_joins_on_return_c(status);
 		reclaim_all_c_scopes(status);
 		if (status.return_assign) {

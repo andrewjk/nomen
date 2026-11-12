@@ -237,6 +237,18 @@ the flat arms remain later work.
   a composed set. The top-level `parse_type` is a wrapper over the base
   parser so the suffix applies after early-returning shapes (tuples /
   anonymous enums), and the link scan pulls Result for `!` before `[`.
+- **Stage 5c (done)** — unit results (`out ! E`): a function that returns
+  nothing but may fail, spelled without a success type and without a new
+  keyword. Desugars to the core `UnitResult<E>` (the `Result` shape with a
+  payload-less `ok`), so the `!` gate, lifting, flat arms, composition, and
+  checked-discard all reuse the Result machinery. Fall-through and a bare
+  `return` are success (the checker appends a trailing bare return so the
+  return builders emit the ok case); a plain returned value is evaluated
+  and discarded (`return load(p)!`); `!!` is rejected (nothing to
+  coalesce). Value-less propagation (`close()!`) is allowed in unit-result
+  functions only. One gap fixed en route: the statement-start postfix loop
+  was missing the `!` case, so a standalone `f()!` statement parsed as two
+  statements.
 - **Deferred** — nullable chaining (`?.` does not exist today; prerequisite
   for the `fetch(...)!.body !! ""` shape), assignment-position lifting.
 
@@ -264,9 +276,6 @@ Each is one clear error:
 
 ## Open questions
 
-- **`void ! E`** — a fallible function returning nothing
-  (`func close = () ! FileError`) needs a bare-`!` return form. Defer until
-  a real API wants it.
 - **Foreign funcs** cannot be fallible (scalars/strings only) — unchanged.
 - **Assignment lifting** (`var r = 0` against a declared `int ! FileError`
   binding) — no in v1; revisit with a real consumer.

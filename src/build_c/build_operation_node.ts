@@ -95,10 +95,12 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			status.code += `_rv_${id}.tag = ${pi.outer_mono}_fail; _rv_${id}._data._fail.${pi.outer_field} = _av_${id}; `;
 		} else if (left_is_producer) {
 			// The temp owns the payload — move the bytes (fail_init would
-			// strdup and orphan the temp's copy).
-			status.code += `_rv_${id}.tag = ${mono}_fail; _rv_${id}._data._fail.${fail_field} = _pb_${id}._data._fail.${fail_field}; `;
+			// strdup and orphan the temp's copy). The tag/ctor come from the
+			// ENCLOSING result type: a unit enclosing (`out ! E`) has the
+			// same fail layout under a different ok case.
+			status.code += `_rv_${id}.tag = ${rv_mono}_fail; _rv_${id}._data._fail.${fail_field} = _pb_${id}._data._fail.${fail_field}; `;
 		} else {
-			status.code += `_rv_${id} = ${mono}_fail_init(_pb_${id}._data._fail.${fail_field}); `;
+			status.code += `_rv_${id} = ${rv_mono}_fail_init(_pb_${id}._data._fail.${fail_field}); `;
 		}
 		if (node.in_flight_binding) {
 			const frames = [status.scoped_declarations, ...(status.c_scope_stack ?? [])];
@@ -117,7 +119,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			reclaim_all_c_scopes(status);
 		}
 		status.code += `return _rv_${id}; } `;
-		if (is_string && !left_is_producer) {
+		if (!node.coalesce_ok_field) {
+			// A value-less operand (`close()!`) yields nothing.
+			status.code += `(void)0; })`;
+		} else if (is_string && !left_is_producer) {
 			status.code += `nomen_str_dup(_pb_${id}._data._ok.${ok_field}); })`;
 		} else {
 			status.code += `_pb_${id}._data._ok.${ok_field}; })`;

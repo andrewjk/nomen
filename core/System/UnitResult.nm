@@ -1,0 +1,14 @@
+/// UnitResult is the type behind the `out ! E` form (ERRORS_PLAN): a
+/// fallible function that returns nothing. It behaves exactly like `Result`
+/// with a payload-less success case — bare returns and fall-through are
+/// success, `return .case` / an error value is a failure — so matching,
+/// checked-discard, the `error` gate, and postfix `!` all reuse the Result
+/// machinery.
+///
+/// `out ! E` is sugar for `UnitResult<E>`; the same spelling rules apply
+/// (`out ! FetchError`, the composed `out ! E1, E2`, an anonymous set
+/// `out ! [.notfound]`).
+pub checked enum UnitResult<E> {
+	case ok
+	case fail(E err)
+}

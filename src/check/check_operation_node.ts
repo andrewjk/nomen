@@ -59,7 +59,9 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		const result_enum = status.enums.findLast((e) => e.name === left_type.name);
 		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
 		const fail_case = result_enum?.cases.find((c) => c.name === "fail");
-		if (result_enum?.template_name !== "Result" || !ok_case?.params[0] || !fail_case?.params[0]) {
+		const left_is_result_like =
+			result_enum?.template_name === "Result" || result_enum?.template_name === "UnitResult";
+		if (!left_is_result_like || !fail_case?.params[0]) {
 			add_error(
 				status,
 				`'!' propagates a 'T ! E' result — '${left_type.name || "value"}' is not a result type`,
@@ -67,6 +69,10 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			);
 			return false;
 		}
+		// A value-less result (`UnitResult`, the `out ! E` type): `close()!`
+		// propagates and yields NOTHING — allowed only in a unit-result
+		// function (there is no value to yield or return).
+		const left_has_payload = !!ok_case?.params[0];
 		let enclosing: FunctionNode | null = null;
 		for (let i = status.stack.length - 1; i >= 0; i--) {
 			if (status.stack[i].node_type === "func") {
@@ -84,7 +90,9 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		}
 		const enclosing_enum = status.enums.findLast((e) => e.name === enclosing.return_type.name);
 		const enclosing_fail = enclosing_enum?.cases.find((c) => c.name === "fail");
-		if (enclosing_fail && enclosing_enum?.template_name === "Result") {
+		const enclosing_is_result_like =
+			enclosing_enum?.template_name === "Result" || enclosing_enum?.template_name === "UnitResult";
+		if (enclosing_fail && enclosing_is_result_like) {
 			const declared_err = enclosing_fail.params[0].type;
 			const operand_err = fail_case.params[0].type;
 			if (mono_type_name(operand_err) !== mono_type_name(declared_err)) {
@@ -124,16 +132,24 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			}
 		}
 		const propagated = new Type(
-			ok_case.params[0].type.name,
-			ok_case.params[0].type.is_static,
-			ok_case.params[0].type.is_array,
-			ok_case.params[0].type.length,
+			ok_case?.params[0]?.type.name ?? "void",
+			ok_case?.params[0]?.type.is_static,
+			ok_case?.params[0]?.type.is_array,
+			ok_case?.params[0]?.type.length,
 		);
-		propagated.type_args = ok_case.params[0].type.type_args;
-		propagated.is_ref = ok_case.params[0].type.is_ref;
-		propagated.is_nullable = ok_case.params[0].type.is_nullable;
+		propagated.type_args = ok_case?.params[0]?.type.type_args;
+		propagated.is_ref = ok_case?.params[0]?.type.is_ref;
+		propagated.is_nullable = ok_case?.params[0]?.type.is_nullable;
+		if (!left_has_payload && !enclosing.unit_result) {
+			add_error(
+				status,
+				`a value-less result cannot propagate into a function that returns a value — discard it with 'var _ =' or propagate in an 'out ! E' function`,
+				op.start,
+			);
+			return false;
+		}
 		op.type = propagated;
-		op.coalesce_ok_field = ok_case.params[0].name;
+		op.coalesce_ok_field = ok_case?.params[0]?.name;
 		op.propagate_fail_field = fail_case.params[0].name;
 		return true;
 	}
@@ -256,6 +272,17 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	if (op.op === "!!") {
 		const result_enum = status.enums.findLast((e) => e.name === left_type.name);
 		const ok_case = result_enum?.cases.find((c) => c.name === "ok");
+		if (result_enum?.template_name === "UnitResult") {
+			// `out ! E` results have no success VALUE — there is nothing to
+			// coalesce or fall back to.
+			add_error(
+				status,
+				`a '!' unit result has no success value — discard it with 'var _ =' or propagate with '!'`,
+				op.start,
+			);
+			status.allow_null_value = old_allow_null;
+			return false;
+		}
 		if (result_enum?.template_name !== "Result" || !ok_case?.params[0]) {
 			add_error(
 				status,

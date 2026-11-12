@@ -1333,7 +1333,6 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const ok_field = node.coalesce_ok_field || ok_case?.params[0]?.name || "value";
 		const fail_field = node.propagate_fail_field || fail_case?.params[0]?.name || "err";
 		const ok_tag = found ? get_enum_case_index(mono, "ok", status) : 0;
-		const fail_tag = found ? get_enum_case_index(mono, "fail", status) : 1;
 		const ok_off = get_enum_payload_offset(mono, "ok", ok_field, status);
 		const has_fail_payload = !!fail_case?.params.length;
 		const fail_off = has_fail_payload
@@ -1380,10 +1379,15 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				? get_struct_size(payload_struct.name, status)
 				: 8;
 		const payload_words = Math.ceil(payload_size / 8);
-		const outer_tag = pi ? get_enum_case_index(pi.outer_mono, "fail", status) : fail_tag;
+		// The returned value is the ENCLOSING function's result mono — a unit
+		// enclosing (`out ! E`) shares the fail layout but not the ok case.
+		const rv_mono = status.function_return_type?.name ?? mono;
+		const outer_tag = pi
+			? get_enum_case_index(pi.outer_mono, "fail", status)
+			: get_enum_case_index(rv_mono, "fail", status);
 		const outer_off = pi
 			? get_enum_payload_offset(pi.outer_mono, "fail", pi.outer_field, status)
-			: fail_off;
+			: get_enum_payload_offset(rv_mono, "fail", fail_field, status);
 		emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset ?? 0}]\n`);
 		emit_asm(status, `mov x10, #${outer_tag}\n`);
 		emit_asm(status, `str x10, [x8]\n`);
@@ -1409,11 +1413,11 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 					emit_strdup(status);
 				}
 				ensure_newline(status);
-				emit_asm(status, `stp x0, x1, [x8, #${fail_off}]\n`);
+				emit_asm(status, `stp x0, x1, [x8, #${outer_off}]\n`);
 			} else {
 				for (let i = 0; i < payload_words; i++) {
 					emit_asm(status, `ldr x2, [x9, #${fail_off + i * 8}]\n`);
-					emit_asm(status, `str x2, [x8, #${fail_off + i * 8}]\n`);
+					emit_asm(status, `str x2, [x8, #${outer_off + i * 8}]\n`);
 				}
 			}
 		}
@@ -1439,18 +1443,22 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		}
 		emit_heap_slots_cleanup_for_return(status);
 		emit_asm(status, `b ${status.function_return_label}\n`);
-		// OK: yield the payload.
+		// OK: yield the payload (a value-less operand yields nothing).
 		emit_asm(status, `${have_label}:\n`);
-		emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
-		if (is_string) {
-			emit_asm(status, `ldp x0, x1, [x9, #${ok_off}]\n`);
-			if (!left_is_producer) {
-				emit_strdup(status);
-			}
-		} else if (node.type?.is_array || (node.type && !is_scalar_type(node.type.name))) {
-			emit_asm(status, `add x0, x9, #${ok_off}\n`);
+		if (!node.coalesce_ok_field) {
+			emit_asm(status, `mov x0, #0\n`);
 		} else {
-			emit_asm(status, `ldr x0, [x9, #${ok_off}]\n`);
+			emit_asm(status, `ldr x9, [x29, #${spill}]\n`);
+			if (is_string) {
+				emit_asm(status, `ldp x0, x1, [x9, #${ok_off}]\n`);
+				if (!left_is_producer) {
+					emit_strdup(status);
+				}
+			} else if (node.type?.is_array || (node.type && !is_scalar_type(node.type.name))) {
+				emit_asm(status, `add x0, x9, #${ok_off}\n`);
+			} else {
+				emit_asm(status, `ldr x0, [x9, #${ok_off}]\n`);
+			}
 		}
 		emit_asm(status, `${done_label}:\n`);
 		return;
