@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { match_arms_alias_payload_yields } from "../build_common/string_return_analysis.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -94,6 +95,12 @@ export default function build_match_node(
 	// its string payloads so they can be freed when the match ends.
 	let scrutinee_is_temp = false;
 	let temp_blob_slot = 0;
+	// An OWNED temp blob's payloads are freed at match end, so arm values that
+	// ALIAS its payloads (a yield rooted at an arm binding) must strdup into
+	// the join INSIDE the arm — force the string-join normalization for the
+	// arm build (the consumers' `match_arms_alias_payload_yields`
+	// classification agrees, so the join point does not strdup again).
+	const old_join_owned = status.join_needs_owned_string;
 
 	// For an enum with associated data we need the ADDRESS of the scrutinee
 	// (so we can read its tag at +0 and payload bytes at +8…); a plain
@@ -107,6 +114,9 @@ export default function build_match_node(
 		scrutinee_is_temp =
 			node.value.node_type === "func_call" ||
 			(node.value.node_type === "access" && v.access?.node_type === "access_func");
+		if (scrutinee_is_temp && match_arms_alias_payload_yields(node)) {
+			status.join_needs_owned_string = true;
+		}
 		if (scrutinee_is_temp) {
 			const enum_size = get_enum_size(enum_with_data.name, status);
 			temp_blob_slot = allocate_stack_space(status, enum_size, 8);
@@ -235,6 +245,7 @@ export default function build_match_node(
 	status.array_ptr_cache = pre_array_cache;
 
 	emit_asm(status, `end_match_${label}:\n`);
+	status.join_needs_owned_string = old_join_owned;
 
 	// A hoisted scrutinee temp dies with the match: free its string payloads
 	// (tag-guarded). Identifier/field scrutinees are NOT freed here — their

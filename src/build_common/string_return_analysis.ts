@@ -405,6 +405,10 @@ export function value_is_owned_string(
 		return true;
 	}
 	if (v.node_type === "match" || v.node_type === "switch") {
+		// A match whose arms alias its scrutinee temp's payload normalizes its
+		// own branches (every aliased value strdup's at the arm — the blob's
+		// payloads are reclaimed at match end): its result is owned.
+		if (match_arms_alias_payload_yields(v)) return true;
 		const branches: any[] = [];
 		if (Array.isArray(v.cases)) for (const c of v.cases) if (c?.branch) branches.push(c.branch);
 		if (v.else_branch) branches.push(v.else_branch);
@@ -610,6 +614,96 @@ export function collect_expression_branch_values(node: any): any[] {
 }
 
 /**
+ * Whether a match's arms yield values that ALIAS the scrutinee blob — a yield
+ * whose root identifier is one of the arms' payload bindings (the binding
+ * itself, a field chain into it, or a nested match's own bindings over the
+ * same blob). When the builder materializes the scrutinee into an OWNED temp
+ * (a call scrutinee — `_match_val_N`), that blob's payloads are reclaimed at
+ * match END, so every aliased arm value must be strdup'd into the join INSIDE
+ * the arm (the mixed-join normalization) or it dangles after the match:
+ * `match f(p) { case .fail(err) { match err { case .bad(d) -> d.body } } }`
+ * frees `d.body`'s block before the consumer reads the join.
+ *
+ * Conservative by design: an unrelated nested match's bindings join the root
+ * set too (an unneeded strdup is sound; a missed one is use-after-free).
+ * Consumers (return/declaration joins) use this to treat the match's result
+ * as OWNED — the arms already normalized — so the join point must not strdup
+ * a second time (that would leak the arm copy).
+ */
+export function match_arms_alias_payload_yields(node: any): boolean {
+	if (!node || node.node_type !== "match") return false;
+	// Only a MATERIALIZED scrutinee (a call — the builder owns a temp and
+	// reclaims its payloads at match end) kills aliased arm values. A
+	// variable/field scrutinee borrows its owner's storage, which outlives
+	// the match.
+	const scrutinee = node.value;
+	const call_shaped =
+		!!scrutinee &&
+		(scrutinee.node_type === "func_call" ||
+			(scrutinee.node_type === "access" && scrutinee.access?.node_type === "access_func"));
+	if (!call_shaped) return false;
+
+	// Whether the expression's ROOT identifier is one of the accumulated arm
+	// bindings. Data chains only — a call result is fresh storage, not an
+	// alias (access_func INSIDE a chain still roots at the target).
+	const roots_at_binding = (n: any, bindings: Set<string>): boolean => {
+		if (!n || typeof n !== "object") return false;
+		switch (n.node_type) {
+			case "value":
+				return typeof n.value === "string" && bindings.has(n.value);
+			case "grouped":
+				return roots_at_binding(n.value, bindings);
+			case "access":
+			case "index":
+				return roots_at_binding(n.target, bindings);
+			default:
+				return false;
+		}
+	};
+	// A yield aliases the blob only when it is a STRING rooted at a binding:
+	// the dup machinery is the string-join normalization (a scalar payload
+	// byte-copies freely — no alias survives the reclaim), and a
+	// checker-stamped transfer (`is_case_move` — the yield-the-binding arms,
+	// including try/catch's synthesized success arm) already moves the
+	// payload out as the match's value, with the reclaim skipping it.
+	const yield_aliases = (value: any, bindings: Set<string>): boolean => {
+		if (!value || typeof value !== "object") return false;
+		if ((value as { is_case_move?: boolean }).is_case_move === true) return false;
+		if (!roots_at_binding(value, bindings)) return false;
+		return type_from_value_node(value)?.name === "string";
+	};
+	// Whether any statement in the block yields a value rooted at `bindings`
+	// (recursing into nested matches/if, whose own arm bindings join the set —
+	// they bind payloads of the same blob transitively).
+	const block_aliases = (statements: any[], bindings: Set<string>): boolean => {
+		for (const st of statements ?? []) {
+			if (!st || typeof st !== "object") continue;
+			if (st.node_type === "let" || st.node_type === "return") {
+				if (yield_aliases(st.value, bindings)) return true;
+				continue;
+			}
+			if (st.node_type === "match" || st.node_type === "if" || st.node_type === "switch") {
+				const inner = new Set(bindings);
+				for (const c of st.cases ?? []) for (const p of c.params ?? []) inner.add(p);
+				const blocks: any[][] = [];
+				for (const c of st.cases ?? []) blocks.push(c.branch?.statements ?? []);
+				if (st.else_branch) blocks.push(st.else_branch.statements ?? []);
+				if (st.if_branch) blocks.push(st.if_branch.statements ?? []);
+				for (const b of blocks) if (block_aliases(b, inner)) return true;
+			}
+		}
+		return false;
+	};
+
+	const bindings = new Set<string>();
+	for (const mc of node.cases ?? []) for (const p of mc.params ?? []) bindings.add(p);
+	for (const mc of node.cases ?? []) {
+		if (block_aliases(mc.branch?.statements ?? [], bindings)) return true;
+	}
+	return block_aliases(node.else_branch?.statements ?? [], bindings);
+}
+
+/**
  * Whether a match/switch/if-expression branch value produces a fresh OWNED
  * heap string — an allocation the join variable can free at scope exit — as
  * opposed to something that must be strdup'd into an owned copy before the
@@ -636,6 +730,10 @@ export function is_owned_string_branch_value(node: any, table: StringAnalysisTab
 	if (node.node_type === "op") return true; // string concat/repeat allocate
 	if (node.node_type === "grouped") return is_owned_string_branch_value(node.value, table);
 	if (node.node_type === "match" || node.node_type === "switch" || node.node_type === "if") {
+		// A match whose arms alias its scrutinee temp's payload normalizes its
+		// own branches (every aliased value strdup's at the arm — the blob's
+		// payloads are reclaimed at match end): its result is owned.
+		if (match_arms_alias_payload_yields(node)) return true;
 		// A nested expression join assigns its branches to the same target; it
 		// is owned if any of its branches is (it is itself normalized).
 		return collect_expression_branch_values(node).some((v) =>

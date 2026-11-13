@@ -680,24 +680,3 @@ Ctrl-C keep working. Tests stay on bare executables.
 This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
-
-## Yielding a payload out of a catch/inner arm drops or truncates output
-
-Recorded 2026-11-13 while fixing the C match-temp reclaim (the commit above
-recorded the leak this fix closed; bind-and-use payload arms are verified
-leak-free on both backends now). Two adjacent shapes, both PRE-EXISTING
-(fail identically with and without that fix) and out of its scope:
-
-- **aarch64: the trailing newline drops** when the last `Console.write`
-  interpolates a `try/catch` whose arm YIELDS a string payload out —
-  `return try fetch(path) catch { case .io(msg) -> msg }` prints
-  `disk on fire` with no `\n` (C prints the full line, leak-free: the arm
-  dup-joins before the match-end reclaim frees the original).
-- **both backends: a nested-match arm yielding a `mv`-STRUCT payload
-  loses the line** — `match f(p) { case .fail(err) { match err { case
-.bad(d) -> d.body } } }` prints nothing for the `.bad` case (expected the
-  struct's field string); no leak, no stale free, just the dropped value.
-
-Both need the moved-out/yield contract for payload bindings re-examined
-(the checker's `mark_moved_out_case_bindings` covers plain-match yield
-arms; the try path and these nested shapes route around it).

@@ -1,4 +1,5 @@
 import { enum_payload_destroy_struct } from "../build_common/destroy_analysis.ts";
+import { match_arms_alias_payload_yields } from "../build_common/string_return_analysis.ts";
 import type { NirStmt } from "../nir/nir.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -140,6 +141,15 @@ export default function build_match_node(
 		(match_type.node_type === "access" &&
 			(match_type as AccessNode).access?.node_type === "access_func");
 	let match_scrutinee_temps: string[] = [];
+	// An OWNED temp blob is reclaimed at match end, so arm values that ALIAS
+	// its payloads (a yield rooted at an arm binding) must strdup into the
+	// join INSIDE the arm — force the string-join normalization for the whole
+	// arm build (the consumers' `match_arms_alias_payload_yields` classification
+	// agrees, so the join point does not strdup a second time).
+	const old_join_owned = status.join_needs_owned_string;
+	if (!scrutinee_is_identifier && scrutinee_is_call && match_arms_alias_payload_yields(node)) {
+		status.join_needs_owned_string = true;
+	}
 	if (!scrutinee_is_identifier && scrutinee_is_call && enum_name) {
 		const temp = `_match_val_${match_temp_counter++}`;
 		status.code += `${c_type(enum_name)} ${temp} = ${value_expr_raw};\n`;
@@ -197,6 +207,7 @@ export default function build_match_node(
 		build_auto_free(status);
 	}
 	status.code += "}\n";
+	status.join_needs_owned_string = old_join_owned;
 
 	// The scrutinee temp dies with the match: free its owned payloads
 	// (tag-guarded), mirroring the enum-local auto-free. The shared

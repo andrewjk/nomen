@@ -15,6 +15,7 @@ import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
+	match_arms_alias_payload_yields,
 } from "../build_common/string_return_analysis.ts";
 import { is_string_borrow } from "../build_common/string_return_analysis.ts";
 import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
@@ -532,7 +533,12 @@ export default function build_return_node(
 			const string_join = ret_type.name === "string" && !ret_type.is_view && !ret_type.is_array;
 			const branch_values = collect_expression_branch_values(node.value);
 			const any_branch_owned =
-				string_join && branch_values.some((v) => is_owned_string_branch_value(v, status));
+				string_join &&
+				(branch_values.some((v) => is_owned_string_branch_value(v, status)) ||
+					// A match whose arms alias its scrutinee temp's payload
+					// normalizes them at the arm (before the match-end reclaim)
+					// — the join result is owned as-is.
+					match_arms_alias_payload_yields(node.value));
 			const old_join_owned = status.join_needs_owned_string;
 			if (any_branch_owned) status.join_needs_owned_string = true;
 			build_node(node.value, status);

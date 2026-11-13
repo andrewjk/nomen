@@ -1826,6 +1826,104 @@ report("/bad")
 		);
 	});
 
+	test("a catch arm yielding its payload keeps the value alive past the match", async () => {
+		// The arm's `msg` binding aliases the scrutinee temp's blob, whose
+		// payloads are freed at match end — the yield must strdup into the
+		// join INSIDE the arm, and the join result must reach the caller with
+		// BOTH halves intact (the aarch64 join reload restored the pointer
+		// but left the length holding a free call's return value).
+		const input = `
+mv error FetchError {
+	case notfound
+	case io(string msg)
+}
+
+func fetch = (string path, out string ! FetchError) {
+	if path == "/bad" {
+		return .io("disk on fire")
+	}
+	if path == "" {
+		return .notfound
+	}
+	return "body"
+}
+
+func describe = (string path, out string) {
+	return try fetch(path) catch {
+		case .notfound -> "missing"
+		case .io(msg) -> msg
+	}
+}
+
+Console.write("\\{describe("/a")}\\n")
+Console.write("\\{describe("")}\\n")
+Console.write("\\{describe("/bad")}\\n")
+`;
+		await build_and_check_output(
+			input,
+			"errors_catch_yield_string",
+			"body\nmissing\ndisk on fire\n",
+		);
+	});
+
+	test("a nested-match arm yielding a mv-struct field reaches the caller", async () => {
+		const input = `
+mv struct Data {
+	var string body
+}
+
+mv error FetchError {
+	case notfound
+	case bad(Data d)
+}
+
+func fetch = (string path, out ! FetchError) {
+	if path == "/bad" {
+		return .bad(Data("payload"))
+	}
+	if path == "" {
+		return .notfound
+	}
+}
+
+func describe = (string path, out string) {
+	return match fetch(path) {
+		case .ok -> "ok"
+		case .fail(err) {
+			match err {
+				case .notfound -> "missing"
+				case .bad(d) -> d.body
+			}
+		}
+	}
+}
+
+func report = (string path) {
+	var s = match fetch(path) {
+		case .ok -> "ok"
+		case .fail(err) {
+			match err {
+				case .notfound -> "missing"
+				case .bad(d) -> d.body
+			}
+		}
+	}
+	Console.write("\\{s}\\n")
+	Console.write("\\{s}\\n")
+}
+
+Console.write("\\{describe("/a")}\\n")
+Console.write("\\{describe("")}\\n")
+Console.write("\\{describe("/bad")}\\n")
+report("/bad")
+`;
+		await build_and_check_output(
+			input,
+			"errors_nested_match_yield_field",
+			"ok\nmissing\npayload\npayload\npayload\n",
+		);
+	});
+
 	test("`!!` on a unit result names the discard forms", () => {
 		const input = `import System
 

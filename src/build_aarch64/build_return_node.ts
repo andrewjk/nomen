@@ -20,6 +20,7 @@ import {
 	is_call_site_borrow_accessor,
 	is_container_borrow_access,
 	is_owned_string_branch_value,
+	match_arms_alias_payload_yields,
 } from "../build_common/string_return_analysis.ts";
 import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
 import { is_float_type } from "../built_in_types.ts";
@@ -592,9 +593,13 @@ export default function build_return_node(
 		// copy the owned original and leak it.
 		return_join_owned_string =
 			current_return_is_string(status) &&
-			collect_expression_branch_values(node.value).some((v) =>
+			(collect_expression_branch_values(node.value).some((v) =>
 				is_owned_string_branch_value(v, status),
-			);
+			) ||
+				// A match whose arms alias its scrutinee temp's payload
+				// normalizes them at the arm (before the match-end frees) —
+				// the join result is owned as-is.
+				match_arms_alias_payload_yields(node.value));
 		const old_return_assign = status.return_assign;
 		const old_return_assign_size = status.return_assign_size;
 		const old_join_owned = status.join_needs_owned_string;
@@ -605,10 +610,16 @@ export default function build_return_node(
 		status.join_needs_owned_string = old_join_owned;
 		status.return_assign = old_return_assign;
 		status.return_assign_size = old_return_assign_size;
-		// Reload the chosen branch's value from the slot (x0 was clobbered by
-		// the branch scope-exit cleanup) and hand the owned result to the
+		// Reload the chosen branch's value from the slot (x0 AND x1 are
+		// clobbered by the branch scope-exit cleanup — a payload free's
+		// return value lands in x1 — so a string pair reloads BOTH halves;
+		// a scalar join reloads its word) and hand the owned result to the
 		// caller as-is.
-		emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+		if (current_return_is_string(status)) {
+			emit_asm(status, `ldp x0, x1, [x29, #${slot}]\n`);
+		} else {
+			emit_asm(status, `ldr x0, [x29, #${slot}]\n`);
+		}
 		// Trait-boxing join (FOLLOWUP "return <computed concrete> from a
 		// trait-returning function inside a switch/match/if join"): the slot
 		// holds the ADDRESS of the winning branch's stack temp — returning it

@@ -33,6 +33,7 @@ import {
 import {
 	collect_expression_branch_values,
 	is_owned_string_branch_value,
+	match_arms_alias_payload_yields,
 } from "../build_common/string_return_analysis.ts";
 import { superseded_param_temp_names } from "../build_common/temp_anchor_consolidation.ts";
 import tuple_return_owned_element from "../build_common/tuple_return_owned_element.ts";
@@ -1352,9 +1353,13 @@ export default function build_declaration_node(
 					node.type.name === "string" && !node.type.is_view && !node.type.is_array;
 				const any_branch_owned =
 					join_is_string &&
-					collect_expression_branch_values(node.value).some((v) =>
+					(collect_expression_branch_values(node.value).some((v) =>
 						is_owned_string_branch_value(v, status),
-					);
+					) ||
+						// A match whose arms alias its scrutinee temp's payload
+						// normalizes them at the arm (before the match-end
+						// reclaim) — the join result is owned as-is.
+						match_arms_alias_payload_yields(node.value));
 				const old_join_owned = status.join_needs_owned_string;
 				if (any_branch_owned) {
 					status.join_needs_owned_string = true;
