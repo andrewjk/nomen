@@ -605,6 +605,38 @@ lift (the binding types `T`, checked-ness discharges at the lift)? And does
 `r = expr!` compose with the in-flight-binding machinery the initializers
 use?
 
+## `!`-lifting a payload-less case of an enum-with-data emits a dead symbol on aarch64
+
+Recorded 2026-11-13 while building `try/catch` (found by a scratch test).
+`return .refused` inside a `!`-declared function, where the ERROR enum has
+associated data on some OTHER case (`error NetError { case timeout(int ms)
+case refused }`), emits `adrp x0, NetError_refused@PAGE` on aarch64 and the
+link fails with `Undefined symbols: "NetError_refused"`. The C backend is
+fine — it lowers the lifted value as `NetError_refused_init()`. The lifted
+`.refused` is being built as a bare tag-constant VALUE (the simple-enum
+convention) instead of the enum-with-data case construction. Payload-carrying
+cases lift correctly, and payload-less cases of a payload-less enum lift
+correctly — only the mixed enum shape is affected. Repro in
+`test/scratch`-style form: `mv` is not needed; `console.write` anything.
+Workaround: give the case a payload, or use a payload-less enum. Note the
+`try/catch` tests avoid this shape deliberately (the payload-binding test
+uses a `mv error` with payload-carrying cases).
+
+## Assignment-position branching expressions (`x = match/switch/if …`)
+
+Recorded 2026-11-13 while testing `try/catch` (reproduced on the clean tree too):
+`label = match load("/x") { case .ok(text) -> text case .fail(err) -> "missing" }`
+builds, but the assignment receives garbage (a stray `\u0001` byte) on both
+backends — while the same shape in DECLARATION position works. So assignment
+position is effectively unsupported for branching RHS values (match / switch /
+if — and therefore `try/catch`, which desugars to a match). The C assignment
+path has an `rhs_is_branching` arm (build_assignment_node's string branch)
+intended to route these through `return_assign`, but it evidently doesn't
+cover the general case (or the aarch64 side lacks it). Tests, SPEC, and
+ERRORS.md only use declaration/return/argument positions for match values;
+`try/catch` inherits that scoping. Worth a pass when a real consumer assigns
+a branch expression.
+
 ## Share-card tokenizer: replace Shiki on the server
 
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the

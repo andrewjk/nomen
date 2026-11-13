@@ -21,8 +21,8 @@ variable, parameter, field, type, or enum case names:
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `else`
 `enum` `error` `foreign` `extend` `for` `func` `if` `import` `internal` `let`
 `match` `mv` `of` `out` `panic` `private` `pub` `raw` `readonly` `ref`
-`return` `struct` `switch` `swap` `todo` `trait` `unsafe` `var` `view`
-`while`
+`return` `struct` `switch` `swap` `todo` `trait` `try` `catch` `unsafe` `var`
+`view` `while`
 
 The literals `true`, `false`, and `null`, and `self`, are reserved as well.
 Using a reserved word as a name is a compile error:
@@ -1275,7 +1275,7 @@ match result {
 
 ### Unit Results (`out ! E`)
 
-A function that returns nothing but may fail declares `out ! E` — no success type, no new keyword. It desugars to the core `UnitResult<E>` (the `Result` shape with a payload-less `ok`), so checked-discard, matching, flat error arms, and `error`-set composition all apply:
+A function that returns nothing but may fail declares `out ! E` — no success type, no new keyword. It desugars to the core `UnitResult<E>` (the `Result` shape with a payload-less `ok`), so checked-discard, matching, and `error`-set composition all apply:
 
 ```
 error FetchError {
@@ -1428,11 +1428,11 @@ match result {
 }
 ```
 
-The generated enum is the error enum itself, so bare returns and flat error arms resolve exactly as they do for a named `error` enum. It cannot join a composed set — name the enum instead. A success-side anonymous enum (`out [.ok, .redirect] ! E`) matches through `.ok(value)` (`.ok` stays the Result's case).
+The generated enum is the error enum itself, so bare returns and `try/catch` arms resolve exactly as they do for a named `error` enum. It cannot join a composed set — name the enum instead. A success-side anonymous enum (`out [.ok, .redirect] ! E`) matches through `.ok(value)` (`.ok` stays the Result's case).
 
-### Flat Error Arms
+### Handling the Error Side: `try / catch`
 
-A match over a result may address the error side directly instead of matching `.fail(err)` and nesting. A shorthand case resolves through the error side of the result — a case declared by several set members is the force-specify error:
+A result's error side is handled at the point of encounter with `try expr catch`. The catch arms address the ERROR enum directly — the success side is implicit: the ok value flows through as the expression's value, so no `.ok` arm is written:
 
 ```
 error FetchError {
@@ -1440,26 +1440,28 @@ error FetchError {
     case offline
 }
 
-func fetch = (string url, out int ! FetchError) {
+func fetch = (string url, out string ! FetchError) {
     if url == "" {
         return .notfound
     }
-    return 7
+    return "content:" + url
 }
 
-var label = match fetch("u") {
-    case .ok(value) -> "ok"
-    case .notfound -> "missing"
-    case .offline -> "offline"
+func describe = (string url, out string) {
+    return try fetch(url) catch {
+        case .notfound -> "missing"
+        case .offline -> "offline"
+    }
 }
 ```
+
+The scrutinee is evaluated once, and the chosen arm produces the expression's value (the catch set must be exhaustive). A unit result (`out ! E`) has no success value to flow through — `try` rejects it: propagate with `!`, discard with `var _ =`, or match the result explicitly.
 
 In a composed set, arms may name the origin: `LoadError.timeout` is one case of one member, and `LoadError(err)` binds the whole member error (the inner match then resolves its cases):
 
 ```
 func describe = (string path, out string) {
-    return match load(path) {
-        case .ok(value) -> "ok"
+    return try load(path) catch {
         case LoadError.timeout -> "timeout"
         case LoadError.offline -> "offline"
         case ParseError.syntax -> "syntax"
@@ -1468,7 +1470,9 @@ func describe = (string path, out string) {
 }
 ```
 
-The lowered form is ordinary matches, so the usual rules apply: the generated per-member matches must be exhaustive (cover every case, or bind the whole member with `case E(err)`), a `.fail(err)` arm cannot be combined with flat arms in the same match, and binding a whole member (`case E(err)`) excludes per-case arms for that member.
+An unqualified `.timeout` resolves across the set's members when exactly one declares it; several is the force-specify error (spell the origin). The catch arms lower to ordinary matches, so the usual rules apply: the generated per-member matches must be exhaustive (cover every case, or bind the whole member with `case E(err)`), and binding a whole member (`case E(err)`) excludes per-case arms for that member. `.ok` and `.fail` arms are rejected inside `catch` — the success side is implicit.
+
+`match` remains the explicit spelling for inspecting BOTH sides: its arms are the result's own cases (`.ok(value)` / `.fail(err)`), and an error-side case there is an error pointing at `try/catch`.
 
 ## Bitsets
 

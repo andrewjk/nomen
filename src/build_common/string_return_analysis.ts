@@ -626,6 +626,9 @@ export function collect_expression_branch_values(node: any): any[] {
 export function is_owned_string_branch_value(node: any, table: StringAnalysisTable): boolean {
 	if (!node || typeof node !== "object") return false;
 	if (node.node_type === "value") {
+		// A `try/catch` success binding transfers the payload OUT as the
+		// match's value (the checker stamps `is_case_move`) — owned here.
+		if ((node as { is_case_move?: boolean }).is_case_move === true) return true;
 		// Literals (static storage), numerics (NULL), and bare variables
 		// (owned by their own declarations) all need a copy to be owned here.
 		return false;

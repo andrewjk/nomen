@@ -397,6 +397,21 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		} else {
 			op.type = func.return_type;
 		}
+		// A string-valued operator (String's `+`/`*`, or any user operator
+		// returning string) is a CALL result — the backends hand every string
+		// return a FRESH heap buffer (C strdup's it; aarch64 normalizes at
+		// the call/return boundary). `func.return_type` is a SHARED signature
+		// Type, and its `is_static` can be inherited from the callee body's
+		// literals — carrying it made ownership decisions order-dependent (a
+		// concat initializer that read `static` lost its scope-exit free
+		// depending on what else had been checked). Clone with the static bit
+		// cleared.
+		if (op.type.name === "string") {
+			const operator_result = new Type(op.type.name, false, op.type.is_array, op.type.length);
+			operator_result.type_args = op.type.type_args;
+			operator_result.is_ref = op.type.is_ref;
+			op.type = operator_result;
+		}
 		const struct_name =
 			custom_op.mono_struct_name || (left_type.is_array ? "Array" : left_type.name);
 		const func_name = operator_to_func_name(op.op) || func.name;
@@ -525,6 +540,20 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		case "|":
 		case "^": {
 			op.type = left_type;
+			// A string concat/repeat (`"a" + b`, `s * n`) allocates a FRESH
+			// heap buffer — never static storage. The shared left_type above
+			// would carry a literal operand's `is_static` (and later checks
+			// mutate that SHARED Type instance), making ownership decisions
+			// order-dependent: a concat initializer that inherited `static`
+			// from a literal lost its scope-exit free (a leak) when nothing
+			// later cleared the flag. Clone instead of mutating the operand's
+			// type, and clear the static bit.
+			if (op.type.name === "string") {
+				const concat_type = new Type(op.type.name, false, op.type.is_array, op.type.length);
+				concat_type.type_args = op.type.type_args;
+				concat_type.is_ref = op.type.is_ref;
+				op.type = concat_type;
+			}
 			break;
 		}
 		case "==":

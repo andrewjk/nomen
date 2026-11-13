@@ -27,7 +27,7 @@ import parse_function from "./parse_function.ts";
 import parse_function_call_parameter from "./parse_function_call_parameter.ts";
 import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
-import parse_match from "./parse_match.ts";
+import parse_match, { parse_try } from "./parse_match.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
 import parse_raw from "./parse_raw.ts";
 import parse_return from "./parse_return.ts";
@@ -296,6 +296,11 @@ export default function parse_statement(status: ParseStatus) {
 			case "match": {
 				const match_node = parse_match(status);
 				add_to_parent(match_node, "Match expression", status);
+				break;
+			}
+			case "try": {
+				const try_node = parse_try(status);
+				add_to_parent(try_node, "Try expression", status);
 				break;
 			}
 			case "switch": {

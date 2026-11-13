@@ -31,6 +31,14 @@ export default class ValueNode extends BaseNode {
 	 * both backends' value paths consult the flag before the literal rules.
 	 */
 	is_struct_zero?: boolean;
+	/**
+	 * Stamped by the checker's synthesized `try/catch` success arm: this bare
+	 * variable is the result's ok payload BINDING, transferred OUT as the
+	 * match's value. The join analyses treat it as an owned branch (no
+	 * boundary dup), and the scrutinee cleanup keeps the payload alive
+	 * (`MatchNode.payload_moved_out`).
+	 */
+	is_case_move?: boolean;
 
 	constructor(start: number, value: string, type?: Type) {
 		super("value", start);

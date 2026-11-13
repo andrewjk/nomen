@@ -813,27 +813,26 @@ func f = (out int ! LoadError, Direction) {
 	});
 });
 
-describe("errors: flat match arms", () => {
-	test("error cases match directly through the fail wrapper", async () => {
+describe("errors: try/catch (the error-side handler)", () => {
+	test("handles the error side; the success value flows through", async () => {
 		const input = `
 error FetchError {
 	case notfound
 	case offline
 }
 
-func fetch = (string url, out int ! FetchError) {
+func fetch = (string url, out string ! FetchError) {
 	if url == "" {
 		return .notfound
 	}
 	if url == "/offline" {
 		return .offline
 	}
-	return 7
+	return "content:" + url
 }
 
 func describe = (string url, out string) {
-	return match fetch(url) {
-		case .ok(value) -> "ok \\{value}"
+	return try fetch(url) catch {
 		case .notfound -> "missing"
 		case .offline -> "offline"
 	}
@@ -843,10 +842,10 @@ Console.write("\\{describe("a")}\\n")
 Console.write("\\{describe("")}\\n")
 Console.write("\\{describe("/offline")}\\n")
 `;
-		await build_and_check_output(input, "errors_flat_single", "ok 7\nmissing\noffline\n");
+		await build_and_check_output(input, "errors_try_single", "content:a\nmissing\noffline\n");
 	});
 
-	test("composed sets match by origin, flat and whole-member", async () => {
+	test("composed sets handle by origin, qualified and whole-member", async () => {
 		const input = `
 error LoadError {
 	case timeout
@@ -868,77 +867,60 @@ func load = (string path, out int ! LoadError, ParseError) {
 	return 42
 }
 
-func describe = (string path, out string) {
-	return match load(path) {
-		case .ok(value) -> "ok \\{value}"
-		case LoadError.timeout -> "load: timeout"
+func describe = (string path, out int) {
+	return try load(path) catch {
+		case LoadError.timeout -> -1
+		case LoadError.offline -> -2
+		case ParseError.syntax -> -3
+		case ParseError.corrupt -> -4
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("/slow")}\\n")
+Console.write("\\{describe("/bad")}\\n")
+`;
+		await build_and_check_output(input, "errors_try_composed", "42\n-1\n-3\n");
+	});
+
+	test("a whole-member bind handles one origin's cases", async () => {
+		const input = `
+error LoadError {
+	case timeout
+	case offline
+}
+
+error ParseError {
+	case syntax
+}
+
+func load = (string path, out int ! LoadError, ParseError) {
+	if path == "/late" {
+		return .offline
+	}
+	if path == "/bad" {
+		return .syntax
+	}
+	return 7
+}
+
+func describe = (string path, out int) {
+	return try load(path) catch {
 		case LoadError(err) {
 			match err {
-				case .timeout -> "unreachable"
-				case .offline -> "load: offline"
+				case .timeout -> -1
+				case .offline -> -2
 			}
 		}
-		case ParseError.syntax -> "parse: syntax"
-		case ParseError(err) {
-			match err {
-				case .syntax(_) -> "unreachable"
-				case .corrupt -> "parse: corrupt"
-			}
-		}
+		case ParseError.syntax -> -3
 	}
 }
 
 Console.write("\\{describe("a")}\\n")
-Console.write("\\{describe("/slow")}\\n")
+Console.write("\\{describe("/late")}\\n")
 Console.write("\\{describe("/bad")}\\n")
 `;
-		// `LoadError.timeout` and `LoadError(err)` mix for one origin — the
-		// mixing rule rejects it, so this test is parse-level only.
-		const parsed = parse(`import System\n${input}`, core, undefined, { allow_internal: true });
-		expect(parsed.errors.length).toBeGreaterThan(0);
-	});
-
-	test("composed flat arms run by origin", async () => {
-		const input = `
-error LoadError {
-	case timeout
-	case offline
-}
-
-error ParseError {
-	case syntax
-	case corrupt
-}
-
-func load = (string path, out int ! LoadError, ParseError) {
-	if path == "/slow" {
-		return .timeout
-	}
-	if path == "/bad" {
-		return .syntax
-	}
-	return 42
-}
-
-func describe = (string path, out string) {
-	return match load(path) {
-		case .ok(value) -> "ok \\{value}"
-		case LoadError.timeout -> "load: timeout"
-		case LoadError.offline -> "load: offline"
-		case ParseError.syntax -> "parse: syntax"
-		case ParseError.corrupt -> "parse: corrupt"
-	}
-}
-
-Console.write("\\{describe("a")}\\n")
-Console.write("\\{describe("/slow")}\\n")
-Console.write("\\{describe("/bad")}\\n")
-`;
-		await build_and_check_output(
-			input,
-			"errors_flat_composed",
-			"ok 42\nload: timeout\nparse: syntax\n",
-		);
+		await build_and_check_output(input, "errors_try_whole_member", "7\n-2\n-3\n");
 	});
 
 	test("an unqualified case resolves across the set when unique", async () => {
@@ -958,21 +940,20 @@ func load = (string path, out int ! LoadError, ParseError) {
 	return 1
 }
 
-func describe = (string path, out string) {
-	return match load(path) {
-		case .ok(value) -> "ok \\{value}"
-		case .timeout -> "timeout"
-		case .syntax -> "syntax"
+func describe = (string path, out int) {
+	return try load(path) catch {
+		case .timeout -> -1
+		case .syntax -> -2
 	}
 }
 
 Console.write("\\{describe("a")}\\n")
 Console.write("\\{describe("/bad")}\\n")
 `;
-		await build_and_check_output(input, "errors_flat_unique", "ok 1\nsyntax\n");
+		await build_and_check_output(input, "errors_try_unique", "1\n-2\n");
 	});
 
-	test("an ambiguous flat arm names the origins", () => {
+	test("an ambiguous case names the origins", () => {
 		const input = `import System
 
 error LoadError {
@@ -988,9 +969,8 @@ func load = (out int ! LoadError, ParseError) {
 }
 
 pub func main = () {
-	var label = match load() {
-		case .ok(_) -> "ok"
-		case .timeout -> "timeout"
+	try load() catch {
+		case .timeout -> -1
 	}
 }
 `;
@@ -999,13 +979,13 @@ pub func main = () {
 			test_error(
 				input,
 				"case '.timeout' is ambiguous in the error set (LoadError, ParseError) — spell the origin (`LoadError.timeout`)",
-				18,
+				17,
 				8,
 			),
 		]);
 	});
 
-	test("mixing a .fail arm with flat arms is rejected", () => {
+	test("`.fail` competes with catch", () => {
 		const input = `import System
 
 error FetchError {
@@ -1017,13 +997,86 @@ func fetch = (out int ! FetchError) {
 }
 
 pub func main = () {
-	var label = match fetch() {
-		case .ok(_) -> "ok"
-		case .fail(err) {
-			match err {
-				case .notfound -> "missing"
-			}
-		}
+	try fetch() catch {
+		case .fail(err) -> -1
+		case .notfound -> -2
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'case .fail' competes with 'catch' — list the error cases flat (or bind a whole member with 'case E(err)')",
+				13,
+				8,
+			),
+		]);
+	});
+
+	test("`.ok` is the implicit success side", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (out int ! FetchError) {
+	return 1
+}
+
+pub func main = () {
+	try fetch() catch {
+		case .ok(value) -> -1
+		case .notfound -> -2
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'case .ok' is the success side — 'try/catch' handles the error side; the success value flows through",
+				13,
+				8,
+			),
+		]);
+	});
+
+	test("`try` needs a result with a success value", () => {
+		const input = `import System
+
+pub func main = () {
+	try 5 catch {
+		case .notfound -> 0
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'try' needs a 'T ! E' result with a success value — 'int' has none; propagate with '!' or match it",
+				4,
+				2,
+			),
+		]);
+	});
+
+	test("flat error arms are retired from plain `match`", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (out int ! FetchError) {
+	return 1
+}
+
+pub func main = () {
+	match fetch() {
+		case .ok(value) -> "ok"
 		case .notfound -> "missing"
 	}
 }
@@ -1032,11 +1085,72 @@ pub func main = () {
 		expect(parsed.errors).toEqual([
 			test_error(
 				input,
-				"cannot mix flat error arms with a '.fail' arm — bind the error with 'case .fail(err)' or list the flat cases",
-				12,
+				"'case .notfound' addresses the error side — 'match' arms on a result are '.ok'/'.fail' only; handle the error side with 'try ... catch { ... }'",
 				14,
+				8,
 			),
 		]);
+	});
+
+	test("a variable scrutinee copies (its declaration owns the payload)", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func load = (string url, out string ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return "content:" + url
+}
+
+var r = load("/y")
+var via_var = try r catch {
+	case .notfound -> "missing"
+}
+Console.write("\\{via_var}\\n")
+var empty = load("")
+var via_empty = try empty catch {
+	case .notfound -> "missing"
+}
+Console.write("\\{via_empty}\\n")
+`;
+		// The variable scrutinee is owned by its declaration, which frees the
+		// payload at scope exit — the try result takes an independent copy.
+		await build_and_check_output(input, "errors_try_var_scrutinee", "content:/y\nmissing\n");
+	});
+
+	test("a nested `.fail` match stays the explicit spelling", async () => {
+		const input = `
+error FetchError {
+	case notfound
+	case offline
+}
+
+func fetch = (string url, out string ! FetchError) {
+	if url == "" {
+		return .notfound
+	}
+	return "content:" + url
+}
+
+func describe = (string url, out string) {
+	return match fetch(url) {
+		case .ok(text) -> text
+		case .fail(err) {
+			match err {
+				case .notfound -> "missing"
+				case .offline -> "offline"
+			}
+		}
+	}
+}
+
+Console.write("\\{describe("a")}\\n")
+Console.write("\\{describe("")}\\n")
+`;
+		await build_and_check_output(input, "errors_match_nested", "content:a\nmissing\n");
 	});
 });
 
@@ -1072,18 +1186,20 @@ match ok {
 		await build_and_check_output(input, "errors_anon_set", "missing\nok 7\n");
 	});
 
-	test("flat arms resolve through an anonymous error set", async () => {
+	test("catch arms resolve through an anonymous error set", async () => {
 		const input = `
-func fetch = (string url, out int ! [.notfound, .offline]) {
+func fetch = (string url, out string ! [.notfound, .offline]) {
 	if url == "" {
 		return .notfound
 	}
-	return 7
+	if url == "/offline" {
+		return .offline
+	}
+	return "ok:" + url
 }
 
 func describe = (string url, out string) {
-	return match fetch(url) {
-		case .ok(value) -> "ok \\{value}"
+	return try fetch(url) catch {
 		case .notfound -> "missing"
 		case .offline -> "offline"
 	}
@@ -1091,8 +1207,9 @@ func describe = (string url, out string) {
 
 Console.write("\\{describe("a")}\\n")
 Console.write("\\{describe("")}\\n")
+Console.write("\\{describe("/offline")}\\n")
 `;
-		await build_and_check_output(input, "errors_anon_flat", "ok 7\nmissing\n");
+		await build_and_check_output(input, "errors_anon_try", "ok:a\nmissing\noffline\n");
 	});
 
 	test("payload-carrying anonymous error sets match with bindings", async () => {
@@ -1194,8 +1311,12 @@ func close = (string path, out ! FetchError) {
 func describe = (string path, out string) {
 	return match close(path) {
 		case .ok -> "closed"
-		case .notfound -> "missing"
-		case .denied -> "denied"
+		case .fail(err) {
+			match err {
+				case .notfound -> "missing"
+				case .denied -> "denied"
+			}
+		}
 	}
 }
 
@@ -1225,7 +1346,11 @@ func step = (int n, out ! FetchError) {
 func describe = (int n, out string) {
 	return match step(n) {
 		case .ok -> "ok"
-		case .notfound -> "notfound"
+		case .fail(err) {
+			match err {
+				case .notfound -> "notfound"
+			}
+		}
 	}
 }
 
@@ -1329,8 +1454,20 @@ func load_all = (string path, out ! LoadError, ParseError) {
 var result = load_all("")
 match result {
 	case .ok -> Console.write("unexpected\\n")
-	case LoadError.timeout -> Console.write("widened\\n")
-	case ParseError.syntax -> Console.write("unreachable\\n")
+	case .fail(err) {
+		match err {
+			case .LoadError(e) {
+				match e {
+					case .timeout -> Console.write("widened\\n")
+				}
+			}
+			case .ParseError(e) {
+				match e {
+					case .syntax -> Console.write("unreachable\\n")
+				}
+			}
+		}
+	}
 }
 `;
 		await build_and_check_output(input, "errors_unit_compose", "widened\n");

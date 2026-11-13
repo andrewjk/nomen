@@ -142,11 +142,11 @@
 			"patterns": [
 				{
 					"name": "keyword.control.nm",
-					"match": "\\b(?:if|else|while|for|of|break|continue|return|switch|case|match|async)\\b"
+					"match": "\\b(?:if|else|while|for|of|break|continue|return|switch|case|match|try|catch|async)\\b"
 				},
 				{
 					"name": "storage.type.nm",
-					"match": "\\b(?:func|struct|trait|enum|bitset)\\b"
+					"match": "\\b(?:func|struct|trait|enum|error|bitset)\\b"
 				},
 				{
 					"name": "keyword.other.nm",

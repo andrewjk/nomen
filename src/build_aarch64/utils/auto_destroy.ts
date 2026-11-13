@@ -742,22 +742,30 @@ export function resolve_struct_name(
  * here is safe. Callers must NOT run this for an enum local that was
  * RETURNED — its bytes (and payload ownership) transferred to the caller.
  */
-export function emit_enum_payload_frees(status: BuildStatus, enum_name: string, decl_name: string) {
+export function emit_enum_payload_frees(
+	status: BuildStatus,
+	enum_name: string,
+	decl_name: string,
+	skip_cases?: Set<string>,
+) {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node?.has_associated_data) return;
 	emit_var_address(status, "x0", decl_name);
-	emit_enum_payload_frees_at(status, enum_name, "x0");
+	emit_enum_payload_frees_at(status, enum_name, "x0", 0, skip_cases);
 }
 
 /**
  * Free the owned payloads of the enum-with-data blob at `[base_reg +
  * base_offset]` (same tag-guarded contract as emit_enum_payload_frees).
+ * `skip_cases` names cases whose payloads were TRANSFERRED OUT (the
+ * `try/catch` success arm) — the consumer owns them now.
  */
 export function emit_enum_payload_frees_at(
 	status: BuildStatus,
 	enum_name: string,
 	base_reg: string,
 	base_offset = 0,
+	skip_cases?: Set<string>,
 ) {
 	const enum_node = status.enums.find((e) => e.name === enum_name);
 	if (!enum_node?.has_associated_data) return;
@@ -770,14 +778,16 @@ export function emit_enum_payload_frees_at(
 		!p.type.is_ref &&
 		!p.type.is_view &&
 		!!status.enums.find((e) => e.name === p.type.name && e.has_associated_data);
-	const owning_cases = enum_node.cases.filter((c) =>
-		c.params.some(
-			(p) =>
-				p.type.name === "string" ||
-				enum_payload_is_reference(p, status) ||
-				!!enum_payload_destroy_struct(p, status) ||
-				is_enum_payload(p),
-		),
+	const owning_cases = enum_node.cases.filter(
+		(c) =>
+			!skip_cases?.has(c.name) &&
+			c.params.some(
+				(p) =>
+					p.type.name === "string" ||
+					enum_payload_is_reference(p, status) ||
+					!!enum_payload_destroy_struct(p, status) ||
+					is_enum_payload(p),
+			),
 	);
 	if (!owning_cases.length) return;
 	// Every call in the body clobbers all caller-saved registers — including

@@ -66,6 +66,50 @@ export default function parse_match(status: ParseStatus): MatchNode {
 	return match_node;
 }
 
+/**
+ * `try expr catch { case .notfound -> ... }` — the error-side handler
+ * (ERRORS.md). Parsed as a MatchNode carrying `from_try`: the arms are the
+ * flat error cases, the success side is implicit (the value flows through),
+ * and the checker synthesizes the success arm + lowers the flat arms into
+ * the same generated matches `match` used to expose. Same arm grammar as
+ * `match` (arrow and block branches, payload bindings, origin-qualified
+ * cases in composed sets).
+ */
+export function parse_try(status: ParseStatus): MatchNode {
+	const try_start = get_index(status);
+	accept("try", status);
+
+	const value = parse_expression(status);
+
+	if (!accept("catch", status)) {
+		add_error(status, `'try' needs a 'catch' block after the expression`, get_index(status));
+	}
+
+	expect("{", status);
+
+	const match_node = new MatchNode(try_start, value);
+	match_node.from_try = true;
+	status.stack.push(match_node);
+
+	while (accept("case", status)) {
+		const pattern = parse_match_case_pattern(status);
+		const branch = parse_match_branch(status);
+		if (branch) {
+			match_node.cases.push({
+				match_value: pattern.value,
+				branch,
+				params: pattern.params,
+			});
+		}
+	}
+
+	expect("}", status);
+
+	status.stack.pop();
+
+	return match_node;
+}
+
 // Parse a match case pattern: an enum case reference (`.caseName`, `Enum.caseName`,
 // or bare `caseName`) optionally followed by `(binding, binding, ...)` that binds
 // the case's associated data to local names inside the branch.

@@ -10,6 +10,17 @@ export default class MatchNode extends BaseNode implements ReturningNode {
 	return_type: Type;
 	has_return?: boolean;
 	value_type?: string;
+	/** Parsed from `try expr catch { arms }`: the arms address the RESULT's
+	 *  error side (flat error arms), and the checker synthesizes the success
+	 *  arm — the value flows through — before lowering the flat arms through
+	 *  the same generated-match machinery `match` used to expose. Plain
+	 *  matches never set this: their arms must be the scrutinee's own cases. */
+	from_try?: boolean;
+	/** Case names whose payload TRANSFERS OUT as the match's own value (the
+	 *  synthesized `try/catch` success arm). The scrutinee-temp cleanup must
+	 *  not free their payloads — the match result owns them now — and the
+	 *  join analyses treat the arm value as an owned branch. */
+	payload_moved_out?: string[];
 
 	constructor(
 		start: number,

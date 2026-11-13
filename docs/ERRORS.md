@@ -114,31 +114,41 @@ The enclosing function must itself be `!`-declared with the **same** error
 enum — or, in a composed set, with a set containing the operand's error enum
 (it widens through its origin tag; see Composition below).
 
-### Matching
+### Handling: `try / catch`
 
-Nested, via the existing machinery — zero new match rules:
+The error side is handled at the point of encounter with `try expr catch`.
+The catch arms address the error enum directly; the success side is implicit
+— the ok value flows through as the expression's value, so the successful
+arm is never written:
 
 ```
-match fetch(url) {
-    case .ok(body) { ... }
-    case .fail(err) {
-        match err {
-            case .notfound { ... }
-            case .network(reason) { ... }
-        }
+func describe = (string url, out string) {
+    return try load(url) catch {
+        case .notfound -> "missing"
+        case .offline -> "offline"
     }
 }
 ```
 
-The flat surface is checker sugar: `case .notfound` arms resolve through the
-`.fail` wrapper, `case LoadError.timeout` addresses one case of one set
-member, `case LoadError(err)` binds the whole member enum, and mixing flat
-arms with an explicit `.fail` arm is rejected (they compete for the outer
-tag). The checker lowers these into generated nested matches the builders
-already understand — branches are moved, never cloned
+In a composed set, arms may name the origin (`case LoadError.timeout`), bind
+a whole member (`case LoadError(err)` — the inner match resolves its cases),
+or stay unqualified when exactly one member declares the case. The checker
+synthesizes the success arm (binding the ok payload and transferring it out
+as the match's value — the payload's ownership leaves the scrutinee temp,
+`MatchNode.payload_moved_out` + the `is_case_move` branch stamp) and lowers
+the catch arms into generated nested matches the builders already understand
+— branches are moved, never cloned
 (`src/check/utils/flat_error_arms.ts`); per-member exhaustiveness falls out
 of the generated matches. One parser addition: `Enum(bindings)` patterns
-(uppercase head + parens).
+(uppercase head + parens). Unit results (`out ! E`) have no success value to
+flow through, so `try` rejects them — propagate with `!`, discard with
+`var _ =`, or match explicitly.
+
+`match` stays the explicit both-sides spelling: its arms are the result's
+own cases (`.ok(value)` / `.fail(err)`), and an error-side case there is a
+checker error pointing at `try/catch`. An arm that yields its own case
+binding (`case .ok(v) -> v`, `case .fail(err) { return err }`) transfers the
+payload out — the scrutinee cleanup keeps it and the join does not dup it.
 
 ## Composition: `T ! E1, E2`
 
@@ -250,7 +260,8 @@ anywhere a nullable value is consumed:
   `check_return_node.ts` (bare-return lifting, `p!` context/widening),
   `check_declaration_node.ts` (in-flight `p!` initializers),
   `check_enum_node.ts` (`error` = always-checked), `check_match_node.ts` /
-  `utils/flat_error_arms.ts` (flat arms → generated nested matches),
+  `utils/flat_error_arms.ts` (catch arms → generated nested matches, the
+  retired-flat-arm guard),
   `check_null_access_node.ts` / `check_null_chain` machinery (Stage 5d).
 - **Nodes** — `Type.ts` (`!` result types), `FunctionNode.ts` (lifting
   stamps, result error sets), `OperationNode.ts` (`coalesce_ok_field`,
@@ -300,7 +311,8 @@ anywhere a nullable value is consumed:
 Recorded as a design 2026-11-12 (the scratch notes the plan used to hold are
 folded into the sections above) and shipped the same week: stages 1–3
 (the `error` keyword, the `T ! E` sugar + lifting, `!!`, postfix `!`) on
-2026-11-12; stage 4 (composition), stage 5 (flat arms), stage 5b (anonymous
+2026-11-12; stage 4 (composition), stage 5 (flat arms — later replaced by
+`try/catch`, 2026-11-13), stage 5b (anonymous
 sets), stage 5c (unit results), and stage 5d (nullable chaining) immediately
 after; the chain-value residuals (`f() ?? fb` leak, `y.v ?? fb` field
 spelling, the `??` non-nullable-left rejection) closed 2026-11-13. The plan

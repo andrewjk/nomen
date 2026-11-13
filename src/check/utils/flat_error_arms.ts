@@ -271,3 +271,79 @@ export default function rewrite_flat_error_arms(
 	}
 	match_node.cases = rebuilt;
 }
+
+/**
+ * Retired-flat-arm guard (ERRORS.md): `match` arms are the SCRUTINEE's own
+ * cases, so a result match accepts `.ok`/`.fail` only — the error side is
+ * handled by `try expr catch { ... }`, which names the unwrap and
+ * synthesizes the success side. Reports one teaching error naming the first
+ * offending arm and returns true (the caller skips arm checking; the build
+ * fails anyway). Unknown cases (typos that no error enum declares) fall
+ * through to the ordinary arm check.
+ */
+export function reject_flat_error_arms(
+	match_node: MatchNode,
+	match_type: Type,
+	status: CheckStatus,
+): boolean {
+	const result_enum = status.enums.findLast((e) => e.name === match_type.name);
+	const result_like =
+		result_enum?.template_name === "Result" || result_enum?.template_name === "UnitResult";
+	if (!result_like) return false;
+	const fail_case = result_enum.cases.find((c) => c.name === "fail");
+	const error_enum = status.enums.findLast((e) => e.name === fail_case?.params[0]?.type.name) as
+		| EnumLike
+		| undefined;
+	if (!error_enum) return false;
+	const owners: (EnumLike | undefined)[] =
+		error_enum.is_composed_error_set === true
+			? error_enum.cases.map((c) => status.enums.findLast((e) => e.name === c.params[0]?.type.name))
+			: [error_enum];
+	const declares = (case_name: string) =>
+		owners.some((o) => o?.cases.some((c) => c.name === case_name));
+
+	// The arm's source-ish text when it addresses the error side, else
+	// undefined (an ordinary `.ok`/`.fail` arm, a Result-qualified case, or
+	// an unknown case the ordinary check should report).
+	const error_side = (arm: MatchCase): string | undefined => {
+		const pattern = arm.match_value;
+		if (pattern.node_type === "value") {
+			const value = (pattern as ValueNode).value;
+			if (value === ".ok" || value === ".fail") return undefined;
+			if (value.startsWith(".") && value.length > 1 && !value.startsWith("..")) {
+				return declares(value.substring(1)) ? value : undefined;
+			}
+			if ((arm.params?.length ?? 0) > 0) {
+				const whole_member = owners.find((o) => o?.name === value || o?.source_name === value);
+				return whole_member ? `${value}(err)` : undefined;
+			}
+			return undefined;
+		}
+		if (pattern.node_type === "access") {
+			const access = pattern as AccessNode;
+			if (access.access.node_type !== "access_field" || access.target.node_type !== "value") {
+				return undefined;
+			}
+			const enum_name = (access.target as ValueNode).value;
+			const case_name = (access.access as AccessFieldNode).name;
+			if (
+				enum_name === result_enum.name ||
+				enum_name === result_enum.source_name ||
+				enum_name === "Result"
+			) {
+				return undefined;
+			}
+			return declares(case_name) ? `${enum_name}.${case_name}` : undefined;
+		}
+		return undefined;
+	};
+
+	const offending = match_node.cases.find((arm) => error_side(arm) !== undefined);
+	if (!offending) return false;
+	add_error(
+		status,
+		`'case ${error_side(offending)}' addresses the error side — 'match' arms on a result are '.ok'/'.fail' only; handle the error side with 'try ... catch { ... }'`,
+		offending.match_value.start,
+	);
+	return true;
+}

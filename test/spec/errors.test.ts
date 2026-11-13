@@ -193,22 +193,21 @@ match result {
 		expect(compile_module(body)).toEqual([]);
 	});
 
-	test("flat error arms resolve through the fail wrapper", () => {
+	test("try/catch handles the error side, success flows through", () => {
 		const body = `
 error FetchError {
 	case notfound
 	case offline
 }
 
-func fetch = (string url, out int ! FetchError) {
+func fetch = (string url, out string ! FetchError) {
 	if url == "" {
 		return .notfound
 	}
-	return 7
+	return "content:" + url
 }
 
-var label = match fetch("u") {
-	case .ok(value) -> "ok"
+var label = try fetch("u") catch {
 	case .notfound -> "missing"
 	case .offline -> "offline"
 }
@@ -216,7 +215,7 @@ var label = match fetch("u") {
 		expect(compile_module(body)).toEqual([]);
 	});
 
-	test("composed flat arms may name the origin", () => {
+	test("composed catch arms may name the origin", () => {
 		const body = `
 error LoadError {
 	case timeout
@@ -238,13 +237,12 @@ func load = (string path, out int ! LoadError, ParseError) {
 	return 7
 }
 
-func describe = (string path, out string) {
-	return match load(path) {
-		case .ok(value) -> "ok"
-		case LoadError.timeout -> "timeout"
-		case LoadError.offline -> "offline"
-		case ParseError.syntax -> "syntax"
-		case ParseError.corrupt -> "corrupt"
+func describe = (string path, out int) {
+	return try load(path) catch {
+		case LoadError.timeout -> -1
+		case LoadError.offline -> -2
+		case ParseError.syntax -> -3
+		case ParseError.corrupt -> -4
 	}
 }
 `;
@@ -277,7 +275,7 @@ match result {
 		expect(compile_module(body)).toEqual([]);
 	});
 
-	test("the unit result form declares, falls through, and matches flat", () => {
+	test("the unit result form declares, falls through, and matches", () => {
 		const body = `
 error FetchError {
 	case notfound
@@ -293,7 +291,11 @@ func close = (string path, out ! FetchError) {
 func describe = (string path, out string) {
 	return match close(path) {
 		case .ok -> "closed"
-		case .notfound -> "missing"
+		case .fail(err) {
+			match err {
+				case .notfound -> "missing"
+			}
+		}
 	}
 }
 `;

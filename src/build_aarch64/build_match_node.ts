@@ -238,11 +238,18 @@ export default function build_match_node(
 
 	// A hoisted scrutinee temp dies with the match: free its string payloads
 	// (tag-guarded). Identifier/field scrutinees are NOT freed here — their
-	// owner outlives the match and keeps ownership.
+	// owner outlives the match and keeps ownership. A case listed in
+	// `payload_moved_out` (the `try/catch` success arm) transferred its
+	// payload OUT as the match's value — the result owns it now.
 	if (scrutinee_is_temp && enum_with_data) {
 		const temp_name = `_match_scrutinee_${label}`;
 		status.stack_offsets!.set(temp_name, temp_blob_slot);
-		emit_enum_payload_frees(status, enum_with_data.name, temp_name);
+		emit_enum_payload_frees(
+			status,
+			enum_with_data.name,
+			temp_name,
+			node.payload_moved_out ? new Set(node.payload_moved_out) : undefined,
+		);
 	}
 
 	exit_scope_frame(status, old_scoped_declarations);

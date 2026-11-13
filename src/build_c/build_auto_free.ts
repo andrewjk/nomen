@@ -46,7 +46,7 @@ function payload_is_reference(type: ParameterNode["type"], status: BuildStatus):
  * (the user `#destroy`, the uniformly-heap string fields, and the nested
  * owned fields — case construction transferred their ownership to the blob).
  */
-function emit_enum_payload_reclaim(
+export function emit_enum_payload_reclaim(
 	cname: string,
 	enum_node: EnumNode,
 	c: EnumNode["cases"][number],
@@ -414,6 +414,16 @@ export function free_scoped_declarations(
 			((dec.value?.node_type === "access" &&
 				(dec.value as AccessNode).access.node_type === "access_func") ||
 				dec.value?.node_type === "func_call" ||
+				// A string-typed OPERATION allocates or transfers an owned
+				// buffer by construction: concat/repeat produce fresh heap,
+				// and the coalesces (`??`, `!!`) yield an owned arm value
+				// (producer transfer / alias dup). The inherited `is_static`
+				// can still say `static` when the left operand was a literal
+				// (and the SHARED signature Type the checker reads can differ
+				// per instance), so the initializer SHAPE is the reliable
+				// signal — a string-typed op result must be freed.
+				(dec.value?.node_type === "op" &&
+					(dec.value as { type?: { name?: string } }).type?.name === "string") ||
 				// A string declaration materialized from a VIEW value
 				// (`const string s = v`) mallocs an owned copy — always
 				// freed, regardless of inferred staticness.

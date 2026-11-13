@@ -85,6 +85,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.literal_last_use_move = n.literal_last_use_move;
 			c.is_struct_zero = n.is_struct_zero;
 			c.is_moved = n.is_moved;
+			c.is_case_move = n.is_case_move;
 			c.allocations = n.allocations?.map(clone_node);
 			c.type_args = n.type_args?.map(clone_type);
 			return c;
@@ -279,6 +280,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			const cases = n.cases.map((mc) => ({
 				match_value: clone_node(mc.match_value),
 				branch: clone_node(mc.branch) as BranchNode,
+				params: mc.params ? [...mc.params] : undefined,
 			}));
 			const c = new MatchNode(
 				n.start,
@@ -288,6 +290,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.return_type ? clone_type(n.return_type) : undefined,
 			);
 			c.has_return = n.has_return;
+			c.from_try = n.from_try;
+			c.payload_moved_out = n.payload_moved_out ? [...n.payload_moved_out] : undefined;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}

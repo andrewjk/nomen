@@ -15,6 +15,7 @@ Most types of memory corruption (use before initialization, use after free, doub
 - **Borrowed Slices** — `view` instances are non-mv, zero-copy slices that can't outlive their source
 - **Traits** — interface-based polymorphism
 - **Enums & Bitsets** — sum types with associated data, plus composable bit flags
+- **Error Handling** — `error` enums, `T ! E` result declarations, `!` propagation, `!!` coalescing, and `try … catch` for the error side
 - **Operator Overloading** — custom behavior for arithmetic operators
 - **Generics** — type-safe generic structs and classes with compile-time checking
 - **Constraints** — compile-time assertions on parameters, fields, and variables

@@ -39,4 +39,18 @@ class Box { var int value }
 			),
 		]);
 	});
+
+	test("try and catch are reserved (the error-side handler)", () => {
+		const input = `import System
+
+pub func main = () {
+	var try = 1
+	var catch = 2
+}
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "'try' is a reserved word and cannot be used as a name", 4, 6),
+			test_error(input, "'catch' is a reserved word and cannot be used as a name", 5, 6),
+		]);
+	});
 });

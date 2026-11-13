@@ -35,6 +35,9 @@ export const KEYWORDS = new Set([
 	"else",
 	"switch",
 	"match",
+	// `try expr catch { ... }` — the error-side handler (ERRORS.md).
+	"try",
+	"catch",
 	"case",
 	"for",
 	"of",
