@@ -605,20 +605,29 @@ lift (the binding types `T`, checked-ness discharges at the lift)? And does
 `r = expr!` compose with the in-flight-binding machinery the initializers
 use?
 
-## Assignment-position branching expressions (`x = match/switch/if …`)
+## Assignment-position branching residuals (`x = match/switch/if …`)
 
-Recorded 2026-11-13 while testing `try/catch` (reproduced on the clean tree too):
-`label = match load("/x") { case .ok(text) -> text case .fail(err) -> "missing" }`
-builds, but the assignment receives garbage (a stray `\u0001` byte) on both
-backends — while the same shape in DECLARATION position works. So assignment
-position is effectively unsupported for branching RHS values (match / switch /
-if — and therefore `try/catch`, which desugars to a match). The C assignment
-path has an `rhs_is_branching` arm (build_assignment_node's string branch)
-intended to route these through `return_assign`, but it evidently doesn't
-cover the general case (or the aarch64 side lacks it). Tests, SPEC, and
-ERRORS.md only use declaration/return/argument positions for match values;
-`try/catch` inherits that scoping. Worth a pass when a real consumer assigns
-a branch expression.
+The core shapes shipped 2026-11-13 (this entry's original report): a
+branching RHS (match / switch / if — and `try/catch`, which desugars to a
+match) assigned to a string or word-sized local, or to a string field,
+lowers through a `return_assign` join temp on both backends
+(`src/build_c/build_assignment_node.ts`, `src/build_aarch64/build_assignment_node.ts`,
+shared classifier `src/build_common/branching_join.ts`). Before that: C
+spliced the branch's scrutinee declaration into expression position
+(clang "expected expression") for every non-string destination, and aarch64
+stored the match epilogue's clobbered x0 (the taken case's tag read as a
+`\u0001` byte). Still open — these destinations keep the historical broken
+lowering (the classifier returns undefined and the statement falls through):
+
+- **Struct/class/trait/enum-with-data locals** (`p = match … { case .a ->
+Point(1, 2) … }`) — the join would need displaced-struct reclaim and
+  (for enums with data) construction semantics, not a word store.
+- **Scalar/struct-typed FIELDS** (`obj.count = match …`) and index
+  targets (`p[i] = match …`) on both backends; aarch64 string fields are
+  covered, C string fields too — the rest of the field paths still build
+  the branch expression in initializer position.
+- **Nullable slots** (companion `_has` flags) and generic-template
+  parameter types.
 
 ## Share-card tokenizer: replace Shiki on the server
 

@@ -2,6 +2,7 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
+import branching_join_size, { is_branch_expression } from "../build_common/branching_join.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
@@ -96,6 +97,41 @@ export default function build_assignment_node(
 		";\n",
 		node.left_value.node_type === "value" ? (node.left_value as ValueNode).value : undefined,
 	);
+	// Assignment-position branching RHS (`x = match/switch/if …` — try/catch
+	// desugars to a match). A branch expression lowers to a C `switch`
+	// STATEMENT — `n = switch (...) {…}` is invalid C, exactly the disease
+	// commit c7bc1d75 fixed for string locals. Word-sized destinations
+	// (scalars, simple enum tags, function values) lower like the declaration
+	// path: declare a join temp, let the branches assign it through the
+	// return_assign join, then store it into the destination. (String locals
+	// keep their dedicated arm below — it owns the mv move-in; string fields
+	// join inside the field-store arm.)
+	if (
+		!node.operator &&
+		is_branch_expression(node.right_value) &&
+		node.left_value.node_type === "value"
+	) {
+		const lhs_name = (node.left_value as ValueNode).value;
+		const lhs_hit = find_decl_in_c_scopes(status, lhs_name);
+		const join_type =
+			lhs_hit && lhs_hit.frame[lhs_hit.index] ? lhs_hit.frame[lhs_hit.index].type : undefined;
+		if (
+			join_type &&
+			join_type.name !== "string" &&
+			branching_join_size(join_type, status) !== undefined
+		) {
+			const temp = `_reassign_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `${c_type(join_type.name)} ${temp};\n`;
+			const old_return_assign = status.return_assign;
+			const old_join_owned = status.join_needs_owned_string;
+			status.return_assign = temp;
+			build_node(node.right_value, status);
+			status.join_needs_owned_string = old_join_owned;
+			status.return_assign = old_return_assign;
+			status.code += `${lhs_name} = ${temp};\n`;
+			return;
+		}
+	}
 	// Assignment to a nullable struct slot or nullable scalar slot (local var
 	// or struct field): write the value (if non-null) and update the
 	// companion `<slot>_has` flag.
@@ -662,17 +698,34 @@ export default function build_assignment_node(
 			build_node(node.left_value, status);
 			const field_access = end_code_scratch(status, saved_len);
 			const temp = `_nomen_strfield_${string_field_counter++}`;
-			status.code += `{\nnomen_string ${temp} = `;
-			if (rhs_is_null_value) {
-				status.code += `(nomen_string){0, 0}`;
-			} else if (fresh_heap || moved_string_donor_owns) {
-				emit_rhs_value(node.right_value, nir_rhs, status);
+			// A branching RHS is a C `switch` statement, not an expression —
+			// it cannot ride as the temp's initializer. Declare the temp bare
+			// and join the branches into it through return_assign, every
+			// branch forced to produce an owned copy: the field must own heap
+			// (the store below moves the temp in, and the destroy/record
+			// paths free the field unconditionally once recorded).
+			if (is_branch_expression(node.right_value) && !rhs_is_null_value) {
+				status.code += `{\nnomen_string ${temp};\n`;
+				const old_return_assign = status.return_assign;
+				const old_join_owned = status.join_needs_owned_string;
+				status.return_assign = temp;
+				status.join_needs_owned_string = true;
+				build_node(node.right_value, status);
+				status.join_needs_owned_string = old_join_owned;
+				status.return_assign = old_return_assign;
 			} else {
-				status.code += `nomen_str_dup(`;
-				emit_rhs_value(node.right_value, nir_rhs, status);
-				status.code += `)`;
+				status.code += `{\nnomen_string ${temp} = `;
+				if (rhs_is_null_value) {
+					status.code += `(nomen_string){0, 0}`;
+				} else if (fresh_heap || moved_string_donor_owns) {
+					emit_rhs_value(node.right_value, nir_rhs, status);
+				} else {
+					status.code += `nomen_str_dup(`;
+					emit_rhs_value(node.right_value, nir_rhs, status);
+					status.code += `)`;
+				}
+				status.code += `;\n`;
 			}
-			status.code += `;\n`;
 			if (old_was_heap) {
 				status.code += `free(${field_access}.ptr);\n`;
 			}

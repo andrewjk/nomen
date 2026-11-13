@@ -4,6 +4,7 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import branching_join_size, { is_branch_expression } from "../build_common/branching_join.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import {
@@ -1082,6 +1083,12 @@ export function get_source_address(value: BaseNode, status: BuildStatus, nir?: N
 	}
 }
 
+let assign_join_counter = 0;
+
+export function reset_assign_join_counter() {
+	assign_join_counter = 0;
+}
+
 export default function build_assignment_node(
 	node: AssignmentNode,
 	status: BuildStatus,
@@ -1097,6 +1104,56 @@ export default function build_assignment_node(
 		"",
 		node.left_value.node_type === "value" ? (node.left_value as ValueNode).value : undefined,
 	);
+	// Assignment-position branching RHS (`x = match/switch/if …` — try/catch
+	// desugars to a match). A branch expression assigns each arm's value
+	// through the return_assign join (build_let_node) instead of leaving it
+	// in x0 at the join point: the match epilogue's scrutinee cleanup
+	// clobbers x0 for call-shaped scrutinees, so a pre-join value never
+	// survives (the stray "\u0001" — the taken case's tag read as the
+	// string's first byte). Word-sized and string destinations join into a
+	// frame temp, the displaced value is reclaimed AFTER the join (the
+	// scrutinee and switch conditions may still read it), then the temp
+	// moves in. (String fields join inside the field-store arm below.)
+	if (
+		!node.operator &&
+		!node.swap &&
+		is_branch_expression(node.right_value) &&
+		node.left_value.node_type === "value"
+	) {
+		const name = (node.left_value as ValueNode).value;
+		const decl = status.scoped_declarations.find((d) => d.name === name);
+		const join_type = decl?.type ?? status.variable_types?.get(name);
+		const join_size = branching_join_size(join_type, status);
+		if (join_type && join_size !== undefined) {
+			const temp = `_assign_join_${assign_join_counter++}`;
+			const slot = allocate_stack_space(status, join_size);
+			status.stack_offsets!.set(temp, slot);
+			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
+			const old_join_owned = status.join_needs_owned_string;
+			status.return_assign = temp;
+			status.return_assign_size = join_size;
+			if (join_size === 16) status.join_needs_owned_string = true;
+			build_node(node.right_value, status);
+			status.join_needs_owned_string = old_join_owned;
+			status.return_assign = old_return_assign;
+			status.return_assign_size = old_return_assign_size;
+			// The displaced value: the join arms wrote the temp, so the
+			// destination slot still holds the old (owned) pair here.
+			if (join_size === 16 && status.heap_strings?.has(name)) {
+				emit_var_load(status, "x0", name, 8);
+				emit_free(status);
+				status.heap_strings!.delete(name);
+			}
+			emit_var_load(status, "x0", temp, join_size);
+			emit_var_store(status, "x0", name, join_size);
+			if (join_size === 16) {
+				if (!status.heap_strings) status.heap_strings = new Set();
+				status.heap_strings.add(name);
+			}
+			return;
+		}
+	}
 	// `unsafe` stores through a raw pointer: `p[i] = v` and `p[i].field = v`.
 	// The element address is computed first and pushed; the RHS builds with
 	// the standard rvalue conventions; then a width-matched store lands it.
@@ -2738,6 +2795,31 @@ export default function build_assignment_node(
 				if (rhs_is_null_literal) {
 					emit_asm(status, `mov x0, #0\n`);
 					emit_asm(status, `mov x1, #0\n`);
+				} else if (is_branch_expression(node.right_value)) {
+					// A branching RHS (`h.label = match/try …`): the match
+					// epilogue's scrutinee cleanup clobbers x0/x1 before the
+					// field store reads them. Join the branches into a frame
+					// temp (every branch forced to produce an owned copy —
+					// the field must own heap once stored and recorded), then
+					// load the pair from the temp; the flow below treats it
+					// exactly like a fresh heap RHS (no dup, displaced free,
+					// store, record).
+					const join_temp = `_field_join_${assign_join_counter++}`;
+					const join_slot = allocate_stack_space(status, 16);
+					status.stack_offsets!.set(join_temp, join_slot);
+					const old_return_assign = status.return_assign;
+					const old_return_assign_size = status.return_assign_size;
+					const old_join_owned = status.join_needs_owned_string;
+					status.return_assign = join_temp;
+					status.return_assign_size = 16;
+					status.join_needs_owned_string = true;
+					build_node(node.right_value, status);
+					status.join_needs_owned_string = old_join_owned;
+					status.return_assign = old_return_assign;
+					status.return_assign_size = old_return_assign_size;
+					emit_var_load(status, "x0", join_temp, 16);
+					ensure_newline(status);
+					status.last_result_is_heap = true;
 				} else {
 					emit_rhs_value(node.right_value, nir_rhs, status);
 					ensure_newline(status);

@@ -17,6 +17,7 @@ import { rematerialize_constants } from "./build_aarch64/asm_remat.ts";
 import { elide_stack_staging } from "./build_aarch64/asm_staging_elide.ts";
 import { unroll_loops_x2 } from "./build_aarch64/asm_unroll2.ts";
 import { reset_access_temp_counter } from "./build_aarch64/build_access_node.ts";
+import { reset_assign_join_counter } from "./build_aarch64/build_assignment_node.ts";
 import { reset_decl_const_counters } from "./build_aarch64/build_declaration_node.ts";
 import { reset_label_counter as reset_for_label_counter } from "./build_aarch64/build_for_loop_node.ts";
 import { reset_temp_counter as reset_func_call_temp_counter } from "./build_aarch64/build_function_call_node.ts";
@@ -159,6 +160,7 @@ export default function build(
 		reset_switch_label_counter();
 		reset_access_temp_counter();
 		reset_func_call_temp_counter();
+		reset_assign_join_counter();
 		reset_inline_counter();
 		reset_decl_const_counters();
 		reset_neon_counter();

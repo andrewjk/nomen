@@ -1152,6 +1152,93 @@ Console.write("\\{describe("")}\\n")
 `;
 		await build_and_check_output(input, "errors_match_nested", "content:a\nmissing\n");
 	});
+
+	// Regression (both backends): `x = try … catch { … }` is assignment-
+	// position branching (the catch desugars to a match). The C backend
+	// spliced the match's scrutinee declaration into expression position
+	// (clang: "expected expression"); aarch64 stored garbage. Both join the
+	// branches into a temp now.
+	test("try/catch assigned to a string local", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func load = (string path, out string ! FetchError) {
+	if path == "/x" {
+		return "real"
+	}
+	return .notfound
+}
+
+func main_test = (out string) {
+	var label = "init"
+	label = try load("/x") catch {
+		case .notfound -> "missing"
+	}
+	return label
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "errors_try_reassign_string", "real\n");
+	});
+
+	test("try/catch assigned to an int local", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func load = (string path, out int ! FetchError) {
+	if path == "/x" {
+		return 7
+	}
+	return .notfound
+}
+
+func main_test = (out int) {
+	var n = 0
+	n = try load("/x") catch {
+		case .notfound -> -1
+	}
+	return n
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "errors_try_reassign_int", "7\n");
+	});
+
+	test("try/catch assigned to a string field", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+mv struct Holder {
+	mv string label
+}
+
+func load = (string path, out string ! FetchError) {
+	if path == "/x" {
+		return "real"
+	}
+	return .notfound
+}
+
+func main_test = (out string) {
+	var h = Holder("init")
+	h.label = try load("/x") catch {
+		case .notfound -> "missing"
+	}
+	return h.label.copy()
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "errors_try_reassign_field", "real\n");
+	});
 });
 
 describe("errors: anonymous error sets", () => {

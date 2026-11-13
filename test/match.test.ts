@@ -801,3 +801,110 @@ Console.write_line(m)
 `;
 	await build_and_check_output(input, "match_reassign_join", "42\n");
 });
+
+// Regression (both backends): a match assigned to a SCALAR local emitted the
+// C `switch` statement into expression position (invalid C), and on aarch64
+// the match epilogue's scrutinee cleanup clobbered x0 so the destination
+// received the taken case's tag as a byte (a stray \u0001). Both lower the
+// RHS through a join temp now.
+test("a match assigned to an int local", async () => {
+	const input = `
+enum Pick {
+	case one
+	case two
+}
+
+func pick = (out Pick) {
+	return .two
+}
+
+func main_test = (out int) {
+	var n = 0
+	n = match pick() {
+		case .one -> 11
+		case .two -> 22
+	}
+	return n
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+	await build_and_check_output(input, "match_reassign_int", "22\n");
+});
+
+test("a switch assigned to an int local", async () => {
+	const input = `
+func main_test = (out int) {
+	var x = 2
+	var n = 0
+	n = switch {
+		case x > 5 -> 11
+		case x > 1 -> 22
+	} else -> 0
+	return n
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+	await build_and_check_output(input, "switch_reassign_int", "22\n");
+});
+
+test("an if assigned to an int local", async () => {
+	const input = `
+func main_test = (out int) {
+	var n = 0
+	n = if 2 > 1 -> 22 else -> 11
+	return n
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+	await build_and_check_output(input, "if_reassign_int", "22\n");
+});
+
+// Regression (aarch64): a match with a CALL scrutinee assigned to a string
+// local stored the scrutinee temp's address as the pair — the epilogue's
+// payload cleanup clobbered x0/x1 before the store. Join the branches into a
+// frame temp like the return path.
+test("a match assigned to a string local with a call scrutinee", async () => {
+	const input = `
+func load = (string path, out Result<string, string>) {
+	if path == "/x" {
+		return .ok("real")
+	}
+	return .fail("nope")
+}
+
+func main_test = (out string) {
+	var label = "init"
+	label = match load("/x") {
+		case .ok(text) -> text
+		case .fail(err) -> "missing"
+	}
+	return label
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+	await build_and_check_output(input, "match_reassign_string_call", "real\n");
+});
+
+test("a match assigned to a string field", async () => {
+	const input = `
+mv struct Holder {
+	mv string label
+}
+
+func main_test = (out string) {
+	var h = Holder("init")
+	h.label = match 1 {
+		case 0 -> "zero"
+		case 1 -> "one"
+	} else -> "other"
+	return h.label.copy()
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+	await build_and_check_output(input, "match_reassign_field", "one\n");
+});
