@@ -1,6 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import find_enum from "../build_common/find_enum.ts";
+import find_enum, { find_enum_for_case } from "../build_common/find_enum.ts";
 import { mono_type_name, resolve_mono_type } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name } from "../build_common/nullable_struct.ts";
@@ -508,6 +508,19 @@ export function emit_direct_field_load(
 export function emit_address_of(node: BaseNode, status: BuildStatus) {
 	if (node.node_type === "value") {
 		const name = (node as ValueNode).value;
+		// A bare enum-shorthand case value (`.refused`, rewritten to
+		// `Enum_case`) is not a variable — build it, which leaves the address
+		// of a tag+payload temp in x0 for enums with associated data. Without
+		// this the pseudo-name falls through to emit_var_address and links as
+		// a dead symbol (the `!`-lift of a payload-less case of a mixed enum).
+		if ((node as ValueNode).is_enum_shorthand) {
+			const found = find_enum_for_case(name, status);
+			if (found?.enum_node.has_associated_data) {
+				build_node(node, status);
+				ensure_newline(status);
+				return;
+			}
+		}
 		if (is_local_ref_var(name, status)) {
 			emit_deref_var_address(status, "x0", name);
 		} else if (status.heap_array_vars?.has(name)) {

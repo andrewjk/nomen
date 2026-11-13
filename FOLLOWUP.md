@@ -605,23 +605,6 @@ lift (the binding types `T`, checked-ness discharges at the lift)? And does
 `r = expr!` compose with the in-flight-binding machinery the initializers
 use?
 
-## `!`-lifting a payload-less case of an enum-with-data emits a dead symbol on aarch64
-
-Recorded 2026-11-13 while building `try/catch` (found by a scratch test).
-`return .refused` inside a `!`-declared function, where the ERROR enum has
-associated data on some OTHER case (`error NetError { case timeout(int ms)
-case refused }`), emits `adrp x0, NetError_refused@PAGE` on aarch64 and the
-link fails with `Undefined symbols: "NetError_refused"`. The C backend is
-fine — it lowers the lifted value as `NetError_refused_init()`. The lifted
-`.refused` is being built as a bare tag-constant VALUE (the simple-enum
-convention) instead of the enum-with-data case construction. Payload-carrying
-cases lift correctly, and payload-less cases of a payload-less enum lift
-correctly — only the mixed enum shape is affected. Repro in
-`test/scratch`-style form: `mv` is not needed; `console.write` anything.
-Workaround: give the case a payload, or use a payload-less enum. Note the
-`try/catch` tests avoid this shape deliberately (the payload-binding test
-uses a `mv error` with payload-carrying cases).
-
 ## Assignment-position branching expressions (`x = match/switch/if …`)
 
 Recorded 2026-11-13 while testing `try/catch` (reproduced on the clean tree too):

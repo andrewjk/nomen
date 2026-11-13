@@ -1431,6 +1431,42 @@ match good {
 		await build_and_check_output(input, "errors_unit_discard", "propagated value error\nok\n");
 	});
 
+	test("a payload-less case of an enum with data lifts", async () => {
+		const input = `
+error NetError {
+	case timeout(int ms)
+	case refused
+}
+
+func check = (int ms, out ! NetError) {
+	if ms > 100 {
+		return .timeout(ms)
+	}
+	if ms < 0 {
+		return .refused
+	}
+	return
+}
+
+func describe = (int ms, out string) {
+	return match check(ms) {
+		case .ok -> "ok"
+		case .fail(err) {
+			match err {
+				case .timeout(_) -> "timeout"
+				case .refused -> "refused"
+			}
+		}
+	}
+}
+
+Console.write("\\{describe(50)}\\n")
+Console.write("\\{describe(200)}\\n")
+Console.write("\\{describe(-1)}\\n")
+`;
+		await build_and_check_output(input, "errors_unit_mixed_enum", "ok\ntimeout\nrefused\n");
+	});
+
 	test("a composed unit set widens", async () => {
 		const input = `
 error LoadError {
