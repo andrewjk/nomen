@@ -1747,6 +1747,85 @@ match failed {
 		);
 	});
 
+	test("a call-scrutinee match reclaims a bound mv-error string payload", async () => {
+		// The scrutinee temp (`_match_val_N`) owns the fail payload's blob;
+		// the arm's `msg` binding only aliases it. The match-end reclaim must
+		// count nested enum-with-data payloads (the mv error inside the
+		// result's fail slot) — the audit run rejects a leak.
+		const input = `
+mv error CloseError {
+	case notfound
+	case io(string msg)
+}
+
+func close_one = (string path, out ! CloseError) {
+	if path == "/bad" {
+		return .io("disk on fire")
+	}
+	if path == "/gone" {
+		return .notfound
+	}
+}
+
+func report = (string path) {
+	match close_one(path) {
+		case .ok {}
+		case .fail(err) {
+			match err {
+				case .notfound { Console.write("gone\\n") }
+				case .io(msg) { Console.write("\\{msg}\\n") }
+			}
+		}
+	}
+	Console.write("closed\\n")
+}
+
+report("/tmp/a")
+report("/gone")
+report("/bad")
+`;
+		await build_and_check_output(
+			input,
+			"errors_call_scrutinee_payload_reclaim",
+			"closed\ngone\nclosed\ndisk on fire\nclosed\n",
+		);
+	});
+
+	test("a statement try reclaims a bound mv-error string payload", async () => {
+		const input = `
+mv error CloseError {
+	case notfound
+	case io(string msg)
+}
+
+func close_one = (string path, out ! CloseError) {
+	if path == "/bad" {
+		return .io("disk on fire")
+	}
+	if path == "/gone" {
+		return .notfound
+	}
+}
+
+func report = (string path) {
+	try close_one(path) catch {
+		case .notfound { Console.write("gone\\n") }
+		case .io(msg) { Console.write("\\{msg}\\n") }
+	}
+	Console.write("closed\\n")
+}
+
+report("/tmp/a")
+report("/gone")
+report("/bad")
+`;
+		await build_and_check_output(
+			input,
+			"errors_unit_try_payload_reclaim",
+			"closed\ngone\nclosed\ndisk on fire\nclosed\n",
+		);
+	});
+
 	test("`!!` on a unit result names the discard forms", () => {
 		const input = `import System
 

@@ -34,7 +34,11 @@ function owning_payload_cases(enum_node: EnumNode, status: BuildStatus) {
 			(p) =>
 				p.type.name === "string" ||
 				payload_is_reference(p.type, status) ||
-				!!enum_payload_destroy_struct(p, status),
+				!!enum_payload_destroy_struct(p, status) ||
+				// A nested enum-with-data payload owns its own payloads — the
+				// reclaim walks it through its `<T>_free_payloads` helper (the
+				// same condition the enum-local auto-free uses).
+				!!status.enums.find((e) => e.name === p.type.name && e.has_associated_data),
 		),
 	);
 }
