@@ -291,6 +291,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.has_return = n.has_return;
 			c.from_try = n.from_try;
+			c.is_statement = n.is_statement;
 			c.payload_moved_out = n.payload_moved_out ? [...n.payload_moved_out] : undefined;
 			c.allocations = n.allocations?.map(clone_node);
 			return c;

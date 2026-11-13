@@ -1455,7 +1455,33 @@ func describe = (string url, out string) {
 }
 ```
 
-The scrutinee is evaluated once, and the chosen arm produces the expression's value (the catch set must be exhaustive). A unit result (`out ! E`) has no success value to flow through — `try` rejects it: propagate with `!`, discard with `var _ =`, or match the result explicitly.
+The scrutinee is evaluated once, and the chosen arm produces the expression's value (the catch set must be exhaustive). In statement position a unit result (`out ! E`) is handled the same way, minus the value: the ok path falls through, and the arms are block branches or `return`s — `->` value arms are rejected, since there is no success value to produce:
+
+```
+error CloseError {
+    case notfound
+    case denied
+}
+
+func close = (string path, out ! CloseError) {
+    if path == "" {
+        return .notfound
+    }
+    if path == "/private" {
+        return .denied
+    }
+}
+
+func finish = () {
+    try close("scratch/a") catch {
+        case .notfound { Console.write("gone") }
+        case .denied { Console.write("denied") }
+    }
+    Console.write("closed")
+}
+```
+
+An expression-position `try` still requires a `T ! E` result with a success value — propagate a unit result with `!`, discard it with `var _ =`, or match the result explicitly.
 
 In a composed set, arms may name the origin: `LoadError.timeout` is one case of one member, and `LoadError(err)` binds the whole member error (the inner match then resolves its cases):
 

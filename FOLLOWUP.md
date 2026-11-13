@@ -680,3 +680,21 @@ Ctrl-C keep working. Tests stay on bare executables.
 This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
+
+## C backend: a call-scrutinee match over an `mv`-error result leaks a bound string payload
+
+Recorded 2026-11-13 while building the statement-position unit `try` (the
+form below was verified leak-clean with a variable scrutinee and with
+payload-less errors). Matching a CALL directly (`match close_one(path)`,
+both the plain nested-match spelling and the equivalent `try close_one(path)
+catch { case .io(msg) { ... } }`) leaks the `msg` string when an arm binds a
+`mv`-error string payload — the audit run reports `LEAK: 1 allocation(s)` on
+the C backend only; aarch64 is clean, and a variable scrutinee (`var r =
+close_one(path)` then matching `r`) is clean on both backends. The C
+builder's enum-with-data path materializes call scrutinees into an owned
+`_match_val_N` temp and reclaims its payloads at match end
+(`emit_enum_payload_reclaim`); a payload the arm BINDING took over (mv move
+into `msg`) and the temp's own reclaim disagree about who frees. Repro:
+`mv error E { case io(string msg) }`, `func f = (string p, out ! E) { if p
+== "/bad" { return .io("x") } }`, `match f(p) { case .ok {} case .fail(err)
+{ match err { case .io(msg) { Console.write(msg) } } } }`.

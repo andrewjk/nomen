@@ -1063,6 +1063,61 @@ pub func main = () {
 		]);
 	});
 
+	test("a unit result in expression position is still rejected", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func close = (out ! FetchError) {
+}
+
+pub func main = () {
+	var x = try close() catch {
+		case .notfound -> 0
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'try' needs a 'T ! E' result with a success value — 'UnitResult_FetchError' has none; propagate with '!' or match it",
+				11,
+				10,
+			),
+			test_error(input, "Type mismatch in declaration: unknown value ?", 11, 10),
+		]);
+	});
+
+	test("a statement unit try's arms cannot yield a value", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func close = (out ! FetchError) {
+}
+
+pub func main = () {
+	try close() catch {
+		case .notfound -> 0
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'try' on a unit result produces no value — its arms cannot '->' one; use a block branch '{ ... }' or 'return'",
+				12,
+				8,
+			),
+		]);
+	});
+
 	test("flat error arms are retired from plain `match`", () => {
 		const input = `import System
 
@@ -1610,6 +1665,86 @@ var _ = close()
 Console.write("discarded\\n")
 `;
 		await build_and_check_output(input, "errors_unit_discard_ok", "discarded\n");
+	});
+
+	test("a statement try handles a unit result; the ok path falls through", async () => {
+		const input = `
+error FetchError {
+	case notfound
+	case denied
+}
+
+func close = (string path, out ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+	if path == "/private" {
+		return .denied
+	}
+}
+
+func report = (string path) {
+	try close(path) catch {
+		case .notfound { Console.write("missing\\n") }
+		case .denied { Console.write("denied\\n") }
+	}
+	Console.write("closed\\n")
+}
+
+report("a")
+report("")
+report("/private")
+`;
+		await build_and_check_output(
+			input,
+			"errors_unit_try_statement",
+			"closed\nmissing\nclosed\ndenied\nclosed\n",
+		);
+	});
+
+	test("a statement try arm can return the error to the caller", async () => {
+		const input = `
+error FetchError {
+	case notfound
+}
+
+func close = (string path, out ! FetchError) {
+	if path == "" {
+		return .notfound
+	}
+}
+
+func report = (string path, out ! FetchError) {
+	try close(path) catch {
+		case .notfound {
+			Console.write("missing\\n")
+			return .notfound
+		}
+	}
+	Console.write("closed\\n")
+}
+
+var ok = report("a")
+match ok {
+	case .ok -> Console.write("ok\\n")
+	case .fail(_) -> Console.write("unexpected\\n")
+}
+
+var failed = report("")
+match failed {
+	case .ok -> Console.write("unexpected\\n")
+	case .fail(err) {
+		match err {
+			case .notfound -> Console.write("propagated\\n")
+		}
+	}
+}
+`;
+		await build_and_check_output(
+			input,
+			"errors_unit_try_return",
+			"closed\nok\nmissing\npropagated\n",
+		);
 	});
 
 	test("`!!` on a unit result names the discard forms", () => {

@@ -316,14 +316,17 @@ function extract_enum_case_name(
 
 /**
  * Synchronize a `try expr catch { ... }` node's arms for checking: gate the
- * scrutinee to a `T ! E` result with a success value, reject explicit
- * `.ok`/`.fail` arms (they compete with the synthesized structure), then
- * prepend the success arm — binding the ok payload and yielding it, so the
- * match's return type infers T and every catch arm is checked against it
- * (the arm typing model: `->` arms are returns of the match). A unit result
- * (`out ! E`) has no value to flow through, so it is rejected (propagate
- * with `!`, discard with `var _ =`, or match explicitly). Returns false when
- * the gate reported (the caller skips arm checking).
+ * scrutinee to a `T ! E` result, reject explicit `.ok`/`.fail` arms (they
+ * compete with the synthesized structure), then prepend the success arm —
+ * binding the ok payload and yielding it, so the match's return type infers T
+ * and every catch arm is checked against it (the arm typing model: `->` arms
+ * are returns of the match). In STATEMENT position a unit result (`out ! E`)
+ * mounts too: nothing flows through, so the synthesized ok arm is EMPTY and
+ * the catch arms may not yield values (block branches or `return`s only).
+ * An expression-position unit result is rejected — its ok path would leave
+ * the expression unassigned (propagate with `!`, discard with `var _ =`, or
+ * match explicitly). Returns false when the gate reported (the caller skips
+ * arm checking).
  */
 function mount_try_catch(
 	match_node: MatchNode,
@@ -333,10 +336,15 @@ function mount_try_catch(
 	const result_enum = status.enums.findLast((e) => e.name === match_type.name);
 	const ok_case = result_enum?.cases.find((c) => c.name === "ok");
 	const fail_case = result_enum?.cases.find((c) => c.name === "fail");
-	if (result_enum?.template_name !== "Result" || !ok_case?.params[0] || !fail_case?.params[0]) {
-		// A unit result (`out ! E`) has no success VALUE to flow through —
-		// its ok path would leave the expression unassigned. Propagate with
-		// `!`, discard with `var _ =`, or match the result explicitly.
+	const result_like =
+		result_enum?.template_name === "Result" || result_enum?.template_name === "UnitResult";
+	// A unit result (`out ! E`) has no success VALUE to flow through. In
+	// statement position that is fine — the ok path just falls through — so
+	// only expression position rejects it.
+	const unit_result = result_like && !ok_case?.params[0];
+	if (!result_like || !fail_case?.params[0] || (unit_result && !match_node.is_statement)) {
+		// Propagate with `!`, discard with `var _ =`, or match the result
+		// explicitly.
 		add_error(
 			status,
 			`'try' needs a 'T ! E' result with a success value — '${type_name(match_type)}' has none; propagate with '!' or match it`,
@@ -365,6 +373,30 @@ function mount_try_catch(
 		}
 	}
 
+	// The unit form produces no match value: an arm that yields one (`->` or
+	// a bare `let` — both parse to a single let statement) would be a silent
+	// dead value with nothing to type it against. Block branches and
+	// `return`s are the arm spellings.
+	if (unit_result) {
+		for (const arm of match_node.cases) {
+			const statements = arm.branch.statements;
+			if (statements.length === 1 && statements[0].node_type === "let") {
+				add_error(
+					status,
+					`'try' on a unit result produces no value — its arms cannot '->' one; use a block branch '{ ... }' or 'return'`,
+					arm.match_value.start,
+				);
+				return false;
+			}
+		}
+		const ok_start = match_node.start;
+		match_node.cases.unshift({
+			match_value: new ValueNode(ok_start, ".ok"),
+			branch: new BranchNode(ok_start),
+		});
+		return true;
+	}
+
 	const ok_start = match_node.start;
 	const tmp = `_try_val_${status.var_name_counter.value++}`;
 	const branch = new BranchNode(ok_start);
@@ -377,7 +409,8 @@ function mount_try_catch(
 	// (the join dups the binding into the result).
 	if (scrutinee_is_owned_temp(match_node)) {
 		value.is_case_move = true;
-		match_node.payload_moved_out = [ok_case.name];
+		// The unit path returned above, so the ok payload exists here.
+		match_node.payload_moved_out = [ok_case!.name];
 	}
 	branch.statements.push(new LetNode(ok_start, value));
 	match_node.cases.unshift({

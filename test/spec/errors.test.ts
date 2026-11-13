@@ -215,6 +215,33 @@ var label = try fetch("u") catch {
 		expect(compile_module(body)).toEqual([]);
 	});
 
+	test("a statement try handles a unit result, arms are blocks or returns", () => {
+		const body = `
+error CloseError {
+	case notfound
+	case denied
+}
+
+func close = (string path, out ! CloseError) {
+	if path == "" {
+		return .notfound
+	}
+	if path == "/private" {
+		return .denied
+	}
+}
+
+func finish = () {
+	try close("scratch/a") catch {
+		case .notfound { Console.write("gone") }
+		case .denied { Console.write("denied") }
+	}
+	Console.write("closed")
+}
+`;
+		expect(compile_module(body)).toEqual([]);
+	});
+
 	test("composed catch arms may name the origin", () => {
 		const body = `
 error LoadError {

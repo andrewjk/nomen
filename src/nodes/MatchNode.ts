@@ -16,6 +16,13 @@ export default class MatchNode extends BaseNode implements ReturningNode {
 	 *  the same generated-match machinery `match` used to expose. Plain
 	 *  matches never set this: their arms must be the scrutinee's own cases. */
 	from_try?: boolean;
+	/** Parsed as a statement (parser-stamped, the SpawnNode convention): the
+	 *  try sits on its own line, not captured into a value. Statement position
+	 *  lets a UNIT result (`out ! E`) mount — nothing flows, so the synthesized
+	 *  success arm is empty and the arms are block branches or `return`s. In
+	 *  expression position a unit result is still rejected (its ok path would
+	 *  leave the expression unassigned). */
+	is_statement?: boolean;
 	/** Case names whose payload TRANSFERS OUT as the match's own value (the
 	 *  synthesized `try/catch` success arm). The scrutinee-temp cleanup must
 	 *  not free their payloads — the match result owns them now — and the

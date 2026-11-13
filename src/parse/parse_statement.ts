@@ -300,6 +300,7 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "try": {
 				const try_node = parse_try(status);
+				try_node.is_statement = true;
 				add_to_parent(try_node, "Try expression", status);
 				break;
 			}
