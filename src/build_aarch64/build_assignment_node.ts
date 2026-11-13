@@ -4,7 +4,10 @@ import emit_field_overrides, {
 } from "../build/emit_field_overrides.ts";
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
-import branching_join_size, { is_branch_expression } from "../build_common/branching_join.ts";
+import branching_join, {
+	branch_values_all_non_null,
+	is_branch_expression,
+} from "../build_common/branching_join.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import {
@@ -687,8 +690,30 @@ function build_nullable_struct_assignment(
 			rhs_flag_slot = allocate_stack_space(status, 8);
 			emit_asm(status, `str x9, [x29, #${rhs_flag_slot}]\n`);
 		}
+		// A uniformly non-null branching RHS joins into a frame temp (the
+		// epilogue's clobbered x0 never survives); the flag lands as 1 —
+		// a nullable-typed arm set needs per-arm flag joins and bails.
 		if (is_scalar) {
-			emit_rhs_value(node.right_value, nir_rhs, status);
+			const scalar_branch_join =
+				is_branch_expression(node.right_value) &&
+				branch_values_all_non_null(node.right_value, type_from_value_node)
+					? branching_join(type_from_value_node(node.right_value), status)
+					: undefined;
+			if (scalar_branch_join && scalar_branch_join.kind === "word") {
+				const join_temp = `_field_join_${assign_join_counter++}`;
+				const join_slot = allocate_stack_space(status, 8);
+				status.stack_offsets!.set(join_temp, join_slot);
+				const old_return_assign = status.return_assign;
+				const old_return_assign_size = status.return_assign_size;
+				status.return_assign = join_temp;
+				status.return_assign_size = 8;
+				build_node(node.right_value, status);
+				status.return_assign = old_return_assign;
+				status.return_assign_size = old_return_assign_size;
+				emit_var_load(status, "x0", join_temp, 8);
+			} else {
+				emit_rhs_value(node.right_value, nir_rhs, status);
+			}
 		} else {
 			// A struct RHS must yield its ADDRESS in x0 (a bare value local's
 			// build would load only its first word).
@@ -789,7 +814,28 @@ function build_nullable_struct_assignment(
 	}
 
 	if (field_is_scalar) {
-		emit_rhs_value(node.right_value, nir_rhs, status);
+		// A uniformly non-null branching RHS joins into a frame temp (the
+		// epilogue's clobbered x0 never survives); the flag lands as 1.
+		const scalar_branch_join =
+			is_branch_expression(node.right_value) &&
+			branch_values_all_non_null(node.right_value, type_from_value_node)
+				? branching_join(field_access.type, status)
+				: undefined;
+		if (scalar_branch_join && scalar_branch_join.kind === "word") {
+			const join_temp = `_field_join_${assign_join_counter++}`;
+			const join_slot = allocate_stack_space(status, 8);
+			status.stack_offsets!.set(join_temp, join_slot);
+			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
+			status.return_assign = join_temp;
+			status.return_assign_size = 8;
+			build_node(node.right_value, status);
+			status.return_assign = old_return_assign;
+			status.return_assign_size = old_return_assign_size;
+			emit_var_load(status, "x0", join_temp, 8);
+		} else {
+			emit_rhs_value(node.right_value, nir_rhs, status);
+		}
 	} else {
 		// A struct RHS must yield its ADDRESS in x0.
 		get_source_address(node.right_value, status, nir_rhs);
@@ -1110,10 +1156,16 @@ export default function build_assignment_node(
 	// in x0 at the join point: the match epilogue's scrutinee cleanup
 	// clobbers x0 for call-shaped scrutinees, so a pre-join value never
 	// survives (the stray "\u0001" — the taken case's tag read as the
-	// string's first byte). Word-sized and string destinations join into a
-	// frame temp, the displaced value is reclaimed AFTER the join (the
-	// scrutinee and switch conditions may still read it), then the temp
-	// moves in. (String fields join inside the field-store arm below.)
+	// string's first byte).
+	//
+	// String and word destinations join into a frame temp and move in
+	// directly (the displaced string is reclaimed AFTER the join — the
+	// scrutinee and switch conditions may still read it). Struct-kind
+	// destinations (value struct, mv struct handle, enum-with-data) join
+	// into a frame temp too, then the assignment RE-RUNS as `x = mv <temp>`:
+	// the existing mv-donor reassignment paths own the displaced reclaim
+	// and the store, and the temp has no scope-exit cleanup to suppress.
+	// (String fields join inside the field-store arm below.)
 	if (
 		!node.operator &&
 		!node.swap &&
@@ -1123,31 +1175,48 @@ export default function build_assignment_node(
 		const name = (node.left_value as ValueNode).value;
 		const decl = status.scoped_declarations.find((d) => d.name === name);
 		const join_type = decl?.type ?? status.variable_types?.get(name);
-		const join_size = branching_join_size(join_type, status);
-		if (join_type && join_size !== undefined) {
+		const join = branching_join(join_type, status);
+		if (join_type && join) {
+			const join_size =
+				join.kind === "string"
+					? 16
+					: join.kind === "struct"
+						? join.is_enum_data
+							? get_enum_size(join.mono_name, status)
+							: get_struct_size(join.mono_name, status)
+						: 8;
 			const temp = `_assign_join_${assign_join_counter++}`;
 			const slot = allocate_stack_space(status, join_size);
 			status.stack_offsets!.set(temp, slot);
 			const old_return_assign = status.return_assign;
 			const old_return_assign_size = status.return_assign_size;
+			const old_return_assign_struct_size = status.return_assign_struct_size;
 			const old_join_owned = status.join_needs_owned_string;
 			status.return_assign = temp;
 			status.return_assign_size = join_size;
-			if (join_size === 16) status.join_needs_owned_string = true;
+			if (join.kind === "struct") status.return_assign_struct_size = join_size;
+			if (join.kind === "string") status.join_needs_owned_string = true;
 			build_node(node.right_value, status);
 			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
 			status.return_assign_size = old_return_assign_size;
+			status.return_assign_struct_size = old_return_assign_struct_size;
+			if (join.kind === "struct") {
+				const donor = new ValueNode(node.right_value.start, temp, new Type(join.mono_name));
+				donor.is_moved = true;
+				build_assignment_node(new AssignmentNode(node.start, node.left_value, donor), status);
+				return;
+			}
 			// The displaced value: the join arms wrote the temp, so the
 			// destination slot still holds the old (owned) pair here.
-			if (join_size === 16 && status.heap_strings?.has(name)) {
+			if (join.kind === "string" && status.heap_strings?.has(name)) {
 				emit_var_load(status, "x0", name, 8);
 				emit_free(status);
 				status.heap_strings!.delete(name);
 			}
 			emit_var_load(status, "x0", temp, join_size);
 			emit_var_store(status, "x0", name, join_size);
-			if (join_size === 16) {
+			if (join.kind === "string") {
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
 			}
@@ -3075,6 +3144,34 @@ export default function build_assignment_node(
 						emit_asm(status, `str x0, [sp, #-16]!\n`);
 					}
 
+					// A branching RHS (`h.pt = match … -> Point(3,4)`) joins
+					// into a frame temp FIRST (the match's scrutinee may still
+					// read the displaced field), and the displaced reclaim
+					// below then treats it like a fresh value: the struct copy
+					// at the bottom overwrites the field bytes, orphaning the
+					// displaced resources.
+					const struct_branch_join =
+						!node.operator && is_branch_expression(node.right_value)
+							? branching_join(field_type, status)
+							: undefined;
+					let struct_branch_slot: number | undefined;
+					if (struct_branch_join && struct_branch_join.kind === "struct") {
+						const join_size = get_struct_size(struct_branch_join.mono_name, status);
+						const join_temp = `_field_join_${assign_join_counter++}`;
+						struct_branch_slot = allocate_stack_space(status, join_size);
+						status.stack_offsets!.set(join_temp, struct_branch_slot);
+						const old_return_assign = status.return_assign;
+						const old_return_assign_size = status.return_assign_size;
+						const old_return_assign_struct_size = status.return_assign_struct_size;
+						status.return_assign = join_temp;
+						status.return_assign_size = join_size;
+						status.return_assign_struct_size = join_size;
+						build_node(node.right_value, status);
+						status.return_assign = old_return_assign;
+						status.return_assign_size = old_return_assign_size;
+						status.return_assign_struct_size = old_return_assign_struct_size;
+					}
+
 					// A `field = mv local` store into a VALUE-struct field
 					// (List/Buffer/mv struct): the plain struct copy below
 					// overwrites the field's bytes, so the displaced value's
@@ -3097,7 +3194,12 @@ export default function build_assignment_node(
 					const field_rhs_is_moved_value =
 						node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved;
 					const field_rhs_is_fresh_call = !node.swap && node.right_value.node_type === "func_call";
-					if (!node.operator && (field_rhs_is_moved_value || field_rhs_is_fresh_call)) {
+					if (
+						!node.operator &&
+						(field_rhs_is_moved_value ||
+							field_rhs_is_fresh_call ||
+							(struct_branch_join && struct_branch_join.kind === "struct"))
+					) {
 						const field_resolved = resolve_struct_type(field_type!, status);
 						const field_target_var =
 							access.target.node_type === "value" ? (access.target as ValueNode).value : "";
@@ -3138,8 +3240,13 @@ export default function build_assignment_node(
 						}
 					}
 
-					get_source_address(node.right_value, status, nir_rhs);
-					ensure_newline(status);
+					if (struct_branch_slot !== undefined) {
+						emit_asm(status, `add x0, x29, #${struct_branch_slot}\n`);
+						ensure_newline(status);
+					} else {
+						get_source_address(node.right_value, status, nir_rhs);
+						ensure_newline(status);
+					}
 					emit_asm(status, `mov x1, x0\n`);
 					if (base_reg !== undefined) {
 						emit_asm(status, `mov x0, ${base_reg}\n`);
@@ -3322,7 +3429,29 @@ export default function build_assignment_node(
 						emit_free(status);
 					}
 
-					emit_rhs_value(node.right_value, nir_rhs, status);
+					// A branching RHS (`h.count = match/try …`) joins into a
+					// frame temp: the match epilogue's scrutinee cleanup would
+					// clobber the x0 the width store below reads. The temp's
+					// word reloads into x0 and the store proceeds unchanged.
+					const scalar_branch_join =
+						!node.operator && is_branch_expression(node.right_value)
+							? branching_join(field_type, status)
+							: undefined;
+					if (scalar_branch_join && scalar_branch_join.kind === "word") {
+						const join_temp = `_field_join_${assign_join_counter++}`;
+						const join_slot = allocate_stack_space(status, 8);
+						status.stack_offsets!.set(join_temp, join_slot);
+						const old_return_assign = status.return_assign;
+						const old_return_assign_size = status.return_assign_size;
+						status.return_assign = join_temp;
+						status.return_assign_size = 8;
+						build_node(node.right_value, status);
+						status.return_assign = old_return_assign;
+						status.return_assign_size = old_return_assign_size;
+						emit_var_load(status, "x0", join_temp, 8);
+					} else {
+						emit_rhs_value(node.right_value, nir_rhs, status);
+					}
 					ensure_newline(status);
 					mark_moved_if_struct(node.right_value, status);
 					// A plain `string` field is a fat (ptr, len) pair: the RHS
@@ -3453,7 +3582,37 @@ function build_index_store(node: AssignmentNode, status: BuildStatus, nir_rhs?: 
 
 	emit_asm(status, `add x9, x9, #${offset}\n`);
 	emit_asm(status, `str x9, [sp, #-16]!\n`);
-	emit_rhs_value(node.right_value, nir_rhs, status);
+	// A branching RHS (`xs[i] = match …`) joins into a frame temp: the match
+	// epilogue's scrutinee cleanup would clobber the x0(/x1) the store below
+	// reads. (Index stores are System-library-only — `unsafe` — so the shape
+	// has no user-facing test; the lowering stays correct for core code.)
+	{
+		const elem_branch_join =
+			!node.operator && is_branch_expression(node.right_value)
+				? branching_join(member?.type ?? elem, status)
+				: undefined;
+		if (
+			elem_branch_join &&
+			(elem_branch_join.kind === "word" || elem_branch_join.kind === "string")
+		) {
+			const join_size = elem_branch_join.kind === "string" ? 16 : 8;
+			const join_temp = `_field_join_${assign_join_counter++}`;
+			const join_slot = allocate_stack_space(status, join_size);
+			status.stack_offsets!.set(join_temp, join_slot);
+			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
+			status.return_assign = join_temp;
+			status.return_assign_size = join_size;
+			if (elem_branch_join.kind === "string") status.join_needs_owned_string = true;
+			build_node(node.right_value, status);
+			status.join_needs_owned_string = false;
+			status.return_assign = old_return_assign;
+			status.return_assign_size = old_return_assign_size;
+			emit_var_load(status, "x0", join_temp, join_size);
+		} else {
+			emit_rhs_value(node.right_value, nir_rhs, status);
+		}
+	}
 	ensure_newline(status);
 	emit_asm(status, `ldr x9, [sp], #16\n`);
 

@@ -908,3 +908,195 @@ Console.write("\\{main_test()}\\n")
 `;
 	await build_and_check_output(input, "match_reassign_field", "one\n");
 });
+
+// Struct-kind destinations (value structs, mv structs, enums with data,
+// nullable slots, container monos): the arms leave the value's ADDRESS (or
+// handle) in x0 and the join lands through a frame temp / the join slot —
+// declaration position on aarch64 used to land partial garbage (the match
+// epilogue's clobbered scratch read as the copy source), and reassignment
+// emitted the branch statement into expression position (C: invalid) or
+// stored the clobbered x0 (aarch64).
+describe("match as a struct/enum destination value", () => {
+	test("a struct match in declaration position", async () => {
+		const input = `
+struct Point {
+	var int x
+	var int y
+}
+
+func pick = (out Result<Point, string>) {
+	return .ok(Point(3, 4))
+}
+
+func main_test = (out int) {
+	var p = Point(0, 0)
+	var q = match pick() {
+		case .ok(pt) -> pt
+		case .fail(_) -> Point(9, 9)
+	}
+	return q.x + q.y
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_decl_struct", "7\n");
+	});
+
+	test("a struct match reassigned to a local", async () => {
+		const input = `
+struct Point {
+	var int x
+	var int y
+}
+
+func pick = (out Result<Point, string>) {
+	return .ok(Point(3, 4))
+}
+
+func main_test = (out int) {
+	var p = Point(0, 0)
+	p = match pick() {
+		case .ok(pt) -> pt
+		case .fail(_) -> Point(9, 9)
+	}
+	return p.x + p.y
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_struct", "7\n");
+	});
+
+	test("an mv-struct match reassigned to a local", async () => {
+		const input = `
+mv struct Box {
+	var int value
+}
+
+func pick = (out Result<Box, string>) {
+	return .ok(Box(5))
+}
+
+func main_test = (out int) {
+	var b = Box(1)
+	b = match pick() {
+		case .ok(box) -> box
+		case .fail(_) -> Box(9)
+	}
+	return b.value
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_mvstruct", "5\n");
+	});
+
+	test("an enum-with-data match reassigned to a local", async () => {
+		const input = `
+error LoadError {
+	case timeout(int ms)
+	case refused
+}
+
+func pick = (int n, out Result<int, LoadError>) {
+	if n == 0 {
+		return .fail(.timeout(50))
+	}
+	return .ok(1)
+}
+
+func main_test = (out int) {
+	var e = LoadError.refused
+	e = match pick(0) {
+		case .ok(_) -> LoadError.refused
+		case .fail(err) -> err
+	}
+	match e {
+		case .timeout(ms) -> Console.write("timeout \\{ms}\\n")
+		case .refused -> Console.write("refused\\n")
+	}
+	return 0
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_enum_data", "timeout 50\n");
+	});
+
+	test("a match assigned to a scalar field", async () => {
+		const input = `
+struct Holder {
+	var int count
+}
+
+func main_test = (out int) {
+	var h = Holder(0)
+	h.count = match 1 {
+		case 0 -> 10
+		case 1 -> 20
+	} else -> 0
+	return h.count
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_scalar_field", "20\n");
+	});
+
+	test("a match assigned to a struct field", async () => {
+		const input = `
+struct Point {
+	var int x
+	var int y
+}
+
+struct Holder {
+	var Point pt
+}
+
+func main_test = (out int) {
+	var h = Holder(Point(0, 0))
+	h.pt = match 1 {
+		case 0 -> Point(1, 1)
+		case 1 -> Point(3, 4)
+	} else -> Point(0, 0)
+	return h.pt.x + h.pt.y
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_struct_field", "7\n");
+	});
+
+	test("a match assigned to a nullable scalar slot", async () => {
+		const input = `
+func main_test = (out int) {
+	var int? n = null
+	n = match 1 {
+		case 0 -> 10
+		case 1 -> 20
+	} else -> 30
+	return n ?? -1
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_nullable", "20\n");
+	});
+
+	test("a match assigned to a container-typed local", async () => {
+		const input = `
+func main_test = (out int) {
+	var l = List<int>()
+	l = match 1 {
+		case 0 -> List<int>()
+		case 1 -> List<int>()
+	} else -> l
+	return l.length
+}
+
+Console.write("\\{main_test()}\\n")
+`;
+		await build_and_check_output(input, "match_reassign_generic_local", "0\n");
+	});
+});

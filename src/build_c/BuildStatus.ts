@@ -232,6 +232,16 @@ export default interface BuildStatus {
 	 */
 	return_assign_size?: number;
 	/**
+	 * Set (to the byte size) while building the branches of a STRUCT-typed
+	 * match/switch/if EXPRESSION joined into a struct-kind slot (a value
+	 * struct, mv struct, or enum-with-data destination): struct-valued arm
+	 * expressions leave the value's ADDRESS in x0 (a constructor's sret
+	 * temp, a case-construction temp, a bare struct variable's slot), so
+	 * the branch store is an address + struct copy rather than a width
+	 * store. Consumed by build_let_node on the aarch64 backend.
+	 */
+	return_assign_struct_size?: number;
+	/**
 	 * Set while building the branches of a string-typed match/switch/if
 	 * EXPRESSION whose branches are mixed (at least one produces a fresh owned
 	 * heap string, e.g. an interpolation): every non-owned branch value

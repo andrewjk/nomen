@@ -2059,6 +2059,29 @@ export default function build_declaration_node(
 		} else {
 			emit_data(status, `${node.name}: .space ${enum_size}\n`);
 		}
+		// A branching initializer (`var e = match/switch/if …`) joins through
+		// the return_assign slot: struct-valued arms leave the tag+payload
+		// blob's ADDRESS in x0, and build_let_node struct-copies it into the
+		// slot (the return_assign_struct_size protocol) — the post-join x0
+		// the copy fallback reads is the match epilogue's clobbered scratch.
+		if (
+			node.value &&
+			(node.value.node_type === "match" ||
+				node.value.node_type === "switch" ||
+				node.value.node_type === "if")
+		) {
+			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
+			const old_return_assign_struct_size = status.return_assign_struct_size;
+			status.return_assign = node.name;
+			status.return_assign_size = enum_size;
+			status.return_assign_struct_size = enum_size;
+			emit_init_value(node.value, nir_init, status);
+			status.return_assign = old_return_assign;
+			status.return_assign_size = old_return_assign_size;
+			status.return_assign_struct_size = old_return_assign_struct_size;
+			return;
+		}
 		if (node.value) {
 			emit_init_value(node.value, nir_init, status);
 			ensure_newline(status);
@@ -3271,6 +3294,30 @@ export default function build_declaration_node(
 					}
 				}
 			} else if (node.value) {
+				// A branching initializer (`var q = match … -> Point(3,4)`)
+				// joins through the return_assign slot: struct-valued arms
+				// leave the value's ADDRESS in x0 and build_let_node
+				// struct-copies it into the slot (the
+				// return_assign_struct_size protocol). The copy fallback
+				// below reads the POST-JOIN x0 — the match epilogue's
+				// clobbered scratch — landing partial garbage.
+				if (
+					node.value.node_type === "match" ||
+					node.value.node_type === "switch" ||
+					node.value.node_type === "if"
+				) {
+					const old_return_assign = status.return_assign;
+					const old_return_assign_size = status.return_assign_size;
+					const old_return_assign_struct_size = status.return_assign_struct_size;
+					status.return_assign = node.name;
+					status.return_assign_size = struct_size;
+					status.return_assign_struct_size = struct_size;
+					emit_init_value(node.value, nir_init, status);
+					status.return_assign = old_return_assign;
+					status.return_assign_size = old_return_assign_size;
+					status.return_assign_struct_size = old_return_assign_struct_size;
+					return;
+				}
 				if (node.value.node_type === "value") {
 					const src_name = (node.value as ValueNode).value;
 					emit_var_address(status, "x1", src_name);

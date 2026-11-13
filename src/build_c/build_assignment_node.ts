@@ -2,7 +2,10 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
-import branching_join_size, { is_branch_expression } from "../build_common/branching_join.ts";
+import branching_join, {
+	branch_values_all_non_null,
+	is_branch_expression,
+} from "../build_common/branching_join.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
 import { override_displaced_string_fields } from "../build_common/ctor_return_owned.ts";
@@ -37,6 +40,7 @@ import AssignmentNode from "../nodes/AssignmentNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
+import IndexNode from "../nodes/IndexNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
@@ -100,12 +104,17 @@ export default function build_assignment_node(
 	// Assignment-position branching RHS (`x = match/switch/if …` — try/catch
 	// desugars to a match). A branch expression lowers to a C `switch`
 	// STATEMENT — `n = switch (...) {…}` is invalid C, exactly the disease
-	// commit c7bc1d75 fixed for string locals. Word-sized destinations
-	// (scalars, simple enum tags, function values) lower like the declaration
-	// path: declare a join temp, let the branches assign it through the
-	// return_assign join, then store it into the destination. (String locals
-	// keep their dedicated arm below — it owns the mv move-in; string fields
-	// join inside the field-store arm.)
+	// commit c7bc1d75 fixed for string locals.
+	//
+	// Word-sized locals (scalars, simple enum tags, function values) join
+	// into a temp and store directly — scalars carry no ownership.
+	// Struct-kind locals (value struct, enum-with-data, generic mono) and
+	// mv-struct (class-like handle) locals join into a temp too, then the
+	// assignment RE-RUNS as `x = mv <temp>`: the existing mv-donor
+	// reassignment paths own the displaced reclaim and the store, and the
+	// temp has no scope-exit cleanup to suppress. (String locals keep their
+	// dedicated arm below — it owns the mv move-in; string fields join
+	// inside the field-store arm.)
 	if (
 		!node.operator &&
 		is_branch_expression(node.right_value) &&
@@ -115,20 +124,66 @@ export default function build_assignment_node(
 		const lhs_hit = find_decl_in_c_scopes(status, lhs_name);
 		const join_type =
 			lhs_hit && lhs_hit.frame[lhs_hit.index] ? lhs_hit.frame[lhs_hit.index].type : undefined;
-		if (
-			join_type &&
-			join_type.name !== "string" &&
-			branching_join_size(join_type, status) !== undefined
-		) {
+		const join = join_type ? branching_join(join_type, status) : undefined;
+		if (join_type && join && join.kind !== "string") {
 			const temp = `_reassign_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
-			status.code += `${c_type(join_type.name)} ${temp};\n`;
+			// The temp's C spelling: the struct TAG for value structs,
+			// enum-with-data blobs and container monos; a POINTER for mv
+			// (class-like) handles; the typedef for scalars/simple enums.
+			const join_struct = status.structs.find(
+				(s) => s.name === join.mono_name && !s.is_simple_type,
+			);
+			const c_spell = join_struct
+				? join_struct.is_class
+					? `struct ${join.mono_name}*`
+					: `struct ${join.mono_name}`
+				: c_type(join.mono_name);
+			status.code += `${c_spell} ${temp};\n`;
 			const old_return_assign = status.return_assign;
 			const old_join_owned = status.join_needs_owned_string;
 			status.return_assign = temp;
 			build_node(node.right_value, status);
 			status.join_needs_owned_string = old_join_owned;
 			status.return_assign = old_return_assign;
+			if (join_struct) {
+				const donor = new ValueNode(node.right_value.start, temp, new Type(join.mono_name));
+				donor.is_moved = true;
+				build_assignment_node(new AssignmentNode(node.start, node.left_value, donor), status);
+				return;
+			}
 			status.code += `${lhs_name} = ${temp};\n`;
+			return;
+		}
+	}
+	// Scalar/enum FIELD and index-TARGET destinations (`obj.count = match …`,
+	// `xs[i] = match …`): capture the lvalue text once, join into a temp,
+	// then store the temp through the captured lvalue. (Value-struct fields
+	// join inside their dedicated arm below; mv-struct fields keep the
+	// historical lowering — the deferred class-field reclamation does not
+	// compose with a temp store yet.)
+	if (
+		!node.operator &&
+		is_branch_expression(node.right_value) &&
+		(node.left_value.node_type === "access" || node.left_value.node_type === "index")
+	) {
+		const dest_type =
+			node.left_value.node_type === "access"
+				? (node.left_value as AccessNode).access.type
+				: (node.left_value as IndexNode).type;
+		const join = branching_join(dest_type, status);
+		const dest_struct =
+			join && join.kind === "word"
+				? status.structs.find((s) => s.name === join.mono_name && !s.is_simple_type)
+				: undefined;
+		if (join && join.kind === "word" && !dest_struct) {
+			const temp = `_reassign_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			const lhs_expr = capture_build(node.left_value, status);
+			status.code += `${c_type(join.mono_name)} ${temp};\n`;
+			const old_return_assign = status.return_assign;
+			status.return_assign = temp;
+			build_node(node.right_value, status);
+			status.return_assign = old_return_assign;
+			status.code += `${lhs_expr} = ${temp};\n`;
 			return;
 		}
 	}
@@ -260,6 +315,25 @@ export default function build_assignment_node(
 				status.code += `${lhs_expr} = `;
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.current_nullable_call_flag = old;
+			} else if (
+				is_branch_expression(node.right_value) &&
+				branch_values_all_non_null(node.right_value, type_from_value_node)
+			) {
+				// A uniformly non-null branching RHS (`n = match … { … }` on an
+				// `int?` slot) joins into a temp — a C `switch` statement cannot
+				// ride in expression position — and the flag lands as 1. A
+				// nullable-typed arm set needs per-arm flag joins and keeps the
+				// historical (broken) lowering.
+				const temp = `_reassign_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				const join_c = slot_struct
+					? `struct ${slot_struct_name}`
+					: c_type(slot_type?.name || "int");
+				status.code += `${join_c} ${temp};\n`;
+				const old_return_assign = status.return_assign;
+				status.return_assign = temp;
+				build_node(node.right_value, status);
+				status.return_assign = old_return_assign;
+				status.code += `${lhs_expr} = ${temp};\n${flag} = 1`;
 			} else {
 				const rhs_flag = nullable_value_flag_expr(node.right_value, status);
 				status.code += `${lhs_expr} = `;
@@ -467,7 +541,9 @@ export default function build_assignment_node(
 		!node.operator &&
 		node.left_value.node_type === "access" &&
 		(node.left_value as AccessNode).access.node_type === "access_field" &&
-		(assign_rhs_is_moved_value || assign_rhs_is_fresh_call)
+		(assign_rhs_is_moved_value ||
+			assign_rhs_is_fresh_call ||
+			is_branch_expression(node.right_value))
 	) {
 		const access_lhs = node.left_value as AccessNode;
 		const field_type = (access_lhs.access as AccessFieldNode).type;
@@ -533,9 +609,22 @@ export default function build_assignment_node(
 			}
 			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
 			const temp = `_tfc_${id}`;
-			status.code += `{ struct ${field_struct.name} ${temp} = `;
-			emit_rhs_value(node.right_value, nir_rhs, status);
-			status.code += `;\n`;
+			// A branching RHS (`h.pt = match … -> Point(3,4)`) is a C
+			// `switch` statement — it cannot ride as the temp's initializer.
+			// Declare the temp bare, join the branches into it (the scrutinee
+			// may still read the displaced field), then the displaced
+			// reclaim + store below run unchanged.
+			if (is_branch_expression(node.right_value)) {
+				status.code += `{ struct ${field_struct.name} ${temp};\n`;
+				const old_return_assign = status.return_assign;
+				status.return_assign = temp;
+				build_node(node.right_value, status);
+				status.return_assign = old_return_assign;
+			} else {
+				status.code += `{ struct ${field_struct.name} ${temp} = `;
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				status.code += `;\n`;
+			}
 			if (needs_displaced_reclaim) {
 				emit_struct_destroys(status, field_struct, field_access);
 			}

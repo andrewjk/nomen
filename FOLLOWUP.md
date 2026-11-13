@@ -607,27 +607,40 @@ use?
 
 ## Assignment-position branching residuals (`x = match/switch/if …`)
 
-The core shapes shipped 2026-11-13 (this entry's original report): a
-branching RHS (match / switch / if — and `try/catch`, which desugars to a
-match) assigned to a string or word-sized local, or to a string field,
-lowers through a `return_assign` join temp on both backends
-(`src/build_c/build_assignment_node.ts`, `src/build_aarch64/build_assignment_node.ts`,
-shared classifier `src/build_common/branching_join.ts`). Before that: C
-spliced the branch's scrutinee declaration into expression position
-(clang "expected expression") for every non-string destination, and aarch64
-stored the match epilogue's clobbered x0 (the taken case's tag read as a
-`\u0001` byte). Still open — these destinations keep the historical broken
-lowering (the classifier returns undefined and the statement falls through):
+The broad pass shipped 2026-11-13: a branching RHS (match / switch / if —
+and `try/catch`, which desugars to a match) now joins into every common
+destination on both backends — string/word locals, struct/mv-struct/
+enum-with-data locals, container (mono) locals, scalar and struct fields,
+string fields, uniformly-non-null nullable slots, and declaration-position
+struct/enum matches on aarch64 (`branching_join` in
+`src/build_common/branching_join.ts` classifies the destination; the
+aarch64 `build_let_node` struct join stores via the
+`return_assign_struct_size` address+copy protocol; struct-kind local
+reassignments re-run as `x = mv <join temp>` so the proven mv-donor paths
+own the displaced reclaim). Still open — the classifier returns undefined
+and the statement keeps the historical broken lowering:
 
-- **Struct/class/trait/enum-with-data locals** (`p = match … { case .a ->
-Point(1, 2) … }`) — the join would need displaced-struct reclaim and
-  (for enums with data) construction semantics, not a word store.
-- **Scalar/struct-typed FIELDS** (`obj.count = match …`) and index
-  targets (`p[i] = match …`) on both backends; aarch64 string fields are
-  covered, C string fields too — the rest of the field paths still build
-  the branch expression in initializer position.
-- **Nullable slots** (companion `_has` flags) and generic-template
-  parameter types.
+- **Trait-typed locals** (`var Speaker s = match … { case .a -> Dog() }`):
+  verified broken on both backends. A trait join needs the return path's
+  concrete-branch boxing at the join point (conformer values boxed into
+  heap handles, displaced handle destroyed through the trait shim) —
+  `build_return_node`'s trait-boxing join is the pattern to lift.
+- **Nullable-typed arm sets** (`n = match c { case .a -> maybe1 case .b ->
+maybe2 }` where every arm is `T?`): needs per-arm flag joins (each arm
+  writes the slot's `_has` from its own value). Uniformly-non-null arm
+  sets — the checker rejects mixed sets — are covered.
+- **Box<T>-wrapper locals** (the stamped `is_class` heap-handle storage):
+  the word join stores the handle but does not consume the anchor
+  machinery, so a displaced instance may leak. No test exercises it.
+- **mv-struct FIELDS on C** (`holder.box = match …` for an mv struct
+  field): the deferred class-field reclamation does not compose with a
+  temp store yet. aarch64 mv-struct fields are covered (the struct-field
+  join patch rides the reclaim-gated arm).
+- **Index targets** (`xs[i] = match …`): the lowering WAS fixed on both
+  backends (`build_index_store` join + the C lvalue-capture arm), but the
+  shape is untestable from user code — raw pointer indexing is
+  `unsafe`-gated (System library only), so no user-facing test can
+  exercise it.
 
 ## Share-card tokenizer: replace Shiki on the server
 
