@@ -4,6 +4,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import { get_library } from "../src/lib.ts";
 import parse from "../src/parse.ts";
+import build_and_check_output from "./build_and_check_output";
 
 const core = path.resolve(import.meta.dirname, "../core");
 
@@ -834,6 +835,133 @@ func collect = (string input, out string) {
 `;
 			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
 			expect(parsed.errors).toEqual([]);
+		});
+	});
+
+	// Guard-clause range refinement: `if x < 0 { return }` must raise
+	// `x.range_lower` on the fall-through path (apply_negated_bounds with
+	// numeric refinement), not just record the string bound fact. Without
+	// it a sentinel-initialized, loop-carried or branch-merged index keeps
+	// its stale provably-negative interval at the guarded use, and the
+	// constraint evaluator answers PROVABLY FALSE — a hard rejection that
+	// bypasses the inside-core trust carve-out — instead of provable-true
+	// (the shape surfaced by the compiled regex engine's table walks).
+	describe("guard-clause range refinement", () => {
+		test("clamp between guards re-establishes numeric bounds (was: provably false)", async () => {
+			const input = `
+func probe = (out int) {
+    var t = Buffer<int>()
+    t.grow_int(8)
+    t.store_int(0, 6)
+    t.store_int(6, 55)
+    var int e = t.load_int(0)
+    if e < 0 {
+        return -1
+    }
+    if e > t.cap {
+        e = t.cap
+    }
+    if e < 0 || e >= t.cap {
+        return -2
+    }
+    return t.load_int(e)
+}
+Console.write("\\{probe()}\\n")
+`;
+			await build_and_check_output(input, "constraints_guard_refine_clamp", "55\n");
+		});
+
+		test("clamp + two-clause || guard verifies a load", () => {
+			const input = `
+import System
+func read = (out int) {
+    var t = Buffer<int>()
+    t.grow_int(8)
+    var int e = t.load_int(0)
+    if e < 0 {
+        return -1
+    }
+    if e > t.cap {
+        e = t.cap
+    }
+    if e < 0 || e >= t.cap {
+        return -1
+    }
+    return t.load_int(e)
+}
+`;
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("sentinel merged through a temp, guard after the merge, verifies", () => {
+			const input = `
+import System
+func walk = (out int) {
+    var t = Buffer<int>()
+    t.grow_int(8)
+    var int nxt = -1
+    var int idx = t.load_int(0)
+    if idx >= 0 && idx < t.cap {
+        nxt = t.load_int(idx)
+    }
+    idx = nxt
+    if idx < 0 || idx >= t.cap {
+        return -1
+    }
+    return idx
+}
+`;
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("each || clause's negated bound narrows the range (clause order swapped)", () => {
+			const input = `
+import System
+func pick = (Array<string> xs, out string) {
+    var int idx = xs.length - 1
+    if idx >= xs.length || idx < 0 {
+        return "none"
+    }
+    return xs.at(idx)
+}
+`;
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("provably negative without a guard is still rejected", () => {
+			const input = `
+import System
+func bad = (Buffer<int> t, out int) {
+    var int idx = -1
+    return t.load_int(idx)
+}
+`;
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
+			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+			expect(parsed.errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
+		});
+
+		test("no lower guard means the lower half is still unproven", () => {
+			const input = `
+import System
+func half = (Buffer<int> t, out int) {
+    var int e = t.load_int(0)
+    if e >= t.cap {
+        return -1
+    }
+    return t.load_int(e)
+}
+`;
+			const parsed = parse(input, get_library(core), undefined, { allow_internal: true });
+			expect(parsed.errors.length).toBeGreaterThanOrEqual(1);
+			expect(
+				parsed.errors.some(
+					(e) => e.message.includes("not satisfied") || e.message.includes("cannot be verified"),
+				),
+			).toBe(true);
 		});
 	});
 });

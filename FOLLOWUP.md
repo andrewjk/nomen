@@ -681,19 +681,22 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## Verifier: stale flow ranges for load-derived loop variables (regex engine work)
+## aarch64: an early bare `return` in `main` emits invalid assembly
 
-While building the compiled regex engine (`core/System/Text/Regex.nm`), a
-union-walk indexed a Buffer through a variable that was (a) initialized from
-a `-1` sentinel and (b) reassigned from a Buffer load inside the loop. The
-constraint evaluator's flow-insensitive range merge kept the initializer's
-`[-1, 0]` range at the load site, so `load_int`'s `i >= 0` clause evaluated
-**false** (provably unsatisfied — which bypasses the inside-core trust
-carve-out) instead of _unverifiable_ (which the carve-out accepts). The
-workaround was to give the walk variable a direct load-initialization (no
-sentinel merge). Worth revisiting: either refine ranges at early-return
-guards (`if x < 0 { return }` should raise `range_lower` on the fall-through
-path), or downgrade provably-false verdicts when the fact originates from a
-merged loop-carried assignment. Also observed: multi-clause `||` early-return
-guards (`a >= X || a >= Y → return`) register only one of the bound facts —
-single-clause guards work.
+Recorded 2026-11-14 while testing guard-clause range refinement
+(`test/constraints.test.ts`). A `()`-returning `main` with an early bare
+`return` inside an `if` (even with a statically-false condition — e.g.
+`var int e = 1; if e < 0 { return }`) builds to assembly clang rejects:
+
+```
+asm: unbalanced stack: sp offset 32 at ret — ret
+```
+
+(the generated `main.s` also duplicates the `_main` label for some shapes —
+e.g. a `pub func main` nested inside the harness-wrapped body). The failure
+is independent of the checker change that surfaced it (verified by stashing
+the change: identical output). The same logic moved into a nested helper
+with value returns (`func probe = (out int) { ... return ... }`) builds and
+runs correctly on both backends — that is the workaround for tests. The
+fix belongs in the aarch64 backend's early-return epilogue emission (the
+prologue's 32-byte stack adjustment is not restored on the `return` path).

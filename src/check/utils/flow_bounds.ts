@@ -1455,13 +1455,29 @@ export function numeric_interval(
  * each is applied (De Morgan). A conjunction `A && B` negates to `!A || !B` — a
  * disjunction where neither fact is individually guaranteed — so nothing sound
  * can be applied and it is skipped.
+ *
+ * `refine_numeric` additionally narrows the NUMERIC interval (`range_lower`/
+ * `range_upper`) with the negated bound when it resolves at compile time —
+ * the mirror of apply_bounds' guard narrowing, so a sentinel-initialized
+ * loop-carried index (`var int i = -1`, reassigned from a load) reads as
+ * provably `>= 0` after its `if i < 0 { return }` guard instead of carrying
+ * the stale provably-negative range into the use site's constraint check.
+ * Only the guard-clause caller enables it: there the negation holds on every
+ * path reaching the code after (the body always exits). The while-loop and
+ * `||` short-circuit callers keep the string-fact-only behavior (a break
+ * exits without the condition being false; the short-circuit facts are
+ * transient).
  */
-export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
+export function apply_negated_bounds(
+	condition: BaseNode,
+	status: CheckStatus,
+	refine_numeric = false,
+) {
 	if (condition.node_type !== "op") return;
 	const op = condition as OperationNode;
 	if (op.op === "||") {
-		apply_negated_bounds(op.left_value, status);
-		apply_negated_bounds(op.right_value, status);
+		apply_negated_bounds(op.left_value, status, refine_numeric);
+		apply_negated_bounds(op.right_value, status, refine_numeric);
 		return;
 	}
 	if (op.op === "&&") return;
@@ -1470,12 +1486,15 @@ export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
 	// Determine the variable and the expression it's compared against
 	let var_name: string | undefined;
 	let expr: string | undefined;
+	let expr_node: BaseNode | undefined;
 	if (op.left_value.node_type === "value") {
 		var_name = (op.left_value as ValueNode).value;
 		expr = expr_to_string(op.right_value, status);
+		expr_node = op.right_value;
 	} else if (op.right_value.node_type === "value") {
 		var_name = (op.right_value as ValueNode).value;
 		expr = expr_to_string(op.left_value, status);
+		expr_node = op.left_value;
 	}
 	if (!var_name || !expr) return;
 
@@ -1496,6 +1515,37 @@ export function apply_negated_bounds(condition: BaseNode, status: CheckStatus) {
 		// var originally was on the right; from var's perspective op is flipped
 		const flipped = op.op === "<" ? ">" : op.op === "<=" ? ">=" : op.op === ">" ? "<" : "<=";
 		rel = flipped === "<" ? ">=" : flipped === "<=" ? ">" : flipped === ">" ? "<=" : "<";
+	}
+
+	// Numeric range refinement (the mirror of apply_bounds' guard narrowing):
+	// `if x < 0 { return }` leaves `x >= 0` holding, so raise range_lower;
+	// `x >= cap` leaves `x < cap`, so lower range_upper. Without this the
+	// numeric interval keeps a stale pre-guard value (a `-1` sentinel merged
+	// through a loop-carried reassignment) and the constraint evaluator
+	// answers PROVABLY FALSE at the guarded use — a hard rejection that
+	// bypasses the inside-core trust carve-out — instead of provable-true.
+	// Enabled only where the negation holds unconditionally (the guard-clause
+	// caller: the body always exits, so only the fall-through path reaches
+	// the code after). The bound must resolve to a compile-time interval.
+	if (refine_numeric && expr_node) {
+		const num = numeric_interval(expr_node, status);
+		if (num) {
+			if (rel === "<") {
+				if (var_decl.range_upper === undefined || num.lower < var_decl.range_upper)
+					var_decl.range_upper = num.lower;
+			} else if (rel === "<=") {
+				const hi = num.upper;
+				if (var_decl.range_upper === undefined || hi < var_decl.range_upper)
+					var_decl.range_upper = hi;
+			} else if (rel === ">") {
+				const lo = num.upper;
+				if (var_decl.range_lower === undefined || lo > var_decl.range_lower)
+					var_decl.range_lower = lo;
+			} else {
+				if (var_decl.range_lower === undefined || num.lower > var_decl.range_lower)
+					var_decl.range_lower = num.lower;
+			}
+		}
 	}
 
 	if (rel === "<" || rel === "<=") {

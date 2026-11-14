@@ -307,7 +307,7 @@ export default function check_if_else_node(if_else: IfElseNode, status: CheckSta
 	//   if s < 0 || s > text.length { return }
 	//   text.slice(s, ...)
 	if (!has_else && if_returns && else_reachable) {
-		apply_negated_bounds(if_else.condition, status);
+		apply_negated_bounds(if_else.condition, status, true);
 	}
 
 	if (if_else.if_branch && !if_else.else_branch) {
