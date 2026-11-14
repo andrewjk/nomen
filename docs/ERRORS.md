@@ -142,7 +142,10 @@ the catch arms into generated nested matches the builders already understand
 of the generated matches. One parser addition: `Enum(bindings)` patterns
 (uppercase head + parens). Unit results (`out ! E`) have no success value to
 flow through, so `try` rejects them — propagate with `!`, discard with
-`var _ =`, or match explicitly.
+`var _ =`, or match explicitly. Position is the other axis: the statement
+form is the unit spelling — a value result in statement position has no
+join target for its ok arm and is rejected by the discard rule (`var _ =
+try ...`, propagate with `!`, or return it).
 
 `match` stays the explicit both-sides spelling: its arms are the result's
 own cases (`.ok(value)` / `.fail(err)`), and an error-side case there is a

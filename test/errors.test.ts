@@ -969,7 +969,7 @@ func load = (out int ! LoadError, ParseError) {
 }
 
 pub func main = () {
-	try load() catch {
+	var _ = try load() catch {
 		case .timeout -> -1
 	}
 }
@@ -997,7 +997,7 @@ func fetch = (out int ! FetchError) {
 }
 
 pub func main = () {
-	try fetch() catch {
+	var _ = try fetch() catch {
 		case .fail(err) -> -1
 		case .notfound -> -2
 	}
@@ -1005,6 +1005,7 @@ pub func main = () {
 `;
 		const parsed = parse(input, core, undefined, { allow_internal: true });
 		expect(parsed.errors).toEqual([
+			test_error(input, "Type mismatch in declaration: unknown value ?", 12, 10),
 			test_error(
 				input,
 				"'case .fail' competes with 'catch' — list the error cases flat (or bind a whole member with 'case E(err)')",
@@ -1026,7 +1027,7 @@ func fetch = (out int ! FetchError) {
 }
 
 pub func main = () {
-	try fetch() catch {
+	var _ = try fetch() catch {
 		case .ok(value) -> -1
 		case .notfound -> -2
 	}
@@ -1034,6 +1035,7 @@ pub func main = () {
 `;
 		const parsed = parse(input, core, undefined, { allow_internal: true });
 		expect(parsed.errors).toEqual([
+			test_error(input, "Type mismatch in declaration: unknown value ?", 12, 10),
 			test_error(
 				input,
 				"'case .ok' is the success side — 'try/catch' handles the error side; the success value flows through",
@@ -1114,6 +1116,34 @@ pub func main = () {
 				"'try' on a unit result produces no value — its arms cannot '->' one; use a block branch '{ ... }' or 'return'",
 				12,
 				8,
+			),
+		]);
+	});
+
+	test("a statement try on a value result is rejected (the discard rule)", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (string path, out string ! FetchError) {
+	return "content"
+}
+
+func report = (string path, out ! FetchError) {
+	try fetch(path) catch {
+		case .notfound -> return .notfound
+	}
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'try' on a value result in statement position must be consumed — bind it ('var _ = try ...'), propagate with '!', or return it",
+				12,
+				2,
 			),
 		]);
 	});

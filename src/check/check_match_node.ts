@@ -323,7 +323,9 @@ function extract_enum_case_name(
  * are returns of the match). In STATEMENT position a unit result (`out ! E`)
  * mounts too: nothing flows through, so the synthesized ok arm is EMPTY and
  * the catch arms may not yield values (block branches or `return`s only).
- * An expression-position unit result is rejected — its ok path would leave
+ * The mirror rule rejects a VALUE result in statement position — its ok arm
+ * yields a value with no join target (the discard rule applies). An
+ * expression-position unit result is rejected — its ok path would leave
  * the expression unassigned (propagate with `!`, discard with `var _ =`, or
  * match explicitly). Returns false when the gate reported (the caller skips
  * arm checking).
@@ -348,6 +350,20 @@ function mount_try_catch(
 		add_error(
 			status,
 			`'try' needs a 'T ! E' result with a success value — '${type_name(match_type)}' has none; propagate with '!' or match it`,
+			match_node.start,
+		);
+		return false;
+	}
+	// The mirror rule: a VALUE result (`T ! E`) in statement position has
+	// nothing to receive the ok arm's value — mounting it used to fail
+	// downstream with a confusing "Type mismatch in return" from the
+	// synthesized ok arm (a statement has no join target). The discard rule
+	// is the diagnostic. (The unit statement form passed the gate above and
+	// still mounts.)
+	if (match_node.is_statement && !unit_result) {
+		add_error(
+			status,
+			`'try' on a value result in statement position must be consumed — bind it ('var _ = try ...'), propagate with '!', or return it`,
 			match_node.start,
 		);
 		return false;
