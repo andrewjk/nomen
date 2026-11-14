@@ -261,6 +261,9 @@ export function bigint_method(name: string, self: string, args: string[]): strin
 			return `(${args[0]}[Number(${args[1]})] = ${args[2]})`;
 		case "div128":
 			return `__div128(${args[0]}, ${args[1]}, ${args[2]})`;
+		case "mul_wide_hi":
+			// High 64 bits of the unsigned 64×64 product (aarch64 `umulh`).
+			return `((BigInt.asUintN(64, BigInt(${args[0]})) * BigInt.asUintN(64, BigInt(${args[1]}))) >> 64n)`;
 	}
 	return undefined;
 }

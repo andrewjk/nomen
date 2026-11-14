@@ -609,6 +609,30 @@ literal/variable (the folded-receiver path needs no spill). This was a
 latent wrong-code bug in the backend — any `buf.store_int(complex_idx,
 complex_val)` site corrupted memory.
 
+43. **edigits — reciprocal single-limb division** (`core/System/BigInt.nm`):
+    the base-2⁶⁴→decimal conversion loop dominated (≈60% of runtime) and
+    called `___udivti3` once per limb. `div_to`'s single-limb path now hoists
+    a 128-bit reciprocal `P = floor((2¹²⁸-1)/d)` per call and estimates each
+    limb quotient as `(n·P)>>128` via a handful of `umulh`/`mul` products,
+    with one `rem >= d` correction (valid for `0 < d < 2⁶³`; short dividends
+    stay on the plain path where the reciprocal setup would not pay off). The
+    same pass replaced the 64×64 low-product bit-split remainder with the one
+    wrapping multiply it actually needs. This is a **library primitive**
+    improvement — the benchmark's product-tree / bulk-divmod algorithm is
+    untouched, so the comparison stays like-for-like (the same category as
+    item 13's `div128` → `___udivti3`). Measured min-of-15 at n=50000:
+    aarch64 92 → 62 ms (1.5×), C 75 → 40 ms (1.9×). The JS backend gained
+    the missing `mul_wide_hi` mapping (high 64 of the u64 product).
+
+    **Tried and reverted for fairness:** adding the main-cardioid / period-2
+    bulb interior tests and a per-iteration escape check to
+    `bench/nomen/mandelbrot.nm` was exact and gave 2.6–3.0× (aarch64 202 →
+    78 ms, C 191 → 64 ms), but it changes the work the benchmark measures —
+    the Go/Rust/Zig references brute-force every pixel. Likewise the
+    edigits-source product-tree base-blocking / `pow10` tweaks were reverted
+    so the `.nm` sources keep mirroring the references; only the shared
+    BigInt primitive was kept.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot

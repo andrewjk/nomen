@@ -31,6 +31,13 @@ func emit_limb = (ref BigInt a, ref BigInt p64, ref BigInt scratch, uint64 hi, u
 	a.add_to(a, limb)
 }
 
+func append_limb = (ref BigInt a, ref BigInt p64, ref BigInt scratch, uint64 v) {
+	var limb = BigInt()
+	a.mul_to(a, p64, ref scratch)
+	limb.set_u64(v)
+	a.add_to(a, limb)
+}
+
 pub func main = () {
 	var t = BigInt()
 	var rem = BigInt()
@@ -71,7 +78,9 @@ pub func main = () {
 		if di == 15 { d.set_u64(18446744073709551615) }
 
 		var pi = 0
-		while pi < 11; pi += 1 {
+		// Patterns 11-13 extend to 8 limbs so div_to's reciprocal fast path
+		// (enabled at a.len >= 8) is exercised, not just the plain path.
+		while pi < 14; pi += 1 {
 			if pi == 0 { emit_limb(ref a, ref p64, ref scratch, 0, 0, 0, 0) }
 			if pi == 1 { emit_limb(ref a, ref p64, ref scratch, 0, 0, 0, 1) }
 			if pi == 2 { emit_limb(ref a, ref p64, ref scratch, 0, 0, 0, max) }
@@ -83,6 +92,27 @@ pub func main = () {
 			if pi == 8 { emit_limb(ref a, ref p64, ref scratch, 7, 7, 7, 7) }
 			if pi == 9 { emit_limb(ref a, ref p64, ref scratch, 0, max, 0, max) }
 			if pi == 10 { emit_limb(ref a, ref p64, ref scratch, 18446744073709551614, max, 0, 5) }
+			if pi == 11 {
+				emit_limb(ref a, ref p64, ref scratch, 1, 2, 3, 4)
+				append_limb(ref a, ref p64, ref scratch, max)
+				append_limb(ref a, ref p64, ref scratch, 0)
+				append_limb(ref a, ref p64, ref scratch, max)
+				append_limb(ref a, ref p64, ref scratch, 0)
+			}
+			if pi == 12 {
+				emit_limb(ref a, ref p64, ref scratch, max, max, max, max)
+				append_limb(ref a, ref p64, ref scratch, 1)
+				append_limb(ref a, ref p64, ref scratch, 0)
+				append_limb(ref a, ref p64, ref scratch, 1)
+				append_limb(ref a, ref p64, ref scratch, 0)
+			}
+			if pi == 13 {
+				emit_limb(ref a, ref p64, ref scratch, 0, 0, 0, 1)
+				append_limb(ref a, ref p64, ref scratch, max)
+				append_limb(ref a, ref p64, ref scratch, max)
+				append_limb(ref a, ref p64, ref scratch, max)
+				append_limb(ref a, ref p64, ref scratch, max)
+			}
 
 			t.div_to(a, d, ref rem)
 			prod.mul_to(t, d, ref scratch)
@@ -100,7 +130,7 @@ pub func main = () {
 }
 `,
 		"bigint_single_limb_sweep",
-		"count 176 bad 0",
+		"count 224 bad 0",
 		true,
 	);
 });
