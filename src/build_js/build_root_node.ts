@@ -14,7 +14,26 @@ import type BuildStatus from "./BuildStatus.ts";
 export default function build_root_node(root: RootNode, status: BuildStatus): void {
 	let main: FunctionNode | undefined;
 	for (const statement of root.statements) {
-		if (is_library(statement)) continue;
+		if (is_library(statement)) {
+			// Library file-scope constants (e.g. the regex engine's opcode
+			// numbers) are plain values any lowered body may reference —
+			// emit them into the library section (top-level `const` is
+			// initialized before `main()` runs).
+			if (
+				statement.node_type === "declare" &&
+				(statement as unknown as { declaration?: string }).declaration === "const"
+			) {
+				const outer_code = status.code;
+				const outer_indent = status.indent;
+				status.code = "";
+				status.indent = 0;
+				stmt(statement, status);
+				status.library_code += status.code;
+				status.code = outer_code;
+				status.indent = outer_indent;
+			}
+			continue;
+		}
 		if (statement.node_type === "import") continue;
 		if (statement.node_type === "func" && (statement as FunctionNode).name === "main") {
 			main = statement as FunctionNode;

@@ -701,3 +701,20 @@ position must be consumed — `var _ = try ...`, propagate with `!`, or use
 the expression form". Gate `mount_try_catch` (or the try statement
 dispatcher) on the scrutinee's payload presence for statement position and
 report that.
+
+## Verifier: stale flow ranges for load-derived loop variables (regex engine work)
+
+While building the compiled regex engine (`core/System/Text/Regex.nm`), a
+union-walk indexed a Buffer through a variable that was (a) initialized from
+a `-1` sentinel and (b) reassigned from a Buffer load inside the loop. The
+constraint evaluator's flow-insensitive range merge kept the initializer's
+`[-1, 0]` range at the load site, so `load_int`'s `i >= 0` clause evaluated
+**false** (provably unsatisfied — which bypasses the inside-core trust
+carve-out) instead of _unverifiable_ (which the carve-out accepts). The
+workaround was to give the walk variable a direct load-initialization (no
+sentinel merge). Worth revisiting: either refine ranges at early-return
+guards (`if x < 0 { return }` should raise `range_lower` on the fall-through
+path), or downgrade provably-false verdicts when the fact originates from a
+merged loop-carried assignment. Also observed: multi-clause `||` early-return
+guards (`a >= X || a >= Y → return`) register only one of the bound facts —
+single-clause guards work.

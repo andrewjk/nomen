@@ -570,6 +570,45 @@ v2.4s` for `.4s`), with the combined bits routed `fmov x0, d0` /
     (−36%), nbody 1M 2505 → 1694 ms (−32%), fannkuch −11%, pidigits −8%,
     spectral/nsieve/binarytrees neutral.
 
+42.5. **Compiled-pattern regex engine** (`core/System/Text/Regex.nm`):
+the engine's per-position cost was dominated by re-parsing the pattern
+STRING at every candidate position — each `match_here` rescanned its range
+for top-level alternation, re-ran `atom_end_pos` per atom, and
+`group_index_at` re-walked the pattern from position 0 at every group match.
+The pattern is now COMPILED ONCE per public call into flat parallel tables
+(seq → alts → steps → atoms + 256-bit class bitmaps) and executed by a
+recursive VM whose functions are line-by-line translations of the
+string-walking ones — same trial order, same capture record/restore points —
+so results are bit-identical (verified by a 1510-case differential fuzz
+against the legacy engine on both backends, 0 mismatches). Supporting
+changes: class membership (ranges, negation, shorthands, escapes) resolves
+at COMPILE time to a single bitmap probe per byte; the candidate-position
+capture log is one hoisted allocation reset per position (the old engine
+heap-allocated a `List<int>` per candidate); `find_next_byte` prefilter and
+`first_byte_set` unchanged. Also in this tranche: the star greedy-run byte
+test is inlined per atom kind (no per-byte call in `[^n]+`-style runs), and
+per-alternative first-byte-set gates skip alternatives whose first consuming
+byte cannot match at the candidate position (sound: the skipped trial fails
+at its first consuming atom before touching capture state; nullable/zero-width
+leading steps disable the gate for that alternative). Tables are sized from
+the pattern length, so overflow cannot happen; a `-1` compile result falls
+back to the legacy engine. Measured (benchmark.sh, best-of-3): aarch64
+26 → 15 ms, C 14 → 9 ms — now ahead of Go (16 ms) and Zig (18 ms), ~2.5×
+off Rust's lazy-DFA (the remaining architectural gap). Compile time rose
+(2.2 → 3.2 s aarch64) — the engine is more code through the non-optimizing
+pipeline; the run-time trade is the point.
+
+42.6. **aarch64 store-clobber fix** (`src/build_aarch64/build_access_node.ts`):
+the inline `Buffer.store_int` fast path evaluated the VALUE into x2 and then
+staged the index — but a COMPOUND index expression (`cls * 4 + (code >> 6)`)
+uses x2 as scratch during its own evaluation, so the final store wrote the
+index fragment over the value (observed: every other bitmap word of the
+regex engine's class tables landed as `code >> 6`). The store path now
+spills x2 across index/data staging whenever the index is not a simple
+literal/variable (the folded-receiver path needs no spill). This was a
+latent wrong-code bug in the backend — any `buf.store_int(complex_idx,
+complex_val)` site corrupted memory.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot

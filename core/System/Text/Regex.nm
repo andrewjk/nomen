@@ -16,6 +16,25 @@ pub struct Regex {
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
+		var p = RxProg()
+		var caps = RxCaps()
+		if rx_compile(pattern, ref p) >= 0 {
+			caps.slots.alloc_int(p.ngroups * 3 + 3)
+			var i = 0
+			while i <= len; i += 1 {
+				if clen > 0 && i < len {
+					i = find_next_byte(input, i, len, charset)
+					if i > len {
+						break
+					}
+				}
+				rx_caps_reset(ref caps)
+				if rx_match_seq(ref p, 0, input, i, len, ref caps) >= 0 {
+					return true
+				}
+			}
+			return false
+		}
 		var i = 0
 		while i <= len; i += 1 {
 			if clen > 0 && i < len {
@@ -24,8 +43,8 @@ pub struct Regex {
 					break
 				}
 			}
-			var caps = List<int>()
-			if match_here(pattern, 0, pat_len, input, i, len, ref caps) >= 0 {
+			var lcaps = List<int>()
+			if match_here(pattern, 0, pat_len, input, i, len, ref lcaps) >= 0 {
 				return true
 			}
 		}
@@ -40,6 +59,30 @@ pub struct Regex {
 		var int len = input.length
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
+		var p = RxProg()
+		var caps = RxCaps()
+		if rx_compile(pattern, ref p) >= 0 {
+			caps.slots.alloc_int(p.ngroups * 3 + 3)
+			var i = 0
+			while i <= len; i += 1 {
+				if clen > 0 && i < len {
+					i = find_next_byte(input, i, len, charset)
+					if i > len {
+						break
+					}
+				}
+				rx_caps_reset(ref caps)
+				var int end = rx_match_seq(ref p, 0, input, i, len, ref caps)
+				if end >= 0 {
+					// One owned substring copy. The old accumulator
+					// (`match_result = match_result + "\{input.at(j)}"` per
+					// matched byte) paid an interpolation malloc PLUS a
+					// whole-accumulator re-copy per byte — O(n²) in the span.
+					return input.substring(i, end)
+				}
+			}
+			return ""
+		}
 		var i = 0
 		while i <= len; i += 1 {
 			if clen > 0 && i < len {
@@ -48,13 +91,9 @@ pub struct Regex {
 					break
 				}
 			}
-			var caps = List<int>()
-			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
+			var lcaps = List<int>()
+			var int end = match_here(pattern, 0, pat_len, input, i, len, ref lcaps)
 			if end >= 0 {
-				// One owned substring copy. The old accumulator
-				// (`match_result = match_result + "\{input.at(j)}"` per
-				// matched byte) paid an interpolation malloc PLUS a
-				// whole-accumulator re-copy per byte — O(n²) in the span.
 				return input.substring(i, end)
 			}
 		}
@@ -76,26 +115,55 @@ pub struct Regex {
 		var string charset = first_byte_set(pattern, pat_len)
 		var int clen = charset.length
 		var int groups = capture_count(pattern)
+		var p = RxProg()
+		var caps = RxCaps()
+		var compiled = rx_compile(pattern, ref p) >= 0
+		if compiled {
+			caps.slots.alloc_int(p.ngroups * 3 + 3)
+		}
 		var i = 0
 		while i <= len; i += 1 {
 			if clen > 0 && i < len {
-				i = find_next_byte(input, i, len, charset)
+				if compiled {
+					i = find_next_byte(input, i, len, charset)
+				} else {
+					i = find_next_byte(input, i, len, charset)
+				}
 				if i > len {
 					break
 				}
 			}
-			var caps = List<int>()
-			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
+			var int end = -1
+			if compiled {
+				rx_caps_reset(ref caps)
+				end = rx_match_seq(ref p, 0, input, i, len, ref caps)
+			} else {
+				var lcaps = List<int>()
+				end = match_here(pattern, 0, pat_len, input, i, len, ref lcaps)
+			}
 			if end >= 0 {
+				if compiled == false {
+					// Legacy path: re-run to capture, then report the
+					// legacy capture log. (Never taken for a well-formed
+					// pattern — the compiled tables are sized from the
+					// pattern length.)
+					var legacy = List<int>()
+					var int lend = match_here(pattern, 0, pat_len, input, i, len, ref legacy)
+					if lend >= 0 {
+						emit_captures_legacy(input, groups, legacy, ref dst)
+						return true
+					}
+					return false
+				}
 				var string whole = input.substring(i, end)
 				dst.push(mv whole)
 				var g = 1
 				while g <= groups; g += 1 {
-					var int at = last_capture_index(caps, g)
+					var int at = rx_last_capture(caps, g)
 					if at >= 0 {
-						var int s = caps.at(at + 1)
+						var int s = caps.slots.load_int(at + 1)
 						if s >= 0 {
-							var string cap = input.substring(s, caps.at(at + 2))
+							var string cap = input.substring(s, caps.slots.load_int(at + 2))
 							dst.push(mv cap)
 						} else {
 							dst.push("")
@@ -125,10 +193,22 @@ pub struct Regex {
 		dst.text = ""
 		var int pat_len = pattern.length
 		var int len = input.length
+		var p = RxProg()
+		var caps = RxCaps()
+		var compiled = rx_compile(pattern, ref p) >= 0
+		if compiled {
+			caps.slots.alloc_int(p.ngroups * 3 + 3)
+		}
 		var i = 0
 		while i <= len; i += 1 {
-			var caps = List<int>()
-			var int end = match_here(pattern, 0, pat_len, input, i, len, ref caps)
+			var int end = -1
+			if compiled {
+				rx_caps_reset(ref caps)
+				end = rx_match_seq(ref p, 0, input, i, len, ref caps)
+			} else {
+				var lcaps = List<int>()
+				end = match_here(pattern, 0, pat_len, input, i, len, ref lcaps)
+			}
 			if end >= 0 {
 				dst.found = true
 				dst.start = i
@@ -148,6 +228,32 @@ pub struct Regex {
 		var int clen = charset.length
 		var total = 0
 		var pos = 0
+		var p = RxProg()
+		var caps = RxCaps()
+		if rx_compile(pattern, ref p) >= 0 {
+			caps.slots.alloc_int(p.ngroups * 3 + 3)
+			while pos < len {
+				if clen > 0 {
+					pos = find_next_byte(input, pos, len, charset)
+					if pos >= len {
+						break
+					}
+				}
+				rx_caps_reset(ref caps)
+				var int end = rx_match_seq(ref p, 0, input, pos, len, ref caps)
+				if end >= 0 {
+					total += 1
+					if end == pos {
+						pos += 1
+					} else {
+						pos = end
+					}
+				} else {
+					pos += 1
+				}
+			}
+			return total
+		}
 		while pos < len {
 			if clen > 0 {
 				pos = find_next_byte(input, pos, len, charset)
@@ -155,8 +261,8 @@ pub struct Regex {
 					break
 				}
 			}
-			var caps = List<int>()
-			var int end = match_here(pattern, 0, pat_len, input, pos, len, ref caps)
+			var lcaps = List<int>()
+			var int end = match_here(pattern, 0, pat_len, input, pos, len, ref lcaps)
 			if end >= 0 {
 				total += 1
 				if end == pos {
@@ -187,24 +293,54 @@ pub struct Regex {
 		var int clen = charset.length
 		var pos = 0
 		var run_start = 0
+		var p = RxProg()
+		var caps = RxCaps()
+		if rx_compile(pattern, ref p) >= 0 {
+			caps.slots.alloc_int(p.ngroups * 3 + 3)
+			while pos < len {
+				if clen > 0 {
+					// Prefilter: jump to the next candidate byte. The skipped
+					// run stays pending — it is copied in bulk at the next
+					// match, or by the tail copy below.
+					pos = find_next_byte(input, pos, len, charset)
+					if pos >= len {
+						break
+					}
+				}
+				rx_caps_reset(ref caps)
+				var int end = rx_match_seq(ref p, 0, input, pos, len, ref caps)
+				if end >= 0 {
+					sb.append_string_view(input.slice(run_start, pos))
+					sb.append_string(replacement)
+					if end == pos {
+						// Empty match: the byte at pos is not consumed — it
+						// starts the next literal run.
+						run_start = pos
+						pos += 1
+					} else {
+						pos = end
+						run_start = pos
+					}
+				} else {
+					pos += 1
+				}
+			}
+			sb.append_string_view(input.slice(run_start, len))
+			return sb.to_string()
+		}
 		while pos < len {
 			if clen > 0 {
-				// Prefilter: jump to the next candidate byte. The skipped
-				// run stays pending — it is copied in bulk at the next
-				// match, or by the tail copy below.
 				pos = find_next_byte(input, pos, len, charset)
 				if pos >= len {
 					break
 				}
 			}
-			var caps = List<int>()
-			var int end = match_here(pattern, 0, pat_len, input, pos, len, ref caps)
+			var lcaps = List<int>()
+			var int end = match_here(pattern, 0, pat_len, input, pos, len, ref lcaps)
 			if end >= 0 {
 				sb.append_string_view(input.slice(run_start, pos))
 				sb.append_string(replacement)
 				if end == pos {
-					// Empty match: the byte at pos is not consumed — it
-					// starts the next literal run.
 					run_start = pos
 					pos += 1
 				} else {
@@ -1927,6 +2063,32 @@ func last_capture_index = (List<int> caps, int group, out int) {
 	return best
 }
 
+// The capture post-processing of Regex.captures over the legacy engine's
+// List-based log (groups 1..N appended after the caller pushed the whole
+// match). Used only by the legacy fallback path.
+func emit_captures_legacy = (
+	string input,
+	int groups,
+	List<int> caps,
+	ref List<string> dst { items }
+) {
+	var g = 1
+	while g <= groups; g += 1 {
+		var int at = last_capture_index(caps, g)
+		if at >= 0 {
+			var int s = caps.at(at + 1)
+			if s >= 0 {
+				var string cap = input.substring(s, caps.at(at + 2))
+				dst.push(mv cap)
+			} else {
+				dst.push("")
+			}
+		} else {
+			dst.push("")
+		}
+	}
+}
+
 /**
  * A Regex.find result: whether the pattern matched, where, and what
  **/
@@ -2152,3 +2314,1521 @@ func shorthand_members = (char c, ref StringBuilder sb {}, out int) {
 	sb.append_char(32 as char)
 	return 0
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compiled-pattern engine.
+//
+// The string-walking engine above re-derives the pattern's structure on every
+// attempt: each `match_here` call rescans its range for top-level alternation,
+// re-runs `atom_end_pos` per atom, and `group_index_at` re-walks the pattern
+// from position 0 at every group match. This engine compiles the pattern ONCE
+// per public call into flat tables (seq → alts → steps → atoms + 256-bit class
+// bitmaps) and runs a recursive VM whose functions are line-by-line
+// translations of the string-walking ones — same trial order, same capture
+// record/restore points — so results are identical while per-position work
+// drops to table loads and byte compares.
+//
+// Tables are parallel Buffer<int>s sized from the pattern length (each source
+// char contributes at most one step/atom), so overflow cannot happen for any
+// pattern the compiler accepts; the -1 path is kept as a soundness fallback
+// that routes the call to the original engine.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Compiled program tables. All indices are ints.
+mv struct RxProg {
+	// SEQ: one "pattern range" (whole pattern, group inner, lookaround inner).
+	// Its alternatives live at seq_alt0[seq] .. +seq_nalt[seq]-1 and are tried
+	// in order — the compiled form of match_here's top-level '|' split.
+	var seq_alt0 = Buffer<int>()
+	var seq_nalt = Buffer<int>()
+	var nseq = 0
+	var cap_seq = 0
+
+	// ALT: a linear sequence of steps (one source alternative).
+	var step0 = Buffer<int>()
+	var nsteps = Buffer<int>()
+	var nalt = 0
+	var cap_alt = 0
+
+	// STEP: one quantified atom.
+	var step_atom = Buffer<int>()
+	var step_q = Buffer<int>() // 0 none, 1 star(*), 2 plus(+), 3 opt(?), 4 counted
+	var step_lazy = Buffer<int>()
+	var step_min = Buffer<int>()
+	var step_max = Buffer<int>()
+	var nstep = 0
+	var cap_step = 0
+
+	// ATOM.
+	var atom_kind = Buffer<int>()
+	var atom_v0 = Buffer<int>() // lit byte / class id / group index / look kind
+	var atom_v1 = Buffer<int>() // group & look inner SEQ id
+	var natom = 0
+	var cap_atom = 0
+
+	// CLASS bitmaps: class c occupies bits[c*4 .. c*4+4); one 64-bit word per
+	// 64 byte codes, 4 words = the full 256-bit membership set. Negated
+	// classes and complement shorthands are resolved at compile time.
+	var bits = Buffer<int>()
+	var ncls = 0
+	var cap_cls = 0
+
+	// Capture groups in the pattern (reported spans: group 1..ngroups).
+	var ngroups = 0
+
+	// Deferred inner-seq compiles: a group/lookaround atom's inner range is
+	// NOT compiled while the enclosing alternative's steps are being laid
+	// out (that would splice the inner steps into the middle of the
+	// alternative — breaking the contiguous step0+nsteps addressing). The
+	// (atom, range) pairs are parked here; rx_compile_alt drains the stack
+	// after its walk, when the enclosing steps are contiguous.
+	var dq = Buffer<int>()
+	var ds = Buffer<int>()
+	var de = Buffer<int>()
+	var nd = 0
+
+	// Alternative SIBLING CHAIN: deferred inner compiles allocate alt ids
+	// BETWEEN a seq's own alternatives, so ids are not contiguous. The seq
+	// header stores the first alt; each alt's alt_next points at its next
+	// sibling (-1 = end), patched by the parent after both ids exist.
+	var alt_next = Buffer<int>()
+
+	// First-byte sets, computed per ALT after its steps are laid out (and
+	// per SEQ as the union of its alternatives). A gate consults them to
+	// skip alternatives whose first consuming byte cannot match at the
+	// candidate position — sound because the skipped trial would fail at
+	// its first byte-consuming atom before any capture state changes (the
+	// first-byte walk stops at the first non-nullable step, so every path
+	// the gate excludes needs a byte the position does not hold).
+	var alt_fb = Buffer<int>()
+	var alt_flags = Buffer<int>() // bit 0: may start with any byte; bit 1: may match empty
+	var seq_fb = Buffer<int>()
+	var seq_flags = Buffer<int>()
+}
+
+// Capture-span log: the same (group, start, end) triple format the old
+// engine's List<int> carried, hoisted to one allocation per public call and
+// reset per candidate position (n = 0 — no realloc, no per-position heap).
+mv struct RxCaps {
+	var slots = Buffer<int>()
+	var n = 0
+}
+
+const RX_A_LIT = 0
+const RX_A_ANY = 1
+const RX_A_CLASS = 2
+const RX_A_GROUP = 3
+const RX_A_BACKREF = 4
+const RX_A_LOOK = 5
+const RX_A_BOL = 6
+const RX_A_EOL = 7
+const RX_A_NOMATCH = 8
+
+const RX_Q_NONE = 0
+const RX_Q_STAR = 1
+const RX_Q_PLUS = 2
+const RX_Q_OPT = 3
+const RX_Q_COUNTED = 4
+
+// The number of ints the tables hold per source pattern character (slack for
+// the seq/alt headers around splits). Everything is sized from this, so a
+// table can only overflow on an int-overflow-sized pattern.
+func rx_table_cap = (int pat_len, out int) {
+	return pat_len * 2 + 8
+}
+
+// Reset the capture log for a new candidate position (the old engine built a
+// fresh List<int> per position; n = 0 is that fresh log, minus the heap).
+func rx_caps_reset = (ref RxCaps caps { n }) {
+	caps.n = 0
+}
+
+// The log index of the LAST entry for `group`, or -1 (old last_capture_index).
+func rx_last_capture = (RxCaps caps, int group, out int) {
+	var int best = -1
+	var i = 0
+	while i < caps.n; i += 3 {
+		if caps.slots.load_int(i) == group {
+			best = i
+		}
+	}
+	return best
+}
+
+// Record a capture span (old record_capture): a later span supersedes an
+// earlier one; a failed group records (-1, -1).
+func rx_record = (ref RxCaps caps { slots, n }, int group, int start, int end) {
+	if group <= 0 {
+		return
+	}
+	var int at = rx_last_capture(caps, group)
+	if at >= 0 {
+		if at + 2 < caps.slots.cap {
+			caps.slots.store_int(at + 1, start)
+			caps.slots.store_int(at + 2, end)
+		}
+		return
+	}
+	if caps.n + 2 < caps.slots.cap {
+		caps.slots.store_int(caps.n, group)
+		caps.slots.store_int(caps.n + 1, start)
+		caps.slots.store_int(caps.n + 2, end)
+		caps.n += 3
+	}
+}
+
+// Whether byte b is a member of class c (256-bit bitmap test).
+func rx_class_has = (ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, int cls, char b, out bool) {
+	var int code = b as int
+	var int word = p.bits.load_int(cls * 4 + (code >> 6))
+	return ((word >> (code & 63)) & 1) == 1
+}
+
+// ── The VM: each function translates its string-walking counterpart ─────────
+
+// The next alternative in a seq's sibling chain (-1 at the end).
+func rx_next_alt = (ref RxProg p {}, int alt, out int) {
+	var int result = -1
+	if alt >= 0 {
+		if alt < p.alt_next.cap {
+			result = p.alt_next.load_int(alt)
+		}
+	}
+	return result
+}
+
+// Guarded table reads used by the chain-walking loops: taking the index as
+// a PARAMETER keeps the loads outside the caller's flow-range tracking
+// (load-derived indices merge a -1 terminator into their range, which the
+// constraint evaluator then treats as provably negative).
+func rx_flags_at = (ref RxProg p {}, int alt, out int) {
+	if alt < 0 {
+		return 0
+	}
+	if alt >= p.alt_flags.cap {
+		return 0
+	}
+	return p.alt_flags.load_int(alt)
+}
+
+func rx_fb_word_at = (ref RxProg p {}, int alt, int word: word >= 0 && word < 4, out int) {
+	if alt < 0 {
+		return 0
+	}
+	if alt >= p.alt_fb.cap {
+		return 0
+	}
+	return p.alt_fb.load_int(alt * 4 + word)
+}
+
+// match_here: try the SEQ's alternatives in order (the top-level split,
+// precomputed at compile time).
+func rx_match_seq = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int seq,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int: out <= in_len
+) {
+	// Seq gate: when the whole seq must consume a byte (non-nullable, no
+	// wildcard first set) and the byte at the position is in no
+	// alternative's first-byte set, nothing can match here.
+	var int sflags = p.seq_flags.load_int(seq)
+	if (sflags & 3) == 0 {
+		if in_pos < in_len {
+			var int code = input.at(in_pos) as int
+			var int fi = seq * 4 + (code >> 6)
+			if fi >= 0 && fi < p.seq_fb.cap {
+				var int word = p.seq_fb.load_int(fi)
+				if ((word >> (code & 63)) & 1) == 0 {
+					return -1
+				}
+			}
+		} else {
+			return -1
+		}
+	}
+	var int alt_k = p.seq_alt0.load_int(seq)
+	var int na = p.seq_nalt.load_int(seq)
+	var k = 0
+	while k < na; k += 1 {
+		// Per-alt gate: skip alternatives whose first consuming byte is not
+		// at the position (the skipped trial would fail at its first
+		// consuming atom, before touching capture state).
+		if alt_k < 0 {
+			return -1
+		}
+		var int aflags = p.alt_flags.load_int(alt_k)
+		if (aflags & 3) == 0 {
+			if in_pos < in_len {
+				var int code = input.at(in_pos) as int
+				var int fi = alt_k * 4 + (code >> 6)
+				var skip = false
+				if fi >= 0 && fi < p.alt_fb.cap {
+					var int word = p.alt_fb.load_int(fi)
+					if ((word >> (code & 63)) & 1) == 0 {
+						skip = true
+					}
+				}
+				if skip {
+					alt_k = rx_next_alt(ref p, alt_k)
+					continue
+				}
+			} else {
+				alt_k = rx_next_alt(ref p, alt_k)
+				continue
+			}
+		}
+		var int r = rx_match_alt(ref p, alt_k, 0, input, in_pos, in_len, ref caps)
+		if r >= 0 {
+			return r
+		}
+		alt_k = rx_next_alt(ref p, alt_k)
+	}
+	return -1
+}
+
+// match_here's post-split body: pattern exhausted → success; otherwise run
+// the step at step_idx (quantifier dispatch) and continue with the rest of
+// the alternative as the continuation.
+func rx_match_alt = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int alt,
+	int step_idx,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int: out <= in_len
+) {
+	var int s0 = p.step0.load_int(alt)
+	var int ns = p.nsteps.load_int(alt)
+	// Pattern exhausted: match succeeds at the current position.
+	if step_idx >= ns {
+		return in_pos
+	}
+	var int st = s0 + step_idx
+	var int atom = p.step_atom.load_int(st)
+	var int q = p.step_q.load_int(st)
+	var int lazy = p.step_lazy.load_int(st)
+	if q == RX_Q_STAR {
+		return rx_star(ref p, atom, 0, lazy, alt, step_idx + 1, input, in_pos, in_len, ref caps)
+	}
+	if q == RX_Q_PLUS {
+		return rx_star(ref p, atom, 1, lazy, alt, step_idx + 1, input, in_pos, in_len, ref caps)
+	}
+	if q == RX_Q_OPT {
+		return rx_optional(ref p, atom, lazy, alt, step_idx + 1, input, in_pos, in_len, ref caps)
+	}
+	if q == RX_Q_COUNTED {
+		var int mn = p.step_min.load_int(st)
+		var int mx = p.step_max.load_int(st)
+		return rx_counted(ref p, atom, mn, mx, lazy, 0, alt, step_idx + 1, input, in_pos, in_len, ref caps)
+	}
+	// No quantifier. Anchors and lookarounds are zero-width; a GROUP atom goes
+	// through the continuation-aware path (JS-style alternative retries).
+	var int kind = p.atom_kind.load_int(atom)
+	if kind == RX_A_LOOK {
+		var int lk = p.atom_v0.load_int(atom)
+		var int inner = p.atom_v1.load_int(atom)
+		if rx_look_succeeds(ref p, lk, inner, input, in_pos, in_len) == false {
+			return -1
+		}
+		return rx_match_alt(ref p, alt, step_idx + 1, input, in_pos, in_len, ref caps)
+	}
+	if kind == RX_A_GROUP {
+		return rx_group_then_rest(ref p, atom, alt, step_idx + 1, input, in_pos, in_len, ref caps)
+	}
+	var int next = rx_single_atom(ref p, atom, input, in_pos, in_len, ref caps)
+	if next < 0 {
+		return -1
+	}
+	return rx_match_alt(ref p, alt, step_idx + 1, input, next, in_len, ref caps)
+}
+
+// match_single_atom: match one atom (no quantifier) exactly once.
+func rx_single_atom = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var int kind = p.atom_kind.load_int(atom)
+	if kind == RX_A_LIT {
+		if in_pos < in_len {
+			if (input.at(in_pos) as int) == p.atom_v0.load_int(atom) {
+				return in_pos + 1
+			}
+		}
+		return -1
+	}
+	if kind == RX_A_ANY {
+		if in_pos < in_len {
+			if (input.at(in_pos) as int) != 10 {
+				return in_pos + 1
+			}
+		}
+		return -1
+	}
+	if kind == RX_A_CLASS {
+		if in_pos < in_len {
+			if rx_class_has(ref p, p.atom_v0.load_int(atom), input.at(in_pos)) {
+				return in_pos + 1
+			}
+		}
+		return -1
+	}
+	if kind == RX_A_BOL {
+		if in_pos != 0 {
+			return -1
+		}
+		return in_pos
+	}
+	if kind == RX_A_EOL {
+		if in_pos != in_len {
+			return -1
+		}
+		return in_pos
+	}
+	if kind == RX_A_NOMATCH {
+		// A trailing backslash never matches (old match_single_atom's
+		// `atom_start + 1 < atom_end` fall-through).
+		return -1
+	}
+	if kind == RX_A_BACKREF {
+		return rx_backref(input, p.atom_v0.load_int(atom), in_pos, in_len, ref caps)
+	}
+	if kind == RX_A_GROUP {
+		// Match the group's inner content, recording the group's span on
+		// success; on failure restore the span this path started with.
+		var int g = p.atom_v0.load_int(atom)
+		var int at = rx_last_capture(caps, g)
+		var int old_start = -1
+		var int old_end = -1
+		if at >= 0 {
+			old_start = caps.slots.load_int(at + 1)
+			old_end = caps.slots.load_int(at + 2)
+		}
+		var int next = rx_match_seq(ref p, p.atom_v1.load_int(atom), input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			rx_record(ref caps, g, in_pos, next)
+			return next
+		}
+		rx_record(ref caps, g, old_start, old_end)
+		return -1
+	}
+	return -1
+}
+
+// char_matches_atom: whether the single-byte atom matches input.at(pos).
+func rx_byte_matches = (ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, int atom, string input, int pos, out bool) {
+	var int kind = p.atom_kind.load_int(atom)
+	if kind == RX_A_LIT {
+		return (input.at(pos) as int) == p.atom_v0.load_int(atom)
+	}
+	if kind == RX_A_ANY {
+		return (input.at(pos) as int) != 10
+	}
+	if kind == RX_A_CLASS {
+		return rx_class_has(ref p, p.atom_v0.load_int(atom), input.at(pos))
+	}
+	return false
+}
+
+// match_group_then_rest: try the group's alternatives in order; a trial whose
+// continuation fails restores the group's previous span before the next.
+func rx_group_then_rest = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int cont_alt,
+	int cont_step,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var int g = p.atom_v0.load_int(atom)
+	var int at = rx_last_capture(caps, g)
+	var int old_start = -1
+	var int old_end = -1
+	if at >= 0 {
+		old_start = caps.slots.load_int(at + 1)
+		old_end = caps.slots.load_int(at + 2)
+	}
+	var int seq = p.atom_v1.load_int(atom)
+	var int alt_k = p.seq_alt0.load_int(seq)
+	var int na = p.seq_nalt.load_int(seq)
+	var k = 0
+	while k < na; k += 1 {
+		// Per-alt gate (see rx_match_seq): the skipped trial would fail at
+		// its first consuming atom without touching capture state.
+		if alt_k < 0 {
+			return -1
+		}
+		var int aflags = p.alt_flags.load_int(alt_k)
+		if (aflags & 3) == 0 {
+			if in_pos < in_len {
+				var int code = input.at(in_pos) as int
+				var int fi = alt_k * 4 + (code >> 6)
+				var skip = false
+				if fi >= 0 && fi < p.alt_fb.cap {
+					var int word = p.alt_fb.load_int(fi)
+					if ((word >> (code & 63)) & 1) == 0 {
+						skip = true
+					}
+				}
+				if skip {
+					alt_k = rx_next_alt(ref p, alt_k)
+					continue
+				}
+			} else {
+				alt_k = rx_next_alt(ref p, alt_k)
+				continue
+			}
+		}
+		var int next = rx_match_alt(ref p, alt_k, 0, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			rx_record(ref caps, g, in_pos, next)
+			var int r = rx_match_alt(ref p, cont_alt, cont_step, input, next, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
+		}
+		rx_record(ref caps, g, old_start, old_end)
+		alt_k = rx_next_alt(ref p, alt_k)
+	}
+	return -1
+}
+
+// match_star: greedy/lazy repetition of one atom. Single-byte atoms run the
+// greedy scan iteratively; groups and backreferences recurse.
+func rx_star = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int min_count,
+	int lazy,
+	int cont_alt,
+	int cont_step,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var int kind = p.atom_kind.load_int(atom)
+	if kind == RX_A_GROUP {
+		return rx_star_group(ref p, atom, min_count, lazy, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+	}
+	if kind == RX_A_BACKREF {
+		return rx_star_backref(ref p, atom, min_count, lazy, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+	}
+	// Greedily consume the longest run of matching characters. The test is
+	// inlined per atom kind (no per-byte call): the run is the innermost
+	// loop of every star-shaped pattern (e.g. `[^\n]+` over the whole
+	// input), so a call frame per byte is the dominant cost.
+	var int max_pos = in_pos
+	var int akind = p.atom_kind.load_int(atom)
+	if akind == RX_A_LIT {
+		var int lit = p.atom_v0.load_int(atom)
+		while max_pos < in_len {
+			if (input.at(max_pos) as int) == lit {
+				max_pos += 1
+			} else {
+				break
+			}
+		}
+	} else {
+		if akind == RX_A_ANY {
+			while max_pos < in_len {
+				if (input.at(max_pos) as int) != 10 {
+					max_pos += 1
+				} else {
+					break
+				}
+			}
+		} else {
+			if akind == RX_A_CLASS {
+				var int cls = p.atom_v0.load_int(atom)
+				while max_pos < in_len {
+					var int code = input.at(max_pos) as int
+					var int fi = cls * 4 + (code >> 6)
+					if fi >= 0 && fi < p.bits.cap {
+						var int word = p.bits.load_int(fi)
+						if ((word >> (code & 63)) & 1) == 1 {
+							max_pos += 1
+						} else {
+							break
+						}
+					} else {
+						break
+					}
+				}
+			} else {
+				while max_pos < in_len {
+					if rx_byte_matches(ref p, atom, input, max_pos) {
+						max_pos += 1
+					} else {
+						break
+					}
+				}
+			}
+		}
+	}
+	if lazy > 0 {
+		var int try_pos = in_pos + min_count
+		while try_pos <= max_pos; try_pos += 1 {
+			var int r = rx_match_alt(ref p, cont_alt, cont_step, input, try_pos, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
+		}
+		return -1
+	}
+	var int try_pos = max_pos
+	while try_pos >= in_pos + min_count; try_pos -= 1 {
+		var int r = rx_match_alt(ref p, cont_alt, cont_step, input, try_pos, in_len, ref caps)
+		if r >= 0 {
+			return r
+		}
+	}
+	return -1
+}
+
+// match_star_group + match_group_iteration: one more iteration of a
+// quantified group, retrying the group's alternatives while the remaining
+// star recursion fails.
+func rx_group_iteration = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int cont_alt,
+	int cont_step,
+	int min_count,
+	int lazy,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var int g = p.atom_v0.load_int(atom)
+	var int at = rx_last_capture(caps, g)
+	var int old_start = -1
+	var int old_end = -1
+	if at >= 0 {
+		old_start = caps.slots.load_int(at + 1)
+		old_end = caps.slots.load_int(at + 2)
+	}
+	var int seq = p.atom_v1.load_int(atom)
+	var int alt_k = p.seq_alt0.load_int(seq)
+	var int na = p.seq_nalt.load_int(seq)
+	var k = 0
+	while k < na; k += 1 {
+		// Per-alt gate (see rx_match_seq).
+		if alt_k < 0 {
+			return -1
+		}
+		var int aflags = p.alt_flags.load_int(alt_k)
+		if (aflags & 3) == 0 {
+			if in_pos < in_len {
+				var int code = input.at(in_pos) as int
+				var int fi = alt_k * 4 + (code >> 6)
+				var skip = false
+				if fi >= 0 && fi < p.alt_fb.cap {
+					var int word = p.alt_fb.load_int(fi)
+					if ((word >> (code & 63)) & 1) == 0 {
+						skip = true
+					}
+				}
+				if skip {
+					alt_k = rx_next_alt(ref p, alt_k)
+					continue
+				}
+			} else {
+				alt_k = rx_next_alt(ref p, alt_k)
+				continue
+			}
+		}
+		var int next = rx_match_alt(ref p, alt_k, 0, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			rx_record(ref caps, g, in_pos, next)
+			if next != in_pos {
+				var new_min = 0
+				if min_count > 0 {
+					new_min = min_count - 1
+				}
+				var int r = rx_star_group(ref p, atom, new_min, lazy, cont_alt, cont_step, input, next, in_len, ref caps)
+				if r >= 0 {
+					return r
+				}
+			}
+		}
+		rx_record(ref caps, g, old_start, old_end)
+		alt_k = rx_next_alt(ref p, alt_k)
+	}
+	return -1
+}
+
+func rx_star_group = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int min_count,
+	int lazy,
+	int cont_alt,
+	int cont_step,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	if lazy > 0 {
+		if min_count <= 0 {
+			var int stop = rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+			if stop >= 0 {
+				return stop
+			}
+		}
+		return rx_group_iteration(ref p, atom, cont_alt, cont_step, min_count, lazy, input, in_pos, in_len, ref caps)
+	}
+	var int r = rx_group_iteration(ref p, atom, cont_alt, cont_step, min_count, lazy, input, in_pos, in_len, ref caps)
+	if r >= 0 {
+		return r
+	}
+	if min_count <= 0 {
+		return rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+	}
+	return -1
+}
+
+// match_star_backref: each iteration consumes the referenced span.
+func rx_star_backref = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int min_count,
+	int lazy,
+	int cont_alt,
+	int cont_step,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var int group = p.atom_v0.load_int(atom)
+	if lazy > 0 {
+		if min_count <= 0 {
+			var int stop = rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+			if stop >= 0 {
+				return stop
+			}
+		}
+		var int next = rx_backref(input, group, in_pos, in_len, ref caps)
+		if next >= 0 {
+			if next != in_pos {
+				var new_min = 0
+				if min_count > 0 {
+					new_min = min_count - 1
+				}
+				return rx_star_backref(ref p, atom, new_min, lazy, cont_alt, cont_step, input, next, in_len, ref caps)
+			}
+		}
+		return -1
+	}
+	var int next = rx_backref(input, group, in_pos, in_len, ref caps)
+	if next >= 0 {
+		if next != in_pos {
+			var new_min = 0
+			if min_count > 0 {
+				new_min = min_count - 1
+			}
+			var int r = rx_star_backref(ref p, atom, new_min, lazy, cont_alt, cont_step, input, next, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
+		}
+	}
+	if min_count <= 0 {
+		return rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+	}
+	return -1
+}
+
+// match_counted: {n}/{n,}/{n,m} repetition via single-atom trials.
+func rx_counted = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int min_count,
+	int max_count,
+	int lazy,
+	int count,
+	int cont_alt,
+	int cont_step,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var can_stop = count >= min_count
+	var can_more = max_count < 0 || count < max_count
+	if lazy > 0 {
+		if can_stop {
+			var int stop = rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+			if stop >= 0 {
+				return stop
+			}
+		}
+		if can_more {
+			var int next = rx_single_atom(ref p, atom, input, in_pos, in_len, ref caps)
+			if next >= 0 {
+				if next != in_pos {
+					return rx_counted(ref p, atom, min_count, max_count, lazy, count + 1, cont_alt, cont_step, input, next, in_len, ref caps)
+				}
+			}
+		}
+		return -1
+	}
+	if can_more {
+		var int next = rx_single_atom(ref p, atom, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			if next != in_pos {
+				var int r = rx_counted(ref p, atom, min_count, max_count, lazy, count + 1, cont_alt, cont_step, input, next, in_len, ref caps)
+				if r >= 0 {
+					return r
+				}
+			}
+		}
+	}
+	if can_stop {
+		return rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+	}
+	return -1
+}
+
+// match_optional: '?' with greedy/lazy preference.
+func rx_optional = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int atom,
+	int lazy,
+	int cont_alt,
+	int cont_step,
+	string input,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps { slots, n },
+	out int
+) {
+	var int kind = p.atom_kind.load_int(atom)
+	if lazy > 0 {
+		var int skip = rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+		if skip >= 0 {
+			return skip
+		}
+		if kind == RX_A_GROUP {
+			return rx_group_then_rest(ref p, atom, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+		}
+		var int next = rx_single_atom(ref p, atom, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			return rx_match_alt(ref p, cont_alt, cont_step, input, next, in_len, ref caps)
+		}
+		return -1
+	}
+	if kind == RX_A_GROUP {
+		var int grouped = rx_group_then_rest(ref p, atom, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+		if grouped >= 0 {
+			return grouped
+		}
+	} else {
+		var int next = rx_single_atom(ref p, atom, input, in_pos, in_len, ref caps)
+		if next >= 0 {
+			var int r = rx_match_alt(ref p, cont_alt, cont_step, input, next, in_len, ref caps)
+			if r >= 0 {
+				return r
+			}
+		}
+	}
+	return rx_match_alt(ref p, cont_alt, cont_step, input, in_pos, in_len, ref caps)
+}
+
+// lookaround_succeeds: kinds 2/3 look ahead from in_pos; 4/5 look behind for
+// a match ending exactly at in_pos. Trials use a throwaway capture log.
+func rx_look_succeeds = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int kind,
+	int inner,
+	string input,
+	int in_pos,
+	int in_len,
+	out bool
+) {
+	if kind == 2 {
+		var trial = RxCaps()
+		return rx_match_seq(ref p, inner, input, in_pos, in_len, ref trial) >= 0
+	}
+	if kind == 3 {
+		var trial = RxCaps()
+		return rx_match_seq(ref p, inner, input, in_pos, in_len, ref trial) < 0
+	}
+	var found = false
+	var s = 0
+	while s <= in_pos {
+		var trial = RxCaps()
+		var int e = rx_match_seq(ref p, inner, input, s, in_len, ref trial)
+		if e == in_pos {
+			found = true
+			break
+		}
+		s += 1
+	}
+	if kind == 4 {
+		return found
+	}
+	return found == false
+}
+
+// match_backref: match the text capture group `group` last matched.
+func rx_backref = (
+	string input,
+	int group,
+	int in_pos,
+	int in_len,
+	ref RxCaps caps {},
+	out int
+) {
+	var int at = rx_last_capture(caps, group)
+	if at < 0 {
+		return -1
+	}
+	var int s = caps.slots.load_int(at + 1)
+	if s < 0 {
+		return -1
+	}
+	var int len = caps.slots.load_int(at + 2) - s
+	if in_pos + len > in_len {
+		return -1
+	}
+	var i = 0
+	while i < len; i += 1 {
+		if input.at(in_pos + i) != input.at(s + i) {
+			return -1
+		}
+	}
+	return in_pos + len
+}
+
+// ── The compiler: pattern string → tables ───────────────────────────────────
+//
+// The walk mirrors the string-walking scanner exactly: the same helper
+// functions (atom_end_pos, group_kind, group_inner_start, group_index_at,
+// counted_quant_*) decide atom bounds and quantifier text at COMPILE time
+// that the old engine re-derived on every match attempt. A class atom's
+// member scan mirrors char_in_class's loop shape (same off-by-ones) so edge
+// cases like a trailing range (`[a-]`) compile to the same membership set
+// the runtime scan tests.
+
+// Compile a whole pattern. Returns 0, or -1 when the pattern needs the
+// legacy engine (never for a well-formed source — tables are sized from the
+// pattern length; the -1 path is pure insurance).
+func rx_compile = (string pattern, ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, out int) {
+	var int cap = rx_table_cap(pattern.length)
+	p.cap_seq = cap
+	p.cap_alt = cap
+	p.cap_step = cap
+	p.cap_atom = cap
+	p.cap_cls = cap
+	p.seq_alt0.alloc_int(cap)
+	p.seq_nalt.alloc_int(cap)
+	p.step0.alloc_int(cap)
+	p.nsteps.alloc_int(cap)
+	p.step_atom.alloc_int(cap)
+	p.step_q.alloc_int(cap)
+	p.step_lazy.alloc_int(cap)
+	p.step_min.alloc_int(cap)
+	p.step_max.alloc_int(cap)
+	p.atom_kind.alloc_int(cap)
+	p.atom_v0.alloc_int(cap)
+	p.atom_v1.alloc_int(cap)
+	p.bits.alloc_int(cap * 4)
+	p.dq.alloc_int(cap)
+	p.ds.alloc_int(cap)
+	p.de.alloc_int(cap)
+	p.alt_fb.alloc_int(cap * 4)
+	p.alt_flags.alloc_int(cap)
+	p.seq_fb.alloc_int(cap * 4)
+	p.seq_flags.alloc_int(cap)
+	p.alt_next.alloc_int(cap)
+	var int seq = rx_compile_seq(pattern, 0, pattern.length, ref p)
+	if seq < 0 {
+		return -1
+	}
+	p.ngroups = capture_count(pattern)
+	return 0
+}
+
+// Compile pattern[s..e) as a SEQ: split top-level alternation (the same scan
+// match_here does at every attempt, done once here), compile each piece as
+// an ALT. The seq header is pushed first and patched after its alts.
+func rx_compile_seq = (string pattern, int s, int e, ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, out int) {
+	if p.nseq >= p.cap_seq {
+		return -1
+	}
+	var int seq_id = p.nseq
+	p.nseq += 1
+	// Placeholders; patched below once the alt range is known.
+	p.seq_alt0.store_int(seq_id, 0)
+	p.seq_nalt.store_int(seq_id, 0)
+	var int first_alt = -1
+	var int prev_alt = -1
+	var int nalt = 0
+	var a = s
+	while true {
+		var int bar = next_top_level_alt(pattern, a, e)
+		var int alt_end = e
+		if bar >= 0 {
+			alt_end = bar
+		}
+		var int alt_id = rx_compile_alt(pattern, a, alt_end, ref p)
+		if alt_id < 0 {
+			return -1
+		}
+		if prev_alt >= 0 {
+			p.alt_next.store_int(prev_alt, alt_id)
+		} else {
+			first_alt = alt_id
+		}
+		prev_alt = alt_id
+		nalt += 1
+		if bar < 0 {
+			break
+		}
+		a = bar + 1
+	}
+	if prev_alt >= 0 {
+		p.alt_next.store_int(prev_alt, -1)
+	}
+	p.seq_alt0.store_int(seq_id, first_alt)
+	p.seq_nalt.store_int(seq_id, nalt)
+	// Union the alternatives' first-byte sets for this seq's gate.
+	var seq_flags = 0
+	if rx_seq_union(ref p, first_alt, nalt, seq_id, ref seq_flags) < 0 {
+		return -1
+	}
+	p.seq_flags.store_int(seq_id, seq_flags)
+	return seq_id
+}
+
+// OR the first-byte sets of a seq's alternatives (walking the sibling
+// chain) into seq_fb, collecting flags. Recursive so every table index is
+// a parameter (see rx_flags_at).
+func rx_seq_union = (
+	ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next },
+	int alt,
+	int remaining,
+	int seq_id,
+	ref int flags,
+	out int
+) {
+	if remaining <= 0 || alt < 0 {
+		return 0
+	}
+	if alt >= p.alt_flags.cap {
+		return -1
+	}
+	var int af = p.alt_flags.load_int(alt)
+	if (af & 1) == 1 {
+		flags = flags | 1
+	}
+	if (af & 2) == 2 {
+		flags = flags | 2
+	}
+	var w3 = 0
+	while w3 < 4; w3 += 1 {
+		var int fi = seq_id * 4 + w3
+		if fi >= 0 && fi < p.seq_fb.cap {
+			var int fi2 = alt * 4 + w3
+			if fi2 >= 0 && fi2 < p.alt_fb.cap {
+				var int word = p.seq_fb.load_int(fi)
+				p.seq_fb.store_int(fi, word | p.alt_fb.load_int(fi2))
+			}
+		}
+	}
+	var int nxt = p.alt_next.load_int(alt)
+	return rx_seq_union(ref p, nxt, remaining - 1, seq_id, ref flags)
+}
+
+// Compile pattern[s..e) (one alternative — no top-level bars) as a linear
+// sequence of quantified-atom steps.
+func rx_compile_alt = (string pattern, int s, int e, ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, out int) {
+	if p.nalt >= p.cap_alt {
+		return -1
+	}
+	var int alt_id = p.nalt
+	p.nalt += 1
+	p.step0.store_int(alt_id, p.nstep)
+	p.nsteps.store_int(alt_id, 0)
+	// Defers pushed while walking THIS alternative are drained at the end,
+	// so the inner compiles cannot splice steps into this alt's range.
+	var int defer_mark = p.nd
+	var i = s
+	while i < e {
+		var char c = pattern.at(i)
+		var int atom = -1
+		var int consumed = i + 1
+		var no_quant = false
+		if c == '^' {
+			// Zero-width anchor — the old engine handles it before the
+			// atom-bounds walk, so it never carries a quantifier.
+			atom = rx_push_atom(ref p, RX_A_BOL, 0, 0)
+			no_quant = true
+		} else {
+			if c == '$' {
+				atom = rx_push_atom(ref p, RX_A_EOL, 0, 0)
+				no_quant = true
+			} else {
+				if c == '(' {
+					var int a_end = atom_end_pos(pattern, i, e)
+					var int kind = group_kind(pattern, i, e)
+					if kind >= 2 {
+						// Lookaround: zero-width, no quantifier (the old
+						// engine consumes it before reading a quantifier,
+						// so a following '*' is a literal atom).
+						atom = rx_push_atom(ref p, RX_A_LOOK, kind, 0)
+						if atom < 0 {
+							return -1
+						}
+						if p.nd >= p.cap_step {
+							return -1
+						}
+						p.dq.store_int(p.nd, atom)
+						p.ds.store_int(p.nd, group_inner_start(pattern, i, e))
+						p.de.store_int(p.nd, a_end - 1)
+						p.nd += 1
+						consumed = a_end
+						no_quant = true
+					} else {
+						var int g = group_index_at(pattern, i)
+						atom = rx_push_atom(ref p, RX_A_GROUP, g, 0)
+						if atom < 0 {
+							return -1
+						}
+						if p.nd >= p.cap_step {
+							return -1
+						}
+						p.dq.store_int(p.nd, atom)
+						p.ds.store_int(p.nd, group_inner_start(pattern, i, e))
+						p.de.store_int(p.nd, a_end - 1)
+						p.nd += 1
+						consumed = a_end
+					}
+				} else {
+					if c == '[' {
+						var int a_end = atom_end_pos(pattern, i, e)
+						var int cls = rx_build_class_bits(pattern, i + 1, a_end - 1, ref p)
+						if cls < 0 {
+							return -1
+						}
+						atom = rx_push_atom(ref p, RX_A_CLASS, cls, 0)
+						consumed = a_end
+					} else {
+						if (c as int) == 92 {
+							// Escaped atom: backreference, shorthand class,
+							// literal byte — or a trailing backslash, which
+							// never matches.
+							if i + 1 >= e {
+								atom = rx_push_atom(ref p, RX_A_NOMATCH, 0, 0)
+								consumed = i + 1
+							} else {
+								var char ec = pattern.at(i + 1)
+								if is_backref_digit(ec) {
+									atom = rx_push_atom(ref p, RX_A_BACKREF, backref_group(ec), 0)
+								} else {
+									if is_shorthand(ec) {
+										var int cls = rx_build_shorthand_bits(ec, ref p)
+										if cls < 0 {
+											return -1
+										}
+										atom = rx_push_atom(ref p, RX_A_CLASS, cls, 0)
+									} else {
+										atom = rx_push_atom(ref p, RX_A_LIT, escaped_byte_value(ec), 0)
+									}
+								}
+								consumed = i + 2
+							}
+						} else {
+							if c == '.' {
+								atom = rx_push_atom(ref p, RX_A_ANY, 0, 0)
+							} else {
+								// Literal byte — including the stray
+								// quantifier characters the old engine
+								// treats as literals when they do not
+								// follow an atom.
+								atom = rx_push_atom(ref p, RX_A_LIT, c as int, 0)
+							}
+						}
+					}
+				}
+			}
+		}
+		if atom < 0 {
+			return -1
+		}
+		// Quantifier parse (skipped for zero-width atoms, matching the old
+		// engine's ordering).
+		var int q = RX_Q_NONE
+		var lazy = 0
+		var int mn = 0
+		var int mx = 0
+		if no_quant == false {
+			consumed = rx_parse_quant(pattern, consumed, e, ref q, ref lazy, ref mn, ref mx)
+		}
+		// One step = one index across all five parallel columns.
+		if p.nstep >= p.cap_step {
+			return -1
+		}
+		var int st = p.nstep
+		p.nstep += 1
+		p.step_atom.store_int(st, atom)
+		p.step_q.store_int(st, q)
+		p.step_lazy.store_int(st, lazy)
+		p.step_min.store_int(st, mn)
+		p.step_max.store_int(st, mx)
+		var int ns = p.nsteps.load_int(alt_id)
+		p.nsteps.store_int(alt_id, ns + 1)
+		i = consumed
+	}
+	// Drain the deferred inner-seq compiles (deepest-first stack order;
+	// each compile may push more defers — nested groups — handled by the
+	// same loop). Steps pushed here belong to NEW alts (the inner seqs),
+	// never to this one, so this alt's step0+nsteps stay contiguous.
+	while p.nd > defer_mark {
+		p.nd -= 1
+		var int at = p.dq.load_int(p.nd)
+		var int is = p.ds.load_int(p.nd)
+		var int ie = p.de.load_int(p.nd)
+		var int inner_seq = rx_compile_seq(pattern, is, ie, ref p)
+		if inner_seq < 0 {
+			return -1
+		}
+		p.atom_v1.store_int(at, inner_seq)
+	}
+	// Compute this alt's first-byte set for the candidate gate: walk the
+	// steps, collecting the byte set of the first consuming atom; zero-width
+	// atoms (anchors, lookarounds) and nullable steps (star/opt/{0..}) let
+	// the walk continue — what FOLLOWS them can also be first. Reaching the
+	// end means every step can match empty: the alt may match empty (no
+	// gate). A wildcard-shaped set (ANY, BACKREF) sets the any flag (no
+	// gate — always descend).
+	var w = 0
+	while w < 4; w += 1 {
+		var int fi0 = alt_id * 4 + w
+		if fi0 >= 0 && fi0 < p.alt_fb.cap {
+			p.alt_fb.store_int(fi0, 0)
+		}
+	}
+	var flags = 0
+	var si = 0
+	while true {
+		if si >= p.nsteps.load_int(alt_id) {
+			// Every step nullable/zero-width: the alt can match empty.
+			flags = flags | 2
+			break
+		}
+		var int st2 = p.step0.load_int(alt_id) + si
+		var int at2 = p.step_atom.load_int(st2)
+		var int q2 = p.step_q.load_int(st2)
+		var int mn2 = p.step_min.load_int(st2)
+		var nullable_step = q2 == RX_Q_STAR || q2 == RX_Q_OPT || (q2 == RX_Q_COUNTED && mn2 == 0)
+		var int akind = p.atom_kind.load_int(at2)
+		var atom_nullable = false
+		var atom_zero_width = false
+		if akind == RX_A_LIT {
+			var int code = p.atom_v0.load_int(at2)
+			var int fi = alt_id * 4 + (code >> 6)
+			if fi >= 0 && fi < p.alt_fb.cap {
+				var int word = p.alt_fb.load_int(fi)
+				p.alt_fb.store_int(fi, word | (1 << (code & 63)))
+			}
+		} else {
+			if akind == RX_A_CLASS {
+				var int cls = p.atom_v0.load_int(at2)
+				var w4 = 0
+				while w4 < 4; w4 += 1 {
+					var int fi = alt_id * 4 + w4
+					if fi >= 0 && fi < p.alt_fb.cap {
+						var int word = p.alt_fb.load_int(fi)
+						p.alt_fb.store_int(fi, word | p.bits.load_int(cls * 4 + w4))
+					}
+				}
+			} else {
+				if akind == RX_A_ANY {
+					flags = flags | 1
+				} else {
+					if akind == RX_A_BACKREF {
+						// A backref consumes an unknown span (possibly
+						// nothing): no gate, and the walk continues.
+						flags = flags | 1
+						atom_nullable = true
+					} else {
+						if akind == RX_A_GROUP {
+							// The group's first bytes are its inner seq's
+							// union (compiled during the drain above).
+							var int inner = p.atom_v1.load_int(at2)
+							var w5 = 0
+							while w5 < 4; w5 += 1 {
+								var int fi = alt_id * 4 + w5
+								if fi >= 0 && fi < p.alt_fb.cap {
+									var int word = p.alt_fb.load_int(fi)
+									p.alt_fb.store_int(fi, word | p.seq_fb.load_int(inner * 4 + w5))
+								}
+							}
+							var int iflags = p.seq_flags.load_int(inner)
+							if (iflags & 1) == 1 {
+								flags = flags | 1
+							}
+							if (iflags & 2) == 2 {
+								atom_nullable = true
+							}
+						} else {
+							if akind == RX_A_LOOK || akind == RX_A_BOL || akind == RX_A_EOL {
+								// Zero-width: no bytes; what follows can be
+								// first.
+								atom_zero_width = true
+							}
+							// RX_A_NOMATCH: no bytes, never nullable — the
+							// gate will skip this alt, which is exact (it
+							// can never match).
+						}
+					}
+				}
+			}
+		}
+		if atom_zero_width || nullable_step || atom_nullable {
+			// The walk continues: whatever follows this step can also be
+			// first (a conservative superset — e.g. a `{1,}` quantifier on
+			// a nullable group keeps its own bytes AND continues).
+			si += 1
+		} else {
+			break
+		}
+	}
+	p.alt_flags.store_int(alt_id, flags)
+	return alt_id
+}
+
+// Append one atom to the atom tables. -1 on table overflow.
+func rx_push_atom = (ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, int kind, int v0, int v1, out int) {
+	if p.natom >= p.cap_atom {
+		return -1
+	}
+	var int id = p.natom
+	p.natom += 1
+	p.atom_kind.store_int(id, kind)
+	p.atom_v0.store_int(id, v0)
+	p.atom_v1.store_int(id, v1)
+	return id
+}
+
+// rx_parse_quant mirrors match_here's quantifier read: '*', '+', '?' (each
+// optionally lazy via a trailing '?'), or a valid `{n}/{n,}/{n,m}` bound
+// (invalid braces are literals). Returns the position past the quantifier,
+// or `at` unchanged when there is none.
+func rx_parse_quant = (
+	string pattern,
+	int at,
+	int e,
+	ref int q,
+	ref int lazy,
+	ref int mn,
+	ref int mx,
+	out int
+) {
+	if at >= e {
+		return at
+	}
+	var char c = pattern.at(at)
+	if c == '*' {
+		q = RX_Q_STAR
+		var int rest = at + 1
+		if rest < e {
+			if pattern.at(rest) == '?' {
+				lazy = 1
+				rest += 1
+			}
+		}
+		return rest
+	}
+	if c == '+' {
+		q = RX_Q_PLUS
+		mn = 1
+		var int rest = at + 1
+		if rest < e {
+			if pattern.at(rest) == '?' {
+				lazy = 1
+				rest += 1
+			}
+		}
+		return rest
+	}
+	if c == '?' {
+		q = RX_Q_OPT
+		var int rest = at + 1
+		if rest < e {
+			if pattern.at(rest) == '?' {
+				lazy = 1
+				rest += 1
+			}
+		}
+		return rest
+	}
+	if c == '{' {
+		var int qe = counted_quant_end(pattern, at, e)
+		if qe >= 0 {
+			q = RX_Q_COUNTED
+			mn = counted_quant_min(pattern, at)
+			mx = counted_quant_max(pattern, at, e)
+			var int rest = qe
+			if rest < e {
+				if pattern.at(rest) == '?' {
+					lazy = 1
+					rest += 1
+				}
+			}
+			return rest
+		}
+	}
+	return at
+}
+
+// Set the bits of `code` in class slot `cls`.
+func rx_set_bit = (ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, int cls, int code: code >= 0 && code < 256) {
+	var int word = p.bits.load_int(cls * 4 + (code >> 6))
+	p.bits.store_int(cls * 4 + (code >> 6), word | (1 << (code & 63)))
+}
+
+
+// The lowercase member set of shorthand class `kind`, expressed as bitmap
+// mutations: complement shorthands (uppercase) fill everything EXCEPT the
+// lowercase set — the same membership matches_shorthand computes.
+func rx_set_shorthand_bits = (ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, int cls, char e) {
+	var int kind = e as int
+	var complement = false
+	if kind >= 65 && kind <= 90 {
+		complement = true
+		kind += 32
+	}
+	var code = 0
+	while code < 256; code += 1 {
+		var found = false
+		if kind == 100 {
+			found = code >= 48 && code <= 57
+		} else {
+			if kind == 119 {
+				found = (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (code >= 48 && code <= 57) || code == 95
+			} else {
+				found = (code >= 9 && code <= 13) || code == 32
+			}
+		}
+		if complement == false {
+			if found {
+				rx_set_bit(ref p, cls, code)
+			}
+		} else {
+			if found == false {
+				rx_set_bit(ref p, cls, code)
+			}
+		}
+	}
+}
+
+// A fresh class slot holding the membership set of shorthand escape `e`
+// (\d \w \s and their complements).
+func rx_build_shorthand_bits = (char e, ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, out int) {
+	if p.ncls >= p.cap_cls {
+		return -1
+	}
+	var int cls = p.ncls
+	p.ncls += 1
+	var w = 0
+	while w < 4; w += 1 {
+		p.bits.store_int(cls * 4 + w, 0)
+	}
+	rx_set_shorthand_bits(ref p, cls, e)
+	return cls
+}
+
+// Build the 256-bit membership set of the class spanning pattern[cs..ce)
+// (the same range char_in_class scans at runtime — same loop shape, same
+// boundaries). Negation is resolved here: the complement set, so the VM's
+// test is a single bitmap probe.
+func rx_build_class_bits = (string pattern, int cs, int ce, ref RxProg p { seq_alt0, seq_nalt, nseq, cap_seq, step0, nsteps, nalt, cap_alt, step_atom, step_q, step_lazy, step_min, step_max, nstep, cap_step, atom_kind, atom_v0, atom_v1, natom, cap_atom, bits, ncls, cap_cls, ngroups, dq, ds, de, nd, alt_fb, alt_flags, seq_fb, seq_flags, alt_next }, out int) {
+	if p.ncls >= p.cap_cls {
+		return -1
+	}
+	var int cls = p.ncls
+	p.ncls += 1
+	var w = 0
+	while w < 4; w += 1 {
+		p.bits.store_int(cls * 4 + w, 0)
+	}
+	var negated = false
+	var int pos = cs
+	if pos < ce {
+		if pattern.at(pos) == '^' {
+			negated = true
+			pos += 1
+		}
+	}
+	var i = pos
+	while i < ce {
+		var char c = pattern.at(i)
+		if (c as int) == 92 {
+			if i + 1 < ce {
+				var char e = pattern.at(i + 1)
+				if is_shorthand(e) {
+					rx_set_shorthand_bits(ref p, cls, e)
+				} else {
+					rx_set_bit(ref p, cls, escaped_byte_value(e))
+				}
+			}
+			i = i + 2
+		} else {
+			if i + 2 < ce {
+				if pattern.at(i + 1) == '-' {
+					var int lo = c as int
+					var int hi = pattern.at(i + 2) as int
+					while lo <= hi {
+						rx_set_bit(ref p, cls, lo)
+						lo += 1
+					}
+					i += 3
+				} else {
+					rx_set_bit(ref p, cls, c as int)
+					i += 1
+				}
+			} else {
+				rx_set_bit(ref p, cls, c as int)
+				i += 1
+			}
+		}
+	}
+	if negated {
+		// Negated class: complement the member set. (char_in_class answers
+		// `!found` — this is that, precomputed.)
+		var code = 0
+		while code < 256; code += 1 {
+			var int word = p.bits.load_int(cls * 4 + (code >> 6))
+			p.bits.store_int(cls * 4 + (code >> 6), word ^ (1 << (code & 63)))
+		}
+	}
+	return cls
+}
+
+// Candidate-position prefilter over a 256-entry byte table (the compiled
+// form of find_next_byte's charset scan: one indexed load per input byte
+// instead of a charset loop).

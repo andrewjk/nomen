@@ -2948,10 +2948,14 @@ function build_access_method(
 				}
 			} else {
 				// Store: evaluate value (→x2), index (→x1) — value first so a
-				// complex index eval can't clobber it, then no spill needed
-				// unless both are complex. Access staging (ASM_PLAN_3 tranche L)
-				// forwards a `_param_N` value temp's tree at the read — a no-op
-				// int cast unwraps so a promoted source moves straight to x2.
+				// simple index eval can't clobber it. A COMPOUND index build
+				// does use x0/x1/x2 as scratch, though (observed: rx_set_bit's
+				// `cls * 4 + (code >> 6)` index left its last temp in x2, and
+				// the store wrote the index fragment over the value) — spill
+				// the value across index/data staging for that case.
+				// Access staging (ASM_PLAN_3 tranche L) forwards a `_param_N`
+				// value temp's tree at the read — a no-op int cast unwraps so
+				// a promoted source moves straight to x2.
 				const value_forwarded = forwarded_param_tree(access_func.params[1], status);
 				const value_node = value_forwarded
 					? unwrap_noop_int_cast(value_forwarded)
@@ -2966,6 +2970,19 @@ function build_access_method(
 					!is_float && elem_bytes === 8 && method === "store_int" && access_func.params.length > 0
 						? lookup_buffer_fold(node.target, access_func.params[0], status)
 						: null;
+				// The index the staging layer will actually build (same
+				// forwarding it consults), and whether building it needs
+				// scratch registers beyond x1.
+				const idx_forwarded = forwarded_param_tree(access_func.params[0], status);
+				const idx_effective = idx_forwarded ?? access_func.params[0];
+				const index_is_simple =
+					idx_effective.node_type === "value" &&
+					(is_int_literal((idx_effective as ValueNode).value) ||
+						/^[\w.]+$/.test((idx_effective as ValueNode).value));
+				const spill_value = !store_folded && !index_is_simple;
+				if (spill_value) {
+					emit_asm(status, `str x2, [sp, #-16]!\n`);
+				}
 				let store_index_reg = "x1";
 				if (store_folded) {
 					store_index_reg = store_folded.var_reg;
@@ -2978,6 +2995,9 @@ function build_access_method(
 					: staged_data_reg(node.target, buffer_cache_key(node.target), status, () =>
 							get_buffer_data_ptr(node.target, status),
 						);
+				if (spill_value) {
+					emit_asm(status, `ldr x2, [sp], #16\n`);
+				}
 				// Strided store
 				if (method === "store_or_int") {
 					if (elem_bytes === 8) {

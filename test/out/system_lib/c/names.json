@@ -37,6 +37,8 @@
 	"Json",
 	"Regex",
 	"RegexMatch",
+	"RxProg",
+	"RxCaps",
 	"List_int",
 	"Buffer_string",
 	"List_string",
