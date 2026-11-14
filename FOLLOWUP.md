@@ -680,3 +680,24 @@ Ctrl-C keep working. Tests stay on bare executables.
 This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
+
+## Statement-position `try` on a value result reports a confusing mismatch
+
+Recorded 2026-11-14 while verifying ANNOUNCEMENT.md samples. A
+statement-position `try` whose scrutinee is a `T ! E` VALUE result (not the
+unit form the statement shape is for):
+
+```nomen
+func report = (string path, out ! FetchError) {
+    try fetch(path) catch { ... }   // fetch returns `out string ! FetchError`
+}
+```
+
+mounts (the checker's `is_statement` gate only special-cases unit results)
+and fails downstream with `Type mismatch in return: unknown value ?
+(expected string)` — the ok arm yields a string with no join target. The
+right diagnostic is the discard rule: "a `T ! E` result in statement
+position must be consumed — `var _ = try ...`, propagate with `!`, or use
+the expression form". Gate `mount_try_catch` (or the try statement
+dispatcher) on the scrutinee's payload presence for statement position and
+report that.
