@@ -1,24 +1,94 @@
 import System
 
-func mbrot = (float cr, float ci, out int) {
-	var zr = 0.0
-	var zi = 0.0
-	var tr = 0.0
-	var ti = 0.0
-	var outer = 0
-	while outer < 10; outer += 1 {
-		var inner = 0
-		while inner < 5; inner += 1 {
-			zi = (zr + zr) * zi + ci
-			zr = tr - ti + cr
-			tr = zr * zr
-			ti = zi * zi
+// 8 pixels per group, mirroring the reference implementations' [8]float64
+// lane vectors (Go/Zig/Rust): 10 blocks of 5 iterations each, with an
+// all-lanes escape check between blocks. The lane state lives in
+// Buffer<float> rows of length 8 so the update loop is the canonical
+// elementwise shape both backends vectorize (NEON planner on aarch64;
+// clang loop-vectorizer on the C backend). `d` carries tr - ti
+// (= zr^2 - zi^2) so the kernel touches four buffers, not five; the
+// arithmetic is bit-identical to the scalar tr/ti form (same rounded
+// products, subtracted/added in the same order).
+//
+// The lane loops are bounded by `lanes`, a local hoisted from `zi.cap` —
+// a runtime trip count. That matters on both backends: clang only
+// vectorizes these loops when the bound isn't a compile-time 8 (a literal
+// 8 group body only ever reaches unroll+SLP, which declines this shape),
+// and the aarch64 codegen reads a local bound from a register instead of
+// reloading the cap field every iteration.
+func mbrot8 = (ref Buffer<float> zr, ref Buffer<float> zi, ref Buffer<float> d, ref Buffer<float> cr, float ci, out int) {
+	// Every lane buffer is sized to 8 by the caller, but that fact doesn't
+	// propagate through `ref` parameters — relate the caps once so each
+	// inner loop's `l < zi.cap` bound discharges every access constraint
+	// (`l < zi.cap <= X.cap`).
+	if zi.cap <= zr.cap && zi.cap <= d.cap && zi.cap <= cr.cap {
+		// Hoist the lane count once: a local lets the loop condition read a
+		// register instead of reloading the cap field every iteration (the
+		// aarch64 codegen doesn't hoist loop-invariant bound expressions),
+		// while the C backend still sees a runtime trip count — clang only
+		// vectorizes these loops when the bound isn't a compile-time 8.
+		var int lanes = zi.cap
+		var l = 0
+		while l < zr.cap; l += 1 {
+			zr.store_float(l, 0.0)
 		}
-		if tr + ti > 4.0 {
-			return 0
+		l = 0
+		while l < zi.cap; l += 1 {
+			zi.store_float(l, 0.0)
 		}
+		l = 0
+		while l < d.cap; l += 1 {
+			d.store_float(l, 0.0)
+		}
+		var block = 0
+		while block < 10; block += 1 {
+			var j = 0
+			while j < 5; j += 1 {
+				// One fused lane loop: all three updates per lane, in the
+				// references' order (zi needs the pre-update zr). Lanes are
+				// independent, so the fused form is bit-identical to the
+				// split per-array loops and gives the C backend a single
+				// vectorizable loop instead of three (one loop-carried
+				// overhead instead of three). Loads are spelled inline so
+				// the body stays within the vectorizer's temp budget.
+				l = 0
+				while l < lanes; l += 1 {
+					const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
+					const float zr1 = d.load_float(l) + cr.load_float(l)
+					zi.store_float(l, zi1)
+					zr.store_float(l, zr1)
+					d.store_float(l, zr1 * zr1 - zi1 * zi1)
+				}
+			}
+			// every lane's |z|^2 escaped the radius-2 disk? A min-reduction
+			// (instead of an early-break scan) keeps the loop vectorizable on
+			// the C backend; aarch64 rides the scalar loop either way. The
+			// 1e30 seed can never mask an inside lane (|z|^2 <= 4 there), and
+			// an escaped lane's |z|^2 only grows (or reaches inf/NaN, which
+			// fail the `<` compare and stay "escaped").
+			var float min_s = 1000000000000000000000000000000.0
+			l = 0
+			while l < lanes; l += 1 {
+				const float s = zr.load_float(l) * zr.load_float(l) + zi.load_float(l) * zi.load_float(l)
+				if s < min_s {
+					min_s = s
+				}
+			}
+			if min_s > 4.0 {
+				return 0
+			}
+		}
+		var accu = 0
+		l = 0
+		while l < lanes; l += 1 {
+			const float z2 = zr.load_float(l) * zr.load_float(l)
+			if z2 + zi.load_float(l) * zi.load_float(l) <= 4.0 {
+				accu = accu + (128 >> l)
+			}
+		}
+		return accu
 	}
-	return 1
+	return 0
 }
 
 pub func main = (Init init) {
@@ -30,25 +100,50 @@ pub func main = (Init init) {
 	const int chunk_size = size / 8
 	const float inv = 2.0 / (size as float)
 
-	var checksum = 0
-	var y = 0
-	while y < size; y += 1 {
-		const float ci = (y as float) * inv - 1.0
-		var x = 0
-		while x < chunk_size; x += 1 {
-			var byte_val = 0
-			var bit = 0
-			while bit < 8; bit += 1 {
-				const int xi = x * 8 + bit
-				const float cr = (xi as float) * inv - 1.5
-				const int r = mbrot(cr, ci)
-				if r == 1 {
-					byte_val = byte_val + (128 >> bit)
+	// Row bytes, stored like the reference implementations (which MD5 the
+	// pixel buffer afterwards; Nomen has no MD5 yet, so a byte-sum checksum
+	// over the same bytes verifies the image instead).
+	const int pixel_count = size * chunk_size
+	var pixels = Buffer<uint8>()
+	var zr = Buffer<float>()
+	var zi = Buffer<float>()
+	var d = Buffer<float>()
+	var cr = Buffer<float>()
+	pixels.alloc_u32(pixel_count)
+	zr.alloc_float(8)
+	zi.alloc_float(8)
+	d.alloc_float(8)
+	cr.alloc_float(8)
+
+	// The allocs sizing facts above don't propagate (alloc returns a numeric
+	// cap, not a symbolic one), so hoist them once and let the loops inside
+	// discharge their access constraints against these guards.
+	if pixel_count <= pixels.cap && 8 <= zr.cap && 8 <= zi.cap && 8 <= d.cap && 8 <= cr.cap {
+		var y = 0
+		while y < size; y += 1 {
+			const float ci = (y as float) * inv - 1.0
+			var x = 0
+			while x < chunk_size; x += 1 {
+				var l = 0
+				while l < cr.cap; l += 1 {
+					const int xi = x * 8 + l
+					cr.store_float(l, (xi as float) * inv - 1.5)
+				}
+				const int r = mbrot8(ref zr, ref zi, ref d, ref cr, ci)
+				const int off = y * chunk_size + x
+				if off >= 0 && off < pixels.cap {
+					pixels.store_u8(off, r as uint8)
 				}
 			}
-			checksum = checksum + byte_val
 		}
-	}
 
-	Console.write("checksum \{checksum}\n")
+		var checksum = 0
+		var i = 0
+		while i < pixel_count; i += 1 {
+			if i >= 0 && i < pixels.cap {
+				checksum = checksum + (pixels.load_u8(i) as int)
+			}
+		}
+		Console.write("checksum \{checksum}\n")
+	}
 }

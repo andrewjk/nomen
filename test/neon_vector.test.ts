@@ -98,8 +98,9 @@ pub func main = () {}
 	expect(code).toContain("ldr q0, [x11, x10, lsl #4]");
 	expect(code).toContain("str q0, [x11, x10, lsl #4]");
 	expect(code).toContain("fmul v0.2d, v0.2d, v1.2d");
-	// The float literal splats across both lanes.
-	expect(code).toContain("dup v0.2d, v0.d[0]");
+	// The float literal splats across both lanes — leaves land in their
+	// operand register directly, so the literal rides v1 beside the load.
+	expect(code).toContain("dup v1.2d, v1.d[0]");
 });
 
 test("per-lane temps ride v-registers through the vector body", () => {
@@ -383,8 +384,8 @@ pub func main = () {}
 `);
 	expect(code).toContain(".Lneon_0:");
 	expect(code).toContain("add v0.2d, v0.2d, v1.2d");
-	// int literals splat from the gpr path
-	expect(code).toContain("dup v0.2d, x0");
+	// int literals splat from the gpr path into the leaf operand register
+	expect(code).toContain("dup v1.2d, x0");
 });
 
 test("4-byte uint32 buffers vectorize as .4s groups", () => {
@@ -403,7 +404,7 @@ pub func main = () {}
 `);
 	expect(code).toContain(".Lneon_0:");
 	expect(code).toContain("add v0.4s, v0.4s, v1.4s");
-	expect(code).toContain("dup v0.4s, w0");
+	expect(code).toContain("dup v1.4s, w0");
 	// 4 elements per group: limit shift #2, sync shift #2
 	expect(code).toMatch(/asr x9, x\d+, #2/);
 	expect(code).toContain("lsl x0, x10, #2");

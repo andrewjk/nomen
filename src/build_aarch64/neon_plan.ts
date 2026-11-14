@@ -94,11 +94,12 @@ import aarch64_size from "./utils/aarch64_size.ts";
  */
 
 /** Max distinct Buffers per plan — the preheader pins each data pointer in
- *  a dedicated scratch register (x11..x13). */
-const MAX_BUFFERS = 3;
+ *  a dedicated scratch register (x11..x13 + x15; x14 is the unroll-by-2
+ *  second-group index). */
+const MAX_BUFFERS = 4;
 /** Adjusted read-pointer registers the emitter can materialize (one per
- *  distinct (buffer, shift > 0) pair -- x15/x16/x17, call-free bodies). */
-const MAX_SHIFTED_PTRS = 3;
+ *  distinct (buffer, shift > 0) pair -- x16/x17, call-free bodies). */
+const MAX_SHIFTED_PTRS = 2;
 /** Max per-lane temps (v4..v7). */
 const MAX_TEMPS = 4;
 /** Max binary-op nesting depth in lane expressions (spill regs v14→v11). */
@@ -951,7 +952,7 @@ function plan_common(
 		}
 		if (process.env.NOMEN_DBG_NEON) {
 			console.error(
-				`NEON: [${status.current_function_name}] refuse: stmt kind ${(s as { kind: string }).kind}`,
+				`NEON: [${status.current_function_name}] loop@${index} refuse: stmt kind ${(s as { kind: string }).kind}`,
 			);
 		}
 		return null; // any other statement kind: no vectorization
@@ -959,7 +960,7 @@ function plan_common(
 	if (bound_name !== null && defs.has(bound_name)) {
 		if (process.env.NOMEN_DBG_NEON)
 			console.error(
-				`NEON: [${status.current_function_name}] refuse: bound ${bound_name} defined in loop`,
+				`NEON: [${status.current_function_name}] loop@${index} refuse: bound ${bound_name} defined in loop`,
 			);
 		return null;
 	}
@@ -1106,12 +1107,14 @@ function plan_common(
 	}
 	if (walk.temps.length > MAX_TEMPS) {
 		if (process.env.NOMEN_DBG_NEON)
-			console.error(`NEON: [${status.current_function_name}] refuse: too many temps`);
+			console.error(
+				`NEON: [${status.current_function_name}] loop@${index} refuse: too many temps (${walk.temps.length})`,
+			);
 		return null;
 	}
 	if (!walk.lanes.some((l) => l.kind === "store") && reductions.length === 0) {
 		if (process.env.NOMEN_DBG_NEON)
-			console.error(`NEON: [${status.current_function_name}] refuse: no store lane`);
+			console.error(`NEON: [${status.current_function_name}] loop@${index} refuse: no store lane`);
 		return null;
 	}
 	if (!walk.elem) return null; // no Buffer access — nothing to vectorize
@@ -1122,7 +1125,7 @@ function plan_common(
 		if (cls !== want) {
 			if (process.env.NOMEN_DBG_NEON)
 				console.error(
-					`NEON: [${status.current_function_name}] refuse: temp class ${cls} != ${want}`,
+					`NEON: [${status.current_function_name}] loop@${index} refuse: temp class ${cls} != ${want}`,
 				);
 			return null;
 		}
@@ -1138,7 +1141,7 @@ function plan_common(
 			if (after.has(t)) {
 				if (process.env.NOMEN_DBG_NEON)
 					console.error(
-						`NEON: [${status.current_function_name}] refuse: temp ${t} read after loop`,
+						`NEON: [${status.current_function_name}] loop@${index} refuse: temp ${t} read after loop`,
 					);
 				return null;
 			}

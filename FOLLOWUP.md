@@ -700,3 +700,41 @@ with value returns (`func probe = (out int) { ... return ... }`) builds and
 runs correctly on both backends — that is the workaround for tests. The
 fix belongs in the aarch64 backend's early-return epilogue emission (the
 prologue's 32-byte stack adjustment is not restored on the `return` path).
+
+## BigInt: subquadratic division (Newton–Raphson) and Toom multiplication
+
+Recorded 2026-11-15 from the edigits benchmark work. Phase timings at
+n=50000 (aarch64 instrumented build): sum_terms ≈ 27 ms, mul+div ≈ 26 ms,
+extract ≈ 31 ms, pow10 ≈ 7 ms. The two structural gaps vs math/big (Go) and
+ibig (Rust), which both use these techniques internally (the repo's stated
+parity standard):
+
+- **Newton–Raphson division** for the multi-limb `div_to` path. The final
+  `answer = numerator / q` (≈5200-limb ÷ ≈2600-limb) runs Knuth-D at
+  ~2600×2600 ≈ 6.8M mul-sub steps; a reciprocal-based division would pay
+  ~2–3 full-size Karatsuba multiplications (~1.2M mul-steps), cutting the
+  biggest edigits phase several-fold. Needs the reciprocal iteration with
+  truncation-error care (2-adic reciprocal on the divisor's top limbs +
+  correction steps), plus a `check via divrem invariant` test.
+- **Toom-3** above Karatsuba for `mul_to` (and the extraction's division
+  core benefits proportionally). Thresholds would need measuring on this
+  codegen — Karatsuba's 32-limb schoolbook base is already tuned.
+
+The extraction loop itself is near its floor: the 1-limb divisor invariant
+path requires `divisor < 2^63`, which pins the chunk radix at 10^18
+(10^19 < 2^64 but ≥ 2^63 would fall off the fast path onto per-limb
+`___udivti3` calls).
+
+## NEON planner: straight-line 4-lane group shapes (mandelbrot residual)
+
+Recorded 2026-11-15. After the fused-loop planning + emitter efficiency
+work, mandelbrot runs ~37 ms (aarch64) / ~25 ms (C) at n=1000 vs ~14.4 ms
+for the Zig/Rust references. The remaining gap is the references'
+8×f64-wide straight-line SIMD (4 `.2d` registers per op, zero loop
+machinery). The planner's elementwise-loop model emits 2-lane groups with
+per-loop overhead; a shape that recognizes fixed-trip lane-group compute
+(the 10×5-iteration mandelbrot kernel with all state in a small set of
+lane buffers) and emits straight-line multi-register code would close most
+of the rest. Unroll-based approaches measured negative before
+(`unroll.ts` is default-off: serial FP dependence chains + spills); this
+needs the value-level lane allocator, not statement duplication.

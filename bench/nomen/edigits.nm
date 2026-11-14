@@ -107,13 +107,19 @@ pub func main = (Init init) {
 	var div_rem = BigInt()
 	answer.div_to(numerator, q, ref div_rem)
 
-	// Extract digits from answer using in-place bulk divmod by 10^18.
+	// Extract digits from answer using in-place bulk divmod by 10^18. The
+	// digit buffer is sized from n: ceil(n / 18) chunks, plus one spare
+	// chunk for the trailing partial group. (A fixed 5020 here silently
+	// dropped stores past its capacity and printed a mid-number slice at
+	// benchmark sizes; the verifier can't relate the store index to the
+	// allocation, so each store still carries its explicit guard.)
 	var one = BigInt()
 	one.set_int(1)
 	var work = BigInt()
 	work.copy_from(answer)
+	const int digit_cap = (n + 17) / 18 * 18 + 18
 	var digits = Buffer<int>()
-	digits.alloc_int(5020)
+	digits.alloc_int(digit_cap)
 	var digit_count = 0
 	var q_e18 = BigInt()
 	q_e18.set_u64(1000000000000000000)
@@ -124,9 +130,6 @@ pub func main = (Init init) {
 		var c = 0
 		while c < 18; c += 1 {
 			const int idx = digit_count + c
-			// `idx = digit_count + c` is a sum of two runtime variables the
-			// verifier can't relate to `digits.cap` (5020), so guard the
-			// store explicitly. `digits.cap` is a pub property on Buffer.
 			if idx >= 0 && idx < digits.cap {
 				digits.store_int(idx, (chunk % 10) as int)
 			}
@@ -135,30 +138,50 @@ pub func main = (Init init) {
 		digit_count = digit_count + 18
 	}
 
-	// Trim spurious leading zeros introduced by the final bulk chunk.
-	while digit_count > 1 {
-		if digits.load_int(digit_count - 1) != 0 {
-			break
+	// Trim spurious leading zeros introduced by the final bulk chunk. The
+	// extraction above ends with digit_count <= digit_cap, but the verifier
+	// can't carry that fact through the loop — hoist the relation once so
+	// the trim loads and the print walk below discharge their access
+	// constraints against it (pos < digit_count <= cap).
+	if digit_count <= digits.cap {
+		var int top = digit_count - 1
+		while top >= 0 && top < digit_count {
+			if digits.load_int(top) != 0 {
+				break
+			}
+			top -= 1
 		}
-		digit_count = digit_count - 1
-	}
-
-	var int pos = digit_count - 1
-	while pos >= 0 {
-		Console.write(digits.load_int(pos).to_string())
-		if pos == digit_count - 1 && digit_count > 1 {
-			Console.write(".")
+		digit_count = top + 1
+		// The reassignment above kills the hoisted cap fact (the verifier
+		// invalidates bounds on any redefined variable), so re-establish it
+		// for the print walk — digit_count only shrank, so it still holds.
+		if digit_count <= digits.cap {
+			// Buffer the whole output and write it once (the reference
+			// implementations buffer stdout too — Rust via BufWriter, Go via
+			// the buffered os.Stdout writer). Groups of 10 digits, each group
+			// trailed by "\t:<digits-so-far>", like the references; the Nomen
+			// format also prints the decimal point after the leading "2".
+			var sb = StringBuilder()
+			const string glyphs = "0123456789"
+			var int pos = digit_count - 1
+			var int until_next = 10
+			while pos >= 0 && pos < digit_count {
+				const int d = digits.load_int(pos)
+				const char glyph = glyphs.at_or(d, '0')
+				sb.append(glyph)
+				if pos == digit_count - 1 && digit_count > 1 {
+					sb.append(".")
+				}
+				pos -= 1
+				until_next -= 1
+				if until_next == 0 || pos < 0 {
+					sb.append("\t:")
+					sb.append_int(digit_count - 1 - pos)
+					sb.append("\n")
+					until_next = 10
+				}
+			}
+			Console.write(sb.to_string())
 		}
-		pos -= 1
-		if (digit_count - 1 - pos) % 10 == 0 && pos >= 0 {
-			Console.write("\t:")
-			Console.write((digit_count - 1 - pos).to_string())
-			Console.write("\n")
-		}
 	}
-	if (digit_count - 1 - pos) % 10 != 0 {
-		Console.write("\t:")
-		Console.write(digit_count.to_string())
-	}
-	Console.write("\n")
 }

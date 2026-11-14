@@ -47,7 +47,7 @@ import { emit_var_store } from "./utils/stack_var.ts";
  * group directly — element i is groups*G.)
  *
  * Register discipline: the vector loop contains NO calls, so the
- * caller-saved scratches x9–x15 and v0–v15 are stable across iterations;
+ * caller-saved scratches x9–x17 and v0–v15 are stable across iterations;
  * the loop never touches callee-saved registers, promoted-variable
  * registers (x19-x28 / d8-d11 pools), or the frame-slot machinery — the
  * only frame access is the standard `emit_var_store` for the induction
@@ -76,9 +76,9 @@ export function reset_neon_counter(): void {
 	neon_counter = 0;
 }
 
-/** Buffer data pointers are pinned here (x11..x13); x9 = limit, x10 = index,
- *  x14 = second unrolled group index. */
-const BUFFER_PTR_REGS = ["x11", "x12", "x13"];
+/** Buffer data pointers are pinned here (x11..x13, x15); x9 = limit,
+ *  x10 = index, x14 = second unrolled group index. */
+const BUFFER_PTR_REGS = ["x11", "x12", "x13", "x15"];
 /** Vector accumulator registers (planner caps at 2 reductions). */
 const REDUCTION_REGS = ["v2", "v3"];
 /** Per-lane temp result registers (planner caps at 4 temps). */
@@ -100,6 +100,33 @@ function lane_reg_of(name: string, plan: NeonPlan): string {
 	return TEMP_REGS[idx] ?? "v4";
 }
 
+/** Low-half d-register of a v-register (dN aliases vN.d[0]). */
+function d_of(vreg: string): string {
+	return `d${vreg.slice(1)}`;
+}
+
+/**
+ * Per-plan preheader splats of loop-invariant scalar operands. plan_common
+ * classifies every local/param never defined in the loop as a "scalar" leaf,
+ * so each distinct one materializes ONCE into a dedicated v register (v9,
+ * v10) and references inside the loop become a single mov — instead of
+ * rebuilding the scalar (slot load / promoted d-reg / bit-pattern param
+ * move) plus a dup per reference per group.
+ */
+const SCALAR_SPLAT_REGS = ["v9", "v10"];
+
+function scalar_splat_reg(
+	e: Extract<NeonLaneExpr, { k: "scalar" }>,
+	splats: Map<string, string>,
+): string | null {
+	const held = splats.get(e.name);
+	if (held) return held;
+	if (splats.size >= SCALAR_SPLAT_REGS.length) return null;
+	const reg = SCALAR_SPLAT_REGS[splats.size];
+	splats.set(e.name, reg);
+	return reg;
+}
+
 function emit_lane_expr(
 	e: NeonLaneExpr,
 	status: BuildStatus,
@@ -108,37 +135,53 @@ function emit_lane_expr(
 	shifted_regs: Map<string, string>,
 	idx: string,
 	depth: number,
+	target: string,
+	splats: Map<string, string>,
 ): void {
 	switch (e.k) {
 		case "load": {
 			const key = `${e.buffer} ${e.shift}`;
 			const shifted = shifted_regs.get(key);
 			if (shifted) {
-				emit_asm(status, `ldr q0, [${shifted}, ${idx}, lsl #4]\n`);
+				emit_asm(status, `ldr q${target.slice(1)}, [${shifted}, ${idx}, lsl #4]\n`);
 			} else {
 				const reg = buffer_regs.get(e.buffer) ?? "x11";
-				emit_asm(status, `ldr q0, [${reg}, ${idx}, lsl #4]\n`);
+				emit_asm(status, `ldr q${target.slice(1)}, [${reg}, ${idx}, lsl #4]\n`);
 			}
 			return;
 		}
 		case "lit":
 		case "scalar": {
+			// Loop-invariant scalars ride their preheader splat: one mov per
+			// reference instead of rebuild + dup. (Literals stay per-reference
+			// — fmov is as cheap as the mov and hoisting every distinct
+			// constant would exhaust the two splat registers.)
+			if (e.k === "scalar") {
+				const splat = scalar_splat_reg(e, splats);
+				if (splat) {
+					emit_asm(status, `mov ${target}.16b, ${splat}.16b\n`);
+					return;
+				}
+			}
 			// Materialize the scalar value, then splat it across the group's
 			// lanes. Floats ride the scalar float-operand path (slots,
-			// promoted d-regs, bit-pattern param regs) into d0 = low half of
-			// v0; ints ride the ordinary value path into x0.
+			// promoted d-regs, bit-pattern param regs) into the target's
+			// low half; ints ride the ordinary value path into x0.
 			if (plan.elem.float) {
-				build_float_operand(e.node, "d0", status);
-				emit_asm(status, `dup v0.2d, v0.d[0]\n`);
+				build_float_operand(e.node, d_of(target), status);
+				emit_asm(status, `dup ${target}.2d, ${target}.d[0]\n`);
 			} else {
 				build_node(e.node, status);
 				ensure_newline(status);
-				emit_asm(status, `dup v0.${plan.elem.arr}, ${plan.elem.arr === "2d" ? "x0" : "w0"}\n`);
+				emit_asm(
+					status,
+					`dup ${target}.${plan.elem.arr}, ${plan.elem.arr === "2d" ? "x0" : "w0"}\n`,
+				);
 			}
 			return;
 		}
 		case "temp": {
-			emit_asm(status, `mov v0.16b, ${lane_reg_of(e.name, plan)}.16b\n`);
+			emit_asm(status, `mov ${target}.16b, ${lane_reg_of(e.name, plan)}.16b\n`);
 			return;
 		}
 		case "op": {
@@ -164,25 +207,91 @@ function emit_lane_expr(
 						shifted_regs,
 						idx,
 						depth + 1,
+						"v0",
+						splats,
 					);
 					emit_asm(status, `mov v8.16b, v0.16b\n`);
-					emit_lane_expr(mul.left, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
+					emit_lane_expr(
+						mul.left,
+						status,
+						plan,
+						buffer_regs,
+						shifted_regs,
+						idx,
+						depth + 1,
+						"v0",
+						splats,
+					);
 					emit_asm(status, `mov ${spill_reg(depth + 1)}.16b, v0.16b\n`);
-					emit_lane_expr(mul.right, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
+					emit_lane_expr(
+						mul.right,
+						status,
+						plan,
+						buffer_regs,
+						shifted_regs,
+						idx,
+						depth + 1,
+						"v0",
+						splats,
+					);
 					emit_asm(status, `mov v1.16b, v0.16b\n`);
 					emit_asm(status, `mov v0.16b, ${spill_reg(depth + 1)}.16b\n`);
 					emit_asm(status, `${e.op === "+" ? "fmla" : "fmls"} v8.2d, v0.2d, v1.2d\n`);
-					emit_asm(status, `mov v0.16b, v8.16b\n`);
+					emit_asm(status, `mov ${target}.16b, v8.16b\n`);
 					return;
 				}
 			}
-			emit_lane_expr(e.left, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
-			emit_asm(status, `mov ${spill_reg(depth)}.16b, v0.16b\n`);
-			emit_lane_expr(e.right, status, plan, buffer_regs, shifted_regs, idx, depth + 1);
-			emit_asm(status, `mov v1.16b, v0.16b\n`);
-			emit_asm(status, `mov v0.16b, ${spill_reg(depth)}.16b\n`);
+			// Leaf operands load/materialize directly into their operand
+			// register, so a leaf side costs no staging mov. When the RIGHT
+			// side is a leaf, evaluate the (possibly compound) left into v0,
+			// the leaf straight into v1, and operate — no spill/restore. The
+			// compound-left recursion may itself use v1, but it has finished
+			// by the time the leaf lands there. Every other shape keeps the
+			// classic dance: left → spill, right → v1, restore, operate.
+			const right_is_leaf = e.right.k !== "op";
+			if (right_is_leaf) {
+				emit_lane_expr(
+					e.left,
+					status,
+					plan,
+					buffer_regs,
+					shifted_regs,
+					idx,
+					depth + 1,
+					"v0",
+					splats,
+				);
+				emit_lane_expr(e.right, status, plan, buffer_regs, shifted_regs, idx, depth, "v1", splats);
+			} else {
+				emit_lane_expr(
+					e.left,
+					status,
+					plan,
+					buffer_regs,
+					shifted_regs,
+					idx,
+					depth + 1,
+					"v0",
+					splats,
+				);
+				emit_asm(status, `mov ${spill_reg(depth)}.16b, v0.16b\n`);
+				emit_lane_expr(
+					e.right,
+					status,
+					plan,
+					buffer_regs,
+					shifted_regs,
+					idx,
+					depth + 1,
+					"v0",
+					splats,
+				);
+				emit_asm(status, `mov v1.16b, v0.16b\n`);
+				emit_asm(status, `mov v0.16b, ${spill_reg(depth)}.16b\n`);
+			}
 			const { mnemonic, arr } = lane_op(e.op, plan.elem);
 			emit_asm(status, `${mnemonic} v0.${arr}, v0.${arr}, v1.${arr}\n`);
+			if (target !== "v0") emit_asm(status, `mov ${target}.16b, v0.16b\n`);
 			return;
 		}
 	}
@@ -227,9 +336,10 @@ function emit_lane_stmt(
 	shifted_regs: Map<string, string>,
 	idx: string,
 	acc_regs: Map<string, string>,
+	splats: Map<string, string>,
 ): void {
 	if (lane.kind === "temp_def") {
-		emit_lane_expr(lane.value, status, plan, buffer_regs, shifted_regs, idx, 0);
+		emit_lane_expr(lane.value, status, plan, buffer_regs, shifted_regs, idx, 0, "v0", splats);
 		emit_asm(status, `mov ${lane_reg_of(lane.name, plan)}.16b, v0.16b\n`);
 		return;
 	}
@@ -237,7 +347,7 @@ function emit_lane_stmt(
 		// Vector-accumulate: vACC ∘= operand (the accumulator never enters
 		// lane_expr — its self-read is the carried dependency). Floats use
 		// fadd/fmul; integer `+` rides `add` (wrap-exact).
-		emit_lane_expr(lane.operand, status, plan, buffer_regs, shifted_regs, idx, 0);
+		emit_lane_expr(lane.operand, status, plan, buffer_regs, shifted_regs, idx, 0, "v0", splats);
 		const acc = acc_regs.get(lane.name) ?? "v2";
 		const mn = lane.op === "+" ? (plan.elem.float ? "fadd" : "add") : "fmul";
 		emit_asm(
@@ -246,7 +356,7 @@ function emit_lane_stmt(
 		);
 		return;
 	}
-	emit_lane_expr(lane.value, status, plan, buffer_regs, shifted_regs, idx, 0);
+	emit_lane_expr(lane.value, status, plan, buffer_regs, shifted_regs, idx, 0, "v0", splats);
 	const reg = buffer_regs.get(lane.buffer) ?? "x11";
 	emit_asm(status, `str q0, [${reg}, ${idx}, lsl #4]\n`);
 }
@@ -289,9 +399,10 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	// Preheader: materialize one ADJUSTED data pointer per distinct
 	// (buffer, shift > 0) read group — `buf + shift * elem_size` — so a
 	// shifted load reuses the group-indexed `[reg, idx, lsl #4]` form with
-	// zero per-iteration cost. x15–x17 are caller-saved scratch; the loop
-	// bodies are call-free by construction (plan_common refuses calls).
-	const SHIFT_PTR_REGS = ["x15", "x16", "x17"];
+	// zero per-iteration cost. x16–x17 are caller-saved scratch (x15 can be
+	// a 4th buffer pointer); the loop bodies are call-free by construction
+	// (plan_common refuses calls).
+	const SHIFT_PTR_REGS = ["x16", "x17"];
 	const shifted_regs = new Map<string, string>();
 	{
 		const elem_size = 16 / plan.elem.group_elems;
@@ -336,6 +447,40 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		acc_regs.set(r.name, reg);
 	});
 
+	// Preheader: materialize each distinct loop-invariant scalar operand
+	// once (v9, v10) so in-loop references are a single mov. Collected in
+	// first-use order; overflow falls back to per-reference materialization.
+	const splats = new Map<string, string>();
+	{
+		const scalars: Extract<NeonLaneExpr, { k: "scalar" }>[] = [];
+		const visit = (e: NeonLaneExpr | undefined): void => {
+			if (!e) return;
+			if (e.k === "scalar") {
+				if (!scalars.some((s) => s.name === e.name)) scalars.push(e);
+			} else if (e.k === "op") {
+				visit(e.left);
+				visit(e.right);
+			}
+		};
+		for (const lane of plan.lanes) {
+			if (lane.kind === "store") visit(lane.value);
+			else if (lane.kind === "temp_def") visit(lane.value);
+			else if (lane.kind === "reduction") visit(lane.operand);
+		}
+		for (const e of scalars) scalar_splat_reg(e, splats);
+		for (const [name, reg] of splats) {
+			const e = scalars.find((s) => s.name === name)!;
+			if (plan.elem.float) {
+				build_float_operand(e.node, d_of(reg), status);
+				emit_asm(status, `dup ${reg}.2d, ${reg}.d[0]\n`);
+			} else {
+				build_node(e.node, status);
+				ensure_newline(status);
+				emit_asm(status, `dup ${reg}.${plan.elem.arr}, ${plan.elem.arr === "2d" ? "x0" : "w0"}\n`);
+			}
+		}
+	}
+
 	// lim = floor((bound - max_shift) / group_elems) double-groups. The
 	// subtraction keeps every shifted read (last lane reads element
 	// base + group - 1 + max_shift) inside the bound; negative bounds go
@@ -353,10 +498,10 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	emit_asm(status, `cmp x10, x9\n`);
 	emit_asm(status, `b.hs ${label}_end\n`);
 	for (const lane of plan.lanes)
-		emit_lane_stmt(lane, status, plan, buffer_regs, shifted_regs, "x10", acc_regs);
+		emit_lane_stmt(lane, status, plan, buffer_regs, shifted_regs, "x10", acc_regs, splats);
 	emit_asm(status, `add x14, x10, #1\n`);
 	for (const lane of plan.lanes)
-		emit_lane_stmt(lane, status, plan, buffer_regs, shifted_regs, "x14", acc_regs);
+		emit_lane_stmt(lane, status, plan, buffer_regs, shifted_regs, "x14", acc_regs, splats);
 	emit_asm(status, `add x10, x10, #2\n`);
 	emit_asm(status, `b ${label}\n`);
 	emit_asm(status, `${label}_end:\n`);

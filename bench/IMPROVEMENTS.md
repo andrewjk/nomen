@@ -36,7 +36,10 @@ measured results). **✗ unfair** items are excluded — see the note below.
 >   representations are fair; algorithmic dodges are not.
 > - **edigits** bulk divmod + binary exponentiation are kept: they bring Nomen's
 >   hand-rolled `BigInt` to parity with `math/big` (Go) and `ibig` (Rust), which
->   use the same techniques internally.
+>   use the same techniques internally. Likewise the mandelbrot 8-lane group
+>   rewrite (item 44) mirrors the references' `[8]float64` vector structure —
+>   same ops per lane, same escape-check cadence, bit-identical checksum — and
+>   its buffered single-write report mirrors the references' buffered stdout.
 
 ## Codegen improvements landed
 
@@ -44,19 +47,20 @@ The following codegen changes have been applied. The "before" column is the
 old codegen; "after" is with all improvements below. Measured on Apple Silicon
 (AArch64), median of 3 runs, small workload sizes:
 
-| Benchmark       | Before  | After   | Speedup | Primary fix                                             |
-| --------------- | ------- | ------- | ------- | ------------------------------------------------------- |
-| mandelbrot      | 365 ms  | 140 ms  | 2.61×   | Float assignment d0→dN + float round-trip + push/pop    |
-| nsieve          | 122 ms  | 53 ms   | 2.30×   | Buffer.load/store inlined + LICM + push/pop peephole    |
-| nbody           | 211 ms  | 120 ms  | 1.76×   | Float reg-alloc + round-trip elim + naked sqrt inline   |
-| lru             | 150 ms  | 27 ms   | 5.5×    | O(1) doubly-linked list LRU + RNG bitmask + peephole    |
-| fannkuch-redux  | 378 ms  | 210 ms  | 1.80×   | Array .at()/.set() fast path + push/pop peephole        |
-| knucleotide     | 17 ms   | 8 ms    | 2.1×    | Buffer.load_int inlined + LICM + push/pop peephole      |
-| spectral-norm   | 64 ms   | 40 ms   | —       | load_float result-register bug fixed (was `nan`)        |
-| binarytrees     | 250 ms  | 246 ms  | 1.02×   | (struct accessors still use memcpy)                     |
-| edigits         | 48 ms   | 8.5 ms  | 5.6×    | Product-tree algorithm + set                            |
-| edigits (5000)  | 734 ms  | 9 ms    | ~80×    | div128→udivti3 + get/set indexed + Buffer_int fast path |
-| pidigits (4000) | 3562 ms | 2840 ms | 1.25×   | Buffer_int load/store inlined (was `bl`)                |
+| Benchmark       | Before  | After   | Speedup | Primary fix                                                        |
+| --------------- | ------- | ------- | ------- | ------------------------------------------------------------------ |
+| mandelbrot      | 365 ms  | 140 ms  | 2.61×   | Float assignment d0→dN + float round-trip + push/pop               |
+| mandelbrot (2)  | 51.5 ms | 36.9 ms | 1.40×   | 8-lane group rewrite (item 44) + NEON emitter efficiency (item 45) |
+| nsieve          | 122 ms  | 53 ms   | 2.30×   | Buffer.load/store inlined + LICM + push/pop peephole               |
+| nbody           | 211 ms  | 120 ms  | 1.76×   | Float reg-alloc + round-trip elim + naked sqrt inline              |
+| lru             | 150 ms  | 27 ms   | 5.5×    | O(1) doubly-linked list LRU + RNG bitmask + peephole               |
+| fannkuch-redux  | 378 ms  | 210 ms  | 1.80×   | Array .at()/.set() fast path + push/pop peephole                   |
+| knucleotide     | 17 ms   | 8 ms    | 2.1×    | Buffer.load_int inlined + LICM + push/pop peephole                 |
+| spectral-norm   | 64 ms   | 40 ms   | —       | load_float result-register bug fixed (was `nan`)                   |
+| binarytrees     | 250 ms  | 246 ms  | 1.02×   | (struct accessors still use memcpy)                                |
+| edigits         | 48 ms   | 8.5 ms  | 5.6×    | Product-tree algorithm + set                                       |
+| edigits (5000)  | 734 ms  | 9 ms    | ~80×    | div128→udivti3 + get/set indexed + Buffer_int fast path            |
+| pidigits (4000) | 3562 ms | 2840 ms | 1.25×   | Buffer_int load/store inlined (was `bl`)                           |
 
 Changes applied:
 
@@ -598,6 +602,17 @@ off Rust's lazy-DFA (the remaining architectural gap). Compile time rose
 (2.2 → 3.2 s aarch64) — the engine is more code through the non-optimizing
 pipeline; the run-time trade is the point.
 
+**Fairness (like-for-like):** this is a library-internal fix, not a
+workload dodge. `bench/nomen/regex-redux.nm` is untouched and makes the same
+calls on the same input with the same patterns; the old engine simply
+re-parsed the pattern at every candidate position. The references compile
+once and reuse the program (Go `regexp.MustCompile`, Rust
+`regex::bytes::Regex::new`; Zig's `mvzr.compile` is inside `countMatches`/
+`replaceAll`, i.e. per call like Nomen's API), and every pattern here is used
+exactly once per run, so per-call vs per-process compilation is equal work.
+The remaining gap is engine quality (backtracking VM vs lazy DFA), not extra
+or skipped benchmark work.
+
 42.6. **aarch64 store-clobber fix** (`src/build_aarch64/build_access_node.ts`):
 the inline `Buffer.store_int` fast path evaluated the VALUE into x2 and then
 staged the index — but a COMPOUND index expression (`cls * 4 + (code >> 6)`)
@@ -632,6 +647,69 @@ complex_val)` site corrupted memory.
     edigits-source product-tree base-blocking / `pow10` tweaks were reverted
     so the `.nm` sources keep mirroring the references; only the shared
     BigInt primitive was kept.
+
+44. **mandelbrot — 8-lane lane-group rewrite** (`bench/nomen/mandelbrot.nm`):
+    the old source computed ONE pixel per `mbrot` call while the Go/Zig/Rust
+    references all process 8 pixels per group (`[8]float64` vectors). The
+    rewrite mirrors that structure: `mbrot8` fills four 8-element
+    `Buffer<float>` lane arrays (zr / zi / d / cr) and runs the identical
+    10×5-iteration update with an all-lanes escape check between blocks —
+    same floating-point ops per lane in the same order, so the checksum is
+    bit-identical to the scalar version (506926 at n=200 verified). Two
+    source-level twists keep both backends on their fast paths:
+    `tr - ti` is folded into one `d` buffer so each update touches at most
+    three buffers (the NEON planner's per-plan pointer budget), and the lane
+    loops are bounded by the buffer `cap` hoisted into a local (`var int
+lanes = zi.cap`) — a runtime trip count, which is what clang's loop
+    vectorizer needs (a literal-8 group body only ever reached unroll+SLP,
+    which declines this shape at any -O level; a runtime-bound loop
+    vectorizes to `.2d` pairs). Row bytes are stored to a `Buffer<uint8>`
+    and checksummed afterwards, matching the references' pixel-buffer +
+    hash traffic (Nomen has no MD5, so the byte-sum is the verifier).
+    Measured min-of-5: n=1000 aarch64 51.5 → 36.9 ms, C 48.5 → 24.7 ms;
+    n=2000 aarch64 196 → 137 ms, C 185 → 93 ms. Zig/Rust sit at 14.4/45.5
+    (8-lane straight-line SIMD; the residual is recorded in FOLLOWUP.md).
+
+45. **NEON emitter efficiency + 4-buffer plans** (`neon_emit.ts`,
+    `neon_plan.ts`): the vector-loop emitter staged every operand through
+    v0 with `mov.16b` shuffles and re-materialized loop-invariant scalars
+    (slot load + dup) per group — measured net-neutral on the mandelbrot
+    update loops. Three changes: leaf operands (loads, literals, temps,
+    splatted scalars) now materialize directly into their operand register
+    (`ldr q1` / `mov v1, v9`) instead of staging through v0, so a leaf-side
+    op costs no staging moves; loop-invariant scalars splat ONCE into
+    v9/v10 in the preheader (one `mov` per reference, instead of
+    rebuild+dup per group); and the buffer-pointer pin pool grew from
+    x11–x13 to x11–x13+x15 (shifting the shifted-read pointers to x16/x17),
+    so plans may touch four distinct buffers. plan_common also plans
+    MULTI-store bodies now (the fused update loop writes zi, zr, d in one
+    body) — sound under the same exact-induction argument (each lane reads
+    base+k before lane k writes it; statements execute in order), and
+    `NOMEN_DBG_NEON` refusal messages now carry the loop index. Together
+    with item 44 this is what takes the mandelbrot kernel from
+    net-neutral-NEON (55 ms) to 1.4× under the scalar baseline (36.9 ms).
+    All 49 `test/neon_vector.test.ts` shape assertions hold; the three that
+    pinned the old staging shape were updated to the new operand-register
+    forms.
+
+46. **edigits — correct digit-buffer sizing + single-write output**
+    (`bench/nomen/edigits.nm`): the digit buffer was a fixed
+    `alloc_int(5020)` with a silent `idx < digits.cap` store guard — at the
+    benchmark's own sizes (n=20000/50000) every chunk past ~5000 digits was
+    DROPPED, and the trim loop then printed a wrong mid-number slice
+    ("7.127413922…" instead of the first digits of e). The buffer is now
+    sized from n (`(n+17)/18*18 + 18`); the print walk hoists
+    `digit_count <= digits.cap` (twice — the trim's `digit_count = top + 1`
+    reassignment kills the verifier's bound fact, so it is re-established)
+    and builds the whole output in one `StringBuilder` (the references
+    buffer stdout too — Rust's `BufWriter`, Go's buffered writer) instead
+    of ~4 `Console.write` + one `to_string()` allocation per digit; the
+    tail group also always emits its `\t:n` count now (n divisible by 10
+    previously printed no count). Output is digit-for-digit identical to
+    the Go reference at n=20000 on both backends. Time is unchanged-to-
+    slightly-better at equal-or-greater work (n=20000: aarch64 15.0 →
+    14.5 ms, C 10.0 → 9.5 ms; n=50000 flat at 62/40 ms printing 10× the
+    digits the broken version printed).
 
 ### Known issues
 
@@ -1086,9 +1164,10 @@ Hilbert-like matrix `A[i,j] = 1/((i+j)(i+j+1)/2+i+1)`.
 - ✓ **[codegen] DONE:** `Buffer<float>` `load_float`/`store_float` inlined.
   Buffer.data pointer cached across loop iterations (LICM).
 
-### mandelbrot (358 / 1423 ms → 140 / 550 ms — ~2.55× speedup)
+### mandelbrot (365 / 1423 ms → 140 / 550 ms → 37 / 137 ms — ~9.8× total)
 
-Computes a Mandelbrot bitmap checksum, double loop over pixels.
+Computes a Mandelbrot bitmap checksum. As of item 44 the source processes 8
+pixels per group like the references (previously one pixel per call).
 
 - ✓ **[codegen] DONE (items 17–18):** Float round-trip elimination + push/pop
   peephole. The mbrot inner loop's float expression chains (`(zr+zr)*zi+ci`,
@@ -1111,18 +1190,36 @@ Computes a Mandelbrot bitmap checksum, double loop over pixels.
   the checksum (12649259 → 12649257 at n=1000). Since the benchmark verifies
   the checksum, the change was reverted. The reference implementations use the
   multiplication form (not recurrence), so the checksum must match exactly.
-- **[source]** The unroll-by-5 trick is already there. Extending it to
-  unroll-by-10 with two escape checks amortized would halve branch overhead.
-- ✓ **[codegen] DONE:** Float-register-allocate the inner-loop `tr`, `ti`, `zr`,
-  `zi`.
-- No use of SIMD (Rust/Zig auto-vectorize the 5-iteration unroll). Out of scope
-  for the current backend but it's the ceiling.
+- ✗ **[source] (tried and reverted for fairness):** Cardioid/bulb interior
+  tests + per-iteration escape check — 2.6–3.0× but dodges the brute-force
+  work the references do (see item 43's fairness note).
+- ✓ **[source] DONE (item 44):** 8-lane rewrite mirroring the references'
+  `[8]float64` groups: `mbrot8` over four 8-element `Buffer<float>` lane
+  arrays, the `tr - ti` fold keeping each loop ≤ 3 buffers, cap-hoisted
+  runtime trip counts, and a stored pixel buffer with byte-sum checksum
+  (matching the references' pixel-buffer + hash traffic). Bit-identical
+  checksums on both backends. n=1000: 51.5 → 36.9 ms (aarch64),
+  48.5 → 24.7 ms (C); n=2000: 196 → 137 / 185 → 93 ms.
+- ✓ **[codegen] DONE (item 45):** NEON emitter operand-direct materialization +
+  preheader scalar splats + 4-buffer plans + multi-store bodies. Without it
+  the vector loops were net-neutral (55 ms); with it the aarch64 kernel beats
+  its scalar baseline 1.4×.
+- **Remaining gap:** Zig/Rust run 14.4/45.5 ms (8×f64 straight-line SIMD with
+  4 `.2d` registers per op). The planner's elementwise-loop model emits
+  2-lane groups with loop machinery; a straight-line lane-group shape needs
+  the value-level lane allocator (FOLLOWUP.md).
 
 ### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms — ~2–3× off Rust)
 
 Computes _e_ to `n` digits via BigInt, then prints. Previously Nomen's _worst_
 ratio (~245×); within ~15× after the product-tree algorithm; now ~2–3× off
 Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point).
+Item 46 fixed a silent wrong-output bug at benchmark sizes (the fixed 5020
+digit buffer dropped chunks past its capacity — the printed digits at
+n=20000/50000 were a mid-number slice, not the first digits of e); output is
+now digit-for-digit identical to the Go reference at n=20000 on both
+backends, with the whole report built in one `StringBuilder` (buffered like
+the references' writers).
 
 - ✓ **[source] DONE:** Bulk divmod-by-10^18 for printing (18 digits per long
   division instead of 1).
@@ -1153,6 +1250,11 @@ Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point).
 - ✓ **[codegen] DONE (item 15):** `Buffer<T>` load/store now inlines for
   monomorphized types (was emitting `bl Buffer_int_load_int`). Cuts the final
   divide + base conversion to inlined strided loads/stores.
+- ✓ **[source] DONE (item 46):** Correct digit-buffer sizing (the fixed 5020
+  silently dropped chunks past its capacity — wrong output at n=20000/50000)
+  and single-`StringBuilder`-write output (buffered like the references).
+  Output now digit-for-digit identical to Go at n=20000 on both backends;
+  time flat-to-better while printing 10× the digits.
 - `Math.log(fk)` is used in `test_k` for the initial binary search — that's
   fine, it's O(log) calls. No fix needed there.
 
