@@ -620,9 +620,6 @@ reassignments re-run as `x = mv <join temp>` so the proven mv-donor paths
 own the displaced reclaim). Still open — the classifier returns undefined
 and the statement keeps the historical broken lowering:
 
-- **Box<T>-wrapper locals** (the stamped `is_class` heap-handle storage):
-  the word join stores the handle but does not consume the anchor
-  machinery, so a displaced instance may leak. No test exercises it.
 - **mv-struct FIELDS on C** (`holder.box = match …` for an mv struct
   field): the deferred class-field reclamation does not compose with a
   temp store yet. aarch64 mv-struct fields are covered (the struct-field

@@ -1242,6 +1242,13 @@ export default function build_assignment_node(
 		const decl = status.scoped_declarations.find((d) => d.name === name);
 		const join_type = decl?.type ?? status.variable_types?.get(name);
 		const join = branching_join(join_type, status);
+		// A word join whose struct is a Box<T>-wrapper (the stamped is_class
+		// heap-handle storage) re-runs like a struct join — a plain word store
+		// would leak the displaced instance (see the re-run comment below).
+		const word_join_is_class =
+			join?.kind === "word"
+				? !!status.structs.find((s) => s.name === join.mono_name && !s.is_simple_type)?.is_class
+				: false;
 		if (join_type && join) {
 			const join_size =
 				join.kind === "string"
@@ -1271,6 +1278,67 @@ export default function build_assignment_node(
 				const donor = new ValueNode(node.right_value.start, temp, new Type(join.mono_name));
 				donor.is_moved = true;
 				build_assignment_node(new AssignmentNode(node.start, node.left_value, donor), status);
+				return;
+			}
+			if (word_join_is_class) {
+				// A Box<T>-wrapper local (the stamped `is_class` heap-handle
+				// storage): a plain word store would leave the handle past the
+				// anchor machinery, so the displaced instance leaks. Run the
+				// class reassignment protocol directly: reclaim the displaced
+				// instance through its anchor slot (updated IN PLACE — a loop
+				// body's emitted code re-runs, so allocating a fresh anchor
+				// would staleness-free the first iteration's handle), then
+				// land the joined handle.
+				const is_alias = !!status.class_alias_vars?.has(name);
+				const anchor = find_anchor_slot(status, name);
+				const alias_flag =
+					is_alias && anchor === undefined ? status.alias_owns_flag?.get(name) : undefined;
+				if (anchor !== undefined) {
+					if (!status.moved?.has(name)) {
+						emit_destroy_for_anchor_slot(
+							status,
+							anchor,
+							join.mono_name,
+							join_type?.type_args,
+							join_type?.is_nullable,
+						);
+						emit_asm(status, `ldr x0, [x29, #${anchor}]\n`);
+						emit_free(status);
+					}
+					emit_var_load(status, "x0", temp, 8);
+					emit_asm(status, `str x0, [x29, #${anchor}]\n`);
+				} else if (alias_flag !== undefined) {
+					// An alias without an anchor: it owns its current value only
+					// after a prior reassignment, so the reclaim is
+					// runtime-guarded and the handle lives in the variable only.
+					const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					const no_free_label = `.Lalias_no_free_${label_id}`;
+					emit_asm(status, `ldr x9, [x29, #${alias_flag}]\n`);
+					emit_asm(status, `cbz x9, ${no_free_label}\n`);
+					emit_destroy_for_decl(
+						status,
+						name,
+						join.mono_name,
+						undefined,
+						join_type?.type_args,
+						join_type?.is_nullable,
+					);
+					emit_var_load(status, "x0", name, 8);
+					emit_free(status);
+					emit_asm(status, `${no_free_label}:\n`);
+					emit_var_load(status, "x0", temp, 8);
+					emit_asm(status, `mov x9, #1\n`);
+					emit_asm(status, `str x9, [x29, #${alias_flag}]\n`);
+				} else {
+					emit_var_load(status, "x0", temp, 8);
+				}
+				status.moved?.delete(name);
+				const offset = status.stack_offsets?.get(name);
+				if (offset !== undefined) {
+					emit_asm(status, `str x0, [x29, #${offset}]\n`);
+				} else {
+					emit_var_store(status, "x0", name, 8);
+				}
 				return;
 			}
 			// The displaced value: the join arms wrote the temp, so the
