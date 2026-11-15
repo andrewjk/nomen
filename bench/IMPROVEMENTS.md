@@ -711,6 +711,39 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     14.5 ms, C 10.0 → 9.5 ms; n=50000 flat at 62/40 ms printing 10× the
     digits the broken version printed).
 
+47. **NEON straight-line lane-group peel** (`neon_plan.ts`, `neon_emit.ts`):
+    the mandelbrot residual from item 44 — the Zig/Rust references run
+    8-wide f64 SIMD as STRAIGHT-LINE code (4 × `.2d` registers per op,
+    zero loop machinery), while the elementwise vector loop pays
+    cmp/branch/counter per double-group plus staging movs. The planner now
+    decides a PEEL: when a plan's lane values fit the straight-line
+    register file (temps × 4 groups ≤ 8 cells in v0–v7, lane-op depth ≤ 3
+    in the v15→v11 operand slots, no reductions/fast-math contraction, no
+    load after a store to its buffer), the emitter runs the plan ONCE over
+    4 whole groups before the counted loop — one compare+branch guard
+    (`bound < 4*G + max_shift` skips it; the counted loop resumes at group
+    4, so big-N trips keep full vector coverage and no element is computed
+    twice). The value-level allocation gives every shared lane temp one
+    CELL register per group (zi1 → v0–v3, zr1 → v4–v7 in the kernel), ops
+    read cells/splats directly with no staging movs, single-consumer temps
+    (the checker-hoisted `d.store_float(l, zr1*zr1 - zi1*zi1)` arg) inline
+    into their consumer's tree, same-buffer loads CSE within an expression
+    (`(zr.load + zr.load)` is one load), stores address groups by
+    immediate offset, and literals pool beside the scalars in the
+    preheader. The peel is a prefix, not a replacement: trip counts stay
+    runtime-agnostic (mandelbrot's `lanes` local keeps its runtime bound —
+    clang needs that on the C backend). Measured min-of-N, bit-identical
+    checksums on both backends (12649259 at n=1000, 50626635 at n=2000):
+    mandelbrot n=1000 aarch64 36.6 → 30.9 ms (−16%), n=2000 135.8 →
+    113.4 ms (−17%); C backend unchanged (25.3/93.5 ms). spectral-norm's
+    fill loop also peels; its total shifted +1.3% (363.5 → 369.5 ms
+    median at n=3200) — the hot eval_a loops are byte-identical and a
+    same-site fixed-size insertion control (13 `mov x8, x8`) measures
+    neutral, so this is placement lottery (the peel block's 64-byte shift
+    moves the inlined hot loops differently than any fixed shift), not a
+    systematic cost. Refusals are `NOMEN_DBG_NEON`-traceable
+    (`peel off: ...`).
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot

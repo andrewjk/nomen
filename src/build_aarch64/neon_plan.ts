@@ -91,6 +91,20 @@ import aarch64_size from "./utils/aarch64_size.ts";
  *   bounds below MIN_TRIP stay scalar. Path bounds let elementwise loops
  *   drop their `n <= a.cap` guard dances entirely: the loop condition
  *   itself verifies the access constraints.
+ *
+ * Straight-line lane-group peel (the fixed-trip lane-compute residual):
+ * when the plan's lane values fit the straight-line register file, the
+ * emitter additionally runs the plan ONCE over PEEL_GROUPS whole groups
+ * (4 × `.2d` = the references' 8-lane f64 width) BEFORE the counted loop,
+ * with no loop machinery at all — the shape the Zig/Rust `@Vector(8, f64)`
+ * mandelbrot kernels lower to. The peel is a guarded prefix, not a
+ * replacement: `bound < groups*G + max_shift` skips it, the counted vector
+ * loop resumes at group `peel` (so big-N loops keep their full vector
+ * coverage — no element is computed twice), and the scalar tail is
+ * unchanged. Soundness: statement-major × group-minor emission keeps every
+ * load ahead of every store (peel plans refuse load-after-store bodies),
+ * so the event-order rule transfers verbatim; the guard keeps every peel
+ * access — shifted reads included — inside the bound.
  */
 
 /** Max distinct Buffers per plan — the preheader pins each data pointer in
@@ -109,6 +123,33 @@ const MAX_REDUCTIONS = 2;
 /** Literal bounds below this stay scalar (unrolled-vector overhead swamps
  *  a handful of iterations). Runtime bounds always vectorize. */
 const MIN_TRIP = 8;
+
+/** Straight-line lane-group peel: whole groups the emitter runs ONCE with
+ *  zero loop machinery before the counted vector loop. 4 groups = the
+ *  references' 4×`.2d` = 8 f64 lanes (16 u32 / 64 u8) — the fixed-trip
+ *  lane-compute width. 0 disables the peel. */
+const PEEL_GROUPS = 4;
+/** Peel cell budget: each lane temp occupies `peel` v-registers (one per
+ *  group), all inside v0–v7 — the loop's v4–v7 temp regs are dead by the
+ *  time the counted loop runs, so the peel claims the whole bank. */
+const PEEL_MAX_CELLS = 8;
+/** Max lane-op nesting in a peel: operand slots index the v15→v11 scratch
+ *  bank by depth; a deeper tree would spill into the v9/v10 splat regs. */
+const PEEL_MAX_DEPTH = 3;
+
+/** Lane-op nesting depth of a peel expression tree. */
+function lane_depth(e: NeonLaneExpr): number {
+	if (e.k !== "op") return 0;
+	return 1 + Math.max(lane_depth(e.left), lane_depth(e.right));
+}
+
+/** `temp` references to `name` inside a lane expression tree. */
+function count_temp_refs(e: NeonLaneExpr | undefined, name: string): number {
+	if (!e) return 0;
+	if (e.k === "temp") return e.name === name ? 1 : 0;
+	if (e.k === "op") return count_temp_refs(e.left, name) + count_temp_refs(e.right, name);
+	return 0;
+}
 
 /**
  * Element descriptor — derived from the Buffer method pair. The 16-byte Q
@@ -251,6 +292,17 @@ export interface NeonPlan {
 	 *  this many elements so every shifted read stays inside the bound;
 	 *  the scalar tail covers the rest. */
 	readonly max_shift: number;
+	/** Whole groups the emitter runs straight-line (no loop machinery)
+	 *  before the counted vector loop: the fixed-trip lane-group shape.
+	 *  0 = peel off; the counted loop alone covers every trip. The
+	 *  straight-line block is guarded: `bound < peel*G + max_shift` skips
+	 *  it (one compare + branch) and the counted loop starts at group 0
+	 *  instead of `peel`. */
+	readonly peel: number;
+	/** Lane temps the peel inlines into their single consumer's tree
+	 *  (their temp_defs are skipped; their cells are freed for the temps
+	 *  that are actually shared). */
+	readonly peel_inline: readonly string[];
 }
 
 // Literal shapes — mirrored exactly from build_float_operand's accepted
@@ -1162,6 +1214,7 @@ function plan_common(
 		else if (lane.kind === "temp_def") scan_shift(lane.value);
 		else if (lane.kind === "reduction") scan_shift(lane.operand);
 	}
+	const peel = plan_peel(walk, reductions, allow_reductions, bound_node, max_shift, index, status);
 	return {
 		induction,
 		bound_node,
@@ -1171,7 +1224,153 @@ function plan_common(
 		reductions,
 		fma_contract: allow_reductions,
 		max_shift,
+		peel: peel.groups,
+		peel_inline: peel.inline,
 	};
+}
+
+/**
+ * Straight-line lane-group peel decision (the fixed-trip lane-compute
+ * shape). The peel is a soundness-preserving PREFIX of the plan — the
+ * counted vector loop resumes at group `peel` — so eligibility is about
+ * register fit and event order, not trip counts:
+ *
+ * - no reductions (the horizontal-combine machinery is loop-shaped) and no
+ *   fast_math contraction (the fmla addend-preload dance stays on the
+ *   counted loop for now);
+ * - every lane temp × `peel` groups fits the v0–v7 cell bank;
+ * - lane-op nesting stays within the v15→v11 operand-slot bank;
+ * - NO load follows a store to the same buffer in statement order —
+ *   statement-major × group-minor emission runs every statement for all
+ *   groups before the next statement, so a load after a store would see
+ *   fresh peel stores where the scalar order sees pre-iteration values.
+ *
+ * Guard: the emitter always guards the straight-line block with the
+ * `bound >= peel*G + max_shift` compare (the peel's widest shifted read
+ * touches element peel*G - 1 + max_shift). A literal bound SMALLER than
+ * that drops the peel entirely (the counted loop's own
+ * shrink-by-max_shift limit keeps it scalar-safe); larger literals ride
+ * the same guard as runtime bounds.
+ */
+function plan_peel(
+	walk: PlanWalk,
+	reductions: readonly NeonReduction[],
+	fma_contract: boolean,
+	bound_node: BaseNode,
+	max_shift: number,
+	index: number,
+	status: BuildStatus,
+): { groups: number; inline: string[] } {
+	const refuse = (why: string): { groups: number; inline: string[] } => {
+		if (process.env.NOMEN_DBG_NEON) {
+			console.error(`NEON: [${status.current_function_name}] loop@${index} peel off: ${why}`);
+		}
+		return { groups: 0, inline: [] };
+	};
+	if (reductions.length > 0) return refuse("reductions ride the counted loop");
+	if (fma_contract) return refuse("fma contraction stays on the counted loop");
+	// Single-consumer temps inline into their consumer's tree: a hoisted
+	// store arg (`d.store_float(l, zr1*zr1 - zi1*zi1)` arrives as one) is
+	// an ordinary lane temp in the loop form, but straight-line code wants
+	// it fused into the store's evaluation — cells (temps × groups ≤ 8)
+	// are the peel's scarce resource, and the loop's per-statement temp
+	// traffic is exactly what the peel exists to remove.
+	const def_depth = new Map<string, number>();
+	for (const lane of walk.lanes) {
+		if (lane.kind === "temp_def") def_depth.set(lane.name, lane_depth(lane.value));
+	}
+	const inline = new Set<string>();
+	// Chained tree depth of an inlined temp: its own depth plus the depths
+	// of any inlined temps it references (defs only reference earlier
+	// temps, so one pass in statement order closes the chains).
+	const inline_tree_depth = new Map<string, number>();
+	for (const lane of walk.lanes) {
+		if (lane.kind !== "temp_def" || inline.has(lane.name)) continue;
+		let consumers = 0;
+		let consumer_depth = 0;
+		for (const other of walk.lanes) {
+			if (other.kind !== "store" && other.kind !== "temp_def") continue;
+			const n = count_temp_refs(other.value, lane.name);
+			consumers += n;
+			if (n > 0) consumer_depth = Math.max(consumer_depth, lane_depth(other.value));
+		}
+		let chained = def_depth.get(lane.name)!;
+		const walk_refs = (e: NeonLaneExpr): void => {
+			if (e.k === "temp") {
+				if (inline.has(e.name)) {
+					chained = Math.max(
+						chained,
+						def_depth.get(lane.name)! + (inline_tree_depth.get(e.name) ?? 0),
+					);
+				}
+			} else if (e.k === "op") {
+				walk_refs(e.left);
+				walk_refs(e.right);
+			}
+		};
+		walk_refs(lane.value);
+		inline_tree_depth.set(lane.name, chained);
+		// Substituted worst path: the consumer's own tree depth plus the
+		// temp's chained tree depth (the temp may sit at the consumer's
+		// root — the exact position is never deeper than consumer_depth).
+		if (consumers === 1 && consumer_depth + chained <= PEEL_MAX_DEPTH) {
+			inline.add(lane.name);
+		}
+	}
+	const cell_temps = walk.temps.filter((t) => !inline.has(t)).length;
+	if (cell_temps * PEEL_GROUPS > PEEL_MAX_CELLS) {
+		return refuse(`cells ${cell_temps * PEEL_GROUPS} > ${PEEL_MAX_CELLS}`);
+	}
+	// Post-inline lane depth: a lane referencing an inlined temp grows by
+	// the substituted tree's depth.
+	let max_d = 0;
+	for (const lane of walk.lanes) {
+		if (lane.kind !== "store" && lane.kind !== "temp_def") continue;
+		let d = lane_depth(lane.value);
+		for (const name of inline) {
+			if (count_temp_refs(lane.value, name) > 0) {
+				d = Math.max(d, lane_depth(lane.value) + (inline_tree_depth.get(name) ?? 0));
+			}
+		}
+		max_d = Math.max(max_d, d);
+	}
+	if (max_d > PEEL_MAX_DEPTH) {
+		return refuse(`lane depth ${max_d} > ${PEEL_MAX_DEPTH}`);
+	}
+	// Loads must precede every store to their buffer (statement order).
+	const stored = new Set<string>();
+	const scan_loads = (e: NeonLaneExpr | undefined): string | null => {
+		if (!e) return null;
+		if (e.k === "load") return stored.has(e.buffer) ? e.buffer : null;
+		if (e.k === "op") return scan_loads(e.left) ?? scan_loads(e.right);
+		return null;
+	};
+	for (const lane of walk.lanes) {
+		if (lane.kind === "store") {
+			const hit = scan_loads(lane.value);
+			if (hit) return refuse(`load of ${hit} follows its store`);
+			stored.add(lane.buffer);
+			continue;
+		}
+		if (lane.kind === "temp_def") {
+			const hit = scan_loads(lane.value);
+			if (hit) return refuse(`load of ${hit} follows its store`);
+		}
+	}
+	const need = PEEL_GROUPS * walk.elem!.group_elems;
+	// Literal bounds: the peel only when the literal provably covers it
+	// (the emitter always guards runtime bounds; a literal below the peel's
+	// widest shifted read must drop the peel entirely — the counted loop's
+	// shrink-by-max_shift limit keeps it scalar-safe).
+	const v = (bound_node as ValueNode | undefined)?.value;
+	if (typeof v === "string" && INT_LIT_RE.test(v)) {
+		try {
+			if (BigInt(v) < BigInt(need + max_shift)) return refuse("literal bound below the peel");
+		} catch {
+			return refuse("literal bound below the peel");
+		}
+	}
+	return { groups: PEEL_GROUPS, inline: [...inline] };
 }
 
 /**

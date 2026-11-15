@@ -724,17 +724,3 @@ The extraction loop itself is near its floor: the 1-limb divisor invariant
 path requires `divisor < 2^63`, which pins the chunk radix at 10^18
 (10^19 < 2^64 but ≥ 2^63 would fall off the fast path onto per-limb
 `___udivti3` calls).
-
-## NEON planner: straight-line 4-lane group shapes (mandelbrot residual)
-
-Recorded 2026-11-15. After the fused-loop planning + emitter efficiency
-work, mandelbrot runs ~37 ms (aarch64) / ~25 ms (C) at n=1000 vs ~14.4 ms
-for the Zig/Rust references. The remaining gap is the references'
-8×f64-wide straight-line SIMD (4 `.2d` registers per op, zero loop
-machinery). The planner's elementwise-loop model emits 2-lane groups with
-per-loop overhead; a shape that recognizes fixed-trip lane-group compute
-(the 10×5-iteration mandelbrot kernel with all state in a small set of
-lane buffers) and emits straight-line multi-register code would close most
-of the rest. Unroll-based approaches measured negative before
-(`unroll.ts` is default-off: serial FP dependence chains + spills); this
-needs the value-level lane allocator, not statement duplication.

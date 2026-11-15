@@ -1257,3 +1257,201 @@ pub func main = (Init init) {
 `;
 	compiles_lenient_without_vector(src);
 });
+
+// --- Straight-line lane-group peel (fixed-trip lane-compute shapes) --------
+//
+// The references' 8-wide f64 SIMD is straight-line: 4 `.2d` registers per
+// op, zero loop machinery. When a plan's lane values fit the straight-line
+// register file, the emitter runs the plan ONCE over 4 whole groups before
+// the counted loop — a guarded prefix (runtime bounds skip it with one
+// compare+branch; the counted loop resumes at group 4, so big-N trips keep
+// full vector coverage and no element is computed twice). Single-consumer
+// temps (checker-hoisted store args) inline into their consumer's tree.
+
+const PEEL_KERNEL = `
+import System
+
+func step = (ref Buffer<float> zr, ref Buffer<float> zi, ref Buffer<float> d, ref Buffer<float> cr, float ci, int lanes) {
+	if lanes <= zr.cap && lanes <= zi.cap && lanes <= d.cap && lanes <= cr.cap {
+		var l = 0
+		while l < lanes; l += 1 {
+			const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
+			const float zr1 = d.load_float(l) + cr.load_float(l)
+			zi.store_float(l, zi1)
+			zr.store_float(l, zr1)
+			d.store_float(l, zr1 * zr1 - zi1 * zi1)
+		}
+	}
+}
+pub func main = () {}
+`;
+
+test("lane-compute kernel peels 4 straight-line groups under one guard", () => {
+	const code = compile_aarch64(PEEL_KERNEL);
+	// One guard branch for the whole block (runtime bound): below 8 lanes
+	// the peel is skipped and the counted loop starts at group 0.
+	expect(code).toMatch(/cmp x\d+, #8\nb\.lt \.Lneon_\d+_np/);
+	// Group addressing is immediate-offset — 4 groups of one .2d each,
+	// buffers pinned in first-appearance order (zr, zi, d, cr).
+	expect(code).toContain("ldr q13, [x11, #0]");
+	expect(code).toContain("ldr q13, [x12, #48]");
+	expect(code).toContain("fadd v4.2d, v15.2d, v14.2d");
+	// Value-level cells: zi1 rides v0–v3, the ci splat (v9) is an operand
+	// directly — no staging mov, no per-group rematerialization.
+	expect(code).toContain("fadd v0.2d, v15.2d, v9.2d");
+	expect(code).toContain("fadd v3.2d, v15.2d, v9.2d");
+	// Stores read their cells straight (the old shape staged every store
+	// through v0 with a mov).
+	expect(code).toContain("str q0, [x12, #0]");
+	expect(code).toContain("str q4, [x11, #0]");
+	expect(code).toContain("str q7, [x11, #48]");
+	// The checker-hoisted store arg (zr1*zr1 - zi1*zi1) is a
+	// single-consumer temp: inlined into the d store's evaluation — its
+	// fmuls read the zi1/zr1 cells, the fsub lands in the store slot.
+	expect(code).toContain("fmul v15.2d, v4.2d, v4.2d");
+	expect(code).toContain("fmul v14.2d, v0.2d, v0.2d");
+	expect(code).toContain("fsub v15.2d, v15.2d, v14.2d");
+	expect(code).toContain("str q15, [x13, #48]");
+	// The counted loop resumes at group 4 (and still guards the tail).
+	expect(code).toContain("mov x10, #4");
+	expect(code).toContain(".Lneon_0_np:");
+	expect(code).toContain("cmp x10, x9");
+});
+
+/** The emitted asm of a single top-level function (from its label to the
+ *  next section directive) — assertions scope to it, since the System
+ *  glue in the same TU carries its own vector loops. */
+function func_body(code: string, name: string): string {
+	const start = code.indexOf(`\n${name}:`);
+	const end = code.indexOf(".p2align", start);
+	return code.slice(start, end === -1 ? undefined : end);
+}
+
+test("peel refuses when lane cells exceed the v0–v7 bank", () => {
+	const code = compile_aarch64(`
+import System
+
+func wide = (ref Buffer<float> a, ref Buffer<float> b, ref Buffer<float> c, int n) {
+	if n <= a.cap && n <= b.cap && n <= c.cap {
+		var l = 0
+		while l < n; l += 1 {
+			const float x = a.load_float(l) * 2.0
+			const float y = b.load_float(l) * 3.0
+			const float z = c.load_float(l) * 4.0
+			a.store_float(l, x + y)
+			b.store_float(l, x)
+			c.store_float(l, y)
+		}
+	}
+}
+pub func main = () {}
+`);
+	// x and y each feed two uses (the store arg + their own store), z rides
+	// two stores — three temps × 4 groups = 12 cells > 8 (only the hoisted
+	// x+y arg inlines away), so the plan keeps the counted loop alone
+	// (still vectorized).
+	const body = func_body(code, "wide");
+	expect(body).not.toMatch(/\.Lneon_\d+_np:/);
+	expect(body).not.toContain("mov x10, #4");
+	expect(body).toMatch(/\.Lneon_\d+:/);
+	expect(body).toContain("cmp x10, x9");
+});
+
+test("peel refuses when a load follows a store to its buffer", () => {
+	const code = compile_aarch64(`
+import System
+
+func rmw = (ref Buffer<float> a, ref Buffer<float> b, int n) {
+	if n <= a.cap && n <= b.cap {
+		var l = 0
+		while l < n; l += 1 {
+			a.store_float(l, 1.0)
+			b.store_float(l, a.load_float(l) + b.load_float(l))
+		}
+	}
+}
+pub func main = () {}
+`);
+	// Statement-major emission would let the peel's stores of groups 0–3
+	// feed the later load — the scalar order reads the pre-iteration value.
+	const body = func_body(code, "rmw");
+	expect(body).not.toMatch(/\.Lneon_\d+_np:/);
+	expect(body).toMatch(/\.Lneon_\d+:/);
+});
+
+test("fast_math plans keep the counted loop (no peel under contraction)", () => {
+	const parsed = parse_raw(PEEL_KERNEL);
+	expect(parsed.errors).toEqual([]);
+	const result = build(parsed.root, { arch: "aarch64", fast_math: true });
+	expect(result.errors ?? []).toEqual([]);
+	const body = func_body(result.code as string, "step");
+	expect(body).toMatch(/\.Lneon_\d+:/);
+	expect(body).not.toMatch(/\.Lneon_\d+_np:/);
+	expect(body).not.toContain("mov x10, #4");
+});
+
+test("behavioral: peel matches scalar across trip regimes (5 / 8 / 20)", async () => {
+	const { default: build_and_check_output } = await import("./build_and_check_output");
+	await build_and_check_output(
+		`
+import System
+
+func step = (ref Buffer<float> zr, ref Buffer<float> zi, ref Buffer<float> d, ref Buffer<float> cr, float ci, int lanes) {
+	if lanes <= zr.cap && lanes <= zi.cap && lanes <= d.cap && lanes <= cr.cap {
+		var l = 0
+		while l < lanes; l += 1 {
+			const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
+			const float zr1 = d.load_float(l) + cr.load_float(l)
+			zi.store_float(l, zi1)
+			zr.store_float(l, zr1)
+			d.store_float(l, zr1 * zr1 - zi1 * zi1)
+		}
+	}
+}
+
+pub func main = (Init init) {
+	var zr = Buffer<float>()
+	var zi = Buffer<float>()
+	var d = Buffer<float>()
+	var cr = Buffer<float>()
+	zr.alloc_float(20)
+	zi.alloc_float(20)
+	d.alloc_float(20)
+	cr.alloc_float(20)
+	var l = 0
+	while l < 20; l += 1 {
+		cr.store_float(l, (l as float) * 0.25)
+	}
+	var t = 0
+	while t < 3; t += 1 {
+		l = 0
+		while l < 20; l += 1 {
+			zr.store_float(l, 1.0)
+			zi.store_float(l, 0.5)
+			d.store_float(l, (l as float) * 0.125)
+		}
+		var lanes = 5
+		if t == 1 {
+			lanes = 8
+		}
+		if t == 2 {
+			lanes = 20
+		}
+		step(ref zr, ref zi, ref d, ref cr, 0.125, lanes)
+		l = 0
+		while l < lanes; l += 1 {
+			Console.write("\\{zr.load_float(l)},\\{zi.load_float(l)},\\{d.load_float(l)} ")
+		}
+		Console.write("\\n")
+	}
+}
+`,
+		"neon_peel_kernel",
+		[
+			"0.000000,1.125000,-1.265625 0.375000,1.125000,-1.125000 0.750000,1.125000,-0.703125 1.125000,1.125000,0.000000 1.500000,1.125000,0.984375 ",
+			"0.000000,1.125000,-1.265625 0.375000,1.125000,-1.125000 0.750000,1.125000,-0.703125 1.125000,1.125000,0.000000 1.500000,1.125000,0.984375 1.875000,1.125000,2.250000 2.250000,1.125000,3.796875 2.625000,1.125000,5.625000 ",
+			"0.000000,1.125000,-1.265625 0.375000,1.125000,-1.125000 0.750000,1.125000,-0.703125 1.125000,1.125000,0.000000 1.500000,1.125000,0.984375 1.875000,1.125000,2.250000 2.250000,1.125000,3.796875 2.625000,1.125000,5.625000 3.000000,1.125000,7.734375 3.375000,1.125000,10.125000 3.750000,1.125000,12.796875 4.125000,1.125000,15.750000 4.500000,1.125000,18.984375 4.875000,1.125000,22.500000 5.250000,1.125000,26.296875 5.625000,1.125000,30.375000 6.000000,1.125000,34.734375 6.375000,1.125000,39.375000 6.750000,1.125000,44.296875 7.125000,1.125000,49.500000 ",
+		].join("\n") + "\n",
+		true,
+	);
+});

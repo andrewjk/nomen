@@ -1,4 +1,5 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type ValueNode from "../nodes/ValueNode.ts";
 import { emit_buffer_struct_addr } from "./build_access_node.ts";
 import build_node from "./build_node.ts";
 import { build_float_operand } from "./build_operation_node.ts";
@@ -45,6 +46,18 @@ import { emit_var_store } from "./utils/stack_var.ts";
  * (Q-register register-offset addressing only encodes scale #0/#4, so the
  * counter runs in 16-byte group units and the scaled index addresses the
  * group directly — element i is groups*G.)
+ *
+ * Straight-line lane-group peel (plan.peel > 0): before the counted loop,
+ * the plan runs ONCE over `peel` whole groups with ZERO loop machinery —
+ * the fixed-trip lane-compute shape (4 × `.2d` = the references' 8-lane
+ * f64 vectors). A value-level allocation gives every lane temp one cell
+ * register per group (v0–v7), ops read cells/splats directly (no staging
+ * movs), and loads/stores address the group by immediate offset
+ * (`ldr q0, [x11, #16]`). A runtime bound guards the block with one
+ * compare+branch (`bound < peel*G + max_shift` skips it, x10 starts at 0
+ * instead of `peel`); the counted loop resumes at group `peel` either way,
+ * so big-N loops keep full vector coverage and no element is computed
+ * twice. The scalar tail is unchanged.
  *
  * Register discipline: the vector loop contains NO calls, so the
  * caller-saved scratches x9–x17 and v0–v15 are stable across iterations;
@@ -103,6 +116,47 @@ function lane_reg_of(name: string, plan: NeonPlan): string {
 /** Low-half d-register of a v-register (dN aliases vN.d[0]). */
 function d_of(vreg: string): string {
 	return `d${vreg.slice(1)}`;
+}
+
+// --- Straight-line lane-group peel ------------------------------------------
+//
+// The peel runs the plan once over `peel` whole groups before the counted
+// loop, straight-line. Register file:
+//
+// - v0–v7: value CELLS — lane temp t (def order) × group g lives in
+//   v{t*4+g}. The counted loop's own temp regs (v4–v7) are dead by the
+//   time it resumes at group `peel`, so the peel may claim the whole bank.
+// - v15→v11: operand slots, indexed by lane-op depth (depth d writes the
+//   subtree's slot v{15-d}); the planner caps peel depth at 3 so slots
+//   never reach the splat regs below.
+// - v9/v10: shared preheader splats (scalars, and literals on peel plans).
+// - v8: untouched (the counted loop's FMA park).
+//
+// The evaluator RETURNS the register holding the value, so leaf operands
+// (loads materialize into their slot, temps/splats are their own cells)
+// reach an op with no staging mov, and a store whose value is already a
+// cell or splat stores straight from it.
+
+/** Cell registers of lane temp `name` for the peel: one per group. Temps
+ *  the plan inlines into their single consumer get no cells. */
+function peel_cells(plan: NeonPlan): Map<string, string[]> {
+	const cells = new Map<string, string[]>();
+	let t = 0;
+	for (const l of plan.lanes) {
+		if (l.kind !== "temp_def" || cells.has(l.name)) continue;
+		if (plan.peel_inline.includes(l.name)) continue;
+		cells.set(
+			l.name,
+			Array.from({ length: plan.peel }, (_, g) => `v${t * 4 + g}`),
+		);
+		t++;
+	}
+	return cells;
+}
+
+/** Operand slot for lane-op depth `depth` (0 → v15 … 4 → v11). */
+function peel_slot(depth: number): string {
+	return `v${15 - depth}`;
 }
 
 /**
@@ -328,6 +382,187 @@ function lane_op(op: string, elem: ElemDesc): { mnemonic: string; arr: "2d" | "4
 	}
 }
 
+/**
+ * Peel expression evaluation (straight-line lane-group shape). Returns the
+ * register holding the group-`group` value of `e`, writing it to `target`
+ * only when materialization is needed — temps are their own cell registers,
+ * pooled scalars/literals are returned as-is, and loads land in the target
+ * slot, so an op's operands usually need no staging mov at all.
+ *
+ * `cse` is the caller-op's load cache: an op creates one map shared by its
+ * two children, so `(zr.load + zr.load)` issues one load. Nested ops make
+ * their own (a sibling's slots may be overwritten; cross-subtree reuse
+ * would be stale).
+ */
+function emit_peel_expr(
+	e: NeonLaneExpr,
+	status: BuildStatus,
+	plan: NeonPlan,
+	buffer_regs: Map<string, string>,
+	shifted_regs: Map<string, string>,
+	group: number,
+	target: string,
+	depth: number,
+	splats: Map<string, string>,
+	cells: Map<string, string[]>,
+	defs: Map<string, NeonLaneExpr>,
+	cse: Map<string, string>,
+): string {
+	switch (e.k) {
+		case "load": {
+			const key = `${e.buffer} ${e.shift} ${group}`;
+			const hit = cse.get(key);
+			if (hit) return hit;
+			const base = shifted_regs.get(`${e.buffer} ${e.shift}`) ?? buffer_regs.get(e.buffer) ?? "x11";
+			emit_asm(status, `ldr q${target.slice(1)}, [${base}, #${group * 16}]\n`);
+			cse.set(key, target);
+			return target;
+		}
+		case "lit":
+		case "scalar": {
+			const key = e.k === "scalar" ? e.name : `#${(e.node as ValueNode).value}`;
+			const splat = splats.get(key);
+			if (splat) return splat;
+			// Unpooled fallback: materialize into the target slot per group.
+			if (plan.elem.float) {
+				build_float_operand(e.node, d_of(target), status);
+				emit_asm(status, `dup ${target}.2d, ${target}.d[0]\n`);
+			} else {
+				build_node(e.node, status);
+				ensure_newline(status);
+				emit_asm(
+					status,
+					`dup ${target}.${plan.elem.arr}, ${plan.elem.arr === "2d" ? "x0" : "w0"}\n`,
+				);
+			}
+			return target;
+		}
+		case "temp": {
+			// An inlined single-consumer temp evaluates its def's tree right
+			// here (fresh CSE cache — the substituted subtree owns its own
+			// loads; all loads within one statement see pre-store state, so
+			// sharing the caller's cache would still be value-correct, but a
+			// fresh one keeps each op's cache self-contained).
+			if (plan.peel_inline.includes(e.name)) {
+				const def = defs.get(e.name)!;
+				return emit_peel_expr(
+					def,
+					status,
+					plan,
+					buffer_regs,
+					shifted_regs,
+					group,
+					target,
+					depth,
+					splats,
+					cells,
+					defs,
+					new Map(),
+				);
+			}
+			return cells.get(e.name)?.[group] ?? "v0";
+		}
+		case "op": {
+			const cache = new Map<string, string>();
+			const r_l = emit_peel_expr(
+				e.left,
+				status,
+				plan,
+				buffer_regs,
+				shifted_regs,
+				group,
+				peel_slot(depth),
+				depth + 1,
+				splats,
+				cells,
+				defs,
+				cache,
+			);
+			const r_r = emit_peel_expr(
+				e.right,
+				status,
+				plan,
+				buffer_regs,
+				shifted_regs,
+				group,
+				peel_slot(depth + 1),
+				depth + 1,
+				splats,
+				cells,
+				defs,
+				cache,
+			);
+			const { mnemonic, arr } = lane_op(e.op, plan.elem);
+			emit_asm(status, `${mnemonic} ${target}.${arr}, ${r_l}.${arr}, ${r_r}.${arr}\n`);
+			return target;
+		}
+	}
+	const _exhaustive: never = e;
+	void _exhaustive;
+	return target;
+}
+
+/** The straight-line peel body: every lane statement, per group, in
+ *  statement-major × group-minor order — all loads (statement order is
+ *  store-free ahead of them, verified by the planner) run ahead of every
+ *  store, matching the scalar event order. Zero branches. */
+function emit_neon_peel(
+	plan: NeonPlan,
+	status: BuildStatus,
+	buffer_regs: Map<string, string>,
+	shifted_regs: Map<string, string>,
+	splats: Map<string, string>,
+): void {
+	const cells = peel_cells(plan);
+	const defs = new Map<string, NeonLaneExpr>();
+	for (const lane of plan.lanes) {
+		if (lane.kind === "temp_def") defs.set(lane.name, lane.value);
+	}
+	for (const lane of plan.lanes) {
+		if (lane.kind === "reduction") continue; // peel plans carry none
+		if (lane.kind === "temp_def") {
+			if (plan.peel_inline.includes(lane.name)) continue; // fused into its consumer
+			const regs = cells.get(lane.name)!;
+			for (let g = 0; g < plan.peel; g++) {
+				const r = emit_peel_expr(
+					lane.value,
+					status,
+					plan,
+					buffer_regs,
+					shifted_regs,
+					g,
+					regs[g],
+					0,
+					splats,
+					cells,
+					defs,
+					new Map(),
+				);
+				if (r !== regs[g]) emit_asm(status, `mov ${regs[g]}.16b, ${r}.16b\n`);
+			}
+			continue;
+		}
+		const reg = buffer_regs.get(lane.buffer) ?? "x11";
+		for (let g = 0; g < plan.peel; g++) {
+			const r = emit_peel_expr(
+				lane.value,
+				status,
+				plan,
+				buffer_regs,
+				shifted_regs,
+				g,
+				peel_slot(0),
+				0,
+				splats,
+				cells,
+				defs,
+				new Map(),
+			);
+			emit_asm(status, `str q${r.slice(1)}, [${reg}, #${g * 16}]\n`);
+		}
+	}
+}
+
 function emit_lane_stmt(
 	lane: NeonLaneStmt,
 	status: BuildStatus,
@@ -450,13 +685,21 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	// Preheader: materialize each distinct loop-invariant scalar operand
 	// once (v9, v10) so in-loop references are a single mov. Collected in
 	// first-use order; overflow falls back to per-reference materialization.
+	// Peel plans pool their literals beside the scalars — a peel references
+	// each literal once per group, so the splat pays for itself immediately.
 	const splats = new Map<string, string>();
 	{
 		const scalars: Extract<NeonLaneExpr, { k: "scalar" }>[] = [];
+		const lits: Extract<NeonLaneExpr, { k: "lit" }>[] = [];
 		const visit = (e: NeonLaneExpr | undefined): void => {
 			if (!e) return;
 			if (e.k === "scalar") {
 				if (!scalars.some((s) => s.name === e.name)) scalars.push(e);
+			} else if (e.k === "lit") {
+				const key = `#${(e.node as ValueNode).value}`;
+				if (plan.peel > 0 && !lits.some((l) => `#${(l.node as ValueNode).value}` === key)) {
+					lits.push(e);
+				}
 			} else if (e.k === "op") {
 				visit(e.left);
 				visit(e.right);
@@ -468,8 +711,14 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 			else if (lane.kind === "reduction") visit(lane.operand);
 		}
 		for (const e of scalars) scalar_splat_reg(e, splats);
-		for (const [name, reg] of splats) {
-			const e = scalars.find((s) => s.name === name)!;
+		for (const e of lits) {
+			if (splats.size >= SCALAR_SPLAT_REGS.length) break;
+			splats.set(`#${(e.node as ValueNode).value}`, SCALAR_SPLAT_REGS[splats.size]);
+		}
+		for (const [key, reg] of splats) {
+			const e = key.startsWith("#")
+				? lits.find((l) => `#${(l.node as ValueNode).value}` === key)!
+				: scalars.find((s) => s.name === key)!;
 			if (plan.elem.float) {
 				build_float_operand(e.node, d_of(reg), status);
 				emit_asm(status, `dup ${reg}.2d, ${reg}.d[0]\n`);
@@ -485,6 +734,7 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	// subtraction keeps every shifted read (last lane reads element
 	// base + group - 1 + max_shift) inside the bound; negative bounds go
 	// more negative (floor via asr) and the vector loop exits immediately.
+	const label = `.Lneon_${neon_counter++}`;
 	build_node(plan.bound_node, status);
 	ensure_newline(status);
 	if (plan.max_shift > 0) emit_asm(status, `sub x0, x0, #${plan.max_shift}\n`);
@@ -493,7 +743,23 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 	emit_asm(status, `bic x9, x9, #1\n`);
 	emit_asm(status, `mov x10, #0\n`);
 
-	const label = `.Lneon_${neon_counter++}`;
+	// Straight-line lane-group peel (plan.peel > 0): one guarded pass over
+	// the first `peel` groups with zero loop machinery; the counted loop
+	// below resumes at group `peel` when the guard passes (x10 starts at 0
+	// otherwise), so no element is ever computed twice and big-N trips
+	// keep their full vector coverage. x0 still holds bound - max_shift
+	// here (mov/asr/bic are flag-neutral), so the guard is one compare +
+	// branch; it also covers the negative-bound case (b.lt taken).
+	if (plan.peel > 0) {
+		const need = plan.peel * plan.elem.group_elems;
+		const skip_label = `${label}_np`;
+		emit_asm(status, `cmp x0, #${need}\n`);
+		emit_asm(status, `b.lt ${skip_label}\n`);
+		emit_neon_peel(plan, status, buffer_regs, shifted_regs, splats);
+		emit_asm(status, `mov x10, #${plan.peel}\n`);
+		emit_asm(status, `${skip_label}:\n`);
+	}
+
 	emit_asm(status, `${label}:\n`);
 	emit_asm(status, `cmp x10, x9\n`);
 	emit_asm(status, `b.hs ${label}_end\n`);
