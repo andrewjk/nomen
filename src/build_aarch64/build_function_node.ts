@@ -268,7 +268,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	label_counter++;
 	status.function_return_label = return_label;
 
-	const is_nested = !!old_return_label && node.name !== "main";
+	// A function built while another function's body is open is NESTED —
+	// INCLUDING a `main`. The parse_with_imports test harness wraps user
+	// programs in `pub func main = () { ... }`, so a pasted full program
+	// redeclares `main` inside the wrapper. Nesting used to exclude `main`,
+	// which emitted the nested main's prologue/epilogue INLINE in the
+	// enclosing body and re-emitted the global `_main` label — clang rejects
+	// the duplicate symbol, and the enclosing main's epilogue sat unreachable
+	// after the nested `ret`. A nested main is an ordinary function under its
+	// uniquified `label_name` (emission_label); only the top-level main is
+	// the process entry point.
+	const is_nested = !!old_return_label;
+	const is_entry_main = node.name === "main" && !is_nested;
 
 	// EVERY function body builds into a fresh buffer (the nested path always
 	// did; the quadratic-fix makes it universal). Per-function isolation keeps
@@ -342,7 +353,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	let callee_idx = 0;
 
 	emit_asm(status, `.p2align 2\n`);
-	if (node.name === "main") {
+	if (is_entry_main) {
 		emit_asm(status, `.globl _main\n`);
 	}
 	// Make user functions visible to the companion C file (spawn trampolines
@@ -353,7 +364,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// sharing a source name, or mono clones of one generic parent, must not
 	// collide); top-level functions keep their own name.
 	const label_name = emission_label(node);
-	if (node.name === "main") {
+	if (is_entry_main) {
 		emit_asm(status, `_main:\n`);
 	} else {
 		emit_asm(status, `.globl ${label_name}\n`);
@@ -366,10 +377,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	emit_asm(status, `stp x29, x30, [sp, #-16]!\n`);
 
 	const is_main_with_init =
-		node.name === "main" &&
-		has_body &&
-		node.params.length > 0 &&
-		node.params[0].type.name === "Init";
+		is_entry_main && has_body && node.params.length > 0 && node.params[0].type.name === "Init";
 	let init_struct_size = 0;
 	if (is_main_with_init) {
 		const vt_size = 8;
@@ -1330,7 +1338,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.nir_alloc_shared = undefined;
 
 	if (loop_regs_used.length > 0 && has_body) {
-		const func_label = `${node.name === "main" ? "_" : ""}${label_name}:`;
+		const func_label = `${is_entry_main ? "_" : ""}${label_name}:`;
 		const func_start = status.code.indexOf(func_label);
 		const search_for = `sub sp, sp, #${stack_placeholder}`;
 		const after_prologue = func_start !== -1 ? status.code.indexOf(search_for, func_start) : -1;
@@ -1375,7 +1383,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		status.code = status.code.slice(0, status.code.length - tail_branch.length);
 	}
 	emit_asm(status, `${return_label}:\n`);
-	if (node.name === "main") {
+	if (is_entry_main) {
 		// In audit mode, call nomen_audit_check at main exit (linked from
 		// audit_runtime.c). If the pool was used (spawn was emitted), shut
 		// it down first so workers are joined and freed — otherwise the
@@ -1407,7 +1415,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// afterwards (the equality guard is only meaningful for class returns,
 	// where a returned instance may be the param itself).
 	const moved_set = status.moved;
-	if (moved_param_save_slots.size > 0 && node.name !== "main") {
+	if (moved_param_save_slots.size > 0 && !is_entry_main) {
 		const need_guard = return_is_class;
 		const need_save = !!node.return_type?.name;
 		// A string return rides the (x0, x1) fat pair — save BOTH halves

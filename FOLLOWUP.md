@@ -681,24 +681,22 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## aarch64: an early bare `return` in `main` emits invalid assembly
+## C backend: a nested `pub func main` re-emits `int main()`
 
-Recorded 2026-11-14 while testing guard-clause range refinement
-(`test/constraints.test.ts`). A `()`-returning `main` with an early bare
-`return` inside an `if` (even with a statically-false condition — e.g.
-`var int e = 1; if e < 0 { return }`) builds to assembly clang rejects:
-
-```
-asm: unbalanced stack: sp offset 32 at ret — ret
-```
-
-(the generated `main.s` also duplicates the `_main` label for some shapes —
-e.g. a `pub func main` nested inside the harness-wrapped body). The failure
-is independent of the checker change that surfaced it (verified by stashing
-the change: identical output). The same logic moved into a nested helper
-with value returns (`func probe = (out int) { ... return ... }`) builds and
-runs correctly on both backends — that is the workaround for tests. The
-fix belongs in the aarch64 backend's early-return epilogue emission (the
-prologue's 32-byte stack adjustment is not restored on the `return` path).
+Recorded 2026-11-15 while fixing the retired "aarch64: an early bare
+`return` in `main` emits invalid assembly" item (the aarch64 half: a nested
+main now emits as an ordinary function under its uniquified `label_name`).
+The C backend has the same trigger and still emits TWO `int main()`
+definitions — the nested main inline at its declaration point (with the real
+body) plus the wrapper's — and clang rejects the redefinition. The gates are
+`node.name.toLocaleLowerCase() === "main"` in `src/build_c/build_function_node.ts`
+(signature emission, the audit/fiber-drain/`return 0` epilogue, the param
+ownership skips at ~461/537/565) and `src/build_c/build_return_node.ts:176`
+(a bare `return` lowering to `return 0;`). The fix mirrors the aarch64
+shape: compute entry-ness (`name === "main"` AND not nested) once and gate
+those sites on it, so a nested main emits under `c_function_name`'s
+uniquified label as an ordinary function. Not done here: the recorded issue
+was aarch64-only, and the C change touches several ownership gates that
+deserve their own pass.
 
 ## Bundle macOS GUI builds into `.app`
