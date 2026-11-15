@@ -1,11 +1,16 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
+import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
+import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { is_owned_string_branch_value } from "../build_common/string_return_analysis.ts";
 import LetNode from "../nodes/LetNode.ts";
+import ValueNode from "../nodes/ValueNode.ts";
 import { get_source_address } from "./build_assignment_node.ts";
 import build_node from "./build_node.ts";
+import { load_nullable_has } from "./build_operation_node.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_strdup } from "./utils/audit.ts";
-import { ensure_newline } from "./utils/code_buffer.ts";
+import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
 import { emit_var_address, emit_var_store } from "./utils/stack_var.ts";
 import { emit_struct_copy } from "./utils/struct_layout.ts";
 
@@ -27,15 +32,47 @@ export default function build_let_node(node: LetNode, status: BuildStatus) {
 	// branching arm (`-> if c -> a else -> b`) joins through the SAME
 	// return_assign (the prefix protocol): its own lets already stored the
 	// slot, so only the nested build runs here.
-	if (status.return_assign && status.return_assign_struct_size) {
+	const joins_through_branches =
+		node.value.node_type === "if" ||
+		node.value.node_type === "match" ||
+		node.value.node_type === "switch";
+	// Per-arm nullable-flag join (a nullable-typed arm set on a nullable
+	// slot): the arm writes the value into the join slot AND its own
+	// null-ness into the slot's `_has` flag slot. A `null` arm writes the
+	// flag only — the slot's value bytes stay stale (every read is
+	// flag-guarded, the same contract a plain `p = null` store keeps). A
+	// nested branching arm joins through its own lets, which see the same
+	// flag slot.
+	const flag_offset = joins_through_branches ? undefined : status.return_assign_flag_offset;
+	if (flag_offset !== undefined && status.return_assign) {
+		const join_target = status.return_assign;
 		const value = node.value;
-		const joins_through_branches =
-			value.node_type === "if" || value.node_type === "match" || value.node_type === "switch";
-		if (joins_through_branches) {
-			build_node(value, status);
+		if (value.node_type === "value" && (value as ValueNode).value === "null") {
+			if (!status.return_assign_struct_size) {
+				emit_var_store(status, "xzr", join_target, status.return_assign_size ?? 8);
+			}
+			emit_asm(status, `str xzr, [x29, #${flag_offset}]\n`);
 			return;
 		}
-		get_source_address(value, status);
+		if (status.return_assign_struct_size) {
+			get_source_address(value, status);
+			ensure_newline(status);
+			emit_var_address(status, "x1", join_target);
+			emit_struct_copy("x0", "x1", 0, status.return_assign_struct_size, status);
+		} else {
+			build_node(value, status);
+			ensure_newline(status);
+			emit_var_store(status, "x0", join_target, status.return_assign_size ?? 8);
+		}
+		store_arm_nullable_flag(value, flag_offset, status);
+		return;
+	}
+	if (status.return_assign && status.return_assign_struct_size) {
+		if (joins_through_branches) {
+			build_node(node.value, status);
+			return;
+		}
+		get_source_address(node.value, status);
 		ensure_newline(status);
 		emit_var_address(status, "x1", status.return_assign);
 		emit_struct_copy("x0", "x1", 0, status.return_assign_struct_size, status);
@@ -68,4 +105,50 @@ export default function build_let_node(node: LetNode, status: BuildStatus) {
 		const size = status.return_assign_size ?? find_var_size(status.return_assign, status);
 		emit_var_store(status, "x0", status.return_assign, size);
 	}
+}
+
+/**
+ * Write an arm value's null-ness into the join slot's `_has` flag: a bare
+ * variable / field forwards its own flag (load_nullable_has), a nullable
+ * call's temp address is still in x0 after the struct copy (the copy only
+ * uses x3), and a fresh non-nullable value lands as 1.
+ */
+function store_arm_nullable_flag(
+	value: LetNode["value"],
+	flag_offset: number,
+	status: BuildStatus,
+) {
+	const t = type_from_value_node(value);
+	const nullable_typed =
+		!!t?.is_nullable && (is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status));
+	if (!nullable_typed) {
+		emit_asm(status, `mov x9, #1\n`);
+		emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+		return;
+	}
+	if (value.node_type === "func_call") {
+		// The call materialized its result (value + `_has`) into a temp; x0
+		// still holds the temp's address (emit_struct_copy only uses x3).
+		const off = is_nullable_scalar_type(t, status) ? 8 : (status.return_assign_struct_size ?? 0);
+		if (off === 0) {
+			// No struct size known — reload through the standard helper.
+			load_nullable_has(value, "x9", status);
+			ensure_newline(status);
+			emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+			return;
+		}
+		emit_asm(status, `ldr x9, [x0, #${off}]\n`);
+		emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+		return;
+	}
+	if (value.node_type === "value" || value.node_type === "access") {
+		load_nullable_has(value, "x9", status);
+		ensure_newline(status);
+		emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
+		return;
+	}
+	// Anything else is not statically null (the checker rejects mixed sets,
+	// so a non-call nullable arm is a variable or a field read).
+	emit_asm(status, `mov x9, #1\n`);
+	emit_asm(status, `str x9, [x29, #${flag_offset}]\n`);
 }

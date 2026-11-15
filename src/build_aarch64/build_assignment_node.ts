@@ -693,9 +693,39 @@ function build_nullable_struct_assignment(
 			emit_asm(status, `str x9, [x29, #${rhs_flag_slot}]\n`);
 		}
 		// A uniformly non-null branching RHS joins into a frame temp (the
-		// epilogue's clobbered x0 never survives); the flag lands as 1 —
-		// a nullable-typed arm set needs per-arm flag joins and bails.
-		if (is_scalar) {
+		// epilogue's clobbered x0 never survives); the flag lands as 1. A
+		// nullable-typed arm set joins PER-ARM: each arm stores the value
+		// into a join temp AND its own null-ness into a flag temp
+		// (build_let_node's return_assign_flag_offset path); the tail then
+		// lands both from the temps.
+		let branch_flag_slot: number | undefined;
+		const nullable_branch_arms =
+			is_branch_expression(node.right_value) &&
+			!branch_values_all_non_null(node.right_value, type_from_value_node);
+		if (nullable_branch_arms) {
+			const join_size = is_scalar ? scalar_size : get_struct_size(type_name, status);
+			const join_temp = `_nullable_join_${assign_join_counter++}`;
+			const join_slot = allocate_stack_space(status, join_size);
+			status.stack_offsets!.set(join_temp, join_slot);
+			branch_flag_slot = allocate_stack_space(status, 8, 8);
+			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
+			const old_return_assign_struct_size = status.return_assign_struct_size;
+			const old_flag_offset = status.return_assign_flag_offset;
+			status.return_assign = join_temp;
+			status.return_assign_size = join_size;
+			if (!is_scalar) status.return_assign_struct_size = join_size;
+			status.return_assign_flag_offset = branch_flag_slot;
+			build_node(node.right_value, status);
+			status.return_assign_flag_offset = old_flag_offset;
+			status.return_assign_struct_size = old_return_assign_struct_size;
+			status.return_assign_size = old_return_assign_size;
+			status.return_assign = old_return_assign;
+			// Load the joined value into the tail's conventions: x0 = the
+			// value (scalar) or the value's ADDRESS (struct copy).
+			if (is_scalar) emit_var_load(status, "x0", join_temp, scalar_size);
+			else emit_var_address(status, "x0", join_temp);
+		} else if (is_scalar) {
 			const scalar_branch_join =
 				is_branch_expression(node.right_value) &&
 				branch_values_all_non_null(node.right_value, type_from_value_node)
@@ -744,8 +774,9 @@ function build_nullable_struct_assignment(
 			const dst_offset = status.stack_offsets?.get(name);
 			emit_struct_copy("x0", "x29", dst_offset ?? 0, struct_size, status);
 		}
-		if (rhs_flag_slot !== undefined) {
-			emit_asm(status, `ldr x9, [x29, #${rhs_flag_slot}]\n`);
+		if (rhs_flag_slot !== undefined || branch_flag_slot !== undefined) {
+			const flag_slot = rhs_flag_slot ?? branch_flag_slot!;
+			emit_asm(status, `ldr x9, [x29, #${flag_slot}]\n`);
 		} else {
 			emit_asm(status, `mov x9, #1\n`);
 		}
@@ -815,7 +846,38 @@ function build_nullable_struct_assignment(
 		emit_asm(status, `str x10, [x29, #${rhs_flag_slot}]\n`);
 	}
 
-	if (field_is_scalar) {
+	// A nullable-typed branching arm set joins PER-ARM (each arm stores the
+	// value into a join temp and its own null-ness into a flag temp —
+	// build_let_node's return_assign_flag_offset path); the tail lands both.
+	// Uniformly non-null arm sets keep the word join + flag-1.
+	let branch_flag_slot: number | undefined;
+	if (
+		is_branch_expression(node.right_value) &&
+		!branch_values_all_non_null(node.right_value, type_from_value_node)
+	) {
+		const join_size = field_is_scalar
+			? aarch64_size(field_access.type?.name || "int")
+			: get_struct_size(field_access.type?.name || "", status);
+		const join_temp = `_nullable_join_${assign_join_counter++}`;
+		const join_slot = allocate_stack_space(status, join_size);
+		status.stack_offsets!.set(join_temp, join_slot);
+		branch_flag_slot = allocate_stack_space(status, 8, 8);
+		const old_return_assign = status.return_assign;
+		const old_return_assign_size = status.return_assign_size;
+		const old_return_assign_struct_size = status.return_assign_struct_size;
+		const old_flag_offset = status.return_assign_flag_offset;
+		status.return_assign = join_temp;
+		status.return_assign_size = join_size;
+		if (!field_is_scalar) status.return_assign_struct_size = join_size;
+		status.return_assign_flag_offset = branch_flag_slot;
+		build_node(node.right_value, status);
+		status.return_assign_flag_offset = old_flag_offset;
+		status.return_assign_struct_size = old_return_assign_struct_size;
+		status.return_assign_size = old_return_assign_size;
+		status.return_assign = old_return_assign;
+		if (field_is_scalar) emit_var_load(status, "x0", join_temp, join_size);
+		else emit_var_address(status, "x0", join_temp);
+	} else if (field_is_scalar) {
 		// A uniformly non-null branching RHS joins into a frame temp (the
 		// epilogue's clobbered x0 never survives); the flag lands as 1.
 		const scalar_branch_join =
@@ -883,16 +945,18 @@ function build_nullable_struct_assignment(
 	// x0 = source address/value, x9 = object base. Copy value in, set flag.
 	if (field_is_scalar) {
 		emit_typed_store(status, "x0", "x9", field_offset, aarch64_size(type_name));
-		if (rhs_flag_slot !== undefined) {
-			emit_asm(status, `ldr w10, [x29, #${rhs_flag_slot}]\n`);
+		if (rhs_flag_slot !== undefined || branch_flag_slot !== undefined) {
+			const flag_slot = rhs_flag_slot ?? branch_flag_slot!;
+			emit_asm(status, `ldr w10, [x29, #${flag_slot}]\n`);
 		} else {
 			emit_asm(status, `mov w10, #1\n`);
 		}
 		emit_asm(status, `strb w10, [x9, #${has_offset}]\n`);
 	} else {
 		emit_struct_copy("x0", "x9", field_offset, struct_size, status);
-		if (rhs_flag_slot !== undefined) {
-			emit_asm(status, `ldr x0, [x29, #${rhs_flag_slot}]\n`);
+		if (rhs_flag_slot !== undefined || branch_flag_slot !== undefined) {
+			const flag_slot = rhs_flag_slot ?? branch_flag_slot!;
+			emit_asm(status, `ldr x0, [x29, #${flag_slot}]\n`);
 		} else {
 			emit_asm(status, `mov x0, #1\n`);
 		}

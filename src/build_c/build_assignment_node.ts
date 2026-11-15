@@ -317,25 +317,31 @@ export default function build_assignment_node(
 				status.code += `${lhs_expr} = `;
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				status.current_nullable_call_flag = old;
-			} else if (
-				is_branch_expression(node.right_value) &&
-				branch_values_all_non_null(node.right_value, type_from_value_node)
-			) {
-				// A uniformly non-null branching RHS (`n = match … { … }` on an
-				// `int?` slot) joins into a temp — a C `switch` statement cannot
-				// ride in expression position — and the flag lands as 1. A
-				// nullable-typed arm set needs per-arm flag joins and keeps the
-				// historical (broken) lowering.
+			} else if (is_branch_expression(node.right_value)) {
+				// A branching RHS (`n = match … { … }` on an `int?` slot)
+				// joins into a temp — a C `switch` statement cannot ride in
+				// expression position. A uniformly non-null arm set joins the
+				// value and the flag lands as 1; a nullable-typed arm set
+				// joins PER-ARM: each arm stores the value into the temp AND
+				// its own null-ness into the slot's flag (build_let_node's
+				// return_assign_flag path) — a `null` arm lands as a dropped
+				// flag, a nullable variable arm forwards its own `_has`, a
+				// non-nullable arm lands as 1.
+				const all_non_null = branch_values_all_non_null(node.right_value, type_from_value_node);
 				const temp = `_reassign_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
 				const join_c = slot_struct
 					? `struct ${slot_struct_name}`
 					: c_type(slot_type?.name || "int");
 				status.code += `${join_c} ${temp};\n`;
 				const old_return_assign = status.return_assign;
+				const old_flag = status.return_assign_flag;
 				status.return_assign = temp;
+				if (!all_non_null) status.return_assign_flag = flag;
 				build_node(node.right_value, status);
+				status.return_assign_flag = old_flag;
 				status.return_assign = old_return_assign;
-				status.code += `${lhs_expr} = ${temp};\n${flag} = 1`;
+				status.code += `${lhs_expr} = ${temp}`;
+				if (all_non_null) status.code += `;\n${flag} = 1`;
 			} else {
 				const rhs_flag = nullable_value_flag_expr(node.right_value, status);
 				status.code += `${lhs_expr} = `;

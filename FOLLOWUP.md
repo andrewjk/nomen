@@ -620,10 +620,6 @@ reassignments re-run as `x = mv <join temp>` so the proven mv-donor paths
 own the displaced reclaim). Still open — the classifier returns undefined
 and the statement keeps the historical broken lowering:
 
-- **Nullable-typed arm sets** (`n = match c { case .a -> maybe1 case .b ->
-maybe2 }` where every arm is `T?`): needs per-arm flag joins (each arm
-  writes the slot's `_has` from its own value). Uniformly-non-null arm
-  sets — the checker rejects mixed sets — are covered.
 - **Box<T>-wrapper locals** (the stamped `is_class` heap-handle storage):
   the word join stores the handle but does not consume the anchor
   machinery, so a displaced instance may leak. No test exercises it.

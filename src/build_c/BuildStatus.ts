@@ -242,6 +242,22 @@ export default interface BuildStatus {
 	 */
 	return_assign_struct_size?: number;
 	/**
+	 * C backend. The nullable-slot `_has` flag lvalue the current join's arms
+	 * must write (a nullable-typed arm set joined per-arm: each arm stores the
+	 * value into return_assign AND its own null-ness into this flag — a null
+	 * literal arm writes the flag only). Set by the nullable-slot assignment
+	 * arm in build_assignment_node; consumed by build_let_node.
+	 */
+	return_assign_flag?: string;
+	/**
+	 * aarch64 only. The stack offset of the nullable-slot `_has` flag slot the
+	 * current join's arms must write — the offset twin of return_assign_flag
+	 * (C writes a named lvalue, aarch64 a frame slot). Set by the nullable
+	 * local/field assignment arms in build_assignment_node; consumed by
+	 * build_let_node.
+	 */
+	return_assign_flag_offset?: number;
+	/**
 	 * Set while building the branches of a string-typed match/switch/if
 	 * EXPRESSION whose branches are mixed (at least one produces a fresh owned
 	 * heap string, e.g. an interpolation): every non-owned branch value
