@@ -499,12 +499,34 @@ export default function build_assignment_node(
 				const saved_len = begin_code_scratch(status);
 				build_node(node.left_value, status);
 				const field_access = end_code_scratch(status, saved_len);
+				// A branching RHS (`holder.node = match …`) joins into a temp
+				// FIRST (the scrutinee may still read the displaced field) — a
+				// C `switch` statement cannot ride in expression position, and
+				// the plain fall-through would emit `field = switch…` (invalid
+				// C). The displaced destroy below then runs, and the joined
+				// handle stores.
+				let branch_temp: string | undefined;
+				if (!node.operator && is_branch_expression(node.right_value)) {
+					const join = branching_join(field_type, status);
+					if (join && join.kind === "word") {
+						branch_temp = `_reassign_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+						status.code += `struct ${field_struct.name}* ${branch_temp};\n`;
+						const old_return_assign = status.return_assign;
+						status.return_assign = branch_temp;
+						build_node(node.right_value, status);
+						status.return_assign = old_return_assign;
+					}
+				}
 				if (!first_init_write) {
 					if (field_type?.is_nullable) {
 						status.code += `if (${field_access}) { ${field_struct.name}_destroy(${field_access}); free(${field_access}); }\n`;
 					} else {
 						status.code += `${field_struct.name}_destroy(${field_access}); free(${field_access});\n`;
 					}
+				}
+				if (branch_temp) {
+					status.code += `${field_access} = ${branch_temp};\n`;
+					return;
 				}
 				// Ownership transfer: assigning a bare variable to an owned
 				// (`mv`) class field moves ownership from the source variable

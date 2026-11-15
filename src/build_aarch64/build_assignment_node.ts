@@ -3221,6 +3221,26 @@ export default function build_assignment_node(
 						status,
 					);
 					const offset = get_field_offset(target_type.name, field_name, status);
+					// A branching RHS joins into a frame temp FIRST (the arms
+					// may still read the displaced field) — the match statement
+					// cannot ride in expression position, and the epilogue's
+					// scrutinee cleanup would clobber the x0 the store reads.
+					let field_branch_temp: string | undefined;
+					if (!node.operator && is_branch_expression(node.right_value)) {
+						const join = branching_join(field_type, status);
+						if (join && join.kind === "word") {
+							field_branch_temp = `_field_join_${assign_join_counter++}`;
+							const join_slot = allocate_stack_space(status, 8, 8);
+							status.stack_offsets!.set(field_branch_temp, join_slot);
+							const old_return_assign = status.return_assign;
+							const old_return_assign_size = status.return_assign_size;
+							status.return_assign = field_branch_temp;
+							status.return_assign_size = 8;
+							build_node(node.right_value, status);
+							status.return_assign = old_return_assign;
+							status.return_assign_size = old_return_assign_size;
+						}
+					}
 					mark_moved_if_struct(node.right_value, status);
 
 					const field_target_var =
@@ -3266,7 +3286,11 @@ export default function build_assignment_node(
 						}
 					}
 
-					emit_rhs_value(node.right_value, nir_rhs, status);
+					if (field_branch_temp) {
+						emit_var_load(status, "x0", field_branch_temp, 8);
+					} else {
+						emit_rhs_value(node.right_value, nir_rhs, status);
+					}
 					ensure_newline(status);
 					emit_asm(status, `mov x2, x0\n`);
 
