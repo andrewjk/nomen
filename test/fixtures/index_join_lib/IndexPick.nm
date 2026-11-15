@@ -1,0 +1,57 @@
+// Minimal library fixture for the assignment-position INDEX-TARGET branching
+// join (`p[i] = match/switch/if …`). Raw pointer indexing is `unsafe`-gated
+// (System library only), so the shape can only be written behind the library
+// boundary — this fixture is the smallest program that reaches the join and
+// can be RUN on both backends.
+
+foreign func malloc = (int bytes, out uint64)
+foreign func free = (uint64 address)
+foreign func putchar = (int c, out int)
+
+/** Print a non-negative decimal integer (the fixture has no System Console). **/
+pub func print_int = (int n) {
+	if n >= 10 {
+		print_int(n / 10)
+	}
+	putchar(48 + n % 10)
+}
+
+/** Print one ASCII space. **/
+pub func print_space = () {
+	putchar(32)
+}
+
+/**
+ * Write a branch-selected value through a raw pointer slot, then read it back.
+ * The `p[i] = match …` store lowers through the index-target join on both
+ * backends (a branch expression is a statement, not an expression).
+ **/
+pub func write_and_read = (int index, int mode, out int) {
+	unsafe {
+		var uint64 mem = malloc(16)
+		var ptr int p = mem as ptr int
+		p[index] = match mode {
+			case 0 -> 10
+			case 1 -> 20
+		} else -> 30
+		var int read_back = p[index]
+		free(mem)
+		return read_back
+	}
+}
+
+/** The same join with a `switch` RHS, writing and reading two slots. **/
+pub func write_two = (int mode, out int) {
+	unsafe {
+		var uint64 mem = malloc(16)
+		var ptr int p = mem as ptr int
+		p[0] = switch {
+			case mode == 0 -> 1
+			case mode == 1 -> 2
+		} else -> 3
+		p[1] = if mode > 0 -> 4 else -> 5
+		var int sum = p[0] + p[1]
+		free(mem)
+		return sum
+	}
+}

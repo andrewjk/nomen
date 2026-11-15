@@ -605,27 +605,6 @@ lift (the binding types `T`, checked-ness discharges at the lift)? And does
 `r = expr!` compose with the in-flight-binding machinery the initializers
 use?
 
-## Assignment-position branching residuals (`x = match/switch/if …`)
-
-The broad pass shipped 2026-11-13: a branching RHS (match / switch / if —
-and `try/catch`, which desugars to a match) now joins into every common
-destination on both backends — string/word locals, struct/mv-struct/
-enum-with-data locals, container (mono) locals, scalar and struct fields,
-string fields, uniformly-non-null nullable slots, and declaration-position
-struct/enum matches on aarch64 (`branching_join` in
-`src/build_common/branching_join.ts` classifies the destination; the
-aarch64 `build_let_node` struct join stores via the
-`return_assign_struct_size` address+copy protocol; struct-kind local
-reassignments re-run as `x = mv <join temp>` so the proven mv-donor paths
-own the displaced reclaim). Still open — the classifier returns undefined
-and the statement keeps the historical broken lowering:
-
-- **Index targets** (`xs[i] = match …`): the lowering WAS fixed on both
-  backends (`build_index_store` join + the C lvalue-capture arm), but the
-  shape is untestable from user code — raw pointer indexing is
-  `unsafe`-gated (System library only), so no user-facing test can
-  exercise it.
-
 ## Share-card tokenizer: replace Shiki on the server
 
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
