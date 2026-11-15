@@ -51,7 +51,12 @@ import {
 } from "./utils/ownership.ts";
 import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
-import { boxing_owns_error, is_trait_type, is_value_struct_conformer } from "./utils/trait_slot.ts";
+import {
+	boxable_branch_trait_name,
+	boxing_owns_error,
+	is_trait_type,
+	is_value_struct_conformer,
+} from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -425,8 +430,15 @@ export default function check_assignment_node(
 				}
 				// A trait-typed source falls through: the handle aliases.
 			} else if (assign.right_value.node_type !== "func_call") {
+				// A branching RHS whose arms are uniformly fresh temporaries
+				// of one conformer (or of the trait itself) joins into a temp
+				// and boxes the winner — the same free contract a direct
+				// func_call RHS takes.
 				const init_type = type_from_value_node(assign.right_value, status);
-				if (is_value_struct_conformer(init_type.name, trait_name, status)) {
+				if (
+					is_value_struct_conformer(init_type.name, trait_name, status) &&
+					!boxable_branch_trait_name(assign.right_value, trait_name, status)
+				) {
 					add_error(status, boxing_owns_error(), assign.right_value.start);
 					return false;
 				}

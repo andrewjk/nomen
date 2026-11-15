@@ -5,6 +5,7 @@ import emit_field_overrides, {
 import branching_join, {
 	branch_values_all_non_null,
 	is_branch_expression,
+	uniform_branch_conformer,
 } from "../build_common/branching_join.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
@@ -41,6 +42,7 @@ import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import type FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
@@ -1070,6 +1072,49 @@ export default function build_assignment_node(
 			const lhs_is_alias_copy = !!status.class_alias_vars?.has(lhs_name);
 			const lhs_has_alias = !!status.aliased_class_sources?.has(lhs_name);
 			const reclaim = !lhs_is_alias_copy && !lhs_has_alias;
+			// A branching RHS joins FIRST (the arms may still read the
+			// destination — a C `switch` statement cannot ride in expression
+			// position either): concrete conformer arms join into a
+			// concrete-struct temp and box the winner at the join point (the
+			// return path's concrete-branch boxing, lifted here); trait-handle
+			// arms join the handle word. The displaced reclaim below then
+			// runs unchanged.
+			let branch_join_temp: string | undefined;
+			let branch_join_struct: StructNode | undefined;
+			let branch_join_trait_handle = false;
+			if (is_branch_expression(rhs)) {
+				const uniform = uniform_branch_conformer(
+					rhs,
+					lhs_trait_class,
+					status,
+					type_from_value_node,
+				);
+				if (uniform?.struct || uniform?.is_trait_handle) {
+					branch_join_struct = uniform.struct;
+					branch_join_trait_handle = !!uniform.is_trait_handle;
+					branch_join_temp = `_tjoin_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+					if (branch_join_struct) {
+						status.code += `struct ${branch_join_struct.name} ${branch_join_temp};\n`;
+					} else {
+						status.code += `void *${branch_join_temp};\n`;
+					}
+					const old_return_assign = status.return_assign;
+					status.return_assign = branch_join_temp;
+					build_node(rhs, status);
+					status.return_assign = old_return_assign;
+				}
+			}
+			if (branch_join_temp && branch_join_trait_handle) {
+				if (reclaim) {
+					if (lhs_type?.is_nullable) {
+						status.code += `if (${lhs_name}) { ${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name}); }\n`;
+					} else {
+						status.code += `${lhs_trait_class}_destroy(${lhs_name}); free(${lhs_name});\n`;
+					}
+				}
+				status.code += `${lhs_name} = ${branch_join_temp};\n`;
+				return;
+			}
 			// STRUCT_PLAN_3 B4 — a value-struct conformer RHS boxes into the
 			// trait slot (T1: the annotation is the marker; T2: boxing takes
 			// ownership). A bare concrete local MOVED in: strdup its
@@ -1077,13 +1122,16 @@ export default function build_assignment_node(
 			// box, and drop the donor's teardown and records. A fresh
 			// temporary (constructor / struct-returning call) constructs into
 			// a stack temp, strdups, and moves into the box.
-			const rhs_type = type_from_value_node(rhs);
+			const rhs_type = branch_join_struct
+				? new Type(branch_join_struct.name)
+				: type_from_value_node(rhs);
 			const rhs_concrete_struct =
-				rhs_type?.name && !status.traits.find((t) => t.name === rhs_type.name)
+				branch_join_struct ??
+				(rhs_type?.name && !status.traits.find((t) => t.name === rhs_type.name)
 					? status.structs.find(
 							(st) => st.name === rhs_type.name && !st.is_simple_type && !st.is_class,
 						)
-					: undefined;
+					: undefined);
 			if (rhs_concrete_struct) {
 				// A mv struct's direct string fields are uniformly heap;
 				// the mv transfers them to the box (strdup'ing would orphan
@@ -1130,10 +1178,15 @@ export default function build_assignment_node(
 					status.suppress_dereference = false;
 					status.code += `;\n`;
 				} else {
-					const box_temp = `_tbox_${id}`;
-					status.code += `struct ${rhs_concrete_struct.name} ${box_temp} = `;
-					emit_rhs_value(rhs, nir_rhs, status);
-					status.code += `;\n`;
+					// Fresh temporary (constructor / struct-returning call — or
+					// the prebuilt branching join temp): construct into a stack
+					// temp, strdup its string fields, mv the bytes into the box.
+					const box_temp = branch_join_temp ?? `_tbox_${id}`;
+					if (!branch_join_temp) {
+						status.code += `struct ${rhs_concrete_struct.name} ${box_temp} = `;
+						emit_rhs_value(rhs, nir_rhs, status);
+						status.code += `;\n`;
+					}
 					for (const f of string_fields) {
 						status.code += `${box_temp}.${f.name} = nomen_str_dup(${box_temp}.${f.name});\n`;
 					}

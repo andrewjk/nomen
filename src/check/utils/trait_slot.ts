@@ -1,4 +1,7 @@
+import { collect_expression_branch_values } from "../../build_common/string_return_analysis.ts";
+import type BaseNode from "../../nodes/BaseNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import type_from_value_node from "./type_from_value_node.ts";
 
 /**
  * Trait-object representation (STRUCT_PLAN_3 B4).
@@ -56,4 +59,35 @@ export function is_value_struct_conformer(
 /** The one error wording for boxing a value that has no owner to give (T2). */
 export function boxing_owns_error(): string {
 	return `boxing owns its instance — mv the value, or copy it ('.copy()')`;
+}
+
+/**
+ * Whether a branching initializer/RHS (match/switch/if — `try/catch` desugars
+ * to a match) can box into a trait-typed destination, and under which arm
+ * shape: every branch value must be a FRESH temporary (a func_call — the
+ * same contract the direct func_call initializer takes; a bare conformer
+ * local would byte-share its owned state with the box the join builds) and
+ * the branch values must be uniformly ONE type — a single concrete
+ * value-struct conformer (the box-at-join shape) or the trait itself (a
+ * handle join). Returns the uniform branch type name, or undefined when the
+ * shape keeps the boxing rejection.
+ */
+export function boxable_branch_trait_name(
+	rhs: BaseNode,
+	trait_name: string,
+	status: CheckStatus,
+): string | undefined {
+	if (rhs.node_type !== "match" && rhs.node_type !== "switch" && rhs.node_type !== "if") {
+		return undefined;
+	}
+	const values = collect_expression_branch_values(rhs);
+	if (!values.length) return undefined;
+	for (const v of values) {
+		if (v.node_type !== "func_call") return undefined;
+	}
+	const first = type_from_value_node(values[0], status)?.name;
+	if (!first) return undefined;
+	if (!values.every((v) => type_from_value_node(v, status)?.name === first)) return undefined;
+	if (first === trait_name) return first;
+	return is_value_struct_conformer(first, trait_name, status) ? first : undefined;
 }

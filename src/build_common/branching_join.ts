@@ -1,5 +1,6 @@
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import type ValueNode from "../nodes/ValueNode.ts";
 import { mono_type_name } from "./mono_name.ts";
@@ -85,4 +86,49 @@ export function branch_values_all_non_null(
 		if (type_from_value_node(v)?.is_nullable) return false;
 	}
 	return true;
+}
+
+export interface UniformBranchConformer {
+	/**
+	 * The uniform concrete value-struct conformer every arm produces (the
+	 * box-at-join shape). Undefined when the arms are uniformly trait-typed.
+	 */
+	struct?: StructNode;
+	/**
+	 * The arms are uniformly TRAIT-typed handle producers (fresh calls
+	 * returning the trait): the join is a handle word store, no boxing.
+	 */
+	is_trait_handle?: boolean;
+}
+
+/**
+ * The uniform trait-position arm shape of a branching expression
+ * (`x = match …` into a trait-typed destination): every branch value must be
+ * a FRESH temporary (a func_call — the same contract a direct func_call
+ * initializer takes; a bare conformer local would byte-share its owned state
+ * with the box the join builds), and the branch values must be uniformly ONE
+ * type — a single concrete value-struct conformer of `trait_name`, or the
+ * trait itself (a handle join). Anything else returns undefined and the call
+ * site keeps the historical rejection.
+ */
+export function uniform_branch_conformer(
+	node: BaseNode,
+	trait_name: string,
+	status: BuildStatus,
+	type_from_value_node: (node: BaseNode) => Type | undefined,
+): UniformBranchConformer | undefined {
+	const values = collect_expression_branch_values(node) as BaseNode[];
+	if (!values.length) return undefined;
+	for (const v of values) {
+		if (v.node_type !== "func_call") return undefined;
+	}
+	const first = type_from_value_node(values[0])?.name;
+	if (!first) return undefined;
+	if (!values.every((v) => type_from_value_node(v)?.name === first)) return undefined;
+	if (first === trait_name) return { is_trait_handle: true };
+	const struct = status.structs.find(
+		(s) => s.name === first && !s.is_simple_type && !s.is_class && !s.is_generic,
+	);
+	if (!struct) return undefined;
+	return { struct };
 }

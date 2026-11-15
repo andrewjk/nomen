@@ -2,6 +2,7 @@ import emit_field_overrides, {
 	has_field_overrides,
 	hoist_field_overrides,
 } from "../build/emit_field_overrides.ts";
+import { is_branch_expression, uniform_branch_conformer } from "../build_common/branching_join.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import {
 	is_normalized_struct_call,
@@ -506,6 +507,60 @@ export default function build_declaration_node(
 			emit_init_value(node.value, nir_init, status);
 			status.code += `;\n`;
 			return;
+		}
+		// STRUCT_PLAN_3 B4 — a trait-typed local initialized from a
+		// branching expression (`var Speaker s = match … { case .a ->
+		// Dog() }`): the arms are uniformly fresh temporaries of ONE
+		// concrete conformer (the checker's gate), so join them into a
+		// concrete-struct temp (a C `switch` statement cannot ride as an
+		// initializer) and box the winner at the join point — the same
+		// malloc + strdup contract as the direct initializer below.
+		// Uniformly trait-typed arms join the handle word instead.
+		if (storage_is_trait_concrete && node.value && is_branch_expression(node.value)) {
+			const uniform = uniform_branch_conformer(
+				node.value,
+				node.type.name,
+				status,
+				type_from_value_node,
+			);
+			const uniform_struct = uniform?.struct;
+			if (uniform_struct || uniform?.is_trait_handle) {
+				if (!status.class_vars) status.class_vars = new Set();
+				status.class_vars.add(safe_name);
+				node.trait_class_trait = node.type.name;
+				if (node.type?.name) {
+					if (!status.variable_types) status.variable_types = new Map();
+					status.variable_types.set(safe_name, node.type);
+				}
+				status.scoped_declarations.push(node);
+				if (uniform!.is_trait_handle) {
+					status.code += `void *${safe_name};\n`;
+					const old_return_assign = status.return_assign;
+					status.return_assign = safe_name;
+					build_node(node.value, status);
+					status.return_assign = old_return_assign;
+					return;
+				}
+				const strdup_string_fields =
+					!owns_strings_uniformly(uniform_struct!) &&
+					!uniform_struct!.functions.some((f) => f.name === "#destroy") &&
+					struct_needs_auto_destroy(uniform_struct!, status);
+				const string_fields = strdup_string_fields ? direct_string_fields(uniform_struct!) : [];
+				const temp = `_box_${safe_name}`;
+				status.code += `struct ${uniform_struct!.name} ${temp};\n`;
+				const old_return_assign = status.return_assign;
+				status.return_assign = temp;
+				build_node(node.value, status);
+				status.return_assign = old_return_assign;
+				for (const f of string_fields) {
+					status.code += `${temp}.${f.name} = nomen_str_dup(${temp}.${f.name});\n`;
+				}
+				status.code += node.is_module_init
+					? `${safe_name} = (void *)malloc(sizeof(struct ${uniform_struct!.name}));\n`
+					: `void *${safe_name} = (void *)malloc(sizeof(struct ${uniform_struct!.name}));\n`;
+				status.code += `*(struct ${uniform_struct!.name} *)${safe_name} = ${temp};\n`;
+				return;
+			}
 		}
 		// STRUCT_PLAN_3 B4 — a trait-typed local whose concrete storage is a
 		// VALUE struct boxes it (T1/T4: the annotation is the marker; the

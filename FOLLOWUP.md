@@ -620,11 +620,6 @@ reassignments re-run as `x = mv <join temp>` so the proven mv-donor paths
 own the displaced reclaim). Still open — the classifier returns undefined
 and the statement keeps the historical broken lowering:
 
-- **Trait-typed locals** (`var Speaker s = match … { case .a -> Dog() }`):
-  verified broken on both backends. A trait join needs the return path's
-  concrete-branch boxing at the join point (conformer values boxed into
-  heap handles, displaced handle destroyed through the trait shim) —
-  `build_return_node`'s trait-boxing join is the pattern to lift.
 - **Nullable-typed arm sets** (`n = match c { case .a -> maybe1 case .b ->
 maybe2 }` where every arm is `T?`): needs per-arm flag joins (each arm
   writes the slot's `_has` from its own value). Uniformly-non-null arm

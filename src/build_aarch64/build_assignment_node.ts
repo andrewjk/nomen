@@ -7,6 +7,7 @@ import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import branching_join, {
 	branch_values_all_non_null,
 	is_branch_expression,
+	uniform_branch_conformer,
 } from "../build_common/branching_join.ts";
 import { is_normalized_struct_call } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
@@ -36,6 +37,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import NullAccessNode from "../nodes/NullAccessNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import {
@@ -1306,7 +1308,13 @@ export default function build_assignment_node(
 		// reclaimed via the `<Trait>_destroy` shim before the new handle
 		// lands. (`rhs_is_struct` alone misses a trait-typed RHS — `r = pick()`.)
 		const rhs_trait_rated_early = !!status.traits.find((t) => t.name === rhs_type.name);
-		if ((rhs_is_struct || rhs_trait_rated_early) && !node.operator) {
+		// A branching RHS also enters: a trait-typed destination's join runs
+		// on the BRANCH VALUES (the match expression's own type is unstamped
+		// for trait joins — the checker leaves it to the destination).
+		if (
+			(rhs_is_struct || rhs_trait_rated_early || is_branch_expression(node.right_value)) &&
+			!node.operator
+		) {
 			// A `ref` TRAIT param's reassignment writes THROUGH to the caller's
 			// boxed-handle slot (`ref_trait_slots` holds its address): reclaim
 			// the displaced handle via the trait's destroy shim, box the new
@@ -1460,7 +1468,12 @@ export default function build_assignment_node(
 							(s) => s.name === rhs_type.name && !s.is_simple_type && !s.is_generic && !s.is_class,
 						)
 					: undefined;
-			if (node.right_value.node_type === "func_call" || rhs_value_struct || rhs_trait_rated) {
+			if (
+				node.right_value.node_type === "func_call" ||
+				rhs_value_struct ||
+				rhs_trait_rated ||
+				is_branch_expression(node.right_value)
+			) {
 				const func_call = node.right_value as import("../nodes/FunctionCallNode.ts").default;
 				const is_constructor = status.structs.find(
 					(s) => s.name === func_call.name && !s.is_simple_type,
@@ -1490,6 +1503,44 @@ export default function build_assignment_node(
 					const trait_class_trait = trait_class_for(status, name);
 					if (trait_class_trait !== undefined) {
 						const decl_frame = status.class_decl_frame?.get(name);
+						// A branching RHS joins FIRST (the arms may still read
+						// the destination): concrete conformer arms join into a
+						// frame temp and box the winner at the join point (the
+						// return path's concrete-branch boxing, lifted here);
+						// trait-handle arms join the handle word. The displaced
+						// reclaim below then runs unchanged, and the joined
+						// winner is boxed/anchored instead of the raw RHS.
+						let trait_join_temp: string | undefined;
+						let trait_join_struct: StructNode | undefined;
+						let trait_join_trait_handle = false;
+						if (is_branch_expression(node.right_value)) {
+							const uniform = uniform_branch_conformer(
+								node.right_value,
+								trait_class_trait,
+								status,
+								type_from_value_node,
+							);
+							if (uniform?.struct || uniform?.is_trait_handle) {
+								trait_join_struct = uniform.struct;
+								trait_join_trait_handle = !!uniform.is_trait_handle;
+								trait_join_temp = `_trait_join_${assign_join_counter++}`;
+								const join_size = trait_join_struct
+									? get_struct_size(trait_join_struct.name, status)
+									: 8;
+								const join_slot = allocate_stack_space(status, join_size, 8);
+								status.stack_offsets!.set(trait_join_temp, join_slot);
+								const old_return_assign = status.return_assign;
+								const old_return_assign_size = status.return_assign_size;
+								const old_return_assign_struct_size = status.return_assign_struct_size;
+								status.return_assign = trait_join_temp;
+								status.return_assign_size = join_size;
+								if (trait_join_struct) status.return_assign_struct_size = join_size;
+								build_node(node.right_value, status);
+								status.return_assign_struct_size = old_return_assign_struct_size;
+								status.return_assign_size = old_return_assign_size;
+								status.return_assign = old_return_assign;
+							}
+						}
 						// Only reclaim the displaced value when the slot actually
 						// OWNS it (it has an anchor). A borrowed slot
 						// (`var Rule p = rules.at(0)` — not `owned_return`) has
@@ -1510,6 +1561,45 @@ export default function build_assignment_node(
 							emit_asm(status, `${no_free_label}:\n`);
 						}
 						status.moved?.delete(name);
+						if (trait_join_temp && trait_join_struct) {
+							// Box the joined winner (the checker's gate keeps the
+							// arms fresh temporaries, so the bytes are freely
+							// owned): malloc + byte copy + strdup unowned string
+							// fields, then anchor the box tagged with the trait.
+							const strdup_string_fields =
+								!owns_strings_uniformly(trait_join_struct) &&
+								!trait_join_struct.functions.some((f) => f.name === "#destroy") &&
+								struct_needs_auto_destroy(trait_join_struct, status);
+							const box_size = get_struct_size(trait_join_struct.name, status);
+							const join_slot = status.stack_offsets!.get(trait_join_temp)!;
+							emit_asm(status, `mov x0, #${box_size}\n`);
+							emit_malloc(status);
+							emit_var_store(status, "x0", name, 8);
+							anchor_heap_pointer(status, name, decl_frame);
+							mark_anchor_destroy(status, name, trait_class_trait);
+							emit_asm(status, `mov x1, x0\n`);
+							emit_asm(status, `add x2, x29, #${join_slot}\n`);
+							const words = Math.ceil(box_size / 8);
+							for (let w = 0; w < words; w++) {
+								emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+								emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+							}
+							emit_var_load(status, "x0", name, 8);
+							if (strdup_string_fields) {
+								emit_string_field_strdups_at(status, trait_join_struct.name, "x0");
+							}
+							build_swap(node, status, nir_swap);
+							return;
+						}
+						if (trait_join_temp && trait_join_trait_handle) {
+							// Trait-handle arms joined a word: anchor + store it.
+							emit_var_load(status, "x0", trait_join_temp, 8);
+							anchor_heap_pointer(status, name, decl_frame);
+							mark_anchor_destroy(status, name, trait_class_trait);
+							emit_var_store(status, "x0", name, 8);
+							build_swap(node, status, nir_swap);
+							return;
+						}
 						if (rhs_value_struct) {
 							// BOX the conformer. Fresh constructor → run the ctor
 							// into the malloc'd box; bare local donor → mv the

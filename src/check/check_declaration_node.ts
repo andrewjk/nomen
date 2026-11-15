@@ -50,7 +50,12 @@ import {
 } from "./utils/ownership.ts";
 import reject_pointer_type from "./utils/reject_pointer_type.ts";
 import { enforce_root_not_frozen } from "./utils/spawn_region.ts";
-import { boxing_owns_error, is_trait_type, is_value_struct_conformer } from "./utils/trait_slot.ts";
+import {
+	boxable_branch_trait_name,
+	boxing_owns_error,
+	is_trait_type,
+	is_value_struct_conformer,
+} from "./utils/trait_slot.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 import {
@@ -563,8 +568,15 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				// box would share its owned state with the owner that stays
 				// behind. (A trait-typed initializer here is a pointer the
 				// callee already owns — the method-return path, unchanged.)
+				// A branching initializer whose arms are uniformly fresh
+				// temporaries of one conformer (or of the trait itself) joins
+				// into a temp and boxes the winner — the same free contract a
+				// direct func_call initializer takes.
 				const init_type = type_from_value_node(decl.value, status);
-				if (is_value_struct_conformer(init_type.name, decl.type.name!, status)) {
+				if (
+					is_value_struct_conformer(init_type.name, decl.type.name!, status) &&
+					!boxable_branch_trait_name(decl.value, decl.type.name!, status)
+				) {
 					add_error(status, boxing_owns_error(), decl.value.start);
 				}
 			}

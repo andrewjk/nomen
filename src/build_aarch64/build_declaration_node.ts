@@ -5,6 +5,7 @@ import emit_field_overrides, {
 import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import { box_ctor_direct_ctor_arg } from "../build_common/box_ctor_in_place.ts";
+import { is_branch_expression, uniform_branch_conformer } from "../build_common/branching_join.ts";
 import call_in_set from "../build_common/call_in_set.ts";
 import { record_call_init_string_fields } from "../build_common/call_init_string_fields.ts";
 import record_ctor_heap_default_fields from "../build_common/ctor_heap_default_fields.ts";
@@ -252,12 +253,14 @@ function declare_trait_handle_storage(status: BuildStatus, node: DeclarationNode
 
 let string_array_counter = 0;
 let decl_const_counter = 0;
+let decl_join_counter = 0;
 
 /** Reset module-level label counters so repeated builds of the same AST emit
  *  identical labels (the AST is shared across backends / repeated builds). */
 export function reset_decl_const_counters() {
 	string_array_counter = 0;
 	decl_const_counter = 0;
+	decl_join_counter = 0;
 }
 
 function emit_string_array_labels(values: BaseNode[], status: BuildStatus): Map<string, string> {
@@ -1690,12 +1693,89 @@ export default function build_declaration_node(
 		emit_var_store(status, "x0", node.name, 8);
 		return;
 	}
+	// STRUCT_PLAN_3 B4 — a trait-typed local initialized from a branching
+	// expression (`var Speaker s = match … { case .a -> Dog() }`): the
+	// arms are uniformly fresh temporaries of ONE concrete conformer (the
+	// checker's gate), so join them into a frame temp (struct-valued arms
+	// leave the value's ADDRESS in x0 and build_let_node struct-copies it
+	// — the return_assign_struct_size protocol) and box the winner at the
+	// join point (same malloc + strdup contract as the direct initializer
+	// above). Uniformly trait-typed arms join the handle word instead.
+	if (
+		!struct_type &&
+		!!status.traits.find((t) => t.name === node.type.name) &&
+		node.value &&
+		is_branch_expression(node.value)
+	) {
+		const uniform = uniform_branch_conformer(
+			node.value,
+			node.type.name,
+			status,
+			type_from_value_node,
+		);
+		const uniform_struct = uniform?.struct;
+		if (uniform_struct || uniform?.is_trait_handle) {
+			set_trait_class_local(status, node.name, node.type.name);
+			declare_trait_handle_storage(status, node);
+			if (uniform!.is_trait_handle) {
+				const old_return_assign = status.return_assign;
+				const old_return_assign_size = status.return_assign_size;
+				status.return_assign = node.name;
+				status.return_assign_size = 8;
+				emit_init_value(node.value, nir_init, status);
+				status.return_assign_size = old_return_assign_size;
+				status.return_assign = old_return_assign;
+				anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+				mark_anchor_destroy(status, node.name, node.type.name);
+				return;
+			}
+			const strdup_string_fields =
+				!owns_strings_uniformly(uniform_struct!) &&
+				!uniform_struct!.functions.some((f) => f.name === "#destroy") &&
+				struct_needs_auto_destroy(uniform_struct!, status);
+			const box_size = get_struct_size(uniform_struct!.name, status);
+			const join_temp = `_trait_decl_join_${decl_join_counter++}`;
+			const join_size = get_struct_size(uniform_struct!.name, status);
+			const join_slot = allocate_stack_space(status, join_size, 8);
+			status.stack_offsets!.set(join_temp, join_slot);
+			const old_return_assign = status.return_assign;
+			const old_return_assign_size = status.return_assign_size;
+			const old_return_assign_struct_size = status.return_assign_struct_size;
+			status.return_assign = join_temp;
+			status.return_assign_size = join_size;
+			status.return_assign_struct_size = join_size;
+			emit_init_value(node.value, nir_init, status);
+			status.return_assign_struct_size = old_return_assign_struct_size;
+			status.return_assign_size = old_return_assign_size;
+			status.return_assign = old_return_assign;
+			// Box the joined winner: malloc, byte copy, strdup unowned
+			// string fields (the box's destroy frees every field it holds).
+			emit_asm(status, `mov x0, #${box_size}\n`);
+			emit_malloc(status);
+			emit_var_store(status, "x0", node.name, 8);
+			anchor_heap_pointer(status, node.name, undefined, node.type.is_nullable);
+			mark_anchor_destroy(status, node.name, node.type.name);
+			emit_asm(status, `mov x1, x0\n`);
+			emit_asm(status, `add x2, x29, #${join_slot}\n`);
+			const words = Math.ceil(box_size / 8);
+			for (let w = 0; w < words; w++) {
+				emit_asm(status, `ldr x3, [x2, #${w * 8}]\n`);
+				emit_asm(status, `str x3, [x1, #${w * 8}]\n`);
+			}
+			emit_var_load(status, "x0", node.name, 8);
+			if (strdup_string_fields) {
+				emit_string_field_strdups_at(status, uniform_struct!.name, "x0");
+			}
+			return;
+		}
+	}
 	// A trait-typed local stores the concrete struct value (the initializer's
 	// actual type) so its vtable (offset 0) and field layout are correct for
 	// trait-typed dispatch and the generated field accessors. Allocate the
 	// concrete struct's size and run its constructor into that storage. The
 	// Nomen type stays the trait (set above) so method/field accesses dispatch
 	// through the vtable rather than lowering to a direct call.
+
 	if (
 		!struct_type &&
 		!!status.traits.find((t) => t.name === node.type.name) &&
