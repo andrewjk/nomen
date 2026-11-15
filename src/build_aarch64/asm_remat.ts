@@ -50,15 +50,20 @@
  */
 
 import {
-	ALL_TRACKED,
 	analyze_function_at,
-	exact_defs,
 	function_chunk_start,
-	transfer,
 	type Analysis,
 } from "./asm_cycle_dead_moves.ts";
 import { build_validated_cycles, containing_cycle_from } from "./asm_if_convert.ts";
 import { is_alias_line, type AsmInstruction } from "./asm_ir.ts";
+import {
+	compute_live_in,
+	exact_defs,
+	live_before,
+	mask_from_names,
+	type RegMask,
+	xw_live,
+} from "./asm_liveness.ts";
 import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
 let remat_on = true;
@@ -197,59 +202,17 @@ function apply_pairs(lines: string[], cands: PairCandidate[], fmov_at?: number[]
 
 /**
  * Exact liveness with one refinement over the shared analysis: a call's
- * ABI argument reads (the x0–x8 slots transfer() adds) do NOT observe the
- * candidates' staging registers. Every argument a callee actually reads
- * is written at the call site (emitter contract), so an unwritten arg
- * slot carries garbage the callee never touches — the deleted pool
+ * ABI argument reads (the x0–x8 slots the call model adds) do NOT observe
+ * the candidates' staging registers. Every argument a callee actually
+ * reads is written at the call site (emitter contract), so an unwritten
+ * arg slot carries garbage the callee never touches — the deleted pool
  * address cannot leak through it. Without this, every loop feeding a
  * call would refuse (all eight arg slots read = live).
  */
-function live_before_fmov(a: Analysis, f: number, exclude_arg_reads: Set<string>): Set<string> {
-	const step = (instr: AsmInstruction, live: Set<string>): void => {
-		if (instr.op === "bl" || instr.op === "blr") {
-			for (let x = 0; x <= 17; x++) live.delete(`x${x}`);
-			live.delete("x30");
-			for (let d = 0; d <= 7; d++) live.delete(`d${d}`);
-			for (let x = 0; x <= 8; x++) {
-				if (!exclude_arg_reads.has(`x${x}`)) live.add(`x${x}`);
-				live.add(`d${x}`);
-			}
-			return;
-		}
-		transfer(instr, live);
-	};
-	const live_in: Set<string>[] = a.blocks.map(() => new Set<string>());
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let bi = a.blocks.length - 1; bi >= 0; bi--) {
-			const blk = a.blocks[bi];
-			const live = new Set<string>();
-			for (const s of blk.succ) {
-				for (const r of live_in[s]) live.add(r);
-			}
-			for (let i = blk.end; i >= blk.start; i--) {
-				if (a.kind[i] !== "instr") continue;
-				if (a.parsed[i]) step(a.parsed[i]!, live);
-				else for (const r of ALL_TRACKED) live.add(r);
-			}
-			if (live.size !== live_in[bi].size || [...live].some((r) => !live_in[bi].has(r))) {
-				live_in[bi] = live;
-				changed = true;
-			}
-		}
-	}
-	const blk = a.line_block[f];
-	const live = new Set<string>();
-	for (const s of a.blocks[blk].succ) {
-		for (const r of live_in[s]) live.add(r);
-	}
-	for (let k = a.blocks[blk].end; k > f; k--) {
-		if (a.kind[k] !== "instr") continue;
-		if (a.parsed[k]) step(a.parsed[k]!, live);
-		else for (const r of ALL_TRACKED) live.add(r);
-	}
-	return live;
+function live_before_fmov(a: Analysis, f: number, exclude_arg_reads: string[]): RegMask {
+	const exclude_args = mask_from_names(exclude_arg_reads);
+	const live_in = compute_live_in(a, exclude_args);
+	return live_before(a, live_in, f, exclude_args);
 }
 
 /**
@@ -272,7 +235,7 @@ function remat_float_pairs(code: string): string {
 		const fmov_line: number[] = [];
 		const trial = apply_pairs(lines, cands, fmov_line);
 		const trial_code = trial.join("\n");
-		const exclude = new Set(cands.map((c) => c.xR));
+		const exclude = cands.map((c) => c.xR);
 		const chunk_memo = new Map<number, { a: Analysis; offset: number } | null>();
 		const winners: PairCandidate[] = [];
 		for (let ci = 0; ci < cands.length; ci++) {
@@ -289,7 +252,7 @@ function remat_float_pairs(code: string): string {
 			// Dead in BOTH register views → no reader observes the deleted
 			// address def on any path → collapse is invisible.
 			const c = cands[ci];
-			if (!live.has(c.xR) && !live.has(`w${c.xR.slice(1)}`)) winners.push(c);
+			if (!xw_live(live, c.xR)) winners.push(c);
 		}
 		if (winners.length === 0) break;
 		code = apply_pairs(lines, winners).join("\n");

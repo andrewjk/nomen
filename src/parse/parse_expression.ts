@@ -84,6 +84,15 @@ function restructure_op(
 // comparison/shift operator instead. This avoids the old greedy scan, which
 // matched a comparison `<` against a distant shift `>>` and produced false
 // "Expected >" errors (see e.g. `while i < other_len || ...`).
+//
+// A cheap lookahead gate skips the attempt entirely when the token after `<`
+// cannot open a type argument (COMPILER_PERF tranche 1): every type starts
+// word-shaped (a name, or the view/ref/ptr markers) or with `[` (a tuple /
+// anonymous enum) — parse_type's complete starter set — so a literal, `(`, or
+// operator follower can only be a comparison operand. Refusing there costs
+// nothing: no snapshot, no journal entry, no error to trim.
+const WORD_TOKEN_RE = /^[A-Za-z_]\w*$/;
+
 function try_parse_generic_args(status: ParseStatus): Type[] | null {
 	const saved_i = status.i;
 	// Journal token-value peels instead of snapshotting every token's value:
@@ -107,6 +116,10 @@ function try_parse_generic_args(status: ParseStatus): Type[] | null {
 		return null;
 	};
 	accept("<", status);
+	const open = peek_current(status);
+	if (open === undefined || (open !== "[" && !WORD_TOKEN_RE.test(open))) {
+		return restore();
+	}
 	const type_args: Type[] = [];
 	try {
 		type_args.push(parse_type(status));

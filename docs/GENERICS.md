@@ -81,7 +81,11 @@ error count, attempts to parse `<Type, ...>`, and on any failure (or if the
 closing `>` isn't immediately followed by `(` or `.`) rewinds and treats `<`
 as comparison. A successful parse requires a follow token of `(` (constructor
 call) or `.` (static method on a generic type), which is what distinguishes
-`Box<int>(42)` from `a < b`.
+`Box<int>(42)` from `a < b`. A cheap lookahead gate skips the attempt before
+any parse work when the token after `<` cannot open a type — every type
+starts word-shaped (a name, or the `view`/`ref`/`ptr` markers) or with `[`
+(a tuple / anonymous enum), so a literal or operator follower is always a
+comparison operand.
 
 ## Type checking
 

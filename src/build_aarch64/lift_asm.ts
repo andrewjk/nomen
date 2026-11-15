@@ -365,7 +365,24 @@ export interface ValidateAsmOptions {
 	allow_external_branch_targets?: boolean;
 }
 
-export function validate_asm(code: string, options: ValidateAsmOptions = {}): LiftError[] {
+/** Everything one lift pass over the text produces, shared between the
+ *  validator and the structured lift (COMPILER_PERF tranche 1 — the
+ *  FOLLOWUP.md "lift_functions walks the line array twice" item):
+ *  validate_asm ran a split + strip/collect pass and the lift then
+ *  re-split, re-stripped, and re-collected bl targets on the same lines.
+ *  Both consumers now read this one pass's arrays. */
+interface LiftShared {
+	lines: string[];
+	/** Per-line `strip_comment(...).trim()` — every later classification
+	 *  reads these instead of re-stripping. */
+	stripped: string[];
+	labels: Set<string>;
+	numeric_labels: Map<string, number[]>;
+	bl_targets: Set<string>;
+	errors: LiftError[];
+}
+
+function lift_shared(code: string, options: ValidateAsmOptions): LiftShared {
 	const errors: LiftError[] = [];
 	const lines = code.split("\n");
 
@@ -434,7 +451,7 @@ export function validate_asm(code: string, options: ValidateAsmOptions = {}): Li
 				!name.startsWith(".") &&
 				(bl_targets.has(name) ||
 					at_function_boundary.has(name) ||
-					prev_is_entry_marker(lines, i) ||
+					prev_is_entry_marker(stripped, i) ||
 					prev_ends_function(stripped, i));
 			if (is_entry) {
 				have_entry = true;
@@ -529,7 +546,11 @@ export function validate_asm(code: string, options: ValidateAsmOptions = {}): Li
 		void delta;
 	}
 
-	return errors;
+	return { lines, stripped, labels, numeric_labels, bl_targets, errors };
+}
+
+export function validate_asm(code: string, options: ValidateAsmOptions = {}): LiftError[] {
+	return lift_shared(code, options).errors;
 }
 
 // --- Stack-balance validation (per-block sp dataflow) ------------------------
@@ -918,9 +939,9 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 	}
 }
 
-function prev_is_entry_marker(lines: string[], i: number): boolean {
+function prev_is_entry_marker(stripped: string[], i: number): boolean {
 	for (let j = i - 1; j >= 0; j--) {
-		const t = strip_comment(lines[j]).trim();
+		const t = stripped[j];
 		if (!t) continue;
 		return t.startsWith(".p2align") || /^\.text$/.test(t);
 	}
@@ -990,30 +1011,28 @@ function describe(operands: Operand[]): string {
  * Structured lift for dataflow phases: same parser, returns lines grouped by
  * function entry (bl-target / globl / boundary-heuristic labels). Validation
  * errors are returned alongside — callers should check them first.
+ *
+ * One pass over the text: the classification reuses the validator's
+ * stripped/bl_targets arrays (lift_shared) instead of re-splitting,
+ * re-stripping, and re-collecting bl targets per line.
  */
 export function lift_functions(
 	code: string,
 	options: ValidateAsmOptions = {},
 ): { result: LiftResult } {
-	const errors = validate_asm(code, options);
+	const { lines: lines_split, stripped, bl_targets, errors } = lift_shared(code, options);
 	const lines: AsmLine[] = [];
 	const functions: LiftedFunction[] = [];
-	const lines_split = code.split("\n");
-	const bl_targets = new Set<string>();
-	for (const raw of lines_split) {
-		const bm = /^\s*bl\s+([A-Za-z_.$][\w.$]*)/.exec(strip_comment(raw));
-		if (bm) bl_targets.add(bm[1]);
-	}
 	let current: LiftedFunction | undefined;
 	for (let i = 0; i < lines_split.length; i++) {
 		const text = lines_split[i];
-		const t = strip_comment(text).trim();
+		const t = stripped[i];
 		const lm = /^([A-Za-z_.$][\w.$]*):(.*)$/.exec(t);
 		const is_global_label =
 			lm &&
 			!lm[2].trim() &&
 			!lm[1].startsWith(".") &&
-			(bl_targets.has(lm[1]) || prev_is_entry_marker(lines_split, i));
+			(bl_targets.has(lm[1]) || prev_is_entry_marker(stripped, i));
 		if (is_global_label && lm) {
 			current = { name: lm[1], body: [] };
 			functions.push(current);

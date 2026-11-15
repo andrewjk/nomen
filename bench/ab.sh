@@ -3,8 +3,7 @@
 # best-of-N. Usage: bench/ab.sh <c|aarch64> [bench names...]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TSX="$ROOT/cli/node_modules/.bin/tsx"
-[ -x "$TSX" ] || TSX="$ROOT/node_modules/.bin/tsx"
+ESBUILD="$ROOT/node_modules/.bin/esbuild"
 ARCH="${1:-c}"
 shift || true
 BENCHES=("$@")
@@ -13,11 +12,21 @@ if [ ${#BENCHES[@]} -eq 0 ]; then
 fi
 OUT="${TMPDIR:-/tmp}/nomen_ab_$$"
 mkdir -p "$OUT"
+
+# Bundle the compiler ONCE, untimed — the benchmark.sh warm-up treatment. The
+# old tsx invocation re-transpiled the compiler's ~140k lines of TypeScript
+# on every benchmark compile; the bundled runner is the same entry point on a
+# prebuilt artifact (correctness tool or not, iteration is the point here).
+NOMEN_RUNNER="$OUT/compile_nomen.mjs"
+"$ESBUILD" "$ROOT/bench/compile_nomen.ts" \
+	--bundle --platform=node --format=esm \
+	--outfile="$NOMEN_RUNNER" --log-level=error
+
 for b in "${BENCHES[@]}"; do
 	src="$ROOT/bench/nomen/$b.nm"
 	[ -f "$src" ] || { echo "missing $src"; continue; }
 	bin="$OUT/$b"
-	if ! "$TSX" "$ROOT/bench/compile_nomen.ts" "$src" "$bin" "$ROOT/core" "$ARCH" >/dev/null 2>"$OUT/$b.err"; then
+	if ! node "$NOMEN_RUNNER" "$src" "$bin" "$ROOT/core" "$ARCH" >/dev/null 2>"$OUT/$b.err"; then
 		echo "$b: COMPILE FAILED"
 		head -5 "$OUT/$b.err"
 		continue

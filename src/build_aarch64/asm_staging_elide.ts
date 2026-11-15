@@ -34,16 +34,19 @@
  */
 
 import {
-	ALL_TRACKED,
 	analyze_function_at,
-	exact_defs,
 	function_chunk_start,
-	transfer,
 	type Analysis,
-	type Block,
 } from "./asm_cycle_dead_moves.ts";
 import { instr_regs } from "./asm_if_convert.ts";
 import { is_alias_line, type AsmInstruction } from "./asm_ir.ts";
+import {
+	compute_live_in,
+	exact_defs,
+	live_before,
+	mask_from_names,
+	xw_live,
+} from "./asm_liveness.ts";
 import { rename_reads } from "./asm_remat.ts";
 import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
@@ -234,75 +237,19 @@ export function find_candidates(lines: string[]): ElideCandidate[] {
 }
 
 /** Exact liveness (backward fixpoint, call-arg slots for the tracked
- *  registers excluded) — is `reg` dead after instruction index `f`? */
+ *  register excluded) — is `reg` dead after instruction index `f`? */
 function reg_dead_after(a: Analysis, f: number, reg: string): boolean {
-	const exclude = new Set([reg]);
-	const step = (instr: AsmInstruction, live: Set<string>): void => {
-		if (instr.op === "ret") {
-			// The return pair x0/x1/d0/d1 is read only when the function
-			// actually returns in it — an unwritten half is garbage the
-			// caller cannot observe. The tracked register is exactly such
-			// a slot here (it was staging, not return data).
-			live.clear();
-			for (const r of ["x0", "x1", "d0", "d1"]) {
-				if (r !== reg) live.add(r);
-			}
-			return;
-		}
-		if (instr.op === "svc") {
-			for (let x = 0; x <= 17; x++) {
-				if (`x${x}` !== reg) live.add(`x${x}`);
-			}
-			return;
-		}
-		if (instr.op === "bl" || instr.op === "blr") {
-			for (let x = 0; x <= 17; x++) live.delete(`x${x}`);
-			live.delete("x30");
-			for (let d = 0; d <= 7; d++) live.delete(`d${d}`);
-			for (let x = 0; x <= 8; x++) {
-				if (!exclude.has(`x${x}`)) live.add(`x${x}`);
-				live.add(`d${x}`);
-			}
-			return;
-		}
-		transfer(instr, live);
-	};
-	const live_in: Set<string>[] = a.blocks.map(() => new Set<string>());
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let bi = a.blocks.length - 1; bi >= 0; bi--) {
-			const blk: Block = a.blocks[bi];
-			const live = new Set<string>();
-			for (const s of blk.succ) {
-				for (const r of live_in[s]) live.add(r);
-			}
-			for (let i = blk.end; i >= blk.start; i--) {
-				if (a.kind[i] !== "instr") continue;
-				if (a.parsed[i]) step(a.parsed[i]!, live);
-				else for (const r of ALL_TRACKED) live.add(r);
-			}
-			if (live.size !== live_in[bi].size || [...live].some((r) => !live_in[bi].has(r))) {
-				live_in[bi] = live;
-				changed = true;
-			}
-		}
-	}
 	const blk = a.line_block[f];
 	if (blk < 0) return false;
-	const live = new Set<string>();
-	for (const s of a.blocks[blk].succ) {
-		for (const r of live_in[s]) live.add(r);
-	}
-	// Walk strictly BELOW f: the result is live-before(f+1) = live-after(f).
-	// The consumer's own def of xS (def positions are never renamed) must
-	// not mask later readers.
-	for (let k = a.blocks[blk].end; k > f; k--) {
-		if (a.kind[k] !== "instr") continue;
-		if (a.parsed[k]) step(a.parsed[k]!, live);
-		else for (const r of ALL_TRACKED) live.add(r);
-	}
-	return !live.has(reg) && !live.has(`w${reg.slice(1)}`);
+	// The exclusion rides BOTH refinement slots: the staging register is
+	// invisible to the call model's arg adds AND to the ret/svc reads —
+	// the return pair x0/x1/d0/d1 is read only when the function actually
+	// returns in it, and an unwritten half (exactly what the staged slot
+	// was) is garbage the caller cannot observe.
+	const exclude = mask_from_names([reg]);
+	const live_in = compute_live_in(a, exclude, exclude);
+	const live = live_before(a, live_in, f, exclude, exclude);
+	return !xw_live(live, reg);
 }
 
 /** Rebuild `lines` with the winners elided in ONE pass (the indexes are

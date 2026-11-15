@@ -50,6 +50,15 @@
 
 import type { AsmInstruction } from "./asm_ir.ts";
 import { is_alias_line } from "./asm_ir.ts";
+import {
+	ALL_MASK,
+	compute_live_in,
+	MASK_WORDS,
+	mask_or,
+	type RegMask,
+	transfer_mask,
+	xw_live,
+} from "./asm_liveness.ts";
 import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
 let cycle_dead_moves_on = true;
@@ -66,96 +75,11 @@ const LABEL_LINE_RE = /^([A-Za-z_.$][\w.$]*|\d+):$/;
 const B_ALIAS_RE = /^(eq|ne|lt|le|gt|ge|hs|lo|ls|hi|mi|pl)$/;
 const NUM_TARGET_RE = /^(\d+)([fb])$/;
 
-export const ALL_TRACKED: string[] = [];
-for (let r = 0; r <= 30; r++) ALL_TRACKED.push(`x${r}`, `w${r}`, `d${r}`);
-ALL_TRACKED.push("sp", "xzr");
-
 function is_branch_op(op: string): boolean {
 	if (op === "b" || op === "cbz" || op === "cbnz" || op === "tbz" || op === "tbnz") return true;
 	if (op === "bl" || op === "blr" || op === "br" || op === "ret") return false;
 	if (op.startsWith("b.")) return true;
 	return op[0] === "b" && op.length > 1 && B_ALIAS_RE.test(op.slice(1));
-}
-
-/** Registers an instruction WRITES (exact, dest-first) — the coalescer's
- *  model. Shared with the sibling asm-level passes (remat). */
-export function exact_defs(instr: AsmInstruction): string[] {
-	switch (instr.op) {
-		case "str":
-		case "strb":
-		case "strh":
-		case "stur":
-		case "sturb":
-		case "sturh":
-		case "stp":
-		case "cmp":
-		case "tst":
-		case "cmn":
-		case "ret":
-			return [];
-		case "ldp": {
-			const defs: string[] = [];
-			for (const o of instr.operands) {
-				if (o.kind === "reg") {
-					defs.push(o.name);
-					if (defs.length === 2) break;
-				} else break;
-			}
-			return defs;
-		}
-		default:
-			break;
-	}
-	if (instr.op.startsWith("b")) return [];
-	for (const o of instr.operands) {
-		if (o.kind === "reg") return [o.name];
-		if (o.kind === "mem" || o.kind === "cond" || o.kind === "imm" || o.kind === "label") break;
-	}
-	return [];
-}
-
-/** Registers an instruction READS: every register operand outside the
- *  leading def positions, plus memory base/index (the coalescer's
- *  positional model). Shared with the sibling asm-level passes (remat). */
-export function reads_of(instr: AsmInstruction): string[] {
-	let skip: number;
-	switch (instr.op) {
-		case "str":
-		case "strb":
-		case "strh":
-		case "stur":
-		case "sturb":
-		case "sturh":
-		case "stp":
-		case "cmp":
-		case "tst":
-		case "cmn":
-		case "blr":
-		case "br":
-		case "cbz":
-		case "cbnz":
-		case "tbz":
-		case "tbnz":
-			skip = 0;
-			break;
-		case "ldp":
-			skip = 2;
-			break;
-		default:
-			skip = 1;
-			break;
-	}
-	const out: string[] = [];
-	let reg_seen = 0;
-	for (const o of instr.operands) {
-		if (o.kind === "reg") {
-			if (reg_seen++ >= skip) out.push(o.name);
-		} else if (o.kind === "mem") {
-			out.push(o.base);
-			if (o.offset?.kind === "reg") out.push(o.offset.name);
-		}
-	}
-	return out;
 }
 
 /** The pruning candidate: `mov xD, xS`, x-family, fp/lr/sp excluded. */
@@ -169,43 +93,15 @@ function mov_dest(instr: AsmInstruction): string | null {
 	return d.name;
 }
 
-/** Per-instruction liveness transfer — shared with the sibling asm-level
- *  passes (remat). */
-export function transfer(instr: AsmInstruction, live: Set<string>): void {
-	const op = instr.op;
-	if (op === "bl" || op === "blr") {
-		for (let a = 0; a <= 17; a++) live.delete(`x${a}`);
-		live.delete("x30");
-		for (let d = 0; d <= 7; d++) live.delete(`d${d}`);
-		for (let a = 0; a <= 8; a++) {
-			live.add(`x${a}`);
-			live.add(`d${a}`);
-		}
-		return;
-	}
-	if (op === "svc") {
-		for (let a = 0; a <= 17; a++) live.add(`x${a}`);
-		return;
-	}
-	if (op === "ret") {
-		live.clear();
-		live.add("x0");
-		live.add("x1");
-		live.add("d0");
-		live.add("d1");
-		return;
-	}
-	for (const d of exact_defs(instr)) live.delete(d);
-	for (const r of reads_of(instr)) live.add(r);
-}
-
 export interface Analysis {
 	lines: string[];
 	parsed: (AsmInstruction | null)[];
 	kind: ("label" | "instr" | "skip")[];
 	blocks: Block[];
 	line_block: number[];
-	live_in: Set<string>[];
+	/** Backward liveness fixpoint over the register-universe masks
+	 *  (asm_liveness.ts) — the string-Set model's exact replacement. */
+	live_in: RegMask[];
 	cycles: { head: number; end: number }[];
 }
 
@@ -440,28 +336,8 @@ function analyze(code: string): Analysis | null {
 		}
 	}
 
-	// Backward liveness fixpoint.
-	const live_in: Set<string>[] = blocks.map(() => new Set<string>());
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let bi = blocks.length - 1; bi >= 0; bi--) {
-			const blk = blocks[bi];
-			const live = new Set<string>();
-			for (const s of blk.succ) {
-				for (const r of live_in[s]) live.add(r);
-			}
-			for (let i = blk.end; i >= blk.start; i--) {
-				if (kind[i] !== "instr") continue;
-				if (parsed[i]) transfer(parsed[i]!, live);
-				else for (const r of ALL_TRACKED) live.add(r);
-			}
-			if (live.size !== live_in[bi].size || [...live].some((r) => !live_in[bi].has(r))) {
-				live_in[bi] = live;
-				changed = true;
-			}
-		}
-	}
+	// Backward liveness fixpoint (mask-based — asm_liveness.ts).
+	const live_in = compute_live_in({ blocks, parsed, kind });
 
 	return { lines, parsed, kind, blocks, line_block, live_in, cycles };
 }
@@ -507,17 +383,23 @@ export function eliminate_dead_cycle_moves(code: string): string {
 			}
 			const out = a.lines.slice();
 			let deleted = 0;
+			const live: RegMask = new Uint32Array(MASK_WORDS);
 			for (let bi = 0; bi < a.blocks.length; bi++) {
 				const blk = a.blocks[bi];
-				const live = new Set<string>();
+				live[0] = 0;
+				live[1] = 0;
+				live[2] = 0;
 				for (const s of blk.succ) {
-					for (const r of a.live_in[s]) live.add(r);
+					const li = a.live_in[s];
+					live[0] |= li[0];
+					live[1] |= li[1];
+					live[2] |= li[2];
 				}
 				for (let i = blk.end; i >= blk.start; i--) {
 					if (a.kind[i] !== "instr") continue;
 					const instr = a.parsed[i];
 					if (!instr) {
-						for (const r of ALL_TRACKED) live.add(r);
+						mask_or(live, ALL_MASK);
 						continue;
 					}
 					if (in_cycle[i]) {
@@ -526,13 +408,13 @@ export function eliminate_dead_cycle_moves(code: string): string {
 						// consumes the x2 def's low half, so the mov is only
 						// dead when NEITHER view is read (the buffer_uint32
 						// receipt).
-						if (dst !== null && !live.has(dst) && !live.has(`w${dst.slice(1)}`)) {
+						if (dst !== null && !xw_live(live, dst)) {
 							out[i] = "";
 							deleted++;
 							continue;
 						}
 					}
-					transfer(instr, live);
+					transfer_mask(instr, live);
 				}
 			}
 			if (deleted === 0) break;

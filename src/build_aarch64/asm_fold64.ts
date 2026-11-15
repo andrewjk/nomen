@@ -44,8 +44,8 @@
  * off arm).
  */
 
-import { exact_defs, reads_of } from "./asm_cycle_dead_moves.ts";
 import { is_alias_line, type AsmInstruction } from "./asm_ir.ts";
+import { exact_defs, reads_of } from "./asm_liveness.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
 
 let fold64_on = true;

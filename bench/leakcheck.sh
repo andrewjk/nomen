@@ -30,9 +30,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BENCH_DIR="$ROOT/bench"
-TSX="$ROOT/cli/node_modules/.bin/tsx"
+ESBUILD="$ROOT/node_modules/.bin/esbuild"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/nomen_leakcheck_XXXXXX")"
 LOG="$WORK/last.log"
+
+# Bundle the compiler ONCE, untimed — the benchmark.sh warm-up treatment
+# (each build runs the prebundled runner instead of re-transpiling the
+# compiler through tsx; correctness tool or not, iteration is the point).
+NOMEN_RUNNER="$WORK/compile_nomen.mjs"
+"$ESBUILD" "$BENCH_DIR/compile_nomen.ts" \
+	--bundle --platform=node --format=esm \
+	--outfile="$NOMEN_RUNNER" --log-level=error
 
 KEEP=0
 LARGE=0
@@ -159,10 +167,10 @@ for entry in "${BENCHES[@]}"; do
 	IFS='|' read -r bench small large <<<"$entry"
 	selected "$bench" || continue
 	[ -f "$BENCH_DIR/nomen/$bench.nm" ] || continue
-	if ! "$TSX" "$BENCH_DIR/compile_nomen.ts" "$BENCH_DIR/nomen/$bench.nm" "$WORK/${bench}_a64" "$ROOT/core" aarch64 "$RELEASE" >"$WORK/${bench}_a64.build.log" 2>&1; then
+	if ! node "$NOMEN_RUNNER" "$BENCH_DIR/nomen/$bench.nm" "$WORK/${bench}_a64" "$ROOT/core" aarch64 "$RELEASE" >"$WORK/${bench}_a64.build.log" 2>&1; then
 		echo "  aarch64 build failed: $bench (see $WORK/${bench}_a64.build.log)" >&2
 	fi
-	if ! "$TSX" "$BENCH_DIR/compile_nomen.ts" "$BENCH_DIR/nomen/$bench.nm" "$WORK/${bench}_c" "$ROOT/core" c "$RELEASE" >"$WORK/${bench}_c.build.log" 2>&1; then
+	if ! node "$NOMEN_RUNNER" "$BENCH_DIR/nomen/$bench.nm" "$WORK/${bench}_c" "$ROOT/core" c "$RELEASE" >"$WORK/${bench}_c.build.log" 2>&1; then
 		echo "  c build failed: $bench (see $WORK/${bench}_c.build.log)" >&2
 	fi
 done
