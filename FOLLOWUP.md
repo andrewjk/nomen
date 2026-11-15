@@ -681,22 +681,4 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## C backend: a nested `pub func main` re-emits `int main()`
-
-Recorded 2026-11-15 while fixing the retired "aarch64: an early bare
-`return` in `main` emits invalid assembly" item (the aarch64 half: a nested
-main now emits as an ordinary function under its uniquified `label_name`).
-The C backend has the same trigger and still emits TWO `int main()`
-definitions — the nested main inline at its declaration point (with the real
-body) plus the wrapper's — and clang rejects the redefinition. The gates are
-`node.name.toLocaleLowerCase() === "main"` in `src/build_c/build_function_node.ts`
-(signature emission, the audit/fiber-drain/`return 0` epilogue, the param
-ownership skips at ~461/537/565) and `src/build_c/build_return_node.ts:176`
-(a bare `return` lowering to `return 0;`). The fix mirrors the aarch64
-shape: compute entry-ness (`name === "main"` AND not nested) once and gate
-those sites on it, so a nested main emits under `c_function_name`'s
-uniquified label as an ordinary function. Not done here: the recorded issue
-was aarch64-only, and the C change touches several ownership gates that
-deserve their own pass.
-
 ## Bundle macOS GUI builds into `.app`

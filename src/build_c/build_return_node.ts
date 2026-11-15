@@ -175,6 +175,8 @@ export default function build_return_node(
 			status.code += `${status.return_assign} = 0;\n`;
 		} else if (status.current_function_name?.toLocaleLowerCase() === "main") {
 			// C's main returns int; a bare Nomen `return` (void) lowers to `return 0;`
+			// — ENTRY main only: `current_function_name` is the emission label,
+			// so a nested main (label `main_main`) takes the plain `return;`.
 			status.code += `return 0;\n`;
 		} else {
 			status.code += `return;\n`;

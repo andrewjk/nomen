@@ -7,6 +7,7 @@ import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import { validate_stack_balance } from "../src/build_aarch64/lift_asm";
+import build_and_check_output from "./build_and_check_output";
 import parse_with_imports, { parse_program } from "./parse_with_imports";
 
 // A `main` declared inside another function body (the parse_with_imports
@@ -17,9 +18,11 @@ import parse_with_imports, { parse_program } from "./parse_with_imports";
 // INLINE in the enclosing body with a SECOND global `_main` label (clang:
 // "symbol '_main' is already defined") and its prologue/epilogue rode the
 // enclosing function's code stream (the enclosing epilogue sat unreachable
-// after the nested `ret`). These tests pin: one `_main`, the nested main
-// under its label, clean stack balance, and the generated TU actually
-// assembles — for the entry main and its early bare `return` too.
+// after the nested `ret`). The C backend had the same trigger and emitted
+// TWO `int main()` definitions — clang rejects the redefinition. These
+// tests pin: one entry main per TU, the nested main under its label, clean
+// stack balance, and the generated code actually compiles — for the entry
+// main and its early bare `return` too.
 
 function assemble(arch: string, code: string): void {
 	const dir = tmpdir();
@@ -81,4 +84,20 @@ pub func main = () {
 	expect(result.errors ?? []).toEqual([]);
 	expect(result.code as string).toContain("bl _nomen_audit_check");
 	assemble("arm64", result.code as string);
+});
+
+test("a nested pub func main compiles and runs on both backends (single entry)", async () => {
+	// The full-program-pasted-into-the-harness shape: the C backend used to
+	// emit `int main()` twice (the nested main at its declaration point plus
+	// the wrapper's) — clang rejects the redefinition. The nested main is an
+	// ordinary function (`main_main`) on both backends; the wrapper main is
+	// the entry, so its (empty) body runs.
+	const input = `
+pub func main = () {
+	var e = 1
+	if e < 0 { return }
+	Console.write("\\{e}\\n")
+}
+`;
+	await build_and_check_output(input, "nested_main_emission", "");
 });

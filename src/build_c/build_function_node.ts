@@ -176,10 +176,18 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			}) + "\n",
 		);
 
+	// The process ENTRY is the TOP-LEVEL `main` only. The checker assigns
+	// `label_name` to every function declared inside another body, so a
+	// nested `pub func main` (the parse_with_imports harness wrapping a
+	// pasted full program) is an ORDINARY function under its uniquified
+	// label. Keying every `main` as the entry emitted `int main()` twice —
+	// clang rejects the redefinition — and hung the process-exit epilogue
+	// (audit check, fiber drain, `return 0`) on a function that never owns
+	// the process. Mirrors the aarch64 backend's is_entry_main.
+	const is_entry_main = node.name.toLocaleLowerCase() === "main" && !node.label_name;
+
 	const is_main_with_init =
-		node.name.toLocaleLowerCase() === "main" &&
-		node.params.length > 0 &&
-		node.params[0].type.name === "Init";
+		is_entry_main && node.params.length > 0 && node.params[0].type.name === "Init";
 
 	// A raw-only body written against the fat nomen_string ABI (see
 	// docs/MEMORY.md): the function emits with its REAL fat signature —
@@ -201,7 +209,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		);
 	if (is_main_with_init) {
 		status.code += `int main(int argc, char **argv)`;
-	} else if (node.name.toLocaleLowerCase() === "main") {
+	} else if (is_entry_main) {
 		status.code += `int main(`;
 	} else {
 		if (node.return_type.name) {
@@ -458,7 +466,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// the flag, a conditional consumption keeps the not-taken paths
 		// freeing. Plain string params are not pointer params, so this runs
 		// at the loop top rather than inside the pointer branch.
-		if (param_is_string_transfer(node, param) && node.name !== "main") {
+		if (param_is_string_transfer(node, param) && !is_entry_main) {
 			const decl = new DeclarationNode(param.start, "private", "var", param.name, param.type);
 			status.scoped_declarations.push(decl);
 			if (!status.heap_strings) status.heap_strings = new Set();
@@ -534,7 +542,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			if (
 				param.is_moved &&
 				moved_owning_param &&
-				node.name !== "main" &&
+				!is_entry_main &&
 				!moved_param_is_consumed(
 					node,
 					param.name,
@@ -562,7 +570,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				!param_struct.is_class &&
 				!param_struct.is_generic &&
 				!param.type.is_nullable &&
-				node.name !== "main" &&
+				!is_entry_main &&
 				// B1 full cutover: a string-only DECLARED-mv struct has no
 				// `struct_needs_destroy` footprint (the gate excludes strings)
 				// — but the transfer row makes the callee the field owner, so
@@ -741,14 +749,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// Fibers: run anything still queued (a cooperative fire-and-forget, or a
 	// fiber spawned but never waited on) so its allocations are freed before
 	// the audit check — mirrors the pool shutdown above.
-	if (node.name.toLocaleLowerCase() === "main" && status.used_fibers) {
+	if (is_entry_main && status.used_fibers) {
 		status.code += `\n__nomen_fiber_drain_all();\n`;
 		// Tear the netpoller down (join the poller thread, free its slots)
 		// so the audit sees a balanced allocator.
 		status.code += `__nomen_io_shutdown();\n`;
 	}
 
-	if (node.name.toLocaleLowerCase() === "main" && status.audit) {
+	if (is_entry_main && status.audit) {
 		// The pool shutdown frees the workers array, so it must run before
 		// the audit check. Any concurrency primitive in the TU pulls the
 		// runtime (and its declarations), so gate on used_fibers — NOT on a
@@ -762,7 +770,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 
 	// C's main returns int. A Nomen main with no explicit return falls through
 	// to here; emit `return 0;` so clang doesn't reject the fall-through.
-	if (node.name.toLocaleLowerCase() === "main") {
+	// Entry main only — a nested main is an ordinary (void) function.
+	if (is_entry_main) {
 		status.code += `return 0;\n`;
 	}
 

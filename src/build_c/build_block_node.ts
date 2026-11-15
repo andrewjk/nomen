@@ -385,10 +385,13 @@ export default function build_block_node(
 	// false), in source order — their declarations become scoped locals freed
 	// at main's exit, and the prologue array is not the NIR ctx's list, so
 	// the emitter falls back to the plain AST walk for exactly these
-	// statements.
+	// statements. ENTRY main only (no `label_name`): a nested main builds
+	// first in this backend (its definitions hoist ahead of the enclosing
+	// function) and must not consume the entry's prologue.
 	if (
 		!with_declarations &&
 		(node as unknown as { name?: string }).name?.toLocaleLowerCase() === "main" &&
+		!(node as unknown as { label_name?: string }).label_name &&
 		status.module_init_statements?.length
 	) {
 		const prologue = status.module_init_statements;
