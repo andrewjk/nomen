@@ -852,6 +852,40 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.moved_string_vars = new Set();
 		const old_owned_string_vars = status.owned_string_vars;
 		status.owned_string_vars = new Set();
+		// The remaining name-keyed ownership/alias maps are per-body for the
+		// same reason (see build_function_node's reset block): methods are a
+		// second function-emission path, and a mark left by one method would
+		// otherwise answer a LATER method's same-named local. The
+		// c_mv_owns_flags leak that surfaced this: `BigInt.mul_toom3`'s
+		// `var sb = BigInt()` registered `_mv_owns_sb`, and the later-built
+		// `Format.float_grouped` (a StringBuilder local also named `sb`, a
+		// struct that needs destroy but is not owning, so it registers no
+		// flag of its own) emitted `if (!_mv_owns_sb) { ... }` with no
+		// declaration in its frame — an undeclared-identifier compile error
+		// of the generated C. Variables cannot be shared across functions.
+		const old_mv_owns_flags = status.c_mv_owns_flags;
+		status.c_mv_owns_flags = new Map();
+		const old_alias_owns_flags = status.c_alias_owns_flags;
+		status.c_alias_owns_flags = new Map();
+		const old_alias_decl_frames = status.alias_decl_frames;
+		status.alias_decl_frames = new Map();
+		const old_class_alias_vars = status.class_alias_vars;
+		status.class_alias_vars = new Set();
+		const old_class_alias_source_map = status.class_alias_source_map;
+		status.class_alias_source_map = new Map();
+		const old_aliased_class_sources = status.aliased_class_sources;
+		status.aliased_class_sources = new Set();
+		const old_heap_strings = status.heap_strings;
+		status.heap_strings = new Set();
+		// heap_string_fields is name-keyed too ("var.field"): records cross a
+		// call boundary only deliberately, via the call-site ref-param write
+		// transfer (see build_function_node).
+		const old_heap_string_fields = status.heap_string_fields;
+		status.heap_string_fields = undefined;
+		const old_moved = status.moved;
+		status.moved = new Set();
+		const old_pending_mv_owns = status.pending_mv_owns_sets;
+		status.pending_mv_owns_sets = undefined;
 		// Shared with the aarch64 backend (see build_function_node): force
 		// heap ownership for string vars that receive a heap value later.
 		status.force_heap_strings = scan_force_heap_strings(func.statements ?? [], status.structs);
@@ -1196,6 +1230,16 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		status.string_borrow_vars = old_string_borrow_vars;
 		status.moved_string_vars = old_moved_string_vars;
 		status.owned_string_vars = old_owned_string_vars;
+		status.c_mv_owns_flags = old_mv_owns_flags;
+		status.c_alias_owns_flags = old_alias_owns_flags;
+		status.alias_decl_frames = old_alias_decl_frames;
+		status.class_alias_vars = old_class_alias_vars;
+		status.class_alias_source_map = old_class_alias_source_map;
+		status.aliased_class_sources = old_aliased_class_sources;
+		status.heap_strings = old_heap_strings;
+		status.heap_string_fields = old_heap_string_fields;
+		status.moved = old_moved;
+		status.pending_mv_owns_sets = old_pending_mv_owns;
 	}
 	status.current_struct = old_current_struct;
 

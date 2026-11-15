@@ -4,27 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## C backend: `c_mv_owns_flags` leak across functions (worked around in BigInt)
-
-Recorded 2026-11-15 while landing the BigInt subquadratic work. The C
-backend's mv-owns flags (`c_mv_owns_flags`, build_declaration_node.ts) are
-keyed by bare variable NAME and consulted by the auto-free pass
-(build_auto_free.ts) to decide whether a scope-exit destroy is guarded by a
-`_mv_owns_<name>` flag. `build_function_node` resets the map per function,
-but a stale entry still leaked into a later function and made it emit a
-guard whose flag was never declared in its frame: declaring an mv-struct
-local named `sb` in an earlier-emitted function (BigInt.mul_toom3's
-`var sb = BigInt()`) made the later-emitted `Format_float_grouped` (whose
-`sb` is a plain StringBuilder) emit `if (!_mv_owns_sb) { ... }` with no
-`unsigned char _mv_owns_sb = 0;` in its frame — undeclared-identifier
-compile error of the generated C. Worked around in the library by renaming
-the BigInt local (`sum_b`); the underlying leak (which map entry survives
-the per-function reset, or which emission path bypasses it) is unresolved.
-Any new System-library local whose name collides with an unrelated
-function's same-named local of a different ownership class can re-trigger
-it. Fix belongs in build_function_node/build_declaration_node (make the
-flag identifiers per-function, or find and close the reset bypass).
-
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
