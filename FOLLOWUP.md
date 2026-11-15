@@ -4,6 +4,27 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
+## C backend: `c_mv_owns_flags` leak across functions (worked around in BigInt)
+
+Recorded 2026-11-15 while landing the BigInt subquadratic work. The C
+backend's mv-owns flags (`c_mv_owns_flags`, build_declaration_node.ts) are
+keyed by bare variable NAME and consulted by the auto-free pass
+(build_auto_free.ts) to decide whether a scope-exit destroy is guarded by a
+`_mv_owns_<name>` flag. `build_function_node` resets the map per function,
+but a stale entry still leaked into a later function and made it emit a
+guard whose flag was never declared in its frame: declaring an mv-struct
+local named `sb` in an earlier-emitted function (BigInt.mul_toom3's
+`var sb = BigInt()`) made the later-emitted `Format_float_grouped` (whose
+`sb` is a plain StringBuilder) emit `if (!_mv_owns_sb) { ... }` with no
+`unsigned char _mv_owns_sb = 0;` in its frame — undeclared-identifier
+compile error of the generated C. Worked around in the library by renaming
+the BigInt local (`sum_b`); the underlying leak (which map entry survives
+the per-function reset, or which emission path bypasses it) is unresolved.
+Any new System-library local whose name collides with an unrelated
+function's same-named local of a different ownership class can re-trigger
+it. Fix belongs in build_function_node/build_declaration_node (make the
+flag identifiers per-function, or find and close the reset bypass).
+
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);
@@ -701,26 +722,4 @@ runs correctly on both backends — that is the workaround for tests. The
 fix belongs in the aarch64 backend's early-return epilogue emission (the
 prologue's 32-byte stack adjustment is not restored on the `return` path).
 
-## BigInt: subquadratic division (Newton–Raphson) and Toom multiplication
-
-Recorded 2026-11-15 from the edigits benchmark work. Phase timings at
-n=50000 (aarch64 instrumented build): sum_terms ≈ 27 ms, mul+div ≈ 26 ms,
-extract ≈ 31 ms, pow10 ≈ 7 ms. The two structural gaps vs math/big (Go) and
-ibig (Rust), which both use these techniques internally (the repo's stated
-parity standard):
-
-- **Newton–Raphson division** for the multi-limb `div_to` path. The final
-  `answer = numerator / q` (≈5200-limb ÷ ≈2600-limb) runs Knuth-D at
-  ~2600×2600 ≈ 6.8M mul-sub steps; a reciprocal-based division would pay
-  ~2–3 full-size Karatsuba multiplications (~1.2M mul-steps), cutting the
-  biggest edigits phase several-fold. Needs the reciprocal iteration with
-  truncation-error care (2-adic reciprocal on the divisor's top limbs +
-  correction steps), plus a `check via divrem invariant` test.
-- **Toom-3** above Karatsuba for `mul_to` (and the extraction's division
-  core benefits proportionally). Thresholds would need measuring on this
-  codegen — Karatsuba's 32-limb schoolbook base is already tuned.
-
-The extraction loop itself is near its floor: the 1-limb divisor invariant
-path requires `divisor < 2^63`, which pins the chunk radix at 10^18
-(10^19 < 2^64 but ≥ 2^63 would fall off the fast path onto per-limb
-`___udivti3` calls).
+## Bundle macOS GUI builds into `.app`

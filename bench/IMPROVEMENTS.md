@@ -744,6 +744,33 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     systematic cost. Refusals are `NOMEN_DBG_NEON`-traceable
     (`peel off: ...`).
 
+48. **BigInt — Toom-3 multiplication landed; Newton–Raphson division tried
+    and removed** (`core/System/BigInt.nm`): **Toom-3** now runs above
+    Karatsuba (gate `TOOM3_MIN_LIMBS = 600`): split at ceil(max/3) limbs,
+    evaluate at 0/1/−1/2/∞, interpolate with Bodrato's scheme (exact /2 by
+    shift, exact /3 by Hensel digit-lifting with the mod-2⁶⁴ inverse of 3).
+    Measured crossover on this codegen: Karatsuba wins to ~300 limbs,
+    parity near 750, Toom-3 ~1.15× by 1500 (squaring, aarch64 -O2) —
+    neutral on the current suite, whose products peak near that crossover.
+    A **Newton–Raphson reciprocal division** for multi-limb `div_to` was
+    also built, measured, and REMOVED: truncating-Newton reciprocal (2-limb
+    seed by div128 long division, doubling-precision ramp with 2 guard
+    limbs, quotient estimate dropping exactly 2k limbs, O(1) ±V correction
+    steps, Knuth-D fallback cap). It was correct on both backends (divrem
+    invariants at 65536/32768 limbs, zero corrections observed) but loses
+    to Knuth-D until divisor ~22k limbs — 0.19× at 500, 0.32× at 3000,
+    0.51× at 6000, 0.76× at 15000, parity ~22k, 1.06× at 30k — because the
+    path costs ~6 mul-equivalents (reciprocal ramp 2.7 + quotient estimate
+    2.2 + remainder product 1.1) against Knuth-D's single m·l pass, and
+    mul_to's per-op constant runs ~2× Knuth-D's tight inner loop. At
+    edigits' shape (5201÷2600) it measured ~45 ms vs Knuth-D's ~37 ms while
+    emitting ~39 KB of extra System asm (+265 ms edigits compile). GMP and
+    Java carry this algorithm behind hand-tuned kernels where the
+    crossover sits near 30 limbs; here it is ~22–30k limbs (~2 MB numbers).
+    Removed as net-negative; recoverable from git (commit 38834c9e in the
+    reflog, pre-amend parent) if mul_to ever gets fast enough to pull the
+    crossover back into practical range.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
