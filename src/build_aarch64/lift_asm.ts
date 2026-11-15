@@ -14,6 +14,7 @@
  */
 
 import {
+	is_alias_line,
 	type AsmInstruction,
 	type AsmLine,
 	type LiftedFunction,
@@ -115,6 +116,24 @@ export function parse_asm_instruction(text: string, line: number): AsmInstructio
 	const parsed = parse_asm_instruction_uncached(text, line);
 	if (parse_memo.size >= PARSE_MEMO_CAP) parse_memo.clear();
 	parse_memo.set(text, parsed ? clone_parsed(parsed, 0) : null);
+	return parsed;
+}
+
+/**
+ * Memoized parse returning the SHARED cached object. For READ-ONLY consumers
+ * only (analysis passes that never mutate the instruction or its operands):
+ * the mutating passes go through `parse_asm_instruction`, whose per-call deep
+ * copy protects the memo. Read-only paths (build_tables, the CFG analyzers,
+ * validate_asm) dominate instruction parses on every build, and cloning on
+ * each hit allocated an instruction + operand array + operand objects per
+ * line per pass per round.
+ */
+export function parse_asm_instruction_shared(text: string, line: number): AsmInstruction | null {
+	const cached = parse_memo.get(text);
+	if (cached !== undefined) return cached === null ? null : cached;
+	const parsed = parse_asm_instruction_uncached(text, line);
+	if (parse_memo.size >= PARSE_MEMO_CAP) parse_memo.clear();
+	parse_memo.set(text, parsed ?? null);
 	return parsed;
 }
 
@@ -387,7 +406,7 @@ export function validate_asm(code: string, options: ValidateAsmOptions = {}): Li
 		if (!t) continue;
 
 		// Alias (`_sym = sym`) and directives pass through.
-		if (/^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) continue;
+		if (is_alias_line(t)) continue;
 		if (t.startsWith(".")) {
 			if (/^\.globl\s+/.test(t)) {
 				at_function_boundary.add(t.replace(/^\.globl\s+/, "").trim());
@@ -449,7 +468,17 @@ export function validate_asm(code: string, options: ValidateAsmOptions = {}): Li
 			continue;
 		}
 
-		const operands = try_parse_operands(split_operands(rest));
+		// Memoized parse (shared object — read-only here): the validator runs
+		// over the WHOLE program on every lift, and the same instruction texts
+		// were just parsed by every optimization pass. The old inline
+		// try_parse_operands re-parsed each line from scratch per call.
+		const instr = parse_asm_instruction_shared(t, i + 1);
+		let operands: Operand[] | null;
+		if (instr && instr.op === op) {
+			operands = instr.operands;
+		} else {
+			operands = try_parse_operands(split_operands(rest));
+		}
 		if (!operands) {
 			err(`malformed operand(s) for '${op}'`);
 			continue;
@@ -611,7 +640,7 @@ function line_effect(text: string): LineEffect {
 		};
 	}
 	// Structured operand parse for the sp-effect ops.
-	const instr = parse_asm_instruction(t, 0);
+	const instr = parse_asm_instruction_shared(t, 0);
 	if (!instr) return { delta: null, branch: null, cond: false, ret: false, unknown_jump: false };
 	const operands = instr.operands;
 	const dest = operands[0];
@@ -755,7 +784,7 @@ function check_function_balance(fn: LiftedFunction, errors: LiftError[]): void {
 		}
 		if (!t) continue;
 		const rest = lm ? lm[2].trim() : t;
-		if (rest.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(rest) || !rest) continue;
+		if (rest.startsWith(".") || is_alias_line(rest) || !rest) continue;
 		is_code[i] = true;
 		effects[i] = line_effect(rest);
 	}
@@ -1002,7 +1031,7 @@ export function lift_functions(
 		}
 		if (lm) {
 			lines.push({ kind: "label", name: lm[1], text, line: i + 1 });
-		} else if (t.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) {
+		} else if (t.startsWith(".") || is_alias_line(t)) {
 			lines.push({ kind: "directive", text, line: i + 1 });
 		} else {
 			lines.push({ kind: "directive", text, line: i + 1 });

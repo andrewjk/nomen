@@ -45,7 +45,7 @@
  */
 
 import { exact_defs, reads_of } from "./asm_cycle_dead_moves.ts";
-import type { AsmInstruction } from "./asm_ir.ts";
+import { is_alias_line, type AsmInstruction } from "./asm_ir.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
 
 let fold64_on = true;
@@ -84,7 +84,7 @@ function classify(lines: string[]): {
 		if (t === "" || t.startsWith("//")) {
 			kind[i] = "blank";
 			parsed[i] = null;
-		} else if (t.startsWith(".") || t.endsWith(":") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) {
+		} else if (t.startsWith(".") || t.endsWith(":") || is_alias_line(t)) {
 			// Label, directive, or alias: a control-flow/data boundary no
 			// fold may cross.
 			kind[i] = "hard";

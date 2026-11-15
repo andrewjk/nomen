@@ -56,7 +56,7 @@
  */
 
 import type { AsmInstruction } from "./asm_ir.ts";
-import { is_cond } from "./asm_ir.ts";
+import { is_alias_line, is_cond } from "./asm_ir.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
 
 let loop_promote_on = true;
@@ -113,12 +113,7 @@ export function promote_loop_slots(code: string): string {
 			parsed.push(null);
 			continue;
 		}
-		if (
-			!trimmed ||
-			trimmed.startsWith("//") ||
-			trimmed.startsWith(".") ||
-			/^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)
-		) {
+		if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			parsed.push(null);
 			continue;
 		}

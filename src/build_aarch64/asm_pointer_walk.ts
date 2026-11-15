@@ -44,7 +44,7 @@
  */
 
 import { function_chunk_start } from "./asm_cycle_dead_moves.ts";
-import { exact_defs, find_containing_cycle } from "./asm_if_convert.ts";
+import { build_validated_cycles, containing_cycle_from, exact_defs } from "./asm_if_convert.ts";
 import type { Operand } from "./asm_ir.ts";
 import { build_tables } from "./asm_remat.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
@@ -90,7 +90,10 @@ function walk_access(mem: Operand): { base: string; j: string; k: number } | nul
 }
 
 function find_walk_one(lines: string[]): WalkCandidate | null {
-	const { parsed, labels, jumps } = build_tables(lines.join("\n"));
+	const { parsed, labels, jumps } = build_tables(lines);
+	// Validated once — every access-group anchor below asks the same
+	// containment question over the same tables.
+	const cycles = build_validated_cycles(labels, jumps, parsed);
 
 	// Jump-targeted labels inside a candidate cycle make the body
 	// conditional (an inner diamond) — the post-index access would skip
@@ -121,7 +124,7 @@ function find_walk_one(lines: string[]): WalkCandidate | null {
 	for (const [, g] of groups) {
 		// The FIRST access line anchors the cycle.
 		const anchor = g.lines[0];
-		const header = find_containing_cycle(labels, jumps, parsed, anchor, anchor);
+		const header = containing_cycle_from(cycles, anchor, anchor);
 		if (!header) continue;
 		const { h, e } = header;
 

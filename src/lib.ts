@@ -187,6 +187,11 @@ function build_type_map(
 	// implicit dependencies.
 	const all_type_names = new Set<string>();
 	const file_sources = new Map<string, string>();
+	// Per-file extraction cache: pass 2 needs the same type names and free
+	// functions pass 1 just computed (they used to be recomputed, doubling
+	// the full-line regex scans over every library file).
+	const file_type_names = new Map<string, string[]>();
+	const file_free_funcs = new Map<string, string[]>();
 	// Map each top-level `pub func` name to a type declared in the same file,
 	// so body-scanning a file that *calls* the function pulls in the file that
 	// *declares* it (free functions aren't tracked by name in the type map).
@@ -199,10 +204,13 @@ function build_type_map(
 		const source = file_texts?.get(f) ?? fs.readFileSync(f, "utf8");
 		file_sources.set(f, source);
 		const type_names = extract_type_names(source);
+		file_type_names.set(f, type_names);
 		for (const name of type_names) all_type_names.add(name);
 		const first_type = type_names[0];
+		const free_funcs = extract_free_func_names(source);
+		file_free_funcs.set(f, free_funcs);
 		if (first_type) {
-			for (const fname of extract_free_func_names(source)) {
+			for (const fname of free_funcs) {
 				if (!func_to_type.has(fname)) func_to_type.set(fname, first_type);
 			}
 		}
@@ -213,22 +221,30 @@ function build_type_map(
 	for (const f of files) {
 		const source = file_sources.get(f)!;
 		const deps = extract_deps(source);
+		// Membership set mirroring `deps` (O(1) `includes` over a list that
+		// grows to dozens of entries across thousands of scanned tokens).
+		const dep_set = new Set(deps);
+		const type_names = file_type_names.get(f)!;
+		const free_funcs = file_free_funcs.get(f)!;
 		for (const token of tokenize(source)) {
-			if (deps.includes(token.value)) continue;
+			if (dep_set.has(token.value)) continue;
 			if (all_type_names.has(token.value)) {
 				deps.push(token.value);
+				dep_set.add(token.value);
 				continue;
 			}
 			// A reference to a free function declared in another file: pull in
 			// a type from that file so its source (including the function) is
 			// inlined.
 			const dep_type = func_to_type.get(token.value);
-			if (dep_type && !deps.includes(dep_type)) deps.push(dep_type);
+			if (dep_type && !dep_set.has(dep_type)) {
+				deps.push(dep_type);
+				dep_set.add(dep_type);
+			}
 		}
 		const rel = path.relative(path.resolve(lib_dir, "System"), f);
 		const parts = rel.split(path.sep);
 		const namespace = parts.length > 1 ? parts[0] : undefined;
-		const type_names = extract_type_names(source);
 		for (const name of type_names) {
 			types.set(name, { name, source, path: f, deps, namespace });
 		}
@@ -236,7 +252,6 @@ function build_type_map(
 		// file in by calling them (see Library.functions). A file with no
 		// types gets a synthetic entry per function; otherwise the entry
 		// shares the first type's (so the file source pushes once).
-		const free_funcs = extract_free_func_names(source);
 		if (type_names.length > 0) {
 			const shared = types.get(type_names[0])!;
 			for (const fname of free_funcs) {

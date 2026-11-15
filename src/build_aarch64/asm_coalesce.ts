@@ -59,7 +59,7 @@
  */
 
 import type { AsmInstruction, Operand } from "./asm_ir.ts";
-import { is_cond } from "./asm_ir.ts";
+import { is_alias_line, is_cond } from "./asm_ir.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
 
 let coalescing_on = true;
@@ -326,7 +326,7 @@ export function coalesce_copies(code: string): string {
 			continue;
 		}
 		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			clear_state();
 			out.push(text);
 			parsed.push(null);
@@ -560,7 +560,7 @@ export function coalesce_copies(code: string): string {
 			if (text_j === null) continue;
 			const t = text_j.trim();
 			if (!t || t.startsWith("//")) continue;
-			if (/^[\w.$]+\s*=\s*[\w.$]+$/.test(t) || (t.startsWith(".") && !t.endsWith(":"))) {
+			if (is_alias_line(t) || (t.startsWith(".") && !t.endsWith(":"))) {
 				continue;
 			}
 			const lm = /^([A-Za-z_.$][\w.$]*):$/.exec(t);
@@ -677,7 +677,7 @@ export function coalesce_copies(code: string): string {
 		const trimmed = text.trim();
 		if (!trimmed || trimmed.startsWith("//")) continue;
 		const label_m = /^([A-Za-z_.$][\w.$]*):$/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			// A label is a join: its block's exposed reads (plus every
 			// other predecessor's unknown contribution) must stay live.
 			// Data directives and aliases keep the universe taint.

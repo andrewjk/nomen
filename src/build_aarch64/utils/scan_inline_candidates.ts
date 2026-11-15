@@ -19,6 +19,8 @@ export function auto_method_inline_enabled(): boolean {
 
 export function set_auto_method_inline_enabled(enabled: boolean): void {
 	auto_method_inline_on = enabled;
+	// The verdict depends on the switch — drop any cached admissions.
+	clear_auto_memo();
 }
 
 /** Call-bearing auto inlining (the ASM_PLAN_7 follow-up), default ON:
@@ -40,12 +42,47 @@ export function auto_calling_inline_enabled(): boolean {
 
 export function set_auto_calling_inline_enabled(enabled: boolean): void {
 	auto_calling_inline_on = enabled;
+	clear_auto_memo();
 }
 
 const MAX_AUTO_METHOD_STATEMENTS = 3;
 const MAX_AUTO_METHOD_PARAMS = 3;
 const MAX_AUTO_CALLING_STATEMENTS = 10;
 const MAX_AUTO_SPLICE_DEPTH = 2;
+
+/**
+ * Admission memo, per (function, depth). The verdict is a pure function of
+ * the checked AST (stable during emission) and the two kill switches — the
+ * setters clear the caches. Without it, every dispatch site re-walked the
+ * callee's body two-three times (body_calls, declares_any_name, the
+ * splice-through scan) and re-admitted its callees recursively, which
+ * showed up as a top-five compile-time cost on System-heavy programs.
+ */
+let auto_memo_leaf = new WeakMap<FunctionNode, Map<number, boolean>>();
+
+function clear_auto_memo(): void {
+	// WeakMap has no clear() — drop the map wholesale (keys are held weakly,
+	// so the old one is collectable with its nodes).
+	auto_memo_leaf = new WeakMap();
+}
+
+function memo_verdict(
+	memo: WeakMap<FunctionNode, Map<number, boolean>>,
+	func: FunctionNode,
+	depth: number,
+	compute: () => boolean,
+): boolean {
+	let by_depth = memo.get(func);
+	if (!by_depth) {
+		by_depth = new Map();
+		memo.set(func, by_depth);
+	}
+	const hit = by_depth.get(depth);
+	if (hit !== undefined) return hit;
+	const verdict = compute();
+	by_depth.set(depth, verdict);
+	return verdict;
+}
 
 /**
  * ensure/grow/clear-shaped methods (ASM_PLAN_7 tranche 7): small real
@@ -67,6 +104,12 @@ const MAX_AUTO_SPLICE_DEPTH = 2;
  */
 export function is_auto_inline_method(func: FunctionNode, depth = 0): boolean {
 	if (!auto_method_inline_on) return false;
+	return memo_verdict(auto_memo_leaf, func, depth, () =>
+		is_auto_inline_method_uncached(func, depth),
+	);
+}
+
+function is_auto_inline_method_uncached(func: FunctionNode, depth: number): boolean {
 	if (!func.has_body) return false;
 	if (func.is_inline) return false; // explicit — the call sites already select it
 	const calls = body_calls(func.statements);

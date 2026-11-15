@@ -23,7 +23,7 @@
  */
 
 import type { AsmInstruction } from "./asm_ir.ts";
-import { reg_class } from "./asm_ir.ts";
+import { is_alias_line, reg_class } from "./asm_ir.ts";
 import { parse_asm_instruction } from "./lift_asm.ts";
 
 interface SlotState {
@@ -167,33 +167,56 @@ export function optimize_frame_slots(code: string): string {
 		const sib = sibling_reg(reg);
 		zextW.delete(reg.startsWith("w") ? `x${reg.slice(1)}` : reg);
 		if (sib && sib.startsWith("x")) zextW.delete(sib);
-		for (const [off, s] of [...slots.entries()].sort((a, b) => a[0] - b[0])) {
-			if (
-				s.pendText !== undefined &&
-				s.pendReg &&
-				(s.pendReg === reg || (sib !== null && s.pendReg === sib))
-			) {
+		// Cheap pre-check: most clobbering instructions touch no pending
+		// slot source. The spread+sort below (slot-ordered materialization)
+		// only runs when a pend actually needs flushing.
+		let needs_flush = false;
+		if (slots.size > 0) {
+			for (const s of slots.values()) {
 				if (
-					store_store_kill_on &&
-					!slot_reader &&
-					at_idx >= 0 &&
-					s.pendIdx !== undefined &&
-					no_slot_read_between(off, s.pendIdx + 1, at_idx) &&
-					next_slot_access_is_store(off, at_idx + 1)
+					s.pendText !== undefined &&
+					s.pendReg &&
+					(s.pendReg === reg || (sib !== null && s.pendReg === sib))
 				) {
-					// Superseded before any read could observe it: no read
-					// between the store and this clobber, and the slot's next
-					// access after the clobber is another store.
+					needs_flush = true;
+					break;
+				}
+			}
+		}
+		if (needs_flush) {
+			for (const [off, s] of [...slots.entries()].sort((a, b) => a[0] - b[0])) {
+				if (
+					s.pendText !== undefined &&
+					s.pendReg &&
+					(s.pendReg === reg || (sib !== null && s.pendReg === sib))
+				) {
+					if (
+						store_store_kill_on &&
+						!slot_reader &&
+						at_idx >= 0 &&
+						s.pendIdx !== undefined &&
+						no_slot_read_between(off, s.pendIdx + 1, at_idx) &&
+						next_slot_access_is_store(off, at_idx + 1)
+					) {
+						// Superseded before any read could observe it: no read
+						// between the store and this clobber, and the slot's next
+						// access after the clobber is another store.
+						slots.delete(off);
+						continue;
+					}
+					out.push(s.pendText);
 					slots.delete(off);
 					continue;
 				}
-				out.push(s.pendText);
-				slots.delete(off);
-				continue;
 			}
-			if (s.availReg === reg || (sib !== null && s.availReg === sib)) {
-				delete s.availReg;
-				delete s.availKey;
+		}
+		// Availability cleanup iterates the map directly — no ordering needed.
+		if (slots.size > 0) {
+			for (const s of slots.values()) {
+				if (s.availReg === reg || (sib !== null && s.availReg === sib)) {
+					delete s.availReg;
+					delete s.availKey;
+				}
 			}
 		}
 	};
@@ -374,7 +397,7 @@ export function optimize_frame_slots(code: string): string {
 			continue;
 		}
 		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			flush_all();
 			out.push(text);
 			continue;
@@ -586,7 +609,7 @@ export function optimize_float_forwarding(code: string): string {
 			continue;
 		}
 		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			// Label: provenance is path-dependent at join points.
 			held.clear();
 			out.push(text);
@@ -771,7 +794,7 @@ function eliminate_dead_float_stage_moves(code: string): string {
 			continue;
 		}
 		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			// Conservative reset: a jump predecessor may read anything.
 			live.clear();
 			for (const r of ALL_TRACKED_REGS) live.add(r);
@@ -967,7 +990,7 @@ export function eliminate_dead_copy_moves(code: string): string {
 			continue;
 		}
 		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			// Join point: liveness is the merge of every predecessor path.
 			taint_all();
 			out[i] = text;
@@ -1111,7 +1134,7 @@ export function eliminate_redundant_widen_masks(code: string): string {
 			continue;
 		}
 		const label_m = /^([A-Za-z_.$][\w.$]*):/.exec(trimmed);
-		if (label_m || trimmed.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.exec(trimmed)) {
+		if (label_m || trimmed.startsWith(".") || is_alias_line(trimmed)) {
 			zext.clear();
 			out.push(text);
 			continue;

@@ -57,9 +57,9 @@ import {
 	transfer,
 	type Analysis,
 } from "./asm_cycle_dead_moves.ts";
-import { find_containing_cycle, instr_regs } from "./asm_if_convert.ts";
-import type { AsmInstruction } from "./asm_ir.ts";
-import { parse_asm_instruction } from "./lift_asm.ts";
+import { build_validated_cycles, containing_cycle_from } from "./asm_if_convert.ts";
+import { is_alias_line, type AsmInstruction } from "./asm_ir.ts";
+import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
 let remat_on = true;
 
@@ -127,7 +127,9 @@ interface PairCandidate {
 /** The `adr xR, LABEL` + `ldr dX, [xR]` shape with an encodable pool
  *  value — at most one per staging register per round. */
 function find_pair_candidates(lines: string[], doubles: Map<string, number>): PairCandidate[] {
-	const parsed: (AsmInstruction | null)[] = lines.map((l, i) => parse_asm_instruction(l, i + 1));
+	const parsed: (AsmInstruction | null)[] = lines.map((l, i) =>
+		parse_asm_instruction_shared(l, i + 1),
+	);
 	const out: PairCandidate[] = [];
 	const seen_xr = new Set<string>();
 	for (let i = 0; i < parsed.length - 1; i++) {
@@ -297,13 +299,15 @@ function remat_float_pairs(code: string): string {
 
 /** Label/jump tables for the cycle validator — the same parse discipline
  *  the if-conversion pass uses (one label position map, resolved jumps).
- *  Shared with the sibling asm-level passes (pointer walk). */
-export function build_tables(code: string): {
+ *  Shared with the sibling asm-level passes (pointer walk). Accepts either
+ *  whole text or pre-split lines: several callers hold the split array and
+ *  used to join it into one string just so this could re-split it. */
+export function build_tables(code_or_lines: string | string[]): {
 	parsed: (AsmInstruction | null)[];
 	labels: Map<string, number[]>;
 	jumps: { from: number; token: string; target: number | null; cond: boolean }[];
 } {
-	const lines = code.split("\n");
+	const lines = Array.isArray(code_or_lines) ? code_or_lines : code_or_lines.split("\n");
 	const parsed: (AsmInstruction | null)[] = Array.from({ length: lines.length }, () => null);
 	const labels = new Map<string, number[]>();
 	const jumps: { from: number; token: string; target: number | null; cond: boolean }[] = [];
@@ -316,10 +320,10 @@ export function build_tables(code: string): {
 			else labels.set(lm[1], [i]);
 			continue;
 		}
-		if (!t || t.startsWith("//") || t.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) {
+		if (!t || t.startsWith("//") || t.startsWith(".") || is_alias_line(t)) {
 			continue;
 		}
-		const instr = parse_asm_instruction(lines[i], i + 1);
+		const instr = parse_asm_instruction_shared(lines[i], i + 1);
 		if (!instr) continue;
 		parsed[i] = instr;
 		const is_branch =
@@ -364,13 +368,58 @@ export function build_tables(code: string): {
  */
 function hoist_one_fmov(code: string): string | null {
 	const lines = code.split("\n");
-	const { parsed, labels, jumps } = build_tables(code);
+	const { parsed, labels, jumps } = build_tables(lines);
+	// Query-independent cycle validation, computed once for the round: every
+	// candidate below asks "innermost validated cycle containing me", which
+	// used to re-walk labels × jumps per fmov candidate.
+	const cycles = build_validated_cycles(labels, jumps, parsed);
+
+	// Function-chunk boundaries (the same rule function_chunk_start uses),
+	// computed once per round: register presence and stray-reader scans are
+	// per-function facts (registers never collide across functions), so they
+	// walk only the candidate's chunk instead of the whole program text.
+	const chunk_starts: number[] = [0];
+	{
+		let prev = "";
+		for (let i = 0; i < lines.length; i++) {
+			const t = lines[i].trim();
+			if (!t) continue;
+			if (
+				i > 0 &&
+				(prev === "ret" ||
+					prev.startsWith(".data") ||
+					prev.startsWith(".p2align") ||
+					prev.startsWith(".text"))
+			) {
+				chunk_starts.push(i);
+			}
+			prev = t;
+		}
+	}
+	const chunk_of = (idx: number): number => {
+		let lo = 0;
+		let hi = chunk_starts.length - 1;
+		while (lo < hi) {
+			const mid = (lo + hi + 1) >> 1;
+			if (chunk_starts[mid] <= idx) lo = mid;
+			else hi = mid - 1;
+		}
+		return lo;
+	};
 
 	// Registers textually present in ANY form (d/s/q/v share the physical
-	// file — a v18.2d use makes d18 unsafe as a hoist destination).
-	const present = (m: number): boolean => {
-		const re = new RegExp(`\\b(?:d|s|q|v)${m}\\b`);
-		return re.test(code);
+	// file — a v18.2d use makes d18 unsafe as a hoist destination). Scoped
+	// to the candidate's function chunk: a register used in another function
+	// is a different physical file. Text-based: vector spellings (`v0.2d`,
+	// `v0.d[0]`) parse as names distinct from `d0`, but alias the same
+	// storage — the raw text sees every family form.
+	const family_re = (m: number) => new RegExp(`\\b[dsqv]${m}\\b`);
+	const present_in_chunk = (start: number, end: number, m: number): boolean => {
+		const needle = family_re(m);
+		for (let k = start; k < end; k++) {
+			if (needle.test(lines[k])) return true;
+		}
+		return false;
 	};
 
 	for (let i = 0; i < parsed.length; i++) {
@@ -381,21 +430,41 @@ function hoist_one_fmov(code: string): string | null {
 		if (imm.kind !== "imm" || !imm.raw.includes(".")) continue; // FP immediate form only
 		const dX = dst.name;
 
-		const header = find_containing_cycle(labels, jumps, parsed, i, i);
+		const header = containing_cycle_from(cycles, i, i);
 		if (!header) continue;
 		const { h, e } = header;
 
+		const chunk_idx = chunk_of(i);
+		const chunk_start = chunk_starts[chunk_idx];
+		const chunk_end =
+			chunk_idx + 1 < chunk_starts.length ? chunk_starts[chunk_idx + 1] : lines.length;
+
 		// Rename scope: (i, J] where J is the next dX definition — or the
 		// cycle end. A label (or any other unparseable line) in between
-		// refuses.
+		// refuses. So does ANY reference to dX's register number in another
+		// float-family spelling (v0.2d / v0.d[0] / s0 / q0 alias d0's
+		// storage but parse as distinct register names): a vector read in
+		// the scope would survive the dX→dM rename and read the wrong
+		// value, and a vector def would hide a definition from the J scan.
+		// The alias check runs BEFORE the def check: an instruction that
+		// DEFINES dX while reading an alias of dX (`faddp d0, v0.2d`) must
+		// refuse, not become the scope end. Bare `dX` spellings are exempt
+		// on the J line (that def IS the expected scope end).
+		const dX_num = Number(dX.slice(1));
+		const fam = family_re(dX_num);
+		const fam_alias = new RegExp(`\\b[svq]${dX_num}\\b`);
 		let J = -1;
-		let label_between = false;
+		let scope_unsafe = false;
 		for (let k = i + 1; k < e; k++) {
 			const c = parsed[k];
 			if (!c) {
 				const t = lines[k].trim();
 				if (!t || t.startsWith("//") || t.startsWith(".")) continue;
-				label_between = true; // a label: another path may skip the fmov
+				scope_unsafe = true; // a label: another path may skip the fmov
+				break;
+			}
+			if (fam_alias.test(lines[k])) {
+				scope_unsafe = true; // a family-alias read/def before the next dX def
 				break;
 			}
 			if (exact_defs(c).includes(dX)) {
@@ -403,24 +472,24 @@ function hoist_one_fmov(code: string): string | null {
 				break;
 			}
 		}
-		if (label_between) continue;
+		if (scope_unsafe) continue;
 		const scope_end = J === -1 ? e : J + 1;
 
-		// dX appears NOWHERE outside the cycle (no stray reader keeps a
-		// stale register after the deletion).
+		// dX appears NOWHERE in the function outside the cycle (no stray
+		// reader keeps a stale register after the deletion) — same family
+		// aliasing rule, over the raw text (comments included are fine:
+		// a false "outside" only refuses).
 		let outside = false;
-		for (let k = 0; k < parsed.length && !outside; k++) {
+		for (let k = chunk_start; k < chunk_end && !outside; k++) {
 			if (k >= h + 1 && k < e) continue;
-			const c = parsed[k];
-			if (!c) continue;
-			if (instr_regs(c).includes(dX)) outside = true;
+			if (fam.test(lines[k])) outside = true;
 		}
 		if (outside) continue;
 
 		// Fresh caller-saved d-register, textually absent in every form.
 		let dM: string | null = null;
 		for (let m = 16; m <= 31; m++) {
-			if (present(m)) continue;
+			if (present_in_chunk(chunk_start, chunk_end, m)) continue;
 			dM = `d${m}`;
 			break;
 		}
@@ -473,7 +542,7 @@ function remat_int_literals(code: string): string {
 	const lines = code.split("\n");
 	let changed = false;
 	for (let i = 0; i < lines.length; i++) {
-		const instr = parse_asm_instruction(lines[i], i + 1);
+		const instr = parse_asm_instruction_shared(lines[i], i + 1);
 		if (!instr || instr.op !== "ldr" || instr.operands.length !== 2) continue;
 		const [dst, src] = instr.operands;
 		if (dst.kind !== "reg" || dst.cls !== "gpr" || dst.name === "sp" || dst.name === "xzr")

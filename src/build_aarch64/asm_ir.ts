@@ -84,6 +84,18 @@ export function is_gpr(name: string): boolean {
 	return GPR64.has(name);
 }
 
+/**
+ * The `_sym = sym` alias-line test, shared by the lift and every asm-level
+ * pass. Most instruction lines contain no `=` at all, so the cheap
+ * substring gate skips the regex on the overwhelming majority of the
+ * per-line classifications across the pass pipeline.
+ */
+const ALIAS_LINE_RE = /^[\w.$]+\s*=\s*[\w.$]+$/;
+
+export function is_alias_line(t: string): boolean {
+	return t.indexOf("=") !== -1 && ALIAS_LINE_RE.test(t);
+}
+
 export function is_fpr(name: string): boolean {
 	return FPR.has(name) || VECTOR_FORM_RE.test(name);
 }

@@ -79,3 +79,16 @@ In order of feasibility:
 3. **edigits** — Needs `log()` and math constants (inline C). BigInt already works.
 4. **mandelbrot** — Needs float64 array access pattern (could reuse Buffer with reinterpret casts).
 5. **spectral-norm** — Same float array need as mandelbrot, plus sqrt.
+
+## Compile times (methodology)
+
+The "Compile times" table measures `compile_nomen.ts` end to end (join + parse
+
+- check + codegen + clang assemble/link), like `go build` / `zig build-exe` /
+  `cargo build` for the competitors. Since those tools are themselves prebuilt
+  native binaries, the Nomen compiler is **bundled once, untimed** (esbuild → a
+  self-contained ESM file in the run's temp dir, mirroring the Rust
+  dependency-tree and Go build-cache warm-ups) and each timed compile runs that
+  artifact with `node` — a from-source `tsx` invocation would re-transpile the
+  compiler's ~140k lines of TypeScript inside every timed run, which is harness
+  overhead, not compilation.

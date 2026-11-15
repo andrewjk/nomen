@@ -86,8 +86,26 @@ function restructure_op(
 // "Expected >" errors (see e.g. `while i < other_len || ...`).
 function try_parse_generic_args(status: ParseStatus): Type[] | null {
 	const saved_i = status.i;
-	const saved_values = status.tokens.map((t) => t.value);
+	// Journal token-value peels instead of snapshotting every token's value:
+	// the only in-place mutation a type-arg attempt performs is
+	// expect_close_angle's `>>` peeling (see the journal contract on
+	// ParseStatus). The old full-stream `tokens.map(t => t.value)` allocated
+	// an entry per token per attempt — every `a < b` comparison in the
+	// program paid a whole-token-stream copy on its failed probe. Journals
+	// chain: a nested speculative parse restores the outer journal on exit.
+	const journal: { idx: number; value: string }[] = [];
+	const saved_journal = status.value_journal;
+	status.value_journal = journal;
 	const saved_errors = status.errors.length;
+	const restore = (): null => {
+		status.i = saved_i;
+		for (let k = journal.length - 1; k >= 0; k--) {
+			status.tokens[journal[k].idx].value = journal[k].value;
+		}
+		status.errors.length = saved_errors;
+		status.value_journal = saved_journal;
+		return null;
+	};
 	accept("<", status);
 	const type_args: Type[] = [];
 	try {
@@ -98,18 +116,13 @@ function try_parse_generic_args(status: ParseStatus): Type[] | null {
 		}
 		if (!expect_close_angle(status)) throw new Error("no close angle");
 	} catch {
-		status.i = saved_i;
-		status.tokens.forEach((t, i) => (t.value = saved_values[i]));
-		status.errors.length = saved_errors;
-		return null;
+		return restore();
 	}
 	const follow = peek_current(status);
 	if (follow !== "(" && follow !== ".") {
-		status.i = saved_i;
-		status.tokens.forEach((t, i) => (t.value = saved_values[i]));
-		status.errors.length = saved_errors;
-		return null;
+		return restore();
 	}
+	status.value_journal = saved_journal;
 	return type_args;
 }
 

@@ -57,4 +57,15 @@ export default interface ParseStatus {
 	 * Errors that have been encountered
 	 */
 	errors: CompileError[];
+	/**
+	 * Token-value mutation journal for speculative parses (only
+	 * `try_parse_generic_args` sets it). `expect_close_angle` peels `>>` →
+	 * `>` IN PLACE; a speculative attempt that backtracks must undo those
+	 * peels. When the journal is present, every peel records the token
+	 * index and its pre-peel value, so undoing touches only the tokens the
+	 * attempt actually mutated instead of snapshotting the whole token
+	 * stream per attempt (which allocated an entry per token per attempt —
+	 * quadratic on comparison-heavy sources).
+	 */
+	value_journal?: { idx: number; value: string }[] | null;
 }

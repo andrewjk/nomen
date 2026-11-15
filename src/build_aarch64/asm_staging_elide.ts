@@ -43,9 +43,9 @@ import {
 	type Block,
 } from "./asm_cycle_dead_moves.ts";
 import { instr_regs } from "./asm_if_convert.ts";
-import type { AsmInstruction } from "./asm_ir.ts";
+import { is_alias_line, type AsmInstruction } from "./asm_ir.ts";
 import { rename_reads } from "./asm_remat.ts";
-import { parse_asm_instruction } from "./lift_asm.ts";
+import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
 let elide_on = true;
 
@@ -146,7 +146,7 @@ function scan_middle(
 		const t = lines[k].trim();
 		const mid = parsed[k];
 		if (!mid) {
-			if (!t || t.startsWith("//") || t.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) {
+			if (!t || t.startsWith("//") || t.startsWith(".") || is_alias_line(t)) {
 				k++;
 				continue;
 			}
@@ -168,7 +168,9 @@ function scan_middle(
  *  The pop restores exactly the pushed value (the middle cannot touch it),
  *  so deleting BOTH lines is a semantic identity — no verdict needed. */
 export function find_pairs(lines: string[]): PairCandidate[] {
-	const parsed: (AsmInstruction | null)[] = lines.map((l, i) => parse_asm_instruction(l, i + 1));
+	const parsed: (AsmInstruction | null)[] = lines.map((l, i) =>
+		parse_asm_instruction_shared(l, i + 1),
+	);
 	const out: PairCandidate[] = [];
 	for (let i = 0; i < parsed.length - 2; i++) {
 		const push = parsed[i];
@@ -182,7 +184,9 @@ export function find_pairs(lines: string[]): PairCandidate[] {
 }
 
 export function find_candidates(lines: string[]): ElideCandidate[] {
-	const parsed: (AsmInstruction | null)[] = lines.map((l, i) => parse_asm_instruction(l, i + 1));
+	const parsed: (AsmInstruction | null)[] = lines.map((l, i) =>
+		parse_asm_instruction_shared(l, i + 1),
+	);
 	const out: ElideCandidate[] = [];
 	for (let i = 0; i < parsed.length - 4; i++) {
 		const mov = parsed[i];
@@ -338,7 +342,9 @@ export function elide_stack_staging(code: string): string {
 	// Form A: mov + pair + consumer, verdict-gated.
 	for (let round = 0; round < 16; round++) {
 		const lines = code.split("\n");
-		const parsed = lines.map((l, i) => parse_asm_instruction(l, i + 1));
+		// Shared parse: this array is only read (rename_reads consults the
+		// parsed consumer's operand positions; the rewrite edits line text).
+		const parsed = lines.map((l, i) => parse_asm_instruction_shared(l, i + 1));
 		const cands = find_candidates(lines);
 		if (cands.length === 0) break;
 		// Select the round's set first: one candidate per staging register,

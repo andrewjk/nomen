@@ -74,8 +74,8 @@
  */
 
 import type { AsmInstruction, Operand } from "./asm_ir.ts";
-import { is_cond } from "./asm_ir.ts";
-import { parse_asm_instruction } from "./lift_asm.ts";
+import { is_alias_line, is_cond } from "./asm_ir.ts";
+import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
 let if_convert_on = true;
 
@@ -247,66 +247,94 @@ function escape_re(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** The innermost validated cycle (header line h, back-edge line e)
- *  strictly containing [test_idx, end_line], or null. Header provenance
- *  from inside, no calls/indirect transfers inside, and every jump
- *  target inside the range is the diamond's own else/end label. Shared
- *  with the sibling asm-level passes (remat). */
-export function find_containing_cycle(
+/**
+ * All VALIDATED cycles of a text's label/jump tables, sorted tightest-range
+ * first. The per-cycle validation (header provenance from inside, no
+ * calls/indirect transfers inside, every jump target inside the range
+ * originating inside) is query-independent — only the (test_idx, end_line)
+ * containment filter varies — so callers that query the same tables
+ * repeatedly (remat's per-candidate hoist scans, if-conversion's
+ * per-diamond scans, pointer-walk's per-access-group anchors) build this
+ * ONCE per round and answer each query in O(validated cycles). The old
+ * per-query form re-walked labels × jumps for every candidate.
+ */
+export function build_validated_cycles(
 	labels: Map<string, number[]>,
 	jumps: { from: number; target: number | null; cond: boolean }[],
 	parsed: (AsmInstruction | null)[],
-	test_idx: number,
-	end_line: number,
-): { h: number; e: number } | null {
+): { h: number; e: number }[] {
 	const candidates: { h: number; e: number }[] = [];
 	for (const [name, ps] of labels) {
 		if (NUMERIC_LABEL_RE.test(name) || ps.length !== 1) continue;
 		const h = ps[0];
-		if (h >= test_idx) continue;
 		for (const j of jumps) {
-			if (j.target !== h || j.cond || j.from <= h || j.from <= end_line) continue;
+			if (j.target !== h || j.cond || j.from <= h) continue;
 			candidates.push({ h, e: j.from });
 		}
 	}
-	// Tightest containing range first (innermost binding).
-	candidates.sort((a, b) => a.e - a.h - (b.e - b.h));
+	const validated: { h: number; e: number }[] = [];
 	for (const { h, e } of candidates) {
-		let ok = true;
-		for (const j2 of jumps) {
-			if (j2.target === h && !(j2.from > h && j2.from <= e)) ok = false;
-		}
-		if (!ok) continue;
-		for (let k = h + 1; k < e && ok; k++) {
-			const c = parsed[k];
-			if (!c) continue;
-			if (c.op === "bl" || c.op === "blr" || c.op === "br" || c.op === "svc" || c.op === "ret") {
-				ok = false;
-			}
-		}
-		if (!ok) continue;
-		// Single entry: every jump whose target sits inside the range must
-		// originate inside — an outside jump into the region would be a
-		// second entry that bypasses the preheader materialization.
-		// (Inside-targeting internal branches — a sibling diamond's
-		// labels, say — are fine; the diamond's own labels additionally
-		// passed the exactly-one-jumper provenance check above.)
-		for (const j3 of jumps) {
-			if (j3.target === null) continue;
-			if (j3.target > h && j3.target < e && !(j3.from > h && j3.from <= e)) {
-				ok = false;
-			}
-		}
-		if (ok) return { h, e };
+		if (cycle_is_valid(h, e, labels, jumps, parsed)) validated.push({ h, e });
+	}
+	// Tightest containing range first (innermost binding).
+	validated.sort((a, b) => a.e - a.h - (b.e - b.h));
+	return validated;
+}
+
+/** The innermost VALIDATED cycle containing [test_idx, end_line], from a
+ *  prebuilt list (see build_validated_cycles). */
+export function containing_cycle_from(
+	validated: { h: number; e: number }[],
+	test_idx: number,
+	end_line: number,
+): { h: number; e: number } | null {
+	for (const { h, e } of validated) {
+		if (h < test_idx && e > end_line) return { h, e };
 	}
 	return null;
 }
 
-/** One conversion attempt over the whole text: find the FIRST eligible
- *  diamond, apply it, return the new text; null when nothing converts.
- *  (One per round keeps every index valid; the caller iterates.) */
-function convert_one(code: string): string | null {
-	const lines = code.split("\n");
+/** The per-candidate validation find_containing_cycle has always applied:
+ *  header provenance from inside, no calls/indirect transfers inside, and
+ *  every jump target inside the range must originate inside (single
+ *  entry). */
+function cycle_is_valid(
+	h: number,
+	e: number,
+	labels: Map<string, number[]>,
+	jumps: { from: number; target: number | null; cond: boolean }[],
+	parsed: (AsmInstruction | null)[],
+): boolean {
+	for (const j2 of jumps) {
+		if (j2.target === h && !(j2.from > h && j2.from <= e)) return false;
+	}
+	for (let k = h + 1; k < e; k++) {
+		const c = parsed[k];
+		if (!c) continue;
+		if (c.op === "bl" || c.op === "blr" || c.op === "br" || c.op === "svc" || c.op === "ret") {
+			return false;
+		}
+	}
+	// Single entry: every jump whose target sits inside the range must
+	// originate inside — an outside jump into the region would be a
+	// second entry that bypasses the preheader materialization.
+	// (Inside-targeting internal branches — a sibling diamond's
+	// labels, say — are fine; the diamond's own labels additionally
+	// passed the exactly-one-jumper provenance check above.)
+	for (const j3 of jumps) {
+		if (j3.target === null) continue;
+		if (j3.target > h && j3.target < e && !(j3.from > h && j3.from <= e)) return false;
+	}
+	return true;
+}
+
+/** One conversion attempt over the given text lines: find the FIRST eligible
+ *  diamond, apply it, return the new lines; null when nothing converts.
+ *  (One per round keeps every index valid; the caller iterates.) Operates on
+ *  a function chunk — the tables and cycle checks are flow-local, so the
+ *  driver runs this per chunk instead of rebuilding whole-program tables per
+ *  single conversion. */
+function convert_one_lines(lines: string[]): string[] | null {
 	const n = lines.length;
 	const parsed: (AsmInstruction | null)[] = Array.from({ length: n }, () => null);
 	const labels = new Map<string, number[]>();
@@ -321,10 +349,10 @@ function convert_one(code: string): string | null {
 			else labels.set(lm[1], [i]);
 			continue;
 		}
-		if (!t || t.startsWith("//") || t.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) {
+		if (!t || t.startsWith("//") || t.startsWith(".") || is_alias_line(t)) {
 			continue;
 		}
-		const instr = parse_asm_instruction(lines[i], i + 1);
+		const instr = parse_asm_instruction_shared(lines[i], i + 1);
 		if (!instr) continue;
 		parsed[i] = instr;
 		if (is_branch_op(instr.op)) {
@@ -350,6 +378,10 @@ function convert_one(code: string): string | null {
 		return ps && ps.length > 0 ? ps[0] : null;
 	};
 	for (const j of jumps) j.target = resolve_target(j.token, j.from);
+
+	// Validated once for this attempt — every diamond below asks the same
+	// containment question over the same tables.
+	const cycles = build_validated_cycles(labels, jumps, parsed);
 
 	for (let i = 0; i < n; i++) {
 		const instr = parsed[i];
@@ -537,7 +569,7 @@ function convert_one(code: string): string | null {
 		if ((tb.match(b_re) ?? []).length !== 1) continue;
 		if (ta.replace(a_re, b_token) !== tb) continue;
 
-		const header = find_containing_cycle(labels, jumps, parsed, i, end_line);
+		const header = containing_cycle_from(cycles, i, end_line);
 		if (header === null) continue;
 
 		// Loop invariance: the predicate and both operands are defined
@@ -594,18 +626,59 @@ function convert_one(code: string): string | null {
 			pre.push(`${indent}csel ${select_reg}, ${a_name}, ${b_name}, ${notcc}`);
 		}
 		lines.splice(header.h, 0, ...pre);
-		return lines.join("\n");
+		return lines;
 	}
 
 	return null;
 }
 
+/** Function-chunk boundaries (one pass). Control flow cannot cross a `ret`,
+ *  so every cycle/diamond is chunk-local — the driver iterates each chunk
+ *  to its own fixpoint instead of rebuilding whole-program tables per
+ *  single conversion. */
+function chunk_starts_of(lines: string[]): number[] {
+	const starts: number[] = [0];
+	let prev = "";
+	for (let i = 0; i < lines.length; i++) {
+		const t = lines[i].trim();
+		if (!t) continue;
+		if (
+			i > 0 &&
+			(prev === "ret" ||
+				prev.startsWith(".data") ||
+				prev.startsWith(".p2align") ||
+				prev.startsWith(".text"))
+		) {
+			starts.push(i);
+		}
+		prev = t;
+	}
+	return starts;
+}
+
 export function convert_loop_invariant_branches(code: string): string {
 	if (!if_convert_on) return code;
-	for (let round = 0; round < 8; round++) {
-		const next = convert_one(code);
-		if (next === null) return code;
-		code = next;
+	const lines = code.split("\n");
+	const starts = chunk_starts_of(lines);
+	let any = false;
+	// Reverse order: a conversion splices lines (deletes the diamond
+	// scaffolding, inserts the preheader), shifting every LATER index —
+	// processing later chunks first keeps earlier chunk bounds valid.
+	for (let c = starts.length - 1; c >= 0; c--) {
+		const start = starts[c];
+		const end = c + 1 < starts.length ? starts[c + 1] : lines.length;
+		let chunk = lines.slice(start, end);
+		let changed = false;
+		for (let round = 0; round < 8; round++) {
+			const next = convert_one_lines(chunk);
+			if (next === null) break;
+			chunk = next;
+			changed = true;
+		}
+		if (changed) {
+			lines.splice(start, end - start, ...chunk);
+			any = true;
+		}
 	}
-	return code;
+	return any ? lines.join("\n") : code;
 }

@@ -21,10 +21,17 @@ export function is_ast_node(value: unknown): value is BaseNode {
  *
  * `skip` names fields to omit; it defaults to the `parent`/`scope` back-refs.
  */
-export function child_nodes(node: BaseNode, skip: string[] = ["parent", "scope"]): BaseNode[] {
+const DEFAULT_SKIP = new Set(["parent", "scope"]);
+
+export function child_nodes(node: BaseNode, skip?: string[]): BaseNode[] {
 	const out: BaseNode[] = [];
-	const skipped = new Set(skip);
-	for (const key of Object.keys(node)) {
+	// The default skip set is shared (the common case — every generic AST
+	// walk); a custom skip list still gets its own Set.
+	const skipped = skip ? new Set(skip) : DEFAULT_SKIP;
+	// for-in over class instances enumerates the own fields (methods sit on
+	// the non-enumerable prototype), and avoids the Object.keys array
+	// allocation per visited node.
+	for (const key in node) {
 		if (skipped.has(key)) continue;
 		const value = (node as unknown as Record<string, unknown>)[key];
 		if (Array.isArray(value)) {

@@ -645,3 +645,32 @@ bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
 ## Bundle macOS GUI builds into `.app`
+
+## Compile-time residuals (COMPILER_PERF tranche 1)
+
+The compile-time pass (asm-pipeline table reuse, per-function-chunk drivers,
+bundled benchmark runner) left these known costs in place, cheapest-first:
+
+- **String-set liveness in the shared CFG analyzer**
+  (`asm_cycle_dead_moves.ts` `analyze` + `asm_remat.ts` `live_before_fmov`):
+  backward liveness still runs over `Set<string>` register names with a
+  fresh Set per block per fixpoint sweep. A register-universe bitmask
+  (x0–x30/w/d/sp/xzr ≈ 96 bits → two `BigInt`-free `Uint32Array` words) with
+  precomputed def/read masks per parsed instruction would cut the constant
+  factor ~5–10×. `bl`/`svc`/`ret` effects are fixed masks; only
+  `exact_defs`/`reads_of` need per-instruction computation (cacheable on the
+  memoized instruction).
+- **`ab.sh` / `leakcheck.sh` still invoke the compiler through `tsx`** —
+  per-run they re-transpile the whole compiler. They are correctness tools
+  (one compile each), so it doesn't distort measurements, but they could
+  share `benchmark.sh`'s untimed esbuild bundle step for faster iteration.
+- **`lift_functions` walks the line array twice** (validate_asm's pass 1 +
+  pass 2, then its own classification pass). A single fused walk needs the
+  label set first (branch-target existence) — two passes are the honest
+  shape, but pass 1 could also classify (label/directive/instruction) so
+  pass 2 and the lift share the stripped texts instead of re-stripping.
+- **`try_parse_generic_args`' backtracking journal** now records only real
+  token-value mutations, but the attempt still re-parses types on every
+  `Name <` occurrence. A cheap lookahead gate (the token after `<` must be
+  identifier-shaped or `[`) would skip the attempt for plain comparisons
+  without any snapshot work.

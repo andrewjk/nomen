@@ -27,10 +27,12 @@ export default function expect_close_angle(status: ParseStatus): boolean {
 		}
 		if (token.value === ">>") {
 			// Peel one angle off; leave the remaining `>` at the current index.
+			if (status.value_journal) status.value_journal.push({ idx: status.i, value: token.value });
 			token.value = ">";
 			return true;
 		}
 		if (token.value === ">>>") {
+			if (status.value_journal) status.value_journal.push({ idx: status.i, value: token.value });
 			token.value = ">>";
 			return true;
 		}

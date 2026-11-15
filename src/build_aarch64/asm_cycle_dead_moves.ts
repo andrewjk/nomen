@@ -49,7 +49,8 @@
  */
 
 import type { AsmInstruction } from "./asm_ir.ts";
-import { parse_asm_instruction } from "./lift_asm.ts";
+import { is_alias_line } from "./asm_ir.ts";
+import { parse_asm_instruction_shared } from "./lift_asm.ts";
 
 let cycle_dead_moves_on = true;
 
@@ -298,11 +299,11 @@ function analyze(code: string): Analysis | null {
 			else labels.set(lm[1], [i]);
 			continue;
 		}
-		if (!t || t.startsWith("//") || t.startsWith(".") || /^[\w.$]+\s*=\s*[\w.$]+$/.test(t)) {
+		if (!t || t.startsWith("//") || t.startsWith(".") || is_alias_line(t)) {
 			kind[i] = "skip";
 			continue;
 		}
-		const instr = parse_asm_instruction(lines[i], i + 1);
+		const instr = parse_asm_instruction_shared(lines[i], i + 1);
 		if (!instr) {
 			kind[i] = "instr";
 			unknown.add(i);
@@ -467,45 +468,86 @@ function analyze(code: string): Analysis | null {
 
 export function eliminate_dead_cycle_moves(code: string): string {
 	if (!cycle_dead_moves_on) return code;
-	for (let round = 0; round < 4; round++) {
-		const a = analyze(code);
-		if (!a) return code;
-		const in_cycle: boolean[] = Array.from({ length: a.lines.length }, () => false);
-		for (const { head, end } of a.cycles) {
-			for (let i = head + 1; i < end; i++) in_cycle[i] = true;
-		}
-		const out = a.lines.slice();
-		let deleted = 0;
-		for (let bi = 0; bi < a.blocks.length; bi++) {
-			const blk = a.blocks[bi];
-			const live = new Set<string>();
-			for (const s of blk.succ) {
-				for (const r of a.live_in[s]) live.add(r);
+	// Function chunks, split ONCE. Control flow cannot cross a `ret`, so
+	// each chunk is analyzed and iterated to its own fixpoint independently
+	// — the old driver re-analyzed the ENTIRE program per round (whole-text
+	// split + parse + CFG + liveness × up to 4 rounds) even when only one
+	// function still had candidates.
+	const lines = code.split("\n");
+	const starts: number[] = [0];
+	{
+		let prev = "";
+		for (let i = 0; i < lines.length; i++) {
+			const t = lines[i].trim();
+			if (!t) continue;
+			if (
+				i > 0 &&
+				(prev === "ret" ||
+					prev.startsWith(".data") ||
+					prev.startsWith(".p2align") ||
+					prev.startsWith(".text"))
+			) {
+				starts.push(i);
 			}
-			for (let i = blk.end; i >= blk.start; i--) {
-				if (a.kind[i] !== "instr") continue;
-				const instr = a.parsed[i];
-				if (!instr) {
-					for (const r of ALL_TRACKED) live.add(r);
-					continue;
+			prev = t;
+		}
+	}
+	let any_change = false;
+	for (let c = 0; c < starts.length; c++) {
+		const start = starts[c];
+		const end = c + 1 < starts.length ? starts[c + 1] : lines.length;
+		let chunk_text = lines.slice(start, end).join("\n");
+		let chunk_changed = false;
+		for (let round = 0; round < 4; round++) {
+			const a = analyze(chunk_text);
+			if (!a) break;
+			const in_cycle: boolean[] = Array.from({ length: a.lines.length }, () => false);
+			for (const { head, end: cyc_end } of a.cycles) {
+				for (let i = head + 1; i < cyc_end; i++) in_cycle[i] = true;
+			}
+			const out = a.lines.slice();
+			let deleted = 0;
+			for (let bi = 0; bi < a.blocks.length; bi++) {
+				const blk = a.blocks[bi];
+				const live = new Set<string>();
+				for (const s of blk.succ) {
+					for (const r of a.live_in[s]) live.add(r);
 				}
-				if (in_cycle[i]) {
-					const dst = mov_dest(instr);
-					// The w-sibling shares the def's fate: a `str w2` below
-					// consumes the x2 def's low half, so the mov is only
-					// dead when NEITHER view is read (the buffer_uint32
-					// receipt).
-					if (dst !== null && !live.has(dst) && !live.has(`w${dst.slice(1)}`)) {
-						out[i] = "";
-						deleted++;
+				for (let i = blk.end; i >= blk.start; i--) {
+					if (a.kind[i] !== "instr") continue;
+					const instr = a.parsed[i];
+					if (!instr) {
+						for (const r of ALL_TRACKED) live.add(r);
 						continue;
 					}
+					if (in_cycle[i]) {
+						const dst = mov_dest(instr);
+						// The w-sibling shares the def's fate: a `str w2` below
+						// consumes the x2 def's low half, so the mov is only
+						// dead when NEITHER view is read (the buffer_uint32
+						// receipt).
+						if (dst !== null && !live.has(dst) && !live.has(`w${dst.slice(1)}`)) {
+							out[i] = "";
+							deleted++;
+							continue;
+						}
+					}
+					transfer(instr, live);
 				}
-				transfer(instr, live);
 			}
+			if (deleted === 0) break;
+			chunk_text = out.join("\n");
+			chunk_changed = true;
 		}
-		if (deleted === 0) return code;
-		code = out.join("\n");
+		if (chunk_changed) {
+			const new_lines = chunk_text.split("\n");
+			// Deletions blank lines in place — the chunk line count is
+			// stable, but stay defensive against a shorter/longer chunk.
+			for (let i = 0; i < end - start && i < new_lines.length; i++) {
+				lines[start + i] = new_lines[i];
+			}
+			any_change = true;
+		}
 	}
-	return code;
+	return any_change ? lines.join("\n") : code;
 }

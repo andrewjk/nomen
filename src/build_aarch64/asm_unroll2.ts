@@ -58,9 +58,12 @@ const NUMERIC_RE = /^\d+$/;
 const LABEL_LINE_RE = /^([A-Za-z_.$][\w.$]*|\d+):$/;
 const MAX_BODY = 30;
 
-/** Find the header line of the first unrollable cycle, or null. */
-function find_unroll_one(lines: string[], done: Set<string>): number | null {
-	const { parsed, labels, jumps } = build_tables(lines.join("\n"));
+/** Find the header line of the first unrollable cycle, or null. Returns the
+ *  cycle bounds too: the caller (the driver) hands `e` straight to
+ *  apply_unroll — re-deriving it there cost a second full-program table
+ *  build per rewrite. */
+function find_unroll_one(lines: string[], done: Set<string>): { h: number; e: number } | null {
+	const { parsed, labels, jumps } = build_tables(lines);
 
 	const targeted = new Set<number>();
 	for (const j of jumps) {
@@ -115,7 +118,7 @@ function find_unroll_one(lines: string[], done: Set<string>): number | null {
 		const resolved = resolve_label(labels, br_target.name, h + 2);
 		if (resolved === null || (resolved > h && resolved < e)) continue;
 
-		return h;
+		return { h, e };
 	}
 	return null;
 }
@@ -136,18 +139,9 @@ function resolve_label(labels: Map<string, number[]>, token: string, from: numbe
 	return ps && ps.length > 0 ? ps[0] : null;
 }
 
-/** Apply the ×2 unroll at header line `h`. */
-function apply_unroll(lines: string[], h: number): string | null {
-	const { jumps } = build_tables(lines.join("\n"));
-	let e = -1;
-	for (const j of jumps) {
-		if (j.target === h && !j.cond && j.from > h) {
-			e = j.from;
-			break;
-		}
-	}
-	if (e === -1) return null;
-
+/** Apply the ×2 unroll at header line `h` with back-edge `e` (already
+ *  resolved by the finder — no second table build). */
+function apply_unroll(lines: string[], h: number, e: number): string | null {
 	const guard = lines.slice(h + 1, h + 3); // cmp + b.cond
 	const body = lines.slice(h + 3, e); // body + update marker + increment
 	const body_dup: string[] = [];
@@ -173,6 +167,55 @@ function apply_unroll(lines: string[], h: number): string | null {
 }
 
 /**
+ * Validate ONLY the function chunk the rewrite touched. The pass's safety
+ * net ("never ship a broken rewrite") used to re-validate the ENTIRE
+ * program per rewrite — every instruction in every function re-parsed per
+ * round. The rewrite only splices lines into one function, so per-chunk
+ * validation sees the same state the whole-file pass would at that point
+ * (entries reset flag/sp tracking) at a fraction of the cost. Branches to
+ * labels outside the chunk are external references here, not emission bugs.
+ */
+function validate_chunk(code: string[], header_idx: number): boolean {
+	const n = code.length;
+	let start = 0;
+	let prev = "";
+	for (let i = 0; i < header_idx; i++) {
+		const t = code[i].trim();
+		if (!t) continue;
+		if (
+			prev === "ret" ||
+			prev.startsWith(".data") ||
+			prev.startsWith(".p2align") ||
+			prev.startsWith(".text")
+		) {
+			start = i;
+		}
+		prev = t;
+	}
+	let end = n;
+	prev = "";
+	for (let i = start; i < n; i++) {
+		const t = code[i].trim();
+		if (!t) continue;
+		if (
+			i > start &&
+			(prev === "ret" ||
+				prev.startsWith(".data") ||
+				prev.startsWith(".p2align") ||
+				prev.startsWith(".text"))
+		) {
+			end = i;
+			break;
+		}
+		prev = t;
+	}
+	const errors = validate_asm(code.slice(start, end).join("\n"), {
+		allow_external_branch_targets: true,
+	});
+	return errors.length === 0;
+}
+
+/**
  * Phase entry — unroll each eligible validated cycle once (≤ 8 rounds;
  * a cycle's label name unrolls at most once).
  */
@@ -181,12 +224,15 @@ export function unroll_loops_x2(code: string): string {
 	const done = new Set<string>();
 	for (let round = 0; round < 8; round++) {
 		const lines = code.split("\n");
-		const h = find_unroll_one(lines, done);
-		if (h === null) break;
-		const name = (LABEL_LINE_RE.exec(lines[h].trim())?.[1] ?? "").trim();
-		const next = apply_unroll(lines, h);
+		const found = find_unroll_one(lines, done);
+		if (found === null) break;
+		const name = (LABEL_LINE_RE.exec(lines[found.h].trim())?.[1] ?? "").trim();
+		const next = apply_unroll(lines, found.h, found.e);
 		if (next === null) break;
-		if (validate_asm(next).length > 0) break; // never ship a broken rewrite
+		// Never ship a broken rewrite: validate the function the rewrite
+		// touched (the header label moved `guard.length` lines down).
+		const next_lines = next.split("\n");
+		if (!validate_chunk(next_lines, found.h + 2)) break;
 		if (name) done.add(name);
 		code = next;
 	}
