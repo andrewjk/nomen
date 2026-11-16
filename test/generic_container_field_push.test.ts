@@ -106,8 +106,19 @@ leaf.inner.push(7)
 h.items.push(mv leaf)
 Console.write_line(h.items.at_or_panic(0).inner.at_or_panic(0).to_string())
 Console.write_line(h.items.length.to_string())
+Console.write_line(json_encode(h))
 `;
-	await build_and_check_output(input, "generic_container_struct_holding", "7\n1\n");
+	// The json_encode line is the comptime-json crash shape (2026-11-16): the
+	// generic-mono element pushed with `mv`, then encoded — the element's
+	// encode recurses into another container mono and segfaulted aarch64 in
+	// the closing inline append (x19/x20 zeroed mid-splice). Fixed by the
+	// full idempotent mono destroy + StableList load deep-copy; kept here as
+	// the regression lock (audit on, both backends).
+	await build_and_check_output(
+		input,
+		"generic_container_struct_holding",
+		'7\n1\n{"items":[{"inner":[7]}]}\n',
+	);
 });
 
 test("generics -- container-field generics check clean for the raw program", () => {

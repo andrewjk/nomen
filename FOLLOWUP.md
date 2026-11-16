@@ -675,41 +675,6 @@ collide with library types" (current AGENTS.md guidance). The scan is
 textual by design (works pre-check), so the parser-side exclusion is the
 cleaner fix if it ever bites hard.
 
-## aarch64: comptime-json encode crashes for generic-mono structs with container-field elements
-
-Found while testing the nested-container-mono fixes (2026-11-16). After the
-`META.is_struct`/`is_container` classification stopped treating a USER
-generic's mono as a container (`Holder<StableList<Leaf>>` used to dispatch
-into the list encoder and fail the check), the encode path over such a
-mono became reachable — and segfaults on aarch64:
-
-```nomen
-mv struct Leaf {
-	var inner = StableList<int>()
-}
-
-mv struct Holder<T> {
-	var items = StableList<T>()
-}
-
-pub func main = () {
-	var h = Holder<Leaf>()
-	var leaf = Leaf()
-	leaf.inner.push(7)
-	h.items.push(mv leaf)
-	Console.write_line(json_encode(h))   // SIGSEGV on aarch64; C is fine
-}
-```
-
-The crash is inside `json_encode_list_StableList_Leaf`'s closing inline
-StringBuilder append (`.end_while_54`): x19/x20 are both 0 and the
-backtrace repeats `.inline_ret_108` — a stack/register imbalance in the
-inline-append splice when the element's own encode recurses into another
-container mono. The plain-struct equivalents (json_serde's tests:
-`Grid`, `Plain { atoms }`) and encode-before-push shapes are fine; a
-generic-mono element pushed with `mv` is the trigger. `test/
-generic_container_field_push.test.ts` avoids the shape for now.
-
 ## ref-param string residuals (the displaced-pair fix landed, these edges remain)
 
 The main leak is fixed (the call site captures the displaced pair and frees
