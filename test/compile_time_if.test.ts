@@ -16,28 +16,25 @@ function parse_src(source: string, options?: { arch?: string; platform?: string 
 	});
 }
 
-test("only the matching arm survives to the tree", () => {
+test("#switch: only the matching arm survives to the tree", () => {
 	const parsed = parse_src(
 		`
-		#if META.arch == "aarch64" {
-			func target_helper = (out int) { return 1 }
-		} #elif META.arch == "c" {
-			func target_helper = (out int) { return 2 }
-		} #else {
-			func target_helper = (out int) { return 3 }
-		}
+		#switch {
+			case META.arch == "aarch64" { func target_helper = (out int) { return 1 } }
+			case META.arch == "c" { func target_helper = (out int) { return 2 } }
+		} else { func target_helper = (out int) { return 3 } }
 		`,
 		{ arch: "c", platform: "macos" },
 	);
 	expect(parsed.errors).toEqual([]);
-	// Exactly ONE helper survives (the c arm); the other two arms are gone.
+	// Exactly ONE helper survives (the c case); the other arms are gone.
 	const helpers = parsed.root.statements.filter(
 		(s) => s.node_type === "func" && (s as any).name === "target_helper",
 	);
 	expect(helpers.length).toBe(1);
 });
 
-test("no matching arm and no #else removes everything", () => {
+test("no matching arm and no else removes everything", () => {
 	const parsed = parse_src(
 		`
 		func keep = () {}
@@ -58,13 +55,16 @@ test("dead arms are not checked — missing names are fine there", () => {
 	const parsed = parse_src(
 		`
 		func f = () {
-			#if META.arch == "c" {
-				var x = 1
-				Console.write_line("{x}")
-			} #elif META.arch == "aarch64" {
-				// Only reached on aarch64: the name below exists nowhere on the
-				// c target — checking it would be a spurious error.
-				this_function_does_not_exist(1, 2)
+			#switch {
+				case META.arch == "c" {
+					var x = 1
+					Console.write_line("{x}")
+				}
+				case META.arch == "aarch64" {
+					// Only reached on aarch64: the name below exists nowhere on
+					// the c target — checking it would be a spurious error.
+					this_function_does_not_exist(1, 2)
+				}
 			}
 		}
 		`,
@@ -78,10 +78,9 @@ test("mutually exclusive same-name declarations do not collide", () => {
 	// duplicate-name check must run on the FOLDED tree, not the raw one.
 	const parsed = parse_src(
 		`
-		#if META.arch == "c" {
-			func hash8 = (int v, out int) { return v & 255 }
-		} #elif META.arch == "aarch64" {
-			func hash8 = (int v, out int) { return v }
+		#switch {
+			case META.arch == "c" { func hash8 = (int v, out int) { return v & 255 } }
+			case META.arch == "aarch64" { func hash8 = (int v, out int) { return v } }
 		}
 		`,
 		{ arch: "aarch64", platform: "macos" },
@@ -113,26 +112,24 @@ test("live code may use a declaration selected by a pragma", () => {
 });
 
 test("conditions compose with && || ! and parentheses", () => {
-	const parsed = parse_src(
-		`
+	const source = `
 		func f = () {
 			#if (META.arch == "c" || META.arch == "aarch64") && !(META.platform == "windows") {
 				var x = 1
 				Console.write_line("{x}")
 			}
 		}
-		`,
-		{ arch: "c", platform: "macos" },
-	);
+	`;
+	const parsed = parse_src(source, { arch: "c", platform: "macos" });
 	expect(parsed.errors).toEqual([]);
-	// The compound condition is FALSE for windows — dead then.
+	// The compound condition is FALSE for windows — the else arm lives then.
 	const win = parse_src(
 		`
 		func f = () {
 			#if (META.arch == "c" || META.arch == "aarch64") && !(META.platform == "windows") {
 				var x = 1
 				Console.write_line("{x}")
-			} #else {
+			} else {
 				var y = 2
 				Console.write_line("{y}")
 			}
@@ -161,22 +158,55 @@ test("comparing a string with a bool is an error", () => {
 	expect(parsed.errors[0].message).toContain("compares a string with a bool");
 });
 
-test("#elif cannot follow #else", () => {
+test("#elif no longer exists — the # dispatch rejects it", () => {
 	const parsed = parse_src(
 		`
 		func f = () {
 			#if META.arch == "c" {
 				var x = 1
-			} #else {
-				var y = 2
 			} #elif META.arch == "aarch64" {
-				var z = 3
+				var y = 2
 			}
 		}
 		`,
 		{ arch: "c", platform: "macos" },
 	);
-	expect(parsed.errors.some((e) => e.message.includes("#elif cannot follow #else"))).toBe(true);
+	expect(parsed.errors.some((e) => e.message.includes("Expected #if, #switch"))).toBe(true);
+});
+
+test("#switch else arms sit outside the case braces", () => {
+	const parsed = parse_src(
+		`
+		func f = () {
+			#switch {
+				case META.arch == "c" {
+					var x = 1
+				} else {
+					var y = 2
+				}
+			}
+		}
+		`,
+		{ arch: "c", platform: "macos" },
+	);
+	expect(
+		parsed.errors.some((e) => e.message.includes("else arms sit outside the case braces")),
+	).toBe(true);
+});
+
+test("#switch case arms accept the -> one-line form", () => {
+	const parsed = parse_src(
+		`
+		func f = () {
+			#switch {
+				case META.arch == "c" -> Console.write_line("c")
+				case META.arch == "aarch64" -> Console.write_line("arm")
+			} else -> Console.write_line("other")
+		}
+		`,
+		{ arch: "c", platform: "macos" },
+	);
+	expect(parsed.errors).toEqual([]);
 });
 
 test("pragmas nest inside pragma arms", () => {
@@ -187,7 +217,7 @@ test("pragmas nest inside pragma arms", () => {
 				#if META.platform == "macos" {
 					var x = "c/macos"
 					Console.write_line(x)
-				} #else {
+				} else {
 					var y = "c/other"
 					Console.write_line(y)
 				}
@@ -213,25 +243,28 @@ test("a pragma inside a struct body is rejected (stage-1 limit)", () => {
 	expect(parsed.errors.some((e) => e.message.includes("cannot appear here"))).toBe(true);
 });
 
-test("raw blocks inside arms select per target", () => {
+test("raw blocks inside #switch arms select per target", () => {
 	const parsed = parse_src(
 		`
 		func raw_probe = () {
-			#if META.arch == "c" {
-			\`\`\`
-			#c_target_marker
-			\`\`\`
-			} #elif META.arch == "aarch64" {
-			\`\`\`
-			#arm_target_marker
-			\`\`\`
+			#switch {
+				case META.arch == "c" {
+				\`\`\`
+				#c_target_marker
+				\`\`\`
+				}
+				case META.arch == "aarch64" {
+				\`\`\`
+				#arm_target_marker
+				\`\`\`
+				}
 			}
 		}
 		`,
 		{ arch: "c", platform: "macos" },
 	);
 	expect(parsed.errors).toEqual([]);
-	// The folded tree must contain only the c arm's raw block.
+	// The folded tree must contain only the c case's raw block.
 	const func = parsed.root.statements.find((s) => s.node_type === "func") as any;
 	const raws = func.statements.filter((s: any) => s.node_type === "raw");
 	expect(raws.length).toBe(1);
@@ -255,10 +288,9 @@ test("both backends build the folded tree per target", () => {
 	const source = `
 		import System
 		func pick = (out string) {
-			#if META.arch == "c" {
-				return "c side"
-			} #elif META.arch == "aarch64" {
-				return "arm side"
+			#switch {
+				case META.arch == "c" { return "c side" }
+				case META.arch == "aarch64" { return "arm side" }
 			}
 		}
 		pub func main = () {

@@ -29,7 +29,7 @@ import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
 import parse_match, { parse_try } from "./parse_match.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
-import parse_pragma_if from "./parse_pragma_if.ts";
+import parse_pragma_if, { parse_pragma_switch } from "./parse_pragma_if.ts";
 import parse_raw from "./parse_raw.ts";
 import parse_return from "./parse_return.ts";
 import parse_struct from "./parse_struct.ts";
@@ -243,13 +243,14 @@ export default function parse_statement(status: ParseStatus) {
 			case "#": {
 				// #init / #destroy / #spawn — special struct functions
 				const next = status.tokens[status.i + 1]?.value;
-				if (next === "if") {
-					// Compile-time conditional (docs/COMPTIME_PLAN_2.md stage
-					// 1): `#if META.arch == "c" { ... }` with `#elif`/`#else`.
-					// The checker folds it before checking — only the
-					// matching arm's statements survive to codegen.
-					const pragma = parse_pragma_if(status);
-					add_to_parent(pragma, "Compile-time if", status);
+				if (next === "if" || next === "switch") {
+					// Compile-time conditionals (docs/COMPTIME_PLAN_2.md stage
+					// 1): `#if META.arch == "c" { ... } else { ... }` and the
+					// `#switch { case ... }` multi-arm form. The checker folds
+					// both before checking — only the matching arm's
+					// statements survive to codegen.
+					const pragma = next === "if" ? parse_pragma_if(status) : parse_pragma_switch(status);
+					add_to_parent(pragma, "Compile-time conditional", status);
 				} else if (next === "init") {
 					consume(status); // consume #
 					consume(status); // consume init
@@ -289,7 +290,7 @@ export default function parse_statement(status: ParseStatus) {
 				} else {
 					add_error(
 						status,
-						`Expected #if, #init, #destroy, #spawn, #weak or #handle`,
+						`Expected #if, #switch, #init, #destroy, #spawn, #weak or #handle`,
 						get_index(status),
 					);
 					consume(status);

@@ -4,15 +4,14 @@ import { compile_main, compile_module } from "./_helpers.ts";
 
 // SPEC.md, "Compile-Time Conditionals" — one test per fenced code block.
 // Every block pins its compile target explicitly so the fold is
-// deterministic regardless of the host running the suite.
+// deterministic regardless of host.
 
-test("body-scope arch switch selects the matching arm", () => {
+test("#switch selects the matching arm per target", () => {
 	const body = `
-		#if META.arch == "aarch64" {
-			Console.write_line("arm")
-		} #elif META.arch == "c" {
-			Console.write_line("c target")
-		} #else {
+		#switch {
+			case META.arch == "aarch64" -> Console.write_line("arm")
+			case META.arch == "c" { Console.write_line("c target") }
+		} else {
 			Console.write_line("other")
 		}
 	`;
@@ -20,13 +19,16 @@ test("body-scope arch switch selects the matching arm", () => {
 	expect(compile_main(body, { arch: "c", platform: "linux" })).toEqual([]);
 });
 
-test("conditions are bools — a bare META value is an error", () => {
-	const errors = compile_main(`#if META.arch { }`, { arch: "c", platform: "macos" });
-	expect(
-		errors.some((e) =>
-			e.message.includes(`#if condition must be a bool — compare META values with == / !=`),
-		),
-	).toBe(true);
+test("#if with a bare else mirrors the runtime if", () => {
+	const body = `
+		#if META.arch == "c" {
+			Console.write_line("portable path")
+		} else {
+			Console.write_line("not c")
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+	expect(compile_main(body, { arch: "aarch64", platform: "macos" })).toEqual([]);
 });
 
 test("equality against a target constant compiles clean", () => {
@@ -36,6 +38,15 @@ test("equality against a target constant compiles clean", () => {
 			platform: "macos",
 		}),
 	).toEqual([]);
+});
+
+test("conditions are bools — a bare META value is an error", () => {
+	const errors = compile_main(`#if META.arch { }`, { arch: "c", platform: "macos" });
+	expect(
+		errors.some((e) =>
+			e.message.includes(`#if condition must be a bool — compare META values with == / !=`),
+		),
+	).toBe(true);
 });
 
 test("declaration scope: a whole struct is selected per platform", () => {
@@ -57,7 +68,7 @@ test("a function body may switch implementation per target", () => {
 		func clamp8 = (int v, out int) {
 			#if META.arch == "aarch64" {
 				return v
-			} #else {
+			} else {
 				if v < 0 { return 0 }
 				if v > 255 { return 255 }
 				return v

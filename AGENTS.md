@@ -246,17 +246,26 @@ directly. Use the directive that matches the backend:
   non-UI hot paths — use `#arch: aarch64` raw asm (or a `bl` to a builtin)
   instead.
 
-### Compile-time conditionals (`#if`)
+### Compile-time conditionals (`#if` / `#switch`)
 
-`#if META.arch == "c" { ... } #elif ... { ... } #else { ... }` selects code
-per compile target before checking (SPEC, "Compile-Time Conditionals").
-`META.arch` is `"c"` / `"aarch64"` / `"js"`; `META.platform` is `"macos"` /
-`"linux"` / `"windows"` (or whatever `--platform` passes). Arms hold ordinary
-Nomen — statements in a body, or whole declarations at file scope — and only
-the selected arm is checked, so dead arms may reference names that don't
-exist for the target. Use it for per-platform/per-target code in `core/`,
-demos and tests in preference to duplicating whole files. String conditions
-beyond `META.arch`/`META.platform` don't exist yet (no `META.info` — that's
+`#if META.arch == "c" { ... } else { ... }` and the multi-arm form
+
+```
+#switch {
+    case META.arch == "aarch64" { ... }
+    case META.arch == "c" { ... }
+} else { ... }
+```
+
+select code per compile target before checking (SPEC, "Compile-Time
+Conditionals"). `META.arch` is `"c"` / `"aarch64"` / `"js"`; `META.platform`
+is `"macos"` / `"linux"` / `"windows"` (or whatever `--platform` passes).
+Arms hold ordinary Nomen — statements in a body, or whole declarations at
+file scope — and only the selected arm is checked, so dead arms may
+reference names that don't exist for the target. Use it for
+per-platform/per-target code in `core/`, demos and tests in preference to
+duplicating whole files. String conditions beyond
+`META.arch`/`META.platform` don't exist yet (no `META.info` — that's
 stage 2 of `docs/COMPTIME_PLAN_2.md`).
 
 String convention (one ABI everywhere, both backends): raw bodies see the

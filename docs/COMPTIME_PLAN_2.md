@@ -253,11 +253,16 @@ Elevate it from "good long-term target" to the acceptance criterion.
    `parse(source, lib, path, { arch, platform })` → `check()`; the CLI passes
    its config so check/build/run/test agree. Contract tests:
    `test/compile_time_if.test.ts`, `test/spec/compile_time_conditionals.test.ts`.
-   Notes from the implementation: `#elif`/`#else` tokenize as `#` + word
-   (both consumed per arm); arms parse with the PRAGMA on the stack as a
-   statement collector (`PragmaIfNode.statements`, moved into the arm's block
-   on close) so the parser's parent-type attach switches treat declarations
-   inside arms like declarations in the enclosing scope
+   Syntax: `#if <cond> { ... } else { ... }` and — for multi-arm target
+   selection — `#switch { case <cond> { ... } ... } else { ... }`, spelled
+   exactly like the runtime switch (subject-less `case` conditions, `else`
+   OUTSIDE the braces). An interim `#elif` tag was replaced by `#switch`
+   before release (design feedback: reuse the language's case/else keywords
+   rather than a `#`-tag ladder).
+   Notes from the implementation: arms parse with the PRAGMA on the stack as
+   a statement collector (`PragmaIfNode.statements`, moved into the arm's
+   block on close) so the parser's parent-type attach switches treat
+   declarations inside arms like declarations in the enclosing scope
    (`parse_function.ts`/`parse_declaration.ts` gained `case "pragma_if"`);
    struct/trait-body arms are rejected at parse (no statement list to splice
    into — a stage-3+ problem with attributes). The backends were left

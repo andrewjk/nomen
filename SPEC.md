@@ -3145,18 +3145,29 @@ them with literals and folds the dead arm of any `if` they guard.
 
 ## Compile-Time Conditionals
 
-`#if` selects code per compilation target **before any checking happens** —
-part of the same `#` directive family as the raw-block tags (`#arch:` /
-`#platform:`), but operating on ordinary Nomen code. Conditions consult the
-`META` namespace and must be compile-time constants:
+Compile-time conditionals select code per compilation target **before any
+checking happens** — part of the same `#` directive family as the raw-block
+tags (`#arch:` / `#platform:`), but operating on ordinary Nomen code, with
+the language's own keywords. Conditions consult the `META` namespace and
+must be compile-time constants. The multi-arm form is `#switch`, spelled
+exactly like the runtime switch:
 
 ```
-#if META.arch == "aarch64" {
-    Console.write_line("arm")
-} #elif META.arch == "c" {
-    Console.write_line("c target")
-} #else {
+#switch {
+    case META.arch == "aarch64" -> Console.write_line("arm")
+    case META.arch == "c" { Console.write_line("c target") }
+} else {
     Console.write_line("other")
+}
+```
+
+For a single binary choice, `#if` with a bare `else` mirrors the runtime if:
+
+```
+#if META.arch == "c" {
+    Console.write_line("portable path")
+} else {
+    Console.write_line("not c")
 }
 ```
 
@@ -3164,8 +3175,8 @@ part of the same `#` directive family as the raw-block tags (`#arch:` /
 same vocabulary the raw-block `#arch:` tags match. `META.platform` is the
 target platform — `"macos"`, `"linux"` or `"windows"` by default, or
 whatever `--platform` passes, the same vocabulary `#platform:` accepts.
-Conditions compose with `==`, `!=`, `&&`, `||`, `!` and parentheses. A
-bare `META` value is an error — conditions must be bools, so compare:
+Conditions compose with `==`, `!=`, `&&`, `||`, `!` and parentheses. A bare
+`META` value is an error — conditions must be bools, so compare:
 
 ```
 #if META.arch == "c" {
@@ -3182,8 +3193,8 @@ bare `META` value is an error — conditions must be bools, so compare:
 Arms hold ordinary Nomen: statements inside a function body, or whole
 declarations at file scope. The pragma is folded before the checker runs —
 only the selected arm is checked (a dead arm may reference names that do
-not exist for this target), and a pragma with no matching arm and no
-`#else` disappears entirely:
+not exist for this target), and a pragma with no matching arm and no `else`
+disappears entirely:
 
 ```
 #if META.platform == "macos" {
@@ -3201,7 +3212,7 @@ A function body may switch implementation per target:
 func clamp8 = (int v, out int) {
     #if META.arch == "aarch64" {
         return v
-    } #else {
+    } else {
         if v < 0 { return 0 }
         if v > 255 { return 255 }
         return v
@@ -3210,7 +3221,7 @@ func clamp8 = (int v, out int) {
 ```
 
 Stage-1 limits: pragmas are valid at file scope and in function bodies
-(not inside struct/trait bodies), `META` exists only inside `#if`
+(not inside struct/trait bodies), `META` exists only inside pragma
 conditions (it is not a runtime value), and raw `#arch:` / `#platform:`
 blocks keep their own tags — a later stage unifies them under `#if META`
 (see `docs/COMPTIME_PLAN_2.md`).
