@@ -142,14 +142,9 @@ if g.cells.length > 0 {
 }
 Console.write_line(json_encode(g))
 `;
-	// audit: false — a NESTED StableList's mono destroy misses its inner
-	// container slabs (a pre-existing mono-destroy gap, recorded in
-	// FOLLOWUP); the decode/encode behavior asserted here is correct.
 	await build_and_check_output(
 		input,
 		"json_serde_nested_containers",
 		'rows=2\nrow0=2\n{"cells":[[1.500000,2.500000],[3.500000]]}\n',
-		false,
-		{ audit: false },
 	);
 });

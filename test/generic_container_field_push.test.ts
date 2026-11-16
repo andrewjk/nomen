@@ -33,12 +33,7 @@ h.items.push(mv inner)
 Console.write_line(h.items.at_or_panic(0).items.at_or_panic(0).value.to_string())
 Console.write_line(h.items.length.to_string())
 `;
-	// audit: false — the NESTED StableList mono destroy misses the inner
-	// containers' slabs (a pre-existing mono-destroy gap, recorded in
-	// FOLLOWUP); the behavior asserted here is correct.
-	await build_and_check_output(input, "generic_container_holder_push", "42\n1\n", false, {
-		audit: false,
-	});
+	await build_and_check_output(input, "generic_container_holder_push", "42\n1\n");
 });
 
 test("generics -- two-hop field path through nested generic field (Wrap<Leaf>)", async () => {
@@ -88,13 +83,10 @@ Console.write_line(h.items.at_or_panic(0).at_or_panic(0).value.to_string())
 Console.write_line(h.items.length.to_string())
 Console.write_line(json_encode(h))
 `;
-	// audit: false — the nested mono destroy gap (see the Holder<Leaf> test).
 	await build_and_check_output(
 		input,
 		"generic_container_nested_push",
 		'9\n2\n{"items":[[{"value":9}],[]]}\n',
-		false,
-		{ audit: false },
 	);
 });
 
@@ -115,10 +107,7 @@ h.items.push(mv leaf)
 Console.write_line(h.items.at_or_panic(0).inner.at_or_panic(0).to_string())
 Console.write_line(h.items.length.to_string())
 `;
-	// audit: false — the nested mono destroy gap (see the Holder<Leaf> test).
-	await build_and_check_output(input, "generic_container_struct_holding", "7\n1\n", false, {
-		audit: false,
-	});
+	await build_and_check_output(input, "generic_container_struct_holding", "7\n1\n");
 });
 
 test("generics -- container-field generics check clean for the raw program", () => {

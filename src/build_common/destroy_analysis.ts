@@ -4,7 +4,7 @@ import type AccessNode from "../nodes/AccessNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import type Type from "../nodes/Type.ts";
 import type { StructTable } from "./mono_name.ts";
-import { resolve_struct_type } from "./mono_name.ts";
+import { is_load_deep_copy_container, resolve_struct_type } from "./mono_name.ts";
 
 /**
  * Optional enums/traits views callers may provide alongside the struct table
@@ -286,7 +286,16 @@ export function element_load_aliases_destroy_state(
 	struct: StructNode,
 	table: StructTable,
 ): boolean {
-	if (has_destroy(struct)) return true;
+	// A user `#destroy` body has release semantics — a bitwise copy cannot
+	// clone the resource. A mv-CONTAINER mono with a user `#destroy` (today
+	// only `StableList`: its tails + field teardown) is the exception — its
+	// destroy releases exactly its own fields, and the load deep-copied
+	// every destroy-worthy one of them (the field walk below, through
+	// field_load_deep_copy, which admits the container monos) — so the
+	// binding owns independent state and stays destroy-tracked. Without
+	// this exemption the deep-copied copy leaked: the binding was classed a
+	// pure borrow and its scope-exit destroy suppressed.
+	if (has_destroy(struct) && !is_load_deep_copy_container(struct.name)) return true;
 	if (struct_has_owned_func_field(struct)) return true;
 	if (struct_has_trait_declared_destroy_fields(struct, table as EnumAwareTable)) return true;
 	for (const field of struct.fields) {

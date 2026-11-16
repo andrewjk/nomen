@@ -14,16 +14,18 @@ export interface StructTable {
 /**
  * Whether `name` is a monomorphized mv-container struct whose
  * `<Mono>_copy` is safe to call from the mv-`Buffer.load_T`
- * specialization — `List_<T>` / `Buffer_<T>` / `Map_<K,V>` / `Set_<T>`
- * (and their bare generics). These own heap slabs their `#destroy` frees
- * unconditionally, and `copy` yields an independent slab, so a returned
+ * specialization — `List_<T>` / `Buffer_<T>` / `Map_<K,V>` / `Set_<T>` /
+ * `StableList_<T>` (and their bare generics). These own heap slabs their
+ * `#destroy` frees unconditionally, and `copy` yields an independent slab, so a returned
  * element's field must be deep-copied or the caller's unconditional
  * container-field teardown double-frees the slot's slab.
  *
  * `Map`/`Set` compose their `copy` from member `Buffer.copy` calls (and a
  * zero-pair `Map()`/`Set()` ctor); the aarch64 deferred-ctor marshalling
  * that crashed that composition is fixed (see build_constructor_params),
- * so they ride the same deep copy.
+ * so they ride the same deep copy. `StableList`'s library `copy` walks
+ * `at`/`push` per element, so nested container elements recurse through
+ * their own mono `copy` — the deep copy is as deep as the element chain.
  */
 export function is_load_deep_copy_container(name: string): boolean {
 	return (
@@ -31,10 +33,12 @@ export function is_load_deep_copy_container(name: string): boolean {
 		name === "Buffer" ||
 		name === "Map" ||
 		name === "Set" ||
+		name === "StableList" ||
 		name.startsWith("List_") ||
 		name.startsWith("Buffer_") ||
 		name.startsWith("Map_") ||
-		name.startsWith("Set_")
+		name.startsWith("Set_") ||
+		name.startsWith("StableList_")
 	);
 }
 

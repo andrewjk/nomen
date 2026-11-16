@@ -732,14 +732,6 @@ backends). Two edges remain, sound but bounded:
   for a deref-to-string operand must load both halves (and not clobber the
   len across the right operand's build).
 
-## Nested StableList mono destroy leaks inner slabs
-
-`StableList<StableList<float>>`'s generated destroy frees the outer slab
-but not the inner containers' slabs (`test/json_serde.test.ts`'s nested
-container test runs with `audit: false` for that reason). The mono destroy
-needs to destroy each element (which is what `T_destroy` is for) — likely a
-missing element-destroy call in the nested-container instantiation.
-
 ## Library serde performance: allocation-bound vs the DOM bench
 
 The stdlib `json_decode_into`/`json_encode` bench (json-serde-typed) is

@@ -536,6 +536,8 @@ pub struct ClassBuffer<T> {
 			}
 			free(slots);
 		}
+		self->data = 0;
+		self->cap = 0;
 		```
 		```
 		#arch: aarch64

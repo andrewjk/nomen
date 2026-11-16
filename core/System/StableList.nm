@@ -293,25 +293,33 @@ pub mv struct StableList<T> {
 	// `#destroy` over zeroed elements is garbage). The directory's own slot
 	// array is reclaimed by the ordinary field destroy (plain free — pointer
 	// words own nothing).
-	// Only the directory slabs (chunks 1..) need explicit teardown — they are
-	// raw pointer words the field destroy cannot see — so each is destroyed
-	// through a cap=filled view (per-element destroy + slab free). Chunk 0
-	// (`items`) is reclaimed by the ordinary field destroy: the
-	// specialized per-element destroy guards zeroed slots (a calloc'd slot
-	// skips the element destroy instead of firing the user `#destroy` on
-	// unconstructed storage) and frees its own slab; pointer words own
-	// nothing.
-	// (The old `stage` relay field is gone — push's tail path stores into
-	// the chunk through a `Buffer.init_view` view.)
+	// The destroy is the WHOLE teardown — tails, then the three member
+	// buffers — and idempotent: `destroy_tails` refuses a drained directory,
+	// and every `Buffer.destroy` zeroes its `data`, so the caller-side field
+	// walk (the scope exit's `items`/`chunks`/`stage` destroys) lands on
+	// zeroed words and reclaims nothing. That matters because `T_destroy`
+	// is what nested-container teardown calls per slot: a
+	// `StableList<StableList<float>>`'s destroy walks each row through
+	// `StableList_float_destroy`, which must reclaim the ROW's own slabs —
+	// the outer scope exit cannot see inside another container's slots (the
+	// tails-only shape leaked every inner slab; the FOLLOWUP entry).
 	func #destroy = (ref self { chunks, items, stage }) {
 		self.destroy_tails()
+		self.items.destroy()
+		self.chunks.destroy()
+		self.stage.destroy()
 	}
 
 	// Raw: destroy directory chunks 1.. — per chunk, `filled` slots + the
-	// slab, via `T_buffer_destroy` on a cap=filled view.
+	// slab, via `T_buffer_destroy` on a cap=filled view. Refuses a drained
+	// directory (`data == 0` — already destroyed): the destroy is
+	// idempotent end to end, so the caller-side field walk stays a no-op.
 	internal func destroy_tails = (ref self { chunks, items, stage }) {
 		```
 		#arch: c
+		if (self->chunks.data == 0) {
+			return;
+		}
 		long n_dir = (self->length - 1L) / 256L;
 		for (long c = 0; c < n_dir; c++) {
 			unsigned long long slab = ((unsigned long long*)self->chunks.data)[c];
@@ -329,8 +337,11 @@ pub mv struct StableList<T> {
 		```
 		#arch: aarch64
 		// x19 = self. n_dir = (length - 1) / 256; per chunk, a cap=filled
-		// view on the stack and `bl T_buffer_destroy`.
+		// view on the stack and `bl T_buffer_destroy`. Refuses a drained
+		// directory (the destroy is idempotent end to end).
 		sub sp, sp, #48
+		ldr x9, [x19, #48]
+		cbz x9, .Lsl_dt_end
 		ldr x20, [x19, #8]
 		sub x20, x20, #1
 		mov x9, #256
