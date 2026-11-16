@@ -579,6 +579,9 @@ export function monomorphize(
 			resolved_type,
 			field.value ? (clone_node(field.value) as BaseNode) : undefined,
 		);
+		// Attributes ride the substitution — a reflected field's @Name must
+		// reach META.info over the mono instantiation too.
+		mono_field.attrs = field.attrs;
 		// Substitute type params in field default values (e.g. Buffer<T>()
 		// becomes Buffer_int() when Tree<T> is monomorphized to Tree_int).
 		if (mono_field.value) {
@@ -656,6 +659,7 @@ export function monomorphize(
 	// names) so downstream consumers — e.g. specialize_function's inference
 	// substitution — see concrete, resolvable type names.
 	mono_struct.source_type_args = flat_args;
+	mono_struct.attrs = generic_struct.attrs;
 	mono_struct.is_class = generic_struct.is_class;
 	// STRUCT_PLAN_3 B1 full cutover: a mono's ownership is DERIVED from its
 	// substituted fields, mirroring enum_mono — a generic whose type param

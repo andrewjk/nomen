@@ -302,6 +302,29 @@ Elevate it from "good long-term target" to the acceptance criterion.
    reflection exposes no offsets/sizes yet; `#for` is body-scope only.
 3. **Attributes** (D1) — sigil chosen then, surfaced via
    `META.info(T).fields[i].attrs`.
+   **SHIPPED** — D1 RESOLVED: the sigil is `@`, one attribute per sigil,
+   comma-separated on the line(s) above the declaration —
+   `@rename("user_name"), @sql_type("VARCHAR")` / flag form `@deprecated` —
+   NOT the bracketed `@[...]` list (no bracket matching; flags read
+   clean). Args are comptime literals (string/int/bool). Parse:
+   `parse_attributes` + a `pending_attributes` side channel on
+   ParseStatus (the `@` case collects, the declaration parser consumes via
+   `take_attributes`) at three attach sites — `parse_struct`,
+   `parse_declaration` (struct/trait fields only; locals are rejected),
+   `parse_function`. Surfacing: `BaseNode.attrs`, propagated through
+   clone_node and the monomorphizer's field/struct reconstruction so
+   reflected monos keep their metadata. Consumed via
+   `META.info(T).attr(...)` / `.has_attr(...)` (struct level) and
+   `field.attr(...)` / `field.has_attr(...)` (R5-style methods on the
+   binding); `has_attr` is a comptime bool so the guard `if` folds and
+   the untaken branch is never checked — a dead arm's `.attr` error
+   cannot fire. `attr` on a missing attribute is a compile error pointing
+   at `has_attr`, never a silent empty string. Acceptance:
+   `test/attributes.test.ts` (incl. a runtime metadata consumer through
+   the JS backend: table attr + field renames + plain-name fallbacks).
+   Two pre-existing issues surfaced by this work are recorded in
+   FOLLOWUP.md (JS-backend library-const default args; attribute names
+   participating in the library type-link scan).
 4. **Generic `T: type` parameters composing with reflection** (R3, R4).
 5. **Unify `#arch`/`#platform` into `#if META`** (D2), once the raw-block
    shape and `aarch64_use_c` semantics are settled.

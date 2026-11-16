@@ -14,6 +14,7 @@ import PragmaForNode from "../../nodes/PragmaForNode.ts";
 import type StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
+import type AttributeMeta from "../../types/AttributeMeta.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { resolve_declared_struct } from "./resolve_declared_type.ts";
 
@@ -49,6 +50,8 @@ interface ComptimeField {
 	 *  (e.g. `T` in a generic body, `Sample` in a concrete one) — lets
 	 *  `META.info(T).name` resolve to the same type. */
 	type_argument: string;
+	/** Attributes declared above the field (`@Name("x")` — stage 3). */
+	attrs?: AttributeMeta[];
 }
 
 type ComptimeValue =
@@ -162,6 +165,7 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 			type_name: (f.type as Type).name,
 			index,
 			type_argument,
+			attrs: (f as unknown as { attrs?: AttributeMeta[] }).attrs,
 		};
 		const body = (node.block.statements ?? []).map((s) => clone_node(s));
 		const rewritten: BaseNode[] = [];
@@ -281,20 +285,28 @@ function rewrite_statement(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode[] {
-	const replaced = rewrite(stmt, true, binding, field, status);
-	if (replaced !== stmt) return [replaced];
-	// A comptime-constant `if` at statement position folds to its live arm.
-	// (rewrite already substituted the condition and both arms.)
+	// A comptime-constant `if` folds to its live arm — but the condition is
+	// substituted and evaluated FIRST, so a dead arm never surfaces comptime
+	// errors (e.g. an `.attr` that only exists on the taken side). The
+	// comptime analogue of the monomorphizer's substituted-condition fold,
+	// with the dead-arm skip the runtime `if` path can't do.
 	if (stmt.node_type === "if") {
 		const if_else = stmt as IfElseNode;
+		if_else.condition = rewrite(if_else.condition, false, binding, field, status);
 		const folded = evaluate_comptime(if_else.condition);
 		if (folded && folded.kind === "bool") {
 			const arm = folded.value
 				? (if_else.if_branch ?? { statements: [] as BaseNode[] })
 				: (if_else.else_branch ?? { statements: [] as BaseNode[] });
-			return [...(arm.statements ?? [])];
+			const out: BaseNode[] = [];
+			for (const inner of arm.statements ?? []) {
+				out.push(...rewrite_statement(inner, binding, field, status));
+			}
+			return out;
 		}
 	}
+	const replaced = rewrite(stmt, true, binding, field, status);
+	if (replaced !== stmt) return [replaced];
 	return [stmt];
 }
 
@@ -422,6 +434,32 @@ function rewrite_binding_access(
 	if (access.access.node_type === "access_func") {
 		const call = access.access as AccessFunctionCallNode;
 		const args = call.params ?? [];
+		if (call.name === "has_attr" && args.length === 1) {
+			// field.has_attr("Name") -> a comptime bool literal — folds in a
+			// comptime `if`, gating the corresponding .attr use.
+			const name = attr_arg_name(args[0], status, binding, call.name);
+			if (name === undefined) return node;
+			const present = (field.attrs ?? []).some((a) => a.name === name);
+			const literal = new ValueNode(node.start, present ? "true" : "false");
+			literal.type = new Type("bool", true);
+			return literal;
+		}
+		if (call.name === "attr" && args.length === 1) {
+			// field.attr("Name") -> the attribute's first value as a
+			// comptime string (string content; int/bool literal text).
+			const name = attr_arg_name(args[0], status, binding, call.name);
+			if (name === undefined) return node;
+			const meta = (field.attrs ?? []).find((a) => a.name === name);
+			if (!meta || meta.values.length === 0) {
+				add_error(
+					status,
+					`#for: field has no '@${name}' attribute — guard with ${binding}.has_attr("${name}")`,
+					node.start,
+				);
+				return node;
+			}
+			return comptime_string(node.start, meta.values[0].text);
+		}
 		if (call.name === "get" && args.length === 1) {
 			// field.get(obj) -> obj.<field> — an ordinary field access.
 			const arg = clone_node(unwrap_grouped(args[0]));
@@ -480,6 +518,30 @@ function comptime_string(start: number, text: string): ValueNode {
 	return value;
 }
 
+/** The (string-literal) argument of an attr/has_attr call, or an error. */
+function attr_arg_name(
+	arg: BaseNode | undefined,
+	status: CheckStatus,
+	binding: string,
+	method: string,
+): string | undefined {
+	const value = unwrap_grouped(arg);
+	if (!value || value.node_type !== "value") {
+		add_error(
+			status,
+			`#for: '${binding}.${method}' takes an attribute name string`,
+			arg?.start ?? 0,
+		);
+		return undefined;
+	}
+	const text = (value as ValueNode).value;
+	if (text.length < 2 || !text.startsWith('"')) {
+		add_error(status, `#for: '${binding}.${method}' takes an attribute name string`, value.start);
+		return undefined;
+	}
+	return text.substring(1, text.length - 1);
+}
+
 function literal_string(node: BaseNode): string | undefined {
 	const value = unwrap_grouped(node);
 	if (value.node_type !== "value") return undefined;
@@ -509,26 +571,61 @@ export function rewrite_meta_name_chains(
 		const n = unwrap_grouped(node);
 		if (
 			n.node_type === "access" &&
-			(n as AccessNode).access.node_type === "access_field" &&
-			((n as AccessNode).access as AccessFieldNode).name === "name"
+			((n as AccessNode).access.node_type === "access_field" ||
+				(n as AccessNode).access.node_type === "access_func")
 		) {
-			const info_call = unwrap_grouped((n as AccessNode).target);
-			if (
-				info_call.node_type === "access" &&
-				(info_call as AccessNode).access.node_type === "access_func" &&
-				((info_call as AccessNode).access as AccessFunctionCallNode).name === "info" &&
-				unwrap_grouped((info_call as AccessNode).target).node_type === "value" &&
-				(unwrap_grouped((info_call as AccessNode).target) as ValueNode).value === "META"
+			const member = (n as AccessNode).access as AccessFieldNode | AccessFunctionCallNode;
+			// META.info(T).name / .attr("X") / .has_attr("X") — struct-level
+			// reflection (stage 3). Resolved against the substitution map
+			// when one is supplied (mono-clone path).
+			let meta_arg: string | undefined;
+			if (member.node_type === "access_field" && member.name === "name") {
+				meta_arg = "";
+			} else if (
+				member.node_type === "access_func" &&
+				(member.name === "attr" || member.name === "has_attr") &&
+				(member as AccessFunctionCallNode).params?.length === 1
 			) {
-				const args = ((info_call as AccessNode).access as AccessFunctionCallNode).params ?? [];
-				const arg = unwrap_grouped(args[0]);
-				if (args.length === 1 && arg.node_type === "value") {
-					let type_name = (arg as ValueNode).value;
-					if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
-					if (!status.type_params.includes(type_name)) {
-						const declared = resolve_declared_struct(type_name, status);
-						if (declared && (declared as StructNode).type_params.length === 0) {
-							return comptime_string(n.start, (declared as StructNode).name);
+				const arg = unwrap_grouped((member as AccessFunctionCallNode).params![0]);
+				if (arg.node_type === "value" && (arg as ValueNode).value.startsWith('"')) {
+					meta_arg = (arg as ValueNode).value.substring(1, (arg as ValueNode).value.length - 1);
+				}
+			}
+			if (meta_arg !== undefined) {
+				const info_call = unwrap_grouped((n as AccessNode).target);
+				if (
+					info_call.node_type === "access" &&
+					(info_call as AccessNode).access.node_type === "access_func" &&
+					((info_call as AccessNode).access as AccessFunctionCallNode).name === "info" &&
+					unwrap_grouped((info_call as AccessNode).target).node_type === "value" &&
+					(unwrap_grouped((info_call as AccessNode).target) as ValueNode).value === "META"
+				) {
+					const args = ((info_call as AccessNode).access as AccessFunctionCallNode).params ?? [];
+					const arg = unwrap_grouped(args[0]);
+					if (args.length === 1 && arg.node_type === "value") {
+						let type_name = (arg as ValueNode).value;
+						if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
+						if (!status.type_params.includes(type_name)) {
+							const declared = resolve_declared_struct(type_name, status);
+							if (declared && (declared as StructNode).type_params.length === 0) {
+								const struct = declared as StructNode;
+								if (meta_arg === "") return comptime_string(n.start, struct.name);
+								const attr = (struct.attrs ?? []).find((a) => a.name === meta_arg);
+								if (member.node_type === "access_func" && member.name === "has_attr") {
+									const literal = new ValueNode(n.start, attr ? "true" : "false");
+									literal.type = new Type("bool", true);
+									return literal;
+								}
+								if (attr && attr.values.length > 0) {
+									return comptime_string(n.start, attr.values[0].text);
+								}
+								add_error(
+									status,
+									`struct '${struct.name}' has no '@${meta_arg}' attribute — guard with META.info(${type_name}).has_attr("${meta_arg}")`,
+									n.start,
+								);
+								return n;
+							}
 						}
 					}
 				}

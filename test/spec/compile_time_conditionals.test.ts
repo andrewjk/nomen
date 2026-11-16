@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 
 import { compile_main, compile_module } from "./_helpers.ts";
-
 // SPEC.md, "Compile-Time Conditionals" — one test per fenced code block.
 // Every block pins its compile target explicitly so the fold is
 // deterministic regardless of host.
@@ -67,6 +66,47 @@ test("META.info over an unknown type errors at the loop", () => {
 		}
 	`);
 	expect(errors.some((e) => e.message.includes("META.info: unknown type 'Nope'"))).toBe(true);
+});
+
+test("attributes attach to structs and fields", () => {
+	const body = `
+		@sql_table("users")
+		mv pub struct User {
+			@rename("user_name"), @sql_type("VARCHAR")
+			var string user_name
+			var int age
+			@deprecated
+			var string old_field
+		}
+	`;
+	expect(compile_module(body)).toEqual([]);
+});
+
+test("META.attr / has_attr drive a generic metadata consumer", () => {
+	const body = `
+		@sql_table("users")
+		mv pub struct User {
+			@Name("user_name")
+			var string user_name
+			var int age
+		}
+		func keys<T> = (T value, out string) {
+			var s = META.info(T).attr("sql_table") + ": "
+			#for field of META.info(T).fields {
+				if field.has_attr("rename") {
+					s = s + field.attr("rename")
+				} else {
+					s = s + field.name
+				}
+				s = s + ","
+			}
+			return s
+		}
+		pub func main = () {
+			Console.write_line(keys(User("jane", 31)))
+		}
+	`;
+	expect(compile_module(body)).toEqual([]);
 });
 
 test("#if with a bare else mirrors the runtime if", () => {

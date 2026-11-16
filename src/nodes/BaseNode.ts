@@ -29,6 +29,14 @@ export default class BaseNode {
 	 */
 	spawn_of?: number;
 
+	/**
+	 * Attributes attached to this declaration — `@Name("user_name")` lines
+	 * directly above it (stage 3, docs/COMPTIME_PLAN_2.md D1). Present on
+	 * struct, field and function declarations; pure metadata surfaced
+	 * through META.
+	 */
+	attrs?: import("../types/AttributeMeta.ts").default[];
+
 	constructor(node_type: NodeType, start: number) {
 		this.node_type = node_type;
 		this.start = start;

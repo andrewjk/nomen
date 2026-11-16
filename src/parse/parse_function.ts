@@ -17,6 +17,7 @@ import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
+import { take_attributes } from "./utils/parse_attributes.ts";
 import {
 	adopt_func_param_type,
 	at_func_type,
@@ -82,6 +83,7 @@ export default function parse_function(
 		return_type = new Type((parent_for_type as StructNode).name);
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
+	func.attrs = take_attributes(status);
 	if (is_inline) func.is_inline = true;
 	if (is_unsafe) {
 		func.is_unsafe = true;

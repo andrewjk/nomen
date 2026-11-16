@@ -46,6 +46,7 @@ import consume from "./utils/consume.ts";
 import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import parse_attributes, { attributes_target_allowed } from "./utils/parse_attributes.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_statement(status: ParseStatus) {
@@ -301,6 +302,25 @@ export default function parse_statement(status: ParseStatus) {
 						get_index(status),
 					);
 					consume(status);
+				}
+				break;
+			}
+			case "@": {
+				// Attributes (stage 3): `@Name("x"), @Type("t")` on the
+				// line(s) before a struct/field/function declaration.
+				// Collected here; the declaration's parser consumes them via
+				// take_attributes and attaches them to the node.
+				const attrs = parse_attributes(status);
+				const target = peek_current(status);
+				if (!attributes_target_allowed(target)) {
+					add_error(
+						status,
+						"Expected a struct, field or function declaration after attributes",
+						get_index(status),
+					);
+					status.pending_attributes = undefined;
+				} else {
+					status.pending_attributes = attrs;
 				}
 				break;
 			}

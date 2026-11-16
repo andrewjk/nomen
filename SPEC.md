@@ -3282,6 +3282,55 @@ Stage-2 limits: `#for` is body-scope only (whole-declaration generation is
 a later stage), reflection exposes field names/types but not offsets, and
 raw `#arch` blocks inside arms are not specialized per field.
 
+### Attributes
+
+Attributes attach compile-time metadata to structs and fields — the input
+to reflection-driven code. Each is `@name` (a flag) or `@name(args)` with
+comptime literal arguments (string, int, float, bool); a comma-separated
+list sits on the line(s) above the declaration. One value per attribute,
+and names are snake_case: they are lookup keys for `attr` / `has_attr`,
+not symbols — nothing resolves them as types or functions.
+
+```
+@sql_table("users")
+mv pub struct User {
+    @rename("user_name"), @sql_type("VARCHAR")
+    var string user_name
+    var int age
+    @deprecated
+    var string old_field
+}
+```
+
+The compiler assigns no meaning to attribute names — they surface through
+META for generic code to consume: `META.info(T).attr("sql_table")` /
+`.has_attr("sql_table")` at the struct level, `field.attr("rename")` /
+`field.has_attr("rename")` per field. `has_attr` is a comptime bool, so an
+`if` over it folds and the untaken branch is never checked:
+
+```
+func keys<T> = (T value, out string) {
+    var s = META.info(T).attr("sql_table") + ": "
+    #for field of META.info(T).fields {
+        if field.has_attr("rename") {
+            s = s + field.attr("rename")
+        } else {
+            s = s + field.name
+        }
+        s = s + ","
+    }
+    return s
+}
+```
+
+`attr` errors when the attribute is absent — gate with `has_attr`. A
+missing attribute read is a compile error, never a silent empty string,
+and one attribute carries one value (repeat the attribute — not the
+arguments — if you ever find yourself packing several). Attribute names
+are ordinary identifiers: one that matches a library type or function
+name links it exactly as if the source had mentioned it — snake_case
+names rarely collide, but prefer names that don't.
+
 Stage-1 limits: pragmas are valid at file scope and in function bodies
 (not inside struct/trait bodies), `META` exists only inside pragma
 conditions (it is not a runtime value), and raw `#arch:` / `#platform:`

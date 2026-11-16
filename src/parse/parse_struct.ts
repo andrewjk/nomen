@@ -18,6 +18,7 @@ import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
 import get_index from "./utils/get_index.ts";
+import { take_attributes } from "./utils/parse_attributes.ts";
 
 export default function parse_struct(
 	visibility: "pub" | "private" | "internal",
@@ -31,6 +32,7 @@ export default function parse_struct(
 	const name = consume_name(status);
 	const struct = new StructNode(start, visibility, name);
 	if (is_owning) struct.is_owning = true;
+	struct.attrs = take_attributes(status);
 
 	if (accept("<", status)) {
 		struct.type_params.push(consume_name(status));

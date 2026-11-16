@@ -274,6 +274,16 @@ body the loop defers until specialization binds `T`, which is how one
 generic serves every struct (a reflection-driven `to_string`/`==`/`hash`
 matches the auto-derived versions). Comptime string `+` folds literals.
 
+Attributes (SPEC, "Attributes") attach metadata to structs and fields:
+`@sql_table("users")` above a struct, `@rename("user_name"), @sql_type("VARCHAR")`
+above a field; `@flag` (no parens) is a flag. The compiler assigns no
+meaning to them — generic code consumes them via
+`META.info(T).attr(...)` / `field.attr(...)` / `field.has_attr(...)`
+(has_attr folds in comptime `if`s). Attribute names are snake_case
+lookup keys, not symbols — they never resolve as types or functions, but
+the type-link scan still matches them against library names, so prefer
+non-colliding words.
+
 String conditions beyond `META.arch`/`META.platform` don't exist yet (no
 rich `META` predicates — see stage 2 notes in `docs/COMPTIME_PLAN_2.md`).
 

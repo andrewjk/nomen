@@ -24,6 +24,7 @@ import consume_name from "./utils/consume_name.ts";
 import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import { take_attributes } from "./utils/parse_attributes.ts";
 import {
 	adopt_func_param_type,
 	at_func_type,
@@ -53,12 +54,27 @@ export default function parse_declaration(
 		status.tokens[status.i + 1]?.value === "[" &&
 		looks_like_destructuring(status, status.i + 1)
 	) {
+		const strayed = take_attributes(status);
+		if (strayed) {
+			add_error(status, "Attributes are not supported on destructuring declarations", start);
+		}
 		accept(keyword, status);
 		parse_destructuring(visibility, declaration, start, status);
 		return;
 	}
 
 	const decl = new DeclarationNode(start, visibility, declaration, "");
+	const attrs = take_attributes(status);
+	if (attrs) {
+		const parent = status.stack.at(-1);
+		if (parent?.node_type === "struct" || parent?.node_type === "trait") {
+			// A struct/trait field — the motivating attach target (JSON
+			// renames, SQL column types), surfaced via META.
+			decl.attrs = attrs;
+		} else {
+			add_error(status, "Attributes are not supported on local declarations", start);
+		}
+	}
 	decl.is_readonly = is_readonly;
 	decl.is_view_keyword = declaration === "view";
 	decl.is_ref_binding = declaration === "ref";

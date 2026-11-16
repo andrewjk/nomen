@@ -68,4 +68,11 @@ export default interface ParseStatus {
 	 * quadratic on comparison-heavy sources).
 	 */
 	value_journal?: { idx: number; value: string }[] | null;
+	/**
+	 * Attributes collected from a leading `@Name("x"), @Type("t")` list
+	 * (stage 3), awaiting the declaration they precede. Set by
+	 * parse_statement's `@` case; consumed (and cleared) by
+	 * take_attributes at the struct/field/function attach sites.
+	 */
+	pending_attributes?: import("../types/AttributeMeta.ts").default[];
 }

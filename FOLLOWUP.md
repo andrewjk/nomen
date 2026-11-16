@@ -643,3 +643,34 @@ Ctrl-C keep working. Tests stay on bare executables.
 This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
+
+## JS backend: library consts with library-enum default args emit undefined references
+
+`build_root_node` lowers library root-level `const`s into the output, but
+the JS backend never emits library enum-case constants that no checked
+code references. `core/System/Controls/LayoutParams.nm`'s
+`const LayoutParams DEFAULT_PARAMS = [ .. LayoutParams(), ...]` lowers to
+`const DEFAULT_PARAMS = LayoutParams_init();`, whose default arguments
+reference `LayoutLength_auto` / `Alignment_stretch` — undefined at
+runtime, so any program whose linked library set includes Controls
+crashes at module load. Found while testing attributes (an attribute
+named like a library type pulls that type — see the next entry); hit by
+building ANY program that links Controls through the JS backend.
+Fix shape: emit enum-case constants for every library enum with a
+referenced type, or skip lowering consts whose initializers transitively
+reference un-emitted symbols (loud, like other JS-backend gaps).
+
+## Attribute names participate in the library type-link scan
+
+`resolve_linked_types` (src/parse.ts) scans every token of the user
+source and links any library type whose name matches — including the
+NAME of an attribute (`@Table("users")` links `Controls::Table` and its
+whole dependency subtree). Same exposure as any bare identifier, but
+attribute names are metadata, not references — linking a GUI dependency
+subtree because of one is surprising, and the linked tail can change JS
+emission (see the previous entry). Options: exclude attribute-name
+tokens from the scan (the parser knows the positions — pass them to the
+scan), or keep the rule and document "prefer attribute names that don't
+collide with library types" (current AGENTS.md guidance). The scan is
+textual by design (works pre-check), so the parser-side exclusion is the
+cleaner fix if it ever bites hard.
