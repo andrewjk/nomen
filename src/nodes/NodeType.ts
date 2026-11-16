@@ -40,4 +40,5 @@ export type NodeType =
 	| "anon_struct"
 	| "index"
 	| "null_access"
-	| "unsafe";
+	| "unsafe"
+	| "pragma_if";

@@ -16,7 +16,15 @@ export default function parse(
 	source: string,
 	library?: Library,
 	file_path?: string,
-	options?: { allow_user_raw?: boolean; allow_internal?: boolean },
+	options?: {
+		allow_user_raw?: boolean;
+		allow_internal?: boolean;
+		/** Compile target for `#if META.arch` folding (defaults: C backend,
+		 *  host platform — see check()). The CLI passes its own config so
+		 *  `nomen check`/`build`/`run`/`test` agree on which arms survive. */
+		arch?: string;
+		platform?: string;
+	},
 ): ParseResult {
 	let user_source_length = source.length;
 	if (library) {
@@ -87,6 +95,8 @@ export default function parse(
 	const checked = check(root, {
 		allow_internal: options?.allow_internal,
 		library_boundary: library ? user_source_length : undefined,
+		arch: options?.arch,
+		platform: options?.platform,
 	});
 
 	return {

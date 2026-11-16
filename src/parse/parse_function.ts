@@ -205,7 +205,12 @@ export default function parse_function(
 
 			switch (parent.node_type) {
 				case "root":
-				case "func": {
+				case "func":
+				case "pragma_if": {
+					// `pragma_if` is the parse-time arm collector of a `#if` —
+					// declarations inside a compile-time arm attach to the
+					// pragma and move into the selected arm's block when it
+					// closes.
 					(parent as BlockNode).statements.push(func);
 					break;
 				}

@@ -346,7 +346,7 @@ function processFile(filename: string, config: Config, mode: Mode, program_args:
 	// silently replaced by the `package.jsonc` `entry`.
 	const input = join(resolved, config.lib);
 	const library = config.lib ? get_library(config.lib) : undefined;
-	const parsed = parse(input, library, resolved);
+	const parsed = parse(input, library, resolved, { arch, platform });
 
 	let errors = parsed.errors;
 

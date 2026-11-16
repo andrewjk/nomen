@@ -3143,6 +3143,78 @@ expressions: `T_SIZE` (the element's byte size), `T_NEEDS_STRDUP` and
 `T_FAT` (bools, true when `T` is `string`). The monomorphizer substitutes
 them with literals and folds the dead arm of any `if` they guard.
 
+## Compile-Time Conditionals
+
+`#if` selects code per compilation target **before any checking happens** —
+part of the same `#` directive family as the raw-block tags (`#arch:` /
+`#platform:`), but operating on ordinary Nomen code. Conditions consult the
+`META` namespace and must be compile-time constants:
+
+```
+#if META.arch == "aarch64" {
+    Console.write_line("arm")
+} #elif META.arch == "c" {
+    Console.write_line("c target")
+} #else {
+    Console.write_line("other")
+}
+```
+
+`META.arch` is the compilation target — `"c"`, `"aarch64"` or `"js"`, the
+same vocabulary the raw-block `#arch:` tags match. `META.platform` is the
+target platform — `"macos"`, `"linux"` or `"windows"` by default, or
+whatever `--platform` passes, the same vocabulary `#platform:` accepts.
+Conditions compose with `==`, `!=`, `&&`, `||`, `!` and parentheses. A
+bare `META` value is an error — conditions must be bools, so compare:
+
+```
+#if META.arch == "c" {
+    Console.write_line("portable path")
+}
+```
+
+```
+#if META.arch { }
+// Error: #if condition must be a bool — compare META values with
+// == / != (e.g. META.arch == "c")
+```
+
+Arms hold ordinary Nomen: statements inside a function body, or whole
+declarations at file scope. The pragma is folded before the checker runs —
+only the selected arm is checked (a dead arm may reference names that do
+not exist for this target), and a pragma with no matching arm and no
+`#else` disappears entirely:
+
+```
+#if META.platform == "macos" {
+    struct MacOnly {
+        pub func hello = (self, out string) {
+            return "mac"
+        }
+    }
+}
+```
+
+A function body may switch implementation per target:
+
+```
+func clamp8 = (int v, out int) {
+    #if META.arch == "aarch64" {
+        return v
+    } #else {
+        if v < 0 { return 0 }
+        if v > 255 { return 255 }
+        return v
+    }
+}
+```
+
+Stage-1 limits: pragmas are valid at file scope and in function bodies
+(not inside struct/trait bodies), `META` exists only inside `#if`
+conditions (it is not a runtime value), and raw `#arch:` / `#platform:`
+blocks keep their own tags — a later stage unifies them under `#if META`
+(see `docs/COMPTIME_PLAN_2.md`).
+
 ## Standard Library
 
 The `System` library (in `core/System/`) is imported with `import System`. The

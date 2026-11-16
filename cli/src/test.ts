@@ -356,7 +356,7 @@ export async function run_test_file(
 	// already concatenated into `input` via `join`, which strips its `import`
 	// lines — `harness` re-supplies it so library resolution still triggers.
 	const source = input + "\n" + harness;
-	const parsed = parse(source, library, resolved);
+	const parsed = parse(source, library, resolved, { arch, platform: default_platform() });
 	if (parsed.errors.length) {
 		result.ok = false;
 		result.phase = "parse";

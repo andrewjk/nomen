@@ -209,7 +209,11 @@ export default function parse_declaration(
 		case "branch":
 		case "block":
 		case "async_block":
-		case "unsafe": {
+		case "unsafe":
+		case "pragma_if": {
+			// `pragma_if` is the parse-time arm collector of a `#if` —
+			// declarations inside a compile-time arm attach to the pragma
+			// and move into the selected arm's block when it closes.
 			(parent as BlockNode).statements.push(decl);
 			break;
 		}

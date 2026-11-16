@@ -3,14 +3,25 @@ import check_node from "./check/check_node.ts";
 import type CheckStatus from "./check/CheckStatus.ts";
 import { finalize_handler_hosts } from "./check/utils/handlers.ts";
 import { stamp_literal_element_moves } from "./check/utils/last_use.ts";
+import { fold_pragma_ifs } from "./check/utils/pragma.ts";
 import emit_warnings from "./check/warnings.ts";
+import default_platform from "./default_platform.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
 import type CheckResult from "./types/CheckResult.ts";
 
 export default function check(
 	root: BaseNode,
-	options?: { allow_internal?: boolean; library_boundary?: number },
+	options?: {
+		allow_internal?: boolean;
+		library_boundary?: number;
+		/** Compile target for `#if META.arch` folding. Defaults to the same
+		 *  target build() defaults to (the C backend); callers that build for
+		 *  another target MUST check with the same one — only the checked-in
+		 *  arm survives to codegen. */
+		arch?: string;
+		platform?: string;
+	},
 ): CheckResult {
 	const status: CheckStatus = {
 		stack: [root],
@@ -32,11 +43,26 @@ export default function check(
 		mutated_local_names: new Set(),
 		ref_param_writes: new Map(),
 		function_emission_names: new Set(),
-		type_name_counts: count_declared_type_names(root),
+		type_name_counts: new Map(),
 		type_emission_names: new Set(),
 		allow_internal: options?.allow_internal,
 		library_boundary: options?.library_boundary,
 	};
+
+	// Compile-time conditionals first (docs/COMPTIME_PLAN_2.md stage 1):
+	// splice every `#if` into its target-selected statements so every pass
+	// below — the emission-label name counter (a dead arm's duplicate name
+	// must not rename live declarations), literal-move stamping, gather,
+	// checking — sees only the code that exists for this target.
+	fold_pragma_ifs(
+		root,
+		{
+			arch: options?.arch ?? "c",
+			platform: options?.platform ?? default_platform(),
+		},
+		status,
+	);
+	status.type_name_counts = count_declared_type_names(root);
 
 	// Move-on-last-use stamping for bracket-literal elements (`[t, c]`):
 	// pure syntax/position analysis (no types yet) — the checker's

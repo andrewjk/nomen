@@ -1,0 +1,233 @@
+import add_error from "../../add_error.ts";
+import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
+import AccessNode from "../../nodes/AccessNode.ts";
+import type BaseNode from "../../nodes/BaseNode.ts";
+import GroupedNode from "../../nodes/GroupedNode.ts";
+import OperationNode from "../../nodes/OperationNode.ts";
+import PragmaIfNode from "../../nodes/PragmaIfNode.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
+import type CheckStatus from "../CheckStatus.ts";
+
+/**
+ * Compile-time conditionals — `#if META.arch == "c" { ... }` — docs/
+ * COMPTIME_PLAN_2.md stage 1.
+ *
+ * The phase contract (R2, applied to the only feature stage 1 has): the
+ * pragma is folded BEFORE any checking, splicing the selected arm's
+ * statements into the parent list, so the checker and both backends only
+ * ever see ordinary AST for code that exists on this target. Dead arms are
+ * never parsed-as-checked — they may freely reference declarations that
+ * don't exist for the target (that is the point).
+ *
+ * The condition grammar is deliberately tiny: META.arch / META.platform,
+ * string and boolean literals, == != && || !, and parentheses. No user
+ * identifiers, no arithmetic, no type info — that is stage 2's META.info
+ * + `#for` (R3/R4), which defers instead of folding.
+ */
+
+/** The compile-time target constants a `#if` condition may consult. */
+export interface PragmaConsts {
+	arch: string;
+	platform: string;
+}
+
+type ConstValue = string | boolean;
+
+type EvalResult =
+	| { ok: true; value: ConstValue; start: number }
+	| { ok: false; message: string; start: number };
+
+/**
+ * Structurally evaluate a `#if` condition against the target constants.
+ * Purely structural — there is no name resolution this early in check, so
+ * `META.arch` is recognized by SHAPE (a `META` value node accessed as a
+ * field), and anything else is an error naming the supported grammar.
+ */
+export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts): EvalResult {
+	switch (node.node_type) {
+		case "value": {
+			const value = (node as ValueNode).value;
+			if (value === "true") return { ok: true, value: true, start: node.start };
+			if (value === "false") return { ok: true, value: false, start: node.start };
+			if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+				return { ok: true, value: value.substring(1, value.length - 1), start: node.start };
+			}
+			return {
+				ok: false,
+				message:
+					"Unsupported #if condition — expected a string literal, true, false, META.arch or META.platform",
+				start: node.start,
+			};
+		}
+		case "grouped": {
+			return evaluate_pragma_condition((node as GroupedNode).value, consts);
+		}
+		case "access": {
+			const access = node as AccessNode;
+			if (
+				access.target.node_type === "value" &&
+				(access.target as ValueNode).value === "META" &&
+				access.access.node_type === "access_field"
+			) {
+				const name = (access.access as AccessFieldNode).name;
+				if (name === "arch") return { ok: true, value: consts.arch, start: node.start };
+				if (name === "platform") return { ok: true, value: consts.platform, start: node.start };
+				return {
+					ok: false,
+					message: `Unknown META field 'META.${name}' — expected META.arch or META.platform`,
+					start: node.start,
+				};
+			}
+			return {
+				ok: false,
+				message:
+					"Unsupported #if condition — only META.arch and META.platform are compile-time values",
+				start: node.start,
+			};
+		}
+		case "op": {
+			const op = node as OperationNode;
+			if (op.op === "==" || op.op === "!=") {
+				const left = evaluate_pragma_condition(op.left_value, consts);
+				if (!left.ok) return left;
+				const right = evaluate_pragma_condition(op.right_value, consts);
+				if (!right.ok) return right;
+				if (typeof left.value !== typeof right.value) {
+					return {
+						ok: false,
+						message: `#if condition compares ${const_type_name(left.value)} with ${const_type_name(right.value)}`,
+						start: node.start,
+					};
+				}
+				const equal = left.value === right.value;
+				return { ok: true, value: op.op === "==" ? equal : !equal, start: node.start };
+			}
+			if (op.op === "&&" || op.op === "||") {
+				const left = evaluate_pragma_condition(op.left_value, consts);
+				if (!left.ok) return left;
+				const left_ok = require_boolean(left, op.op);
+				if (!left_ok.ok) return left_ok;
+				const right = evaluate_pragma_condition(op.right_value, consts);
+				if (!right.ok) return right;
+				const right_ok = require_boolean(right, op.op);
+				if (!right_ok.ok) return right_ok;
+				return {
+					ok: true,
+					value: op.op === "&&" ? left.value && right.value : left.value || right.value,
+					start: node.start,
+				};
+			}
+			if (op.op === "!") {
+				// Prefix `!` parks its operand in both slots (parse_expression);
+				// reading right_value sees it either way.
+				const inner = evaluate_pragma_condition(op.right_value, consts);
+				if (!inner.ok) return inner;
+				const inner_ok = require_boolean(inner, "!");
+				if (!inner_ok.ok) return inner_ok;
+				return { ok: true, value: !inner.value, start: node.start };
+			}
+			return {
+				ok: false,
+				message: `Unsupported #if condition operator '${op.op}' — supported: == != && || !`,
+				start: node.start,
+			};
+		}
+		default: {
+			return {
+				ok: false,
+				message:
+					"Unsupported #if condition — supported: META.arch, META.platform, string/bool literals, == != && || ! and parentheses",
+				start: node.start,
+			};
+		}
+	}
+}
+
+function require_boolean(
+	result: { ok: true; value: ConstValue; start: number },
+	op: string,
+): { ok: true } | { ok: false; message: string; start: number } {
+	if (typeof result.value === "boolean") return { ok: true };
+	return {
+		ok: false,
+		message: `'${op}' in a #if condition needs boolean operands — compare META values with == / != (e.g. META.arch == "c")`,
+		start: result.start,
+	};
+}
+
+function const_type_name(value: ConstValue): string {
+	return typeof value === "string" ? "a string" : "a bool";
+}
+
+/**
+ * Splice every `#if` pragma out of every statement list, recursively — the
+ * compile-time analogue of unwrap_unsafe_blocks (src/check.ts). Runs at the
+ * START of check, before any gather/stamp/checking, so every downstream
+ * pass sees a flat tree: gather_structs registers target-selected
+ * declarations, count_declared_type_names never lets a dead arm's duplicate
+ * names trigger live emission-label renames, and no backend ever meets a
+ * node type it doesn't know.
+ *
+ * Selection: the first arm whose condition holds. A condition that fails to
+ * evaluate is a compile error and drops the whole pragma (splicing nothing)
+ * — downstream still sees sane AST. No matching arm (and no `#else`)
+ * removes the pragma entirely, which is the feature: code for other
+ * targets disappears without a trace.
+ */
+export function fold_pragma_ifs(node: unknown, consts: PragmaConsts, status: CheckStatus): void {
+	if (!node || typeof node !== "object") return;
+	if (Array.isArray(node)) {
+		for (const child of node) fold_pragma_ifs(child, consts, status);
+		return;
+	}
+	const any_node = node as Record<string, unknown>;
+	if (Array.isArray(any_node.statements)) {
+		const list = any_node.statements as BaseNode[];
+		for (let i = list.length - 1; i >= 0; i--) {
+			const child = list[i] as BaseNode | undefined;
+			// Recurse first so nested statement lists (pragma arms, function
+			// bodies, struct bodies, inner blocks) are already folded when we
+			// splice — the spliced-in statements are fold-free.
+			fold_pragma_ifs(child, consts, status);
+			if (!child || typeof child !== "object" || child.node_type !== "pragma_if") continue;
+			const inner = select_pragma_branch(child as PragmaIfNode, consts, status);
+			list.splice(i, 1, ...inner);
+		}
+	}
+	for (const key of Object.keys(node)) {
+		if (key === "parent" || key === "scope" || key === "statements") continue;
+		const value = any_node[key];
+		if (value && typeof value === "object") fold_pragma_ifs(value, consts, status);
+	}
+}
+
+/** Pick the first matching arm of a folded pragma and return its statements. */
+function select_pragma_branch(
+	pragma: PragmaIfNode,
+	consts: PragmaConsts,
+	status: CheckStatus,
+): BaseNode[] {
+	for (const branch of pragma.branches) {
+		if (branch.condition) {
+			const result = evaluate_pragma_condition(branch.condition, consts);
+			if (!result.ok) {
+				add_error(status, result.message, result.start);
+				return [];
+			}
+			// A bare META value is a string — conditions must be boolean.
+			// (Comptime strings only compose through == / != for now; name
+			// generation makes them first-class in stage 2, R6.)
+			if (typeof result.value !== "boolean") {
+				add_error(
+					status,
+					'#if condition must be a bool — compare META values with == / != (e.g. META.arch == "c")',
+					result.start,
+				);
+				return [];
+			}
+			if (!result.value) continue;
+		}
+		return branch.block.statements ?? [];
+	}
+	return [];
+}

@@ -53,6 +53,7 @@ import { gather_normalized_struct_returners } from "./build_common/struct_return
 import build_js from "./build_js/build_js.ts";
 import { parse_interp_name } from "./check/utils/interp_arg_kinds.ts";
 import { stamp_last_use_moves } from "./check/utils/last_use.ts";
+import default_platform from "./default_platform.ts";
 import BaseNode from "./nodes/BaseNode.ts";
 import { child_nodes } from "./nodes/child_nodes.ts";
 import RawNode from "./nodes/RawNode.ts";
@@ -993,19 +994,11 @@ export function build_split(
 
 /**
  * Derive a default target platform from the host when none is supplied.
+ * Re-exported from the shared module so the checker's `#if` folding and the
+ * build agree on the default target without importing each other. See
+ * `src/default_platform.ts`.
  */
-export function default_platform(): string {
-	switch (process.platform) {
-		case "darwin":
-			return "macos";
-		case "linux":
-			return "linux";
-		case "win32":
-			return "windows";
-		default:
-			return process.platform;
-	}
-}
+export { default as default_platform } from "./default_platform.ts";
 
 /**
  * Whether a top-level definition belongs in the precompilable System

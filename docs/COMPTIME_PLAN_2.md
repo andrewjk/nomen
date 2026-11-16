@@ -245,6 +245,25 @@ Elevate it from "good long-term target" to the acceptance criterion.
    (`META.arch`, `META.platform`, plus a restricted comptime expression
    grammar), valid at declaration and body scope, evaluating before checking
    bodies and checking only the live arm. No `META.info`, no `#for`.
+   **SHIPPED** — `PragmaIfNode` (`src/nodes/PragmaIfNode.ts`), parsed by
+   `src/parse/parse_pragma_if.ts`, folded before checking by
+   `fold_pragma_ifs` (`src/check/utils/pragma.ts`), which runs at the top of
+   `check()` before `count_declared_type_names` so target-selected
+   declarations register exactly once. Targets thread through
+   `parse(source, lib, path, { arch, platform })` → `check()`; the CLI passes
+   its config so check/build/run/test agree. Contract tests:
+   `test/compile_time_if.test.ts`, `test/spec/compile_time_conditionals.test.ts`.
+   Notes from the implementation: `#elif`/`#else` tokenize as `#` + word
+   (both consumed per arm); arms parse with the PRAGMA on the stack as a
+   statement collector (`PragmaIfNode.statements`, moved into the arm's block
+   on close) so the parser's parent-type attach switches treat declarations
+   inside arms like declarations in the enclosing scope
+   (`parse_function.ts`/`parse_declaration.ts` gained `case "pragma_if"`);
+   struct/trait-body arms are rejected at parse (no statement list to splice
+   into — a stage-3+ problem with attributes). The backends were left
+   STRICT: a `pragma_if` reaching a backend throws, since the fold runs
+   unconditionally in `check()` — surviving nodes mean a fold gap (compiler
+   bug), matching lower_function's "NIR lowering gap" contract.
 2. **`#for` + `META.info(T).fields` + `field.get/set`** (R3, R4, R5, R8),
    validated by re-deriving `Stringable`/`Equatable`/`Hashable` (R9).
 3. **Attributes** (D1) — sigil chosen then, surfaced via
