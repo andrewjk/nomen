@@ -190,10 +190,15 @@ export function in_place_field_path_root_struct_name(
 	root: string,
 ): string | undefined {
 	if (root === "self") return status.current_struct?.name;
+	// The declared type may carry the GENERIC spelling (`var Holder<Leaf> h`
+	// records name "Holder" + args) while the walk addresses MONO layouts —
+	// flatten it (`Holder_Leaf`) or the first hop's owner lookup fails and
+	// the in-place splice bails, leaving the ordinary lowering to emit
+	// invalid C (`&Ctor()` for a by-pointer element param).
 	const declared = status.variable_types?.get(root);
-	if (declared?.name) return declared.name;
+	if (declared?.name) return mono_type_name(declared);
 	const decl = status.scoped_declarations?.findLast((d) => d.name === root);
-	return decl?.type?.name;
+	return decl?.type?.name ? mono_type_name(decl.type) : undefined;
 }
 
 /** True for the simple categories whose marshalling never emits a call. */

@@ -1,4 +1,5 @@
 import add_error from "../../add_error.ts";
+import { mono_type_name } from "../../build_common/mono_name.ts";
 import { get_built_in_type } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
@@ -478,7 +479,7 @@ function rewrite(
 
 /** Classify a type name for the comptime predicates: a plain struct (not a
  *  builtin, not generic/container), and a container (generic spelling or a
- *  monomorphized container, which carries `source_type_args`). */
+ *  monomorphized System container). */
 function classify_type_name(
 	name: string,
 	status: CheckStatus,
@@ -486,9 +487,28 @@ function classify_type_name(
 	const declared = resolve_declared_struct(name, status) as StructNode | undefined;
 	const is_builtin = !!get_built_in_type(name);
 	const generic_spelling = !!declared && declared.type_params.length > 0;
-	const mono_container =
-		!!declared &&
-		!!(declared as unknown as { source_type_args?: unknown[] }).source_type_args?.length;
+	// A MONO is a container when its CANONICAL generic is a System library
+	// struct (`StableList_float` -> StableList, `Buffer_uint64` -> Buffer).
+	// The old suffix-only test (`source_type_args` present) classified any
+	// instantiation as a container — including a USER generic's mono, so
+	// `Holder<StableList<Leaf>>` (name `Holder_StableList_Leaf`) dispatched
+	// into the reflection-driven list encoder instead of the struct walker.
+	const source_type_args = (declared as unknown as { source_type_args?: Type[] }).source_type_args;
+	let mono_container = false;
+	if (declared && source_type_args?.length) {
+		const suffix = source_type_args.map((arg) => mono_type_name(arg)).join("_");
+		if (declared.name.endsWith(suffix)) {
+			const canonical_name = declared.name.slice(0, declared.name.length - suffix.length - 1);
+			const canonical = status.structs.find(
+				(s) => s.name === canonical_name && s.type_params.length > 0,
+			);
+			mono_container = !!canonical?.is_library;
+		} else {
+			// The name doesn't decompose into `<canonical>_<args>` (not
+			// expected); keep the conservative container reading.
+			mono_container = true;
+		}
+	}
 	return {
 		is_struct: !!declared && !is_builtin && !generic_spelling && !mono_container,
 		is_container: generic_spelling || mono_container,
@@ -837,17 +857,6 @@ export function rewrite_meta_name_chains(
 			) {
 				let type_name = (arg as ValueNode).value;
 				if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
-				if (type_name.includes("StableList")) {
-					console.error(
-						"DBG classify:",
-						predicate.name,
-						type_name,
-						"declared:",
-						!!resolve_declared_struct(type_name, status),
-						"kind:",
-						JSON.stringify(classify_type_name(type_name, status)),
-					);
-				}
 				// Skip names that resolve to NOTHING: an unbound type parameter
 				// scanned from the outside (the per-block pass walks deferred
 				// generic bodies, where T has no binding yet). Classifying it

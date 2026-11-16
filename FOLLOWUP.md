@@ -675,17 +675,40 @@ collide with library types" (current AGENTS.md guidance). The scan is
 textual by design (works pre-check), so the parser-side exclusion is the
 cleaner fix if it ever bites hard.
 
-## C backend: nested container monos emit incomplete struct fields
+## aarch64: comptime-json encode crashes for generic-mono structs with container-field elements
 
-`Buffer_StableList_Leaf` (a `Buffer<T>` whose element is itself a
-container mono) appears in `main.h` as a bare field type with only a
-forward declaration — `error: field has incomplete type`. Repro: a generic
-struct with a container-typed field instantiated over another container or
-a struct holding one (`Holder<Leaf>` where `Holder<T> { var items =
-StableList<T>() }`), built for C. The reflection/check phases are fine; the
-C emitter's struct-body emission loses the definition of that mono. Not on
-the serde path (which decodes concrete container fields), but it blocks
-user generics over containers.
+Found while testing the nested-container-mono fixes (2026-11-16). After the
+`META.is_struct`/`is_container` classification stopped treating a USER
+generic's mono as a container (`Holder<StableList<Leaf>>` used to dispatch
+into the list encoder and fail the check), the encode path over such a
+mono became reachable — and segfaults on aarch64:
+
+```nomen
+mv struct Leaf {
+	var inner = StableList<int>()
+}
+
+mv struct Holder<T> {
+	var items = StableList<T>()
+}
+
+pub func main = () {
+	var h = Holder<Leaf>()
+	var leaf = Leaf()
+	leaf.inner.push(7)
+	h.items.push(mv leaf)
+	Console.write_line(json_encode(h))   // SIGSEGV on aarch64; C is fine
+}
+```
+
+The crash is inside `json_encode_list_StableList_Leaf`'s closing inline
+StringBuilder append (`.end_while_54`): x19/x20 are both 0 and the
+backtrace repeats `.inline_ret_108` — a stack/register imbalance in the
+inline-append splice when the element's own encode recurses into another
+container mono. The plain-struct equivalents (json_serde's tests:
+`Grid`, `Plain { atoms }`) and encode-before-push shapes are fine; a
+generic-mono element pushed with `mv` is the trigger. `test/
+generic_container_field_push.test.ts` avoids the shape for now.
 
 ## ref-param assignment of an owned string leaks
 
