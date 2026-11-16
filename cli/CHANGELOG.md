@@ -29,6 +29,39 @@
 
 
 
+
+## 0.14.0
+<sub>2026-11-16</sub>
+
+-  *(minor)* - Feat: try/catch handles the error side; match keeps .ok/.fail
+-  *(minor)* - statement-position try handles unit results (out ! E)
+-  *(minor)*
+  Compiled-pattern regex engine (pattern compiled once to flat tables + bitmap classes + first-byte gates; ~2x on regex-heavy workloads on both backends) and an aarch64 store-clobber fix for compound-index Buffer stores
+-  *(minor)* - BigInt: Toom-3 multiplication above Karatsuba (gate 600 limbs, measured crossover)
+-  *(patch)* - Fix: !-lifting a payload-less case of a mixed error enum on aarch64
+-  *(patch)* - Fix: assignment-position branching RHS (match/switch/if/try)
+-  *(patch)* - Fix: branching RHS joins for struct/enum/field destinations
+-  *(patch)* - C match temps reclaim nested enum-with-data payloads
+-  *(patch)* - payload yields out of catch/match arms survive the match-end reclaim
+-  *(patch)* - Fix: statement try on a value result is rejected by the discard rule
+-  *(patch)* - Fix: guard-clause negation refines numeric ranges
+-  *(patch)* - Perf: BigInt reciprocal single-limb division
+-  *(patch)*
+  Perf: mandelbrot 8-lane rewrite + NEON emitter operand-direct materialization, 4-buffer plans, multi-store loop bodies; edigits correct digit-buffer sizing + buffered single-write output
+-  *(patch)* - NEON straight-line lane-group peel (mandelbrot aarch64 -16%)
+-  *(patch)* - Fix: C backend leaks mv-owns flags across struct methods
+-  *(patch)* - Fix: aarch64 nested main emitted a duplicate _main symbol
+-  *(patch)* - Fix: C backend nested main redefined int main
+-  *(patch)* - Fix: box trait-typed local branching joins
+-  *(patch)* - Fix: join nullable-typed branching arms per-arm
+-  *(patch)* - Fix: reclaim Box local in branching join
+-  *(patch)* - Fix: join Box wrapper field branch stores
+-  *(patch)* - Test: pin index-target branch stores
+-  *(patch)*
+  Compile-time tranche 1: asm pass pipeline table reuse, per-function-chunk drivers, memoized instruction parsing, bundled benchmark compiler runner
+-  *(patch)*
+  Perf: compile-time residuals (COMPILER_PERF tranche 1) — mask-based register liveness for the shared asm CFG passes, one-pass lift_functions, tsx→esbuild in ab.sh/leakcheck.sh, try_parse_generic_args lookahead gate
+
 ## 0.13.0
 <sub>2026-11-12</sub>
 
