@@ -87,6 +87,12 @@ export default function check(
 	// otherwise desynchronize those pairings.
 	unwrap_unsafe_blocks(root);
 
+	// Compile-time `#for` placeholders leave the tree once their iterations
+	// are spliced in (check_pragma_for_node). Deferred loops inside generic
+	// bodies go too: those bodies are never built, their specializations
+	// carry already-expanded clones, and nothing downstream reads the node.
+	drop_pragma_for_placeholders(root);
+
 	// Only analyse for warnings on a clean check — a partially-checked,
 	// erroring tree would surface misleading or spurious warnings. Gate on
 	// USER-ADDRESSABLE errors: synthesized nodes (the auto-derived `copy`,
@@ -132,6 +138,35 @@ function unwrap_unsafe_blocks(node: unknown): void {
 		if (key === "parent" || key === "scope" || key === "statements") continue;
 		const value = any_node[key];
 		if (value && typeof value === "object") unwrap_unsafe_blocks(value);
+	}
+}
+
+/**
+ * Remove consumed compile-time `#for` nodes (check_pragma_for_node leaves
+ * them in place as placeholders so the live statement walk checks the
+ * spliced iterations in order). Mirrors unwrap_unsafe_blocks' walk:
+ * statement lists are filtered in place, everything else descended.
+ */
+function drop_pragma_for_placeholders(node: unknown): void {
+	if (!node || typeof node !== "object") return;
+	if (Array.isArray(node)) {
+		for (const child of node) drop_pragma_for_placeholders(child);
+		return;
+	}
+	const any_node = node as Record<string, unknown>;
+	if (Array.isArray(any_node.statements)) {
+		const list = any_node.statements as BaseNode[];
+		for (let i = list.length - 1; i >= 0; i--) {
+			const child = list[i] as BaseNode | undefined;
+			drop_pragma_for_placeholders(child);
+			if (!child || typeof child !== "object" || child.node_type !== "pragma_for") continue;
+			list.splice(i, 1);
+		}
+	}
+	for (const key of Object.keys(node)) {
+		if (key === "parent" || key === "scope" || key === "statements") continue;
+		const value = any_node[key];
+		if (value && typeof value === "object") drop_pragma_for_placeholders(value);
 	}
 }
 

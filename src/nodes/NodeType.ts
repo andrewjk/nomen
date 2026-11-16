@@ -41,4 +41,5 @@ export type NodeType =
 	| "index"
 	| "null_access"
 	| "unsafe"
-	| "pragma_if";
+	| "pragma_if"
+	| "pragma_for";

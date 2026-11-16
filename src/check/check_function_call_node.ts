@@ -29,6 +29,11 @@ import { maybe_record_capture } from "./utils/captures.ts";
 import { resolve_case_enum_type } from "./utils/case_enum.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import {
+	expand_pragma_fors_in_list,
+	rewrite_meta_name_chains,
+	substitute_pragma_iterables,
+} from "./utils/comptime.ts";
+import {
 	monomorphize_enum,
 	enforce_case_payload_ownership,
 	hoist_case_string_arg_temp,
@@ -719,6 +724,17 @@ export function monomorphize(
 			bitsets: status.bitsets,
 		});
 		fold_substituted_constant_ifs(cloned.statements);
+		// Compile-time `#for` loops deferred inside the generic method body
+		// unroll HERE: method clones are stamped `checked = true` (never
+		// re-checked), so — exactly like the substituted `T_*` condition
+		// arms this fold just removed — the loop's iterations join the
+		// body as unchecked-but-retyped AST. First rewrite the iterable's
+		// type-parameter references (T -> the bound name), then expand.
+		substitute_pragma_iterables(cloned.statements, substitution);
+		expand_pragma_fors_in_list(cloned.statements, status);
+		// Mono method clones are never re-checked, so `META.info(T).name`
+		// chains outside `#for` arms resolve here, through the substitution.
+		rewrite_meta_name_chains(cloned.statements, status, substitution);
 		rename_local_labels(cloned, mono_name);
 		// Checker-hoisted call-argument temps (`const _param_N = <arg>` in
 		// func.allocations) are built as declarations ahead of the body — and
@@ -871,6 +887,11 @@ export function monomorphize(
 			bitsets: status.bitsets,
 		});
 		fold_substituted_constant_ifs(cloned.statements);
+		// The cloned #init body IS re-checked, so its deferred compile-time
+		// `#for` loops expand then — but the iterable's type-parameter
+		// reference must be rewritten to the bound name first (the re-check
+		// runs with an empty type_params stack).
+		substitute_pragma_iterables(cloned.statements, substitution);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = new Type(mono_name);
 		cloned.type_params = [];
@@ -3029,10 +3050,29 @@ function specialize_function(
 
 	for (let i = 0; i < generic_func.params.length; i++) {
 		const param = generic_func.params[i];
-		const generic_struct = status.structs.findLast((s) => s.name === param.type.name);
-		if (!generic_struct?.is_generic) continue;
-
 		const arg = call_node.params[i];
+		const generic_struct = status.structs.findLast((s) => s.name === param.type.name);
+		if (!generic_struct?.is_generic) {
+			// Bare type parameter (`func f<T> = (T value, ...)`) — the
+			// inference source for reflection-driven generics (stage 2,
+			// docs/COMPTIME_PLAN_2.md R9): bind T from the argument's
+			// concrete type. Only concrete bindings count — an argument
+			// whose type is itself an unbound parameter leaves T unbound,
+			// surfacing below as "Cannot infer" (an honest dead end, never
+			// a phantom specialization).
+			if (
+				arg &&
+				generic_func.type_params.includes(param.type.name) &&
+				!substitution.has(param.type.name)
+			) {
+				const arg_type = infer_arg_type(arg, status);
+				if (arg_type.name && !type_contains_unresolved_param(arg_type, status)) {
+					substitution.set(param.type.name, arg_type.name);
+					suffix_parts.push(arg_type.name);
+				}
+			}
+			continue;
+		}
 		if (!arg) continue;
 
 		let type_args_for_struct: Type[] = [];
@@ -3125,6 +3165,14 @@ function specialize_function(
 	if (generic_func.type_params.length > 0) {
 		substitute_body_types(cloned.statements, substitution);
 		materialize_mono_enum_types(cloned.statements, substitution, status);
+		// Deferred compile-time `#for` loops in the generic body resolve
+		// during this clone's re-check — but only if their iterable's type
+		// parameter reference is rewritten to the bound name first.
+		substitute_pragma_iterables(cloned.statements, substitution);
+		// Same for `META.info(T).name` chains outside `#for` arms: rewrite
+		// T -> the bound name so the re-check (empty type_params stack)
+		// resolves them to literals.
+		rewrite_meta_name_chains(cloned.statements, status, substitution);
 	}
 
 	cloned.type_params = [];
@@ -3178,6 +3226,12 @@ function infer_arg_type(node: import("../nodes/BaseNode.ts").default, status: Ch
 			t.type_args = fc.type_args;
 			return t;
 		}
+		// A bare constructor call `Point(1, 2)` — the callee names a
+		// registered struct, and the constructor's return type is that
+		// struct. (Stage 2: the inference source for bare-T params of
+		// reflection-driven generics.)
+		const ctor_struct = status.structs.findLast((s) => s.name === fc.name);
+		if (ctor_struct) return new Type(ctor_struct.name);
 		return fc.type;
 	}
 	if (node.node_type === "access") {

@@ -264,9 +264,18 @@ Arms hold ordinary Nomen — statements in a body, or whole declarations at
 file scope — and only the selected arm is checked, so dead arms may
 reference names that don't exist for the target. Use it for
 per-platform/per-target code in `core/`, demos and tests in preference to
-duplicating whole files. String conditions beyond
-`META.arch`/`META.platform` don't exist yet (no `META.info` — that's
-stage 2 of `docs/COMPTIME_PLAN_2.md`).
+duplicating whole files.
+
+`#for field of META.info(T).fields { ... }` unrolls per struct field at
+compile time (SPEC, "Compile-Time Reflection"). The binding exposes
+`.name`, `.type.name`, `.get(obj)`, `.set(obj, value)`; comptime `if`
+conditions over `field.type.name` fold to the live arm. Inside a generic
+body the loop defers until specialization binds `T`, which is how one
+generic serves every struct (a reflection-driven `to_string`/`==`/`hash`
+matches the auto-derived versions). Comptime string `+` folds literals.
+
+String conditions beyond `META.arch`/`META.platform` don't exist yet (no
+rich `META` predicates — see stage 2 notes in `docs/COMPTIME_PLAN_2.md`).
 
 String convention (one ABI everywhere, both backends): raw bodies see the
 same fat `string` values Nomen code sees — a C `char*` is the explicit

@@ -29,6 +29,7 @@ import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
 import parse_match, { parse_try } from "./parse_match.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
+import parse_pragma_for from "./parse_pragma_for.ts";
 import parse_pragma_if, { parse_pragma_switch } from "./parse_pragma_if.ts";
 import parse_raw from "./parse_raw.ts";
 import parse_return from "./parse_return.ts";
@@ -251,6 +252,12 @@ export default function parse_statement(status: ParseStatus) {
 					// statements survive to codegen.
 					const pragma = next === "if" ? parse_pragma_if(status) : parse_pragma_switch(status);
 					add_to_parent(pragma, "Compile-time conditional", status);
+				} else if (next === "for") {
+					// Compile-time field loop (stage 2): `#for field of
+					// META.info(T).fields { ... }` — unrolled at check time,
+					// deferred while T is an unbound type parameter.
+					const loop = parse_pragma_for(status);
+					add_to_parent(loop, "Compile-time for", status);
 				} else if (next === "init") {
 					consume(status); // consume #
 					consume(status); // consume init

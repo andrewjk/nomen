@@ -1,0 +1,627 @@
+import add_error from "../../add_error.ts";
+import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
+import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
+import AccessNode from "../../nodes/AccessNode.ts";
+import AssignmentNode from "../../nodes/AssignmentNode.ts";
+import type BaseNode from "../../nodes/BaseNode.ts";
+import { is_ast_node } from "../../nodes/child_nodes.ts";
+import clone_node from "../../nodes/clone_node.ts";
+import GroupedNode from "../../nodes/GroupedNode.ts";
+import IfElseNode from "../../nodes/IfElseNode.ts";
+import NestedBlockNode from "../../nodes/NestedBlockNode.ts";
+import OperationNode from "../../nodes/OperationNode.ts";
+import PragmaForNode from "../../nodes/PragmaForNode.ts";
+import type StructNode from "../../nodes/StructNode.ts";
+import Type from "../../nodes/Type.ts";
+import ValueNode from "../../nodes/ValueNode.ts";
+import type CheckStatus from "../CheckStatus.ts";
+import { resolve_declared_struct } from "./resolve_declared_type.ts";
+
+/**
+ * Compile-time field reflection — `#for field of META.info(T).fields` —
+ * docs/COMPTIME_PLAN_2.md stage 2 (R2–R6, R8).
+ *
+ * The phase contract (R2): expansion happens at CHECK time and produces
+ * ordinary AST before the arm is checked — one freshly-scoped block per
+ * field (the R8 hygiene: per-iteration scope instead of name suffixes, so
+ * unrolled locals cannot collide). Concrete `T` expands when the checker
+ * reaches the node; `T` still in `status.type_params` defers (R3) — the
+ * node survives into the specialization, which is re-checked from
+ * scratch, and unrolls there. A `T` that neither defers nor resolves is a
+ * compile error, never a silent drop.
+ *
+ * The binding is comptime (R4): it exists only during expansion and is
+ * erased here — `<b>.name` / `<b>.type.name` rewrite to string literals,
+ * `<b>.get(obj)` to an ordinary field access, `<b>.set(obj, v)` to an
+ * ordinary assignment (R5 — methods on the binding, so no lvalue plumbing
+ * is needed). Comptime string concat folds literals eagerly (R6), and an
+ * `if` whose condition became comptime-constant folds to its live arm
+ * (the same shape the monomorphizer's fold_substituted_constant_ifs
+ * applies to substituted `T_*` conditions).
+ */
+
+/** One comptime field binding value: what `META.info(T).fields[i]` is. */
+interface ComptimeField {
+	name: string;
+	type_name: string;
+	index: number;
+	/** The type-argument expression the loop reflects over, as written
+	 *  (e.g. `T` in a generic body, `Sample` in a concrete one) — lets
+	 *  `META.info(T).name` resolve to the same type. */
+	type_argument: string;
+}
+
+type ComptimeValue =
+	| { kind: "bool"; value: boolean }
+	| { kind: "string"; value: string }
+	| { kind: "int"; value: number };
+
+type IterableResolution =
+	| { struct: StructNode }
+	| { deferred: true }
+	| { error: string; start: number };
+
+function unwrap_grouped(node: BaseNode | undefined): BaseNode {
+	let current = node as BaseNode;
+	while (current && current.node_type === "grouped") {
+		current = (current as GroupedNode).value;
+	}
+	return current;
+}
+
+/**
+ * Recognize `META.info(T).fields` structurally and resolve `T`.
+ * Deferred when `T` is an unbound type parameter (R3); an error when `T`
+ * names nothing (which includes a type parameter that survived into a
+ * re-checked body — there it means specialization never bound it).
+ */
+function resolve_meta_iterable(node: BaseNode, status: CheckStatus): IterableResolution {
+	const fields_access = unwrap_grouped(node);
+	if (
+		fields_access.node_type !== "access" ||
+		(fields_access as AccessNode).access.node_type !== "access_field" ||
+		((fields_access as AccessNode).access as AccessFieldNode).name !== "fields"
+	) {
+		return {
+			error: "#for iterates META.info(T).fields — other iterables are not comptime values",
+			start: node.start,
+		};
+	}
+	const info_call = unwrap_grouped((fields_access as AccessNode).target);
+	if (
+		info_call.node_type !== "access" ||
+		(info_call as AccessNode).target.node_type !== "value" ||
+		((info_call as AccessNode).target as ValueNode).value !== "META" ||
+		(info_call as AccessNode).access.node_type !== "access_func" ||
+		((info_call as AccessNode).access as AccessFunctionCallNode).name !== "info"
+	) {
+		return {
+			error: "#for iterates META.info(T).fields — other iterables are not comptime values",
+			start: node.start,
+		};
+	}
+	const args = ((info_call as AccessNode).access as AccessFunctionCallNode).params ?? [];
+	const type_arg = unwrap_grouped(args[0]);
+	if (
+		args.length !== 1 ||
+		type_arg.node_type !== "value" ||
+		(type_arg as ValueNode).value.startsWith('"')
+	) {
+		return {
+			error: "META.info takes a type name — META.info(T) where T is a struct type",
+			start: info_call.start,
+		};
+	}
+	const type_name = (type_arg as ValueNode).value;
+
+	if (status.type_params.includes(type_name)) {
+		// R3: inside a generic body the parameter is unbound — defer, the
+		// specialization re-checks the cloned body and expands there.
+		return { deferred: true };
+	}
+	const declared = resolve_declared_struct(type_name, status);
+	if (!declared) {
+		return {
+			error: `META.info: unknown type '${type_name}' — reflection is over struct types`,
+			start: info_call.start,
+		};
+	}
+	const struct = declared as StructNode;
+	if (struct.type_params.length > 0 || struct.is_generic) {
+		return {
+			error: `META.info: '${type_name}' is generic — reflect over a concrete instantiation`,
+			start: info_call.start,
+		};
+	}
+	return { struct };
+}
+
+/**
+ * Expand a `#for` node into per-field iteration blocks, or return null to
+ * defer (R3). Each iteration deep-clones the arm (clone_node preserves
+ * prototypes and checker stamps), rewrites the binding's comptime uses
+ * into ordinary AST, stamps `spawn_of` (R7), and wraps the result in a
+ * fresh block scope (R8). Returns [] on error (the pragma is consumed —
+ * downstream never sees a node it doesn't know).
+ */
+export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): BaseNode[] | null {
+	const resolved = resolve_meta_iterable(node.iterable, status);
+	if ("error" in resolved) {
+		add_error(status, resolved.error, resolved.start);
+		return [];
+	}
+	if ("deferred" in resolved) return null;
+	const struct = resolved.struct;
+
+	const typed_fields = struct.fields.filter((f) => f.type && f.type.name);
+	const type_argument = iterable_type_argument(node.iterable);
+	const iterations: BaseNode[] = [];
+	typed_fields.forEach((f, index) => {
+		const field: ComptimeField = {
+			name: f.name,
+			type_name: (f.type as Type).name,
+			index,
+			type_argument,
+		};
+		const body = (node.block.statements ?? []).map((s) => clone_node(s));
+		const rewritten: BaseNode[] = [];
+		for (const stmt of body) {
+			rewritten.push(...rewrite_statement(stmt, node.binding, field, status));
+		}
+		for (const s of rewritten) {
+			// R7: point diagnostics from generated code at the `#for`.
+			s.spawn_of = node.start;
+		}
+		iterations.push(new NestedBlockNode(node.block.start, rewritten));
+	});
+	return iterations;
+}
+
+/** The type name a `#for`'s iterable reflects over, as written in source. */
+function iterable_type_argument(iterable: BaseNode): string {
+	const fields_access = unwrap_grouped(iterable);
+	if (fields_access.node_type !== "access") return "";
+	const info_call = unwrap_grouped((fields_access as AccessNode).target);
+	if (info_call.node_type !== "access") return "";
+	const args = ((info_call as AccessNode).access as AccessFunctionCallNode).params ?? [];
+	const arg = unwrap_grouped(args[0]);
+	return arg && arg.node_type === "value" ? (arg as ValueNode).value : "";
+}
+
+/**
+ * Rename a pragma iterable's type-parameter references through a
+ * monomorphization substitution map (`T` -> `Pt`), so a `#for` that
+ * deferred inside a generic body resolves once the specialization binds
+ * the parameter. Only ValueNodes inside pragma_for ITERABLES are touched —
+ * a blanket rename would corrupt ordinary runtime values named `T`.
+ */
+export function substitute_pragma_iterables(
+	statements: BaseNode[],
+	substitution: Map<string, string>,
+): void {
+	const visit = (node: BaseNode): void => {
+		if (node.node_type === "pragma_for") {
+			const loop = node as PragmaForNode;
+			const rename = (n: BaseNode): BaseNode => {
+				if (n.node_type === "value") {
+					const value = (n as ValueNode).value;
+					if (substitution.has(value)) return new ValueNode(n.start, substitution.get(value)!);
+					return n;
+				}
+				for (const key in n) {
+					if (key === "parent" || key === "scope") continue;
+					const child = (n as unknown as Record<string, unknown>)[key];
+					if (Array.isArray(child)) {
+						(n as unknown as Record<string, unknown>)[key] = child.map((c) =>
+							is_ast_node(c) ? rename(c as BaseNode) : c,
+						);
+					} else if (is_ast_node(child)) {
+						(n as unknown as Record<string, unknown>)[key] = rename(child as BaseNode);
+					}
+				}
+				return n;
+			};
+			loop.iterable = rename(loop.iterable);
+			// Descend into nested pragmas inside the arm too.
+			for (const stmt of loop.block.statements ?? []) visit(stmt);
+			return;
+		}
+		for (const key in node) {
+			if (key === "parent" || key === "scope") continue;
+			const child = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(child)) {
+				for (const c of child) if (is_ast_node(c)) visit(c as BaseNode);
+			} else if (is_ast_node(child)) {
+				visit(child as BaseNode);
+			}
+		}
+	};
+	for (const stmt of statements) visit(stmt);
+}
+
+/**
+ * Expand every `#for` in a statement list in place — the mono-clone hook.
+ * Used where a cloned body will NOT be re-checked (monomorphized struct
+ * methods are stamped `checked = true`), mirroring how the substituted
+ * `T_*` condition arms are folded there instead of re-checked. Deferred
+ * loops whose parameter still doesn't resolve produce a compile error.
+ */
+export function expand_pragma_fors_in_list(statements: BaseNode[], status: CheckStatus): void {
+	for (let i = 0; i < statements.length; i++) {
+		const stmt = statements[i];
+		if (stmt.node_type !== "pragma_for") {
+			// Descend: arms and bodies can carry their own loops.
+			for (const key in stmt) {
+				if (key === "parent" || key === "scope") continue;
+				const child = (stmt as unknown as Record<string, unknown>)[key];
+				if (Array.isArray(child) && child.every(is_ast_node) && key === "statements") {
+					expand_pragma_fors_in_list(child as BaseNode[], status);
+				} else if (is_ast_node(child)) {
+					expand_pragma_fors_in_list([child as BaseNode], status);
+				}
+			}
+			continue;
+		}
+		const iterations = expand_pragma_for(stmt as PragmaForNode, status);
+		if (iterations === null) continue; // deferred — specialization re-checks
+		statements.splice(i, 1, ...iterations);
+		i += iterations.length - 1;
+	}
+}
+
+/**
+ * Rewrite one arm statement into its comptime-substituted form. Returns a
+ * LIST because a comptime `if` folds to zero-or-more statements (the
+ * substitutions happen inside `rewrite`; the comptime-constant `if` fold
+ * matches the monomorphizer's substituted-condition precedent).
+ */
+function rewrite_statement(
+	stmt: BaseNode,
+	binding: string,
+	field: ComptimeField,
+	status: CheckStatus,
+): BaseNode[] {
+	const replaced = rewrite(stmt, true, binding, field, status);
+	if (replaced !== stmt) return [replaced];
+	// A comptime-constant `if` at statement position folds to its live arm.
+	// (rewrite already substituted the condition and both arms.)
+	if (stmt.node_type === "if") {
+		const if_else = stmt as IfElseNode;
+		const folded = evaluate_comptime(if_else.condition);
+		if (folded && folded.kind === "bool") {
+			const arm = folded.value
+				? (if_else.if_branch ?? { statements: [] as BaseNode[] })
+				: (if_else.else_branch ?? { statements: [] as BaseNode[] });
+			return [...(arm.statements ?? [])];
+		}
+	}
+	return [stmt];
+}
+
+/**
+ * The comptime substitution walk. Mutates freshly-cloned nodes in place;
+ * returns a replacement node when the whole node rewrites (a `field.*`
+ * chain becomes a literal/access/assignment). Statement-position is
+ * tracked so `field.set(obj, v)` is only accepted where an assignment is
+ * legal.
+ */
+function rewrite(
+	node: BaseNode,
+	statement_position: boolean,
+	binding: string,
+	field: ComptimeField,
+	status: CheckStatus,
+): BaseNode {
+	if (node.node_type === "access") {
+		const access = node as AccessNode;
+		const target = unwrap_grouped(access.target);
+		// `META.info(T).name` in expression position — the reflected type's
+		// own name as a comptime string (R6). Only the SAME type the loop
+		// reflects over resolves here; any other META use is a check error
+		// downstream (META is not a runtime value).
+		if (
+			access.access.node_type === "access_field" &&
+			(access.access as AccessFieldNode).name === "name" &&
+			target.node_type === "access" &&
+			(target as AccessNode).access.node_type === "access_func" &&
+			((target as AccessNode).access as AccessFunctionCallNode).name === "info" &&
+			unwrap_grouped((target as AccessNode).target).node_type === "value" &&
+			(unwrap_grouped((target as AccessNode).target) as ValueNode).value === "META"
+		) {
+			const args = ((target as AccessNode).access as AccessFunctionCallNode).params ?? [];
+			const arg = unwrap_grouped(args[0]);
+			if (
+				args.length === 1 &&
+				arg.node_type === "value" &&
+				(arg as ValueNode).value === field.type_argument
+			) {
+				return comptime_string(node.start, field.type_name);
+			}
+		}
+		if (target.node_type === "value" && (target as ValueNode).value === binding) {
+			return rewrite_binding_access(node, access, statement_position, binding, field, status);
+		}
+		// `field.type.name` — a two-level chain: the OUTER node carries
+		// `.name`, its target is the bare `.type`. Match before the generic
+		// descent would rewrite the inner link into a literal.
+		if (
+			access.access.node_type === "access_field" &&
+			(access.access as AccessFieldNode).name === "name" &&
+			target.node_type === "access" &&
+			(target as AccessNode).access.node_type === "access_field" &&
+			((target as AccessNode).access as AccessFieldNode).name === "type" &&
+			unwrap_grouped((target as AccessNode).target).node_type === "value" &&
+			(unwrap_grouped((target as AccessNode).target) as ValueNode).value === binding
+		) {
+			return comptime_string(node.start, field.type_name);
+		}
+	}
+	if (node.node_type === "value" && (node as ValueNode).value === binding) {
+		add_error(status, `#for binding '${binding}' used without .name, .get or .set`, node.start);
+		return node;
+	}
+
+	// Comptime string concatenation (R6): `"a" + "b"` (post-substitution —
+	// `META.info(T).name` already rewrote to a literal) folds to one
+	// literal. Runtime concat (any non-literal operand) is left alone.
+	if (node.node_type === "op") {
+		const op = node as OperationNode;
+		op.left_value = rewrite(op.left_value, false, binding, field, status);
+		op.right_value = rewrite(op.right_value, false, binding, field, status);
+		if (op.op === "+") {
+			const left = literal_string(op.left_value);
+			const right = literal_string(op.right_value);
+			if (left !== undefined && right !== undefined) {
+				return comptime_string(node.start, left + right);
+			}
+		}
+		return node;
+	}
+
+	// Comptime-constant `if` folding happens at statement level
+	// (rewrite_statement); here we only descend. Statement lists keep
+	// statement position for their elements so `field.set` stays legal
+	// inside nested bodies.
+	for (const key in node) {
+		if (key === "parent" || key === "scope") continue;
+		const value = (node as unknown as Record<string, unknown>)[key];
+		if (Array.isArray(value)) {
+			if (value.every(is_ast_node)) {
+				const is_statement_list = key === "statements";
+				const out: BaseNode[] = [];
+				for (const item of value as BaseNode[]) {
+					if (is_statement_list) {
+						out.push(...rewrite_statement(item, binding, field, status));
+					} else {
+						out.push(rewrite(item, false, binding, field, status));
+					}
+				}
+				(node as unknown as Record<string, unknown>)[key] = out;
+			}
+		} else if (is_ast_node(value)) {
+			(node as unknown as Record<string, unknown>)[key] = rewrite(
+				value,
+				false,
+				binding,
+				field,
+				status,
+			);
+		}
+	}
+	return node;
+}
+
+function rewrite_binding_access(
+	node: BaseNode,
+	access: AccessNode,
+	statement_position: boolean,
+	binding: string,
+	field: ComptimeField,
+	status: CheckStatus,
+): BaseNode {
+	if (access.access.node_type === "access_func") {
+		const call = access.access as AccessFunctionCallNode;
+		const args = call.params ?? [];
+		if (call.name === "get" && args.length === 1) {
+			// field.get(obj) -> obj.<field> — an ordinary field access.
+			const arg = clone_node(unwrap_grouped(args[0]));
+			return new AccessNode(node.start, arg, new AccessFieldNode(access.access.start, field.name));
+		}
+		if (call.name === "set" && args.length === 2) {
+			if (!statement_position) {
+				add_error(
+					status,
+					`#for: '${binding}.set(obj, value)' must be a statement — assign through .set at statement level`,
+					node.start,
+				);
+				return node;
+			}
+			// field.set(obj, v) -> obj.<field> = v — an ordinary assignment,
+			// so no lvalue plumbing is needed (R5).
+			const target = clone_node(unwrap_grouped(args[0]));
+			const value = clone_node(unwrap_grouped(args[1]));
+			return new AssignmentNode(
+				node.start,
+				new AccessNode(node.start, target, new AccessFieldNode(access.access.start, field.name)),
+				value,
+			);
+		}
+		add_error(
+			status,
+			`#for binding '${binding}' supports .name, .get(obj) and .set(obj, value) — not '.${call.name}'`,
+			access.access.start,
+		);
+		return node;
+	}
+	const field_name = (access.access as AccessFieldNode).name;
+	if (field_name === "name") {
+		return comptime_string(node.start, field.name);
+	}
+	if (field_name === "type") {
+		add_error(
+			status,
+			`#for: '${binding}.type' is only valid as '${binding}.type.name'`,
+			access.access.start,
+		);
+		return node;
+	}
+	add_error(
+		status,
+		`#for binding '${binding}' supports .name, .type.name, .get(obj) and .set(obj, value) — not '.${field_name}'`,
+		access.access.start,
+	);
+	return node;
+}
+
+/** A comptime string literal node: a checked-shape static string value. */
+function comptime_string(start: number, text: string): ValueNode {
+	const value = new ValueNode(start, `"${text}"`);
+	value.type = new Type("string", true);
+	return value;
+}
+
+function literal_string(node: BaseNode): string | undefined {
+	const value = unwrap_grouped(node);
+	if (value.node_type !== "value") return undefined;
+	const text = (value as ValueNode).value;
+	if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+		return text.substring(1, text.length - 1);
+	}
+	return undefined;
+}
+
+/**
+ * Rewrite `META.info(T).name` chains — in ANY statement position, not just
+ * `#for` arms — into the reflected type's name as a comptime string
+ * literal (R6). Runs per block before the statement walk, so re-checked
+ * specialization clones resolve too. `T` still in `status.type_params`
+ * (declaration-time generic bodies) is skipped — the specialization's own
+ * pass handles it. `substitution` renames type parameters first (the
+ * mono-method clones that are stamped checked without a re-check).
+ * Mutates in place; idempotent.
+ */
+export function rewrite_meta_name_chains(
+	statements: BaseNode[],
+	status: CheckStatus,
+	substitution?: Map<string, string>,
+): void {
+	const visit = (node: BaseNode): BaseNode => {
+		const n = unwrap_grouped(node);
+		if (
+			n.node_type === "access" &&
+			(n as AccessNode).access.node_type === "access_field" &&
+			((n as AccessNode).access as AccessFieldNode).name === "name"
+		) {
+			const info_call = unwrap_grouped((n as AccessNode).target);
+			if (
+				info_call.node_type === "access" &&
+				(info_call as AccessNode).access.node_type === "access_func" &&
+				((info_call as AccessNode).access as AccessFunctionCallNode).name === "info" &&
+				unwrap_grouped((info_call as AccessNode).target).node_type === "value" &&
+				(unwrap_grouped((info_call as AccessNode).target) as ValueNode).value === "META"
+			) {
+				const args = ((info_call as AccessNode).access as AccessFunctionCallNode).params ?? [];
+				const arg = unwrap_grouped(args[0]);
+				if (args.length === 1 && arg.node_type === "value") {
+					let type_name = (arg as ValueNode).value;
+					if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
+					if (!status.type_params.includes(type_name)) {
+						const declared = resolve_declared_struct(type_name, status);
+						if (declared && (declared as StructNode).type_params.length === 0) {
+							return comptime_string(n.start, (declared as StructNode).name);
+						}
+					}
+				}
+			}
+		}
+		for (const key in n) {
+			if (key === "parent" || key === "scope") continue;
+			const value = (n as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(value)) {
+				if (value.every(is_ast_node)) {
+					(n as unknown as Record<string, unknown>)[key] = (value as BaseNode[]).map((c) =>
+						visit(c),
+					);
+				}
+			} else if (is_ast_node(value)) {
+				(n as unknown as Record<string, unknown>)[key] = visit(value as BaseNode);
+			}
+		}
+		return n === node ? node : node;
+	};
+	for (let i = 0; i < statements.length; i++) {
+		visit(statements[i]);
+	}
+}
+
+function evaluate_comptime(node: BaseNode | undefined): ComptimeValue | undefined {
+	if (!node) return undefined;
+	const n = unwrap_grouped(node);
+	switch (n.node_type) {
+		case "value": {
+			const text = (n as ValueNode).value;
+			if (text === "true") return { kind: "bool", value: true };
+			if (text === "false") return { kind: "bool", value: false };
+			if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+				return { kind: "string", value: text.substring(1, text.length - 1) };
+			}
+			if (/^\d+$/.test(text)) return { kind: "int", value: parseInt(text, 10) };
+			return undefined;
+		}
+		case "op": {
+			const op = n as OperationNode;
+			if (op.op === "!") {
+				const inner = evaluate_comptime(op.right_value);
+				if (!inner || inner.kind !== "bool") return undefined;
+				return { kind: "bool", value: !inner.value };
+			}
+			const left = evaluate_comptime(op.left_value);
+			if (!left) return undefined;
+			const right = evaluate_comptime(op.right_value);
+			if (!right) return undefined;
+			if (op.op === "==") {
+				return left.kind === right.kind
+					? { kind: "bool", value: left.value === right.value }
+					: undefined;
+			}
+			if (op.op === "!=") {
+				return left.kind === right.kind
+					? { kind: "bool", value: left.value !== right.value }
+					: undefined;
+			}
+			if (op.op === "&&") {
+				if (left.kind !== "bool" || right.kind !== "bool") return undefined;
+				return { kind: "bool", value: left.value && right.value };
+			}
+			if (op.op === "||") {
+				if (left.kind !== "bool" || right.kind !== "bool") return undefined;
+				return { kind: "bool", value: left.value || right.value };
+			}
+			if (left.kind !== "int" || right.kind !== "int") return undefined;
+			switch (op.op) {
+				case "+":
+					return { kind: "int", value: left.value + right.value };
+				case "-":
+					return { kind: "int", value: left.value - right.value };
+				case "*":
+					return { kind: "int", value: left.value * right.value };
+				case "/":
+					return { kind: "int", value: Math.trunc(left.value / right.value) };
+				case "%":
+					return { kind: "int", value: left.value % right.value };
+				case "<":
+					return { kind: "bool", value: left.value < right.value };
+				case "<=":
+					return { kind: "bool", value: left.value <= right.value };
+				case ">":
+					return { kind: "bool", value: left.value > right.value };
+				case ">=":
+					return { kind: "bool", value: left.value >= right.value };
+				default:
+					return undefined;
+			}
+		}
+		default:
+			return undefined;
+	}
+}

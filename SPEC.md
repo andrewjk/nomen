@@ -3220,6 +3220,68 @@ func clamp8 = (int v, out int) {
 }
 ```
 
+### Compile-Time Reflection (`#for` over `META.info(T).fields`)
+
+`#for` unrolls a body once per field of a struct, at compile time. The
+iterable is always `META.info(T).fields`; the loop binding is a comptime
+value whose members are erased before codegen:
+
+```
+func describe<T> = (T value, out string) {
+    var s = META.info(T).name + "("
+    #for field of META.info(T).fields {
+        s = s + field.name + " "
+    }
+    s = s + ")"
+    return s
+}
+```
+
+- `field.name` — the field's name as a comptime string (usable in
+  expressions; comptime string `+` folds literals eagerly).
+- `field.type.name` — the field's type name as a comptime string. An `if`
+  whose condition is comptime-constant folds to its live arm, so
+  per-field-type dispatch reads naturally:
+
+```
+mv struct Counter {
+    var int n
+    var string label
+}
+
+func zero_ints = (mv Counter c, mv out Counter) {
+    #for field of META.info(Counter).fields {
+        if field.type.name == "int" {
+            field.set(c, 0)
+        }
+    }
+    return c
+}
+```
+
+- `field.get(obj)` — reads the field, at its concrete type.
+- `field.set(obj, value)` — assigns it; a statement, not an expression.
+
+Inside a generic body (`T` unbound), the loop **defers**: it unrolls when
+the body is specialized and the parameter is bound, producing ordinary
+checked code per instantiation. That is what makes one generic function
+serve every struct — a reflection-driven `to_string`, `==` or `hash`
+matches the auto-derived versions field for field. `META` exists only in
+these compile-time positions; it is not a runtime value. Errors — an
+unknown type, a generic type (reflect over a concrete instantiation), a
+binding used without `.name`/`.get`/`.set` — are reported at the loop:
+
+```
+#for field of META.info(Nope).fields {
+    var x = 1
+}
+// Error: META.info: unknown type 'Nope' — reflection is over struct types
+```
+
+Stage-2 limits: `#for` is body-scope only (whole-declaration generation is
+a later stage), reflection exposes field names/types but not offsets, and
+raw `#arch` blocks inside arms are not specialized per field.
+
 Stage-1 limits: pragmas are valid at file scope and in function bodies
 (not inside struct/trait bodies), `META` exists only inside pragma
 conditions (it is not a runtime value), and raw `#arch:` / `#platform:`

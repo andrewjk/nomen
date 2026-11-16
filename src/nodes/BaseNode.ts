@@ -20,6 +20,15 @@ export default class BaseNode {
 	 *  `var X b = mv a`). Marks an ownership transfer rather than a copy. */
 	is_moved?: boolean;
 
+	/**
+	 * The `start` offset of the compile-time `#for` that generated this
+	 * node (R7, docs/COMPTIME_PLAN_2.md). Stamped on clones spliced out of
+	 * a `#for` arm so an error inside unrolled code can report both the
+	 * generated site and the loop that spawned it. Undefined on
+	 * hand-written nodes.
+	 */
+	spawn_of?: number;
+
 	constructor(node_type: NodeType, start: number) {
 		this.node_type = node_type;
 		this.start = start;

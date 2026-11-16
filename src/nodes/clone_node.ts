@@ -21,9 +21,12 @@ import ImportNode from "./ImportNode.ts";
 import IndexNode from "./IndexNode.ts";
 import LetNode from "./LetNode.ts";
 import MatchNode from "./MatchNode.ts";
+import NestedBlockNode from "./NestedBlockNode.ts";
 import OperationNode from "./OperationNode.ts";
 import PanicNode from "./PanicNode.ts";
 import ParameterNode from "./ParameterNode.ts";
+import PragmaForNode from "./PragmaForNode.ts";
+import PragmaIfNode from "./PragmaIfNode.ts";
 import RangeNode from "./RangeNode.ts";
 import RawNode from "./RawNode.ts";
 import ReturnNode from "./ReturnNode.ts";
@@ -549,6 +552,35 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.allocations = n.allocations?.map(clone_node);
 			c.type_params = n.type_params.slice();
+			return c;
+		}
+		case "pragma_if": {
+			// Compile-time conditional (stage 1). By the time any clone runs,
+			// the checker's fold has already removed every pragma_if from the
+			// tree — this arm exists so a node that somehow survives (a new
+			// clone site running pre-fold) deep-copies instead of being
+			// shared across copies (the default arm returns by reference,
+			// which would couple N unrolled iterations to one node).
+			const n = node as PragmaIfNode;
+			const c = new PragmaIfNode(n.start);
+			c.branches = n.branches.map((b) => ({
+				condition: b.condition ? clone_node(b.condition) : null,
+				block: new NestedBlockNode(b.block.start, (b.block.statements ?? []).map(clone_node)),
+			}));
+			return c;
+		}
+		case "pragma_for": {
+			// Compile-time field loop (stage 2). Unrolling clones the arm
+			// once per field — the default by-reference return would make
+			// every iteration share one subtree, so a nested `#for` (or any
+			// other arm content) must be deep-copied per iteration.
+			const n = node as PragmaForNode;
+			const c = new PragmaForNode(
+				n.start,
+				n.binding,
+				clone_node(n.iterable),
+				new NestedBlockNode(n.block.start, (n.block.statements ?? []).map(clone_node)),
+			);
 			return c;
 		}
 		default: {

@@ -19,6 +19,56 @@ test("#switch selects the matching arm per target", () => {
 	expect(compile_main(body, { arch: "c", platform: "linux" })).toEqual([]);
 });
 
+test("#for unrolls per field — the binding drives names, reads and writes", () => {
+	const body = `
+		mv struct Counter {
+			var int n
+			var string label
+		}
+		func zero_ints = (mv Counter c, mv out Counter) {
+			#for field of META.info(Counter).fields {
+				if field.type.name == "int" {
+					field.set(c, 0)
+				}
+			}
+			return c
+		}
+	`;
+	expect(compile_module(body)).toEqual([]);
+});
+
+test("#for defers in a generic body and expands at specialization", () => {
+	const body = `
+		struct Point {
+			var int x
+			var int y
+		}
+		func describe<T> = (T value, out string) {
+			var s = META.info(T).name + "("
+			#for field of META.info(T).fields {
+				s = s + field.name + " "
+			}
+			s = s + ")"
+			return s
+		}
+		pub func main = () {
+			Console.write_line(describe(Point(1, 2)))
+		}
+	`;
+	expect(compile_module(body)).toEqual([]);
+});
+
+test("META.info over an unknown type errors at the loop", () => {
+	const errors = compile_module(`
+		func f = () {
+			#for field of META.info(Nope).fields {
+				var x = 1
+			}
+		}
+	`);
+	expect(errors.some((e) => e.message.includes("META.info: unknown type 'Nope'"))).toBe(true);
+});
+
 test("#if with a bare else mirrors the runtime if", () => {
 	const body = `
 		#if META.arch == "c" {

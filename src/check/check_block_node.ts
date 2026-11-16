@@ -20,6 +20,7 @@ import { resolve_struct_field_types } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { materialize_anon_enum_type } from "./utils/anon_enum.ts";
 import { synthesize_auto_derived_methods } from "./utils/auto_derive.ts";
+import { rewrite_meta_name_chains } from "./utils/comptime.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { register_foreign_for_ownership } from "./utils/ownership.ts";
@@ -77,6 +78,12 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 	// and the "already has function" guard makes this idempotent across nested
 	// blocks.
 	synthesize_auto_derived_methods(status);
+
+	// Compile-time `META.info(T).name` chains (stage 2) resolve to string
+	// literals before the walk — including inside re-checked specialization
+	// clones, which run their own check_block_node. Unbound generic T is
+	// skipped here; the specialization's pass handles it.
+	rewrite_meta_name_chains(node.statements, status);
 
 	status.scope_depth++;
 	status.stack.push(node);

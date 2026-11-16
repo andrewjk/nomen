@@ -52,6 +52,7 @@ import check_let_node from "./check_let_node.ts";
 import check_match_node from "./check_match_node.ts";
 import check_null_access_node from "./check_null_access_node.ts";
 import check_operation_node from "./check_operation_node.ts";
+import check_pragma_for_node from "./check_pragma_for_node.ts";
 import check_range_node from "./check_range_node.ts";
 import check_return_node from "./check_return_node.ts";
 import check_spawn_node from "./check_spawn_node.ts";
@@ -217,6 +218,13 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			const values_len = status.values.length;
 			check_block_node(node as import("../nodes/NestedBlockNode.ts").default, status);
 			status.values.length = values_len;
+			break;
+		}
+		case "pragma_for": {
+			// Compile-time `#for` (stage 2): expanded into per-field blocks
+			// spliced after the node; the enclosing walk checks them as
+			// ordinary blocks. Deferred (generic-T) loops return untouched.
+			check_pragma_for_node(node as import("../nodes/PragmaForNode.ts").default, status);
 			break;
 		}
 		default: {

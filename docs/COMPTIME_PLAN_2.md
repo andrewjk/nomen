@@ -271,6 +271,35 @@ Elevate it from "good long-term target" to the acceptance criterion.
    bug), matching lower_function's "NIR lowering gap" contract.
 2. **`#for` + `META.info(T).fields` + `field.get/set`** (R3, R4, R5, R8),
    validated by re-deriving `Stringable`/`Equatable`/`Hashable` (R9).
+   **SHIPPED** — `PragmaForNode` (`src/nodes/PragmaForNode.ts`), parsed by
+   `src/parse/parse_pragma_for.ts` (body scope; arms are ordinary nested
+   blocks, so per-iteration scoping doubles as the R8 hygiene — no rename
+   machinery needed), expanded by `src/check/utils/comptime.ts`
+   (`expand_pragma_for` + the comptime substitution walk; R6 comptime
+   string `+` folds literals; comptime-constant `if`s inside arms fold to
+   their live arm, the `fold_substituted_constant_ifs` precedent). The
+   checker dispatch (`check_pragma_for_node`) splices the per-field blocks
+   directly after the pragma node so the enclosing live walk checks them in
+   order; consumed placeholders are dropped post-check
+   (`drop_pragma_for_placeholders` in check.ts). Deferral (R3): a `T` in
+   `status.type_params` leaves the node; `specialize_function` rewrites the
+   iterable's parameter references (`substitute_pragma_iterables`) and the
+   re-check expands. Mono-struct method clones (never re-checked) expand in
+   the hook next to `fold_substituted_constant_ifs`. R4 comptime bindings
+   are erased during expansion — the checker never sizes one. R5: `.get`/
+   `.set` desugar to ordinary field access/assignment (`.set` is a
+   statement, so no lvalue plumbing). R7: `BaseNode.spawn_of` stamped on
+   every cloned statement. Inference: bare `T` params bind from the
+   argument's concrete type (`specialize_function`, incl. bare-struct
+   constructor args in `infer_arg_type`); `META.info(T).name` resolves in
+   any statement position (`rewrite_meta_name_chains`, per block, so
+   re-checked clones resolve too). **R9 ACCEPTED**: `test/comptime_for.test.ts`
+   re-derives all three derives with one generic each and diffs the runtime
+   behavior against the hardcoded versions (JS backend, byte-identical
+   `to_string`, matching eq and hash) plus a clean C build. Known gaps
+   (loud, by design): `#for` inside a generic-struct method whose
+   iterable's parameter never binds errors rather than silently dropping;
+   reflection exposes no offsets/sizes yet; `#for` is body-scope only.
 3. **Attributes** (D1) — sigil chosen then, surfaced via
    `META.info(T).fields[i].attrs`.
 4. **Generic `T: type` parameters composing with reflection** (R3, R4).
