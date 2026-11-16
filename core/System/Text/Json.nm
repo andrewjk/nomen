@@ -104,9 +104,7 @@ pub struct Json {
 	// which is reset and filled. Returns the index of the root node.
 	pub func parse = (string s, ref JsonTree tree { nodes }, out int) {
 		tree.reset()
-		var pos = Buffer<int>()
-		pos.alloc_int(1)
-		pos.store_int(0, 0)
+		var int pos = 0
 		var int len = s.length
 		return json_parse_value(s, ref pos, len, ref tree)
 	}
@@ -119,20 +117,20 @@ pub struct Json {
 	}
 }
 
-func json_skip_ws = (string s, ref Buffer<int> pos {}, int len) {
-	while pos.load_int(0) < len {
-		var int i = pos.load_int(0)
+func json_skip_ws = (string s, ref int pos, int len) {
+	while pos < len {
+		var int i = pos
 		var int code = s.at(i) as int
 		if code == 32 || code == 9 || code == 10 || code == 13 {
-			pos.store_int(0, i + 1)
+			pos = i + 1
 		} else {
 			return
 		}
 	}
 }
 
-func json_parse_string = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
-	var int i = pos.load_int(0)
+func json_parse_string = (string s, ref int pos, int len, ref JsonTree tree { nodes }, out int) {
+	var int i = pos
 	i += 1
 	var sb = StringBuilder()
 	while i < len {
@@ -186,15 +184,15 @@ func json_parse_string = (string s, ref Buffer<int> pos {}, int len, ref JsonTre
 			i += 1
 		}
 	}
-	pos.store_int(0, i)
+	pos = i
 	var int n = tree.alloc_node()
 	tree.set_kind(n, 3)
 	tree.take_text(n, ref sb)
 	return n
 }
 
-func json_parse_number = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
-	var int i = pos.load_int(0)
+func json_parse_number = (string s, ref int pos, int len, ref JsonTree tree { nodes }, out int) {
+	var int i = pos
 	var int start = i
 	while i < len {
 		var int code = s.at(i) as int
@@ -204,7 +202,7 @@ func json_parse_number = (string s, ref Buffer<int> pos {}, int len, ref JsonTre
 			break
 		}
 	}
-	pos.store_int(0, i)
+	pos = i
 	var sb = StringBuilder()
 	// One bulk append for the whole run of number bytes (the scan above
 	// already found its end) — no per-byte append_char.
@@ -215,8 +213,8 @@ func json_parse_number = (string s, ref Buffer<int> pos {}, int len, ref JsonTre
 	return n
 }
 
-func json_parse_literal = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
-	var int i = pos.load_int(0)
+func json_parse_literal = (string s, ref int pos, int len, ref JsonTree tree { nodes }, out int) {
+	var int i = pos
 	var int code = s.at(i) as int
 	var int n = tree.alloc_node()
 	var adv = 4
@@ -233,26 +231,26 @@ func json_parse_literal = (string s, ref Buffer<int> pos {}, int len, ref JsonTr
 		tree.set_kind(n, 0)
 		adv = 4
 	}
-	pos.store_int(0, i + adv)
+	pos = i + adv
 	return n
 }
 
-func json_parse_value = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
+func json_parse_value = (string s, ref int pos, int len, ref JsonTree tree { nodes }, out int) {
 	json_skip_ws(s, ref pos, len)
-	var int i = pos.load_int(0)
+	var int i = pos
 	if i >= len {
 		return tree.alloc_node()
 	}
 	var int code = s.at(i) as int
 	if code == 123 {
-		pos.store_int(0, i + 1)
+		pos = i + 1
 		var int n = tree.alloc_node()
 		tree.set_kind(n, 5)
 		tree.set_child(n, json_parse_pairs(s, ref pos, len, ref tree))
 		return n
 	}
 	if code == 91 {
-		pos.store_int(0, i + 1)
+		pos = i + 1
 		var int n = tree.alloc_node()
 		tree.set_kind(n, 4)
 		tree.set_child(n, json_parse_elements(s, ref pos, len, ref tree))
@@ -267,54 +265,54 @@ func json_parse_value = (string s, ref Buffer<int> pos {}, int len, ref JsonTree
 	return json_parse_number(s, ref pos, len, ref tree)
 }
 
-func json_parse_elements = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
+func json_parse_elements = (string s, ref int pos, int len, ref JsonTree tree { nodes }, out int) {
 	json_skip_ws(s, ref pos, len)
-	var int i = pos.load_int(0)
+	var int i = pos
 	if i >= len {
 		return -1
 	}
 	if (s.at(i) as int) == 93 {
-		pos.store_int(0, i + 1)
+		pos = i + 1
 		return -1
 	}
 	var int elem = json_parse_value(s, ref pos, len, ref tree)
 	json_skip_ws(s, ref pos, len)
-	var int i2 = pos.load_int(0)
+	var int i2 = pos
 	if i2 < len {
 		if (s.at(i2) as int) == 44 {
-			pos.store_int(0, i2 + 1)
+			pos = i2 + 1
 		}
 	}
 	tree.set_next(elem, json_parse_elements(s, ref pos, len, ref tree))
 	return elem
 }
 
-func json_parse_pairs = (string s, ref Buffer<int> pos {}, int len, ref JsonTree tree { nodes }, out int) {
+func json_parse_pairs = (string s, ref int pos, int len, ref JsonTree tree { nodes }, out int) {
 	json_skip_ws(s, ref pos, len)
-	var int i = pos.load_int(0)
+	var int i = pos
 	if i >= len {
 		return -1
 	}
 	if (s.at(i) as int) == 125 {
-		pos.store_int(0, i + 1)
+		pos = i + 1
 		return -1
 	}
 	json_skip_ws(s, ref pos, len)
 	var int key = json_parse_string(s, ref pos, len, ref tree)
 	json_skip_ws(s, ref pos, len)
-	var int i2 = pos.load_int(0)
+	var int i2 = pos
 	if i2 < len {
 		if (s.at(i2) as int) == 58 {
-			pos.store_int(0, i2 + 1)
+			pos = i2 + 1
 		}
 	}
 	var int v = json_parse_value(s, ref pos, len, ref tree)
 	tree.set_val(key, v)
 	json_skip_ws(s, ref pos, len)
-	var int i3 = pos.load_int(0)
+	var int i3 = pos
 	if i3 < len {
 		if (s.at(i3) as int) == 44 {
-			pos.store_int(0, i3 + 1)
+			pos = i3 + 1
 		}
 	}
 	tree.set_next(key, json_parse_pairs(s, ref pos, len, ref tree))
@@ -403,9 +401,7 @@ func json_ser_value = (ref JsonTree tree { nodes }, int n, ref StringBuilder sb 
 // Decode `text` (a JSON object) into `target`, overwriting the fields it
 // names. Missing keys keep their defaults; unknown keys are skipped.
 pub func json_decode_into<T> = (string text, ref T target) {
-	var pos = Buffer<int>()
-	pos.alloc_int(1)
-	pos.store_int(0, 0)
+	var int pos = 0
 	json_decode_object_into(text, ref pos, text.length, ref target)
 }
 
@@ -423,35 +419,35 @@ pub func json_encode<T> = (T value, out string) {
 // `field.set` (an owned value assigned through a `ref` parameter LEAKS —
 // see FOLLOWUP); struct and container fields recurse by `ref`. Reached
 // with plain-struct T only.
-func json_decode_object_into<T> = (string s, ref Buffer<int> pos {}, int len, ref T target) {
-	var int open = pos.load_int(0)
+func json_decode_object_into<T> = (string s, ref int pos, int len, ref T target) {
+	var int open = pos
 	json_skip_ws(s, ref pos, len)
-	open = pos.load_int(0)
+	open = pos
 	if open >= len {
 		return
 	}
 	if (s.at(open) as int) != 123 {
 		return
 	}
-	pos.store_int(0, open + 1)
+	pos = open + 1
 	while true {
 		json_skip_ws(s, ref pos, len)
-		var int i = pos.load_int(0)
+		var int i = pos
 		if i >= len {
 			return
 		}
 		var int c = s.at(i) as int
 		if c == 125 {
-			pos.store_int(0, i + 1)
+			pos = i + 1
 			return
 		}
 		if c == 44 {
-			pos.store_int(0, i + 1)
+			pos = i + 1
 			continue
 		}
 		var key = json_read_key_span(s, ref pos, len)
 		json_skip_ws(s, ref pos, len)
-		pos.store_int(0, pos.load_int(0) + 1)
+		pos = pos + 1
 		json_skip_ws(s, ref pos, len)
 		var bool matched = false
 		#for field of META.info(T).fields {
@@ -497,29 +493,29 @@ func json_decode_object_into<T> = (string s, ref Buffer<int> pos {}, int len, re
 // into a LOCAL (assigning an owned value through a `ref` parameter leaks,
 // so the element dispatch assigns the local; struct/container elements
 // recurse by `ref`).
-func json_decode_list_into<E> = (string s, ref Buffer<int> pos {}, int len, ref StableList<E> list) {
+func json_decode_list_into<E> = (string s, ref int pos, int len, ref StableList<E> list) {
 	json_skip_ws(s, ref pos, len)
-	var int open = pos.load_int(0)
+	var int open = pos
 	if open >= len {
 		return
 	}
 	if (s.at(open) as int) != 91 {
 		return
 	}
-	pos.store_int(0, open + 1)
+	pos = open + 1
 	while true {
 		json_skip_ws(s, ref pos, len)
-		var int i = pos.load_int(0)
+		var int i = pos
 		if i >= len {
 			return
 		}
 		var int c = s.at(i) as int
 		if c == 93 {
-			pos.store_int(0, i + 1)
+			pos = i + 1
 			return
 		}
 		if c == 44 {
-			pos.store_int(0, i + 1)
+			pos = i + 1
 			continue
 		}
 		var item = E()
@@ -571,9 +567,9 @@ mv struct JsonKeySpan {
 
 // Scan the quoted key at the cursor, returning its INNER span. Escapes are
 // kept raw: comparisons against plain names are exact for unescaped keys.
-func json_read_key_span = (string s, ref Buffer<int> pos {}, int len, out JsonKeySpan) {
+func json_read_key_span = (string s, ref int pos, int len, out JsonKeySpan) {
 	var span = JsonKeySpan()
-	var int i = pos.load_int(0)
+	var int i = pos
 	i += 1
 	span.start = i
 	while i < len; i += 1 {
@@ -584,12 +580,12 @@ func json_read_key_span = (string s, ref Buffer<int> pos {}, int len, out JsonKe
 		}
 		if code == 34 {
 			span.end = i
-			pos.store_int(0, i + 1)
+			pos = i + 1
 			return span
 		}
 	}
 	span.end = i
-	pos.store_int(0, i)
+	pos = i
 	return span
 }
 
@@ -606,8 +602,8 @@ func json_key_eq = (string s, int start, int end, string expected, out bool) {
 	return true
 }
 
-func json_read_quoted = (string s, ref Buffer<int> pos {}, int len, out string) {
-	var int i = pos.load_int(0)
+func json_read_quoted = (string s, ref int pos, int len, out string) {
+	var int i = pos
 	var sb = StringBuilder()
 	sb.append_char('"')
 	i += 1
@@ -627,17 +623,69 @@ func json_read_quoted = (string s, ref Buffer<int> pos {}, int len, out string) 
 			break
 		}
 	}
-	pos.store_int(0, i)
+	pos = i
 	return sb.to_string()
 }
 
-func json_read_string_value = (string s, ref Buffer<int> pos {}, int len, out string) {
+func json_read_string_value = (string s, ref int pos, int len, out string) {
 	var quoted = json_read_quoted(s, ref pos, len)
 	return Json.deserialize(quoted)
 }
 
-func json_read_int = (string s, ref Buffer<int> pos {}, int len, out int) {
-	var int i = pos.load_int(0)
+// Append `"` + `value` + `"` into `sb` in place — the encode-path form of
+// `sb.append_string(Json.serialize(value))` with no temp StringBuilder, no
+// `to_string` copy, and no per-call free. The fast path scans for the five
+// escape-requiring codes first; when the value has none (keys and the vast
+// majority of values), the whole literal lands as a bare memcpy between two
+// quote chars — no per-character dispatch, no allocation. The slow path is
+// `serialize`'s switch, appended straight into `sb`.
+func json_append_quoted = (ref StringBuilder sb {}, string value) {
+	var int len = value.length
+	var int i = 0
+	var bool plain = true
+	while i < len; i += 1 {
+		var int code = value.at(i) as int
+		if code == 34 || code == 92 || code == 10 || code == 9 || code == 13 {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		sb.append_char('"')
+		sb.append_string(value)
+		sb.append_char('"')
+		return
+	}
+	sb.append_char('"')
+	i = 0
+	while i < len; i += 1 {
+		var char c = value.at(i)
+		var int code = c as int
+		switch {
+			case code == 34 {
+				sb.append_string("\x5c\"")
+			}
+			case code == 92 {
+				sb.append_string("\x5c\x5c")
+			}
+			case code == 10 {
+				sb.append_string("\x5cn")
+			}
+			case code == 9 {
+				sb.append_string("\x5ct")
+			}
+			case code == 13 {
+				sb.append_string("\x5cr")
+			}
+		} else {
+			sb.append_char(c)
+		}
+	}
+	sb.append_char('"')
+}
+
+func json_read_int = (string s, ref int pos, int len, out int) {
+	var int i = pos
 	var int sign = 1
 	if (s.at(i) as int) == 45 {
 		sign = -1
@@ -654,12 +702,12 @@ func json_read_int = (string s, ref Buffer<int> pos {}, int len, out int) {
 		}
 		value = value * 10 + (code - 48)
 	}
-	pos.store_int(0, i)
+	pos = i
 	return sign * value
 }
 
-func json_read_float = (string s, ref Buffer<int> pos {}, int len, out float) {
-	var int i = pos.load_int(0)
+func json_read_float = (string s, ref int pos, int len, out float) {
+	var int i = pos
 	var float sign = 1.0
 	if (s.at(i) as int) == 45 {
 		sign = -1.0
@@ -693,29 +741,29 @@ func json_read_float = (string s, ref Buffer<int> pos {}, int len, out float) {
 			}
 		}
 	}
-	pos.store_int(0, i)
+	pos = i
 	return sign * value
 }
 
-func json_read_bool = (string s, ref Buffer<int> pos {}, int len, out bool) {
-	var int i = pos.load_int(0)
+func json_read_bool = (string s, ref int pos, int len, out bool) {
+	var int i = pos
 	if i < len {
 		if (s.at(i) as int) == 116 {
-			pos.store_int(0, i + 4)
+			pos = i + 4
 			return true
 		}
 	}
 	if i + 4 < len {
-		pos.store_int(0, i + 5)
+		pos = i + 5
 	}
 	return false
 }
 
 // Skip one JSON value (unknown keys): strings to the closing quote,
 // objects/arrays by depth, everything else to a delimiter.
-func json_skip_value = (string s, ref Buffer<int> pos {}, int len) {
+func json_skip_value = (string s, ref int pos, int len) {
 	json_skip_ws(s, ref pos, len)
-	var int i = pos.load_int(0)
+	var int i = pos
 	if i >= len {
 		return
 	}
@@ -733,7 +781,7 @@ func json_skip_value = (string s, ref Buffer<int> pos {}, int len) {
 				break
 			}
 		}
-		pos.store_int(0, i)
+		pos = i
 		return
 	}
 	if code == 91 || code == 123 {
@@ -767,7 +815,7 @@ func json_skip_value = (string s, ref Buffer<int> pos {}, int len) {
 				}
 			}
 		}
-		pos.store_int(0, i)
+		pos = i
 		return
 	}
 	while i < len; i += 1 {
@@ -776,7 +824,7 @@ func json_skip_value = (string s, ref Buffer<int> pos {}, int len) {
 			break
 		}
 	}
-	pos.store_int(0, i)
+	pos = i
 }
 
 // -- encode -----------------------------------------------------------------
@@ -784,7 +832,7 @@ func json_skip_value = (string s, ref Buffer<int> pos {}, int len) {
 // Encode one value of type T — the mirror of json_decode_value_into.
 func json_encode_element<T> = (T value, ref StringBuilder sb {}) {
 	if META.name(T) == "string" {
-		sb.append_string(Json.serialize(value))
+		json_append_quoted(ref sb, value)
 		return
 	}
 	if META.name(T) == "int" {
@@ -877,7 +925,14 @@ func json_encode_into<T> = (T value, ref StringBuilder sb {}) {
 				sb.append_char(',')
 			}
 			first = false
-			sb.append_string(Json.serialize(key))
+			// The key is a comptime string (the field's name or its
+			// @rename value), but the escape check still runs per field:
+			// `json_append_quoted`'s fast path appends it as a bare memcpy
+			// between quotes when no escape is needed — the per-field
+			// `Json.serialize(key)` this replaces allocated a temp
+			// StringBuilder, a `to_string` copy, and its teardown on every
+			// encoded object.
+			json_append_quoted(ref sb, key)
 			sb.append_char(':')
 			json_encode_element(field.get(value), ref sb)
 		}

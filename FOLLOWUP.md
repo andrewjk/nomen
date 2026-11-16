@@ -735,10 +735,32 @@ backends). Two edges remain, sound but bounded:
 ## Library serde performance: allocation-bound vs the DOM bench
 
 The stdlib `json_decode_into`/`json_encode` bench (json-serde-typed) is
-~8x slower than the JsonTree DOM bench on sample.json (0.62s vs 0.074s at
-25k iterations): per-field key escaping (`Json.serialize(key)` allocates a
-string per field on encode) and per-element container construction on
-decode (`T()` + a fresh `StableList` per nested array; the DOM reuses its
-pool). Key comparison already uses byte spans and floats use integer-math
-fixed-point. Next steps: comptime-escaped key literals, a reused element
-scratch, or a pool-backed container decode path.
+~4.5x slower than the JsonTree DOM bench on sample.json (0.89s vs 0.20s
+user at 25k iterations, aarch64 `-O2`, same-context A/B). Landed 2026-11-17:
+`json_append_quoted` appends keys and string values in place (no per-field
+temp StringBuilder + `to_string` copy — the comptime-escaped-key idea, done
+as a scan-then-raw-append since keys are plain identifiers), and the decode
+cursor is a plain `ref int` (no `Buffer<int>` malloc per decode, no
+`load_int`/`store_int` calls per position update). Both are strictly less
+work but bench-neutral — the cost is elsewhere:
+
+- **Encode (~0.74s of the 0.89s) — the per-element load copy.**
+  `json_encode_list`'s `var elem = list.at(i)` deep-copies every nested
+  container element (the ownership-safe load: the binding is
+  destroy-tracked and frees the copy — before the destroy-tracked fix the
+  copies leaked per element instead). The sampler puts `Buffer_float_set`
+  (the copy's per-slot walk) at the top: a 2-float point list's copy
+  materializes its whole 256-slot chunk, because `Buffer<T>` has no length
+  — `copy` clones `cap` slots, and StableList's chunk-0 is an exact 256
+  allocation. A copy-free read needs either a read-only element borrow —
+  `ref E elem = list.at(i)` rewrites to `slot_ptr` but the aarch64
+  slot-borrow destroy is not suppressed, so the aliased slot's interior
+  pointer gets freed (malloc abort; the same un-designed family as "for
+  ref x of list") — or a length on `Buffer` so copies take the live
+  prefix.
+- **Decode (~0.15s) — fresh chunk-0 slabs per element container** (`T()` +
+  a fresh `StableList` per nested array; the DOM reuses its pool). Each
+  `StableList<float>()` costs a 2 KB exact-256 calloc that lives as the
+  result's storage — necessary under the stable-address design; a
+  pool-backed container decode path (the JsonTree approach) is the
+  structural fix.
