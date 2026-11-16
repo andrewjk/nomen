@@ -632,3 +632,66 @@ test("generics -- var mv with no type word keeps the reserved-name error", () =>
 		JSON.stringify(parsed.errors),
 	).toBe(true);
 });
+
+test("generics -- a free generic called from two functions specializes once", () => {
+	// Regression: clone_status slices the functions table per function body,
+	// so specialization memoization used to miss across functions and emit
+	// one clone per calling function — duplicate C definitions (the bench's
+	// compile-time-serde dispatcher hit this with three call sites).
+	const input = `
+func twice<T> = (T value, out T) {
+	return value
+}
+
+func first = () {
+	var int a = twice(21)
+	Console.write(a.to_string())
+}
+
+func second = () {
+	var int b = twice(42)
+	Console.write(b.to_string())
+}
+
+pub func main = (Init init) {
+	first()
+	second()
+}
+`;
+	const parsed = parse_with_imports(input);
+	expect(parsed.errors).toEqual([]);
+	const specialized = parsed.root.statements.filter(
+		(s) => s.node_type === "func" && (s as unknown as { name: string }).name === "twice_int",
+	);
+	expect(specialized.length).toBe(1);
+});
+
+test("generics -- T() constructs the bound type (default ctor or scalar zero)", () => {
+	// `T()` deferred inside a generic body; the specialization rewrites it to
+	// the bound constructor (structs) or the zero literal (scalars).
+	const input = `
+mv struct Item {
+	var n = 5
+	var s = "seed"
+}
+
+func default_of<T> = (T seed, out T) {
+	var x = T()
+	return x
+}
+
+func first_push<T> = (ref StableList<T> list, T seed) {
+	var item = T()
+	list.push(mv item)
+}
+
+var it = default_of(Item())
+Console.write_line(it.n.to_string() + " " + it.s)
+var z = default_of(7)
+Console.write_line(z.to_string())
+var items = StableList<Item>()
+first_push(ref items, Item())
+Console.write_line(items.length.to_string())
+`;
+	expect(parse_with_imports(input).errors).toEqual([]);
+});

@@ -544,6 +544,13 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 					// signature.
 					strip_param_length_equalities(func);
 					assign_function_label(func, block, status);
+					// The generic flag must be set at REGISTRATION, not only
+					// when the function's own statement is checked: a caller
+					// earlier in the source resolves the call through this
+					// pre-registered node, and a falsy is_generic would send
+					// it down the plain-call path (never specialized, then
+					// emitted as a call to a function that is never defined).
+					func.is_generic = func.type_params.length > 0;
 					status.functions.push(func);
 				}
 				break;

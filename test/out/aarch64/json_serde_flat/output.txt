@@ -1,0 +1,5 @@
+Ada
+36
+9.500000
+true
+{"name":"Ada","age":36,"score":9.500000,"active":true}

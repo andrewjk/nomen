@@ -66,7 +66,14 @@ export default function is_system_definition(
 	system_set?: Set<string>,
 ): boolean {
 	if (node.node_type === "func") {
-		return !!(node as FunctionNode).is_library;
+		const f = node as FunctionNode;
+		if (!f.is_library) return false;
+		// A specialization is per-PROGRAM code: it is created while checking
+		// the program that needs it, so only the canonical System build (which
+		// created its own) may claim one — user builds emit every specialization
+		// into the user TU (see should_emit_definition's system-mode pass).
+		if (f.is_specialization) return false;
+		return true;
 	}
 	if (node.node_type === "struct") {
 		const s = node as StructNode;
@@ -123,7 +130,19 @@ export function should_emit_definition(
 	structs: StructNode[],
 	system_set?: Set<string>,
 ): boolean {
-	if (emit_mode === "system") return is_system_definition(node, structs, system_set);
+	if (emit_mode === "system") {
+		// The canonical System build emits the specializations IT created
+		// (library-internal generic calls); user builds route all
+		// specializations to their own TU.
+		if (
+			node.node_type === "func" &&
+			(node as FunctionNode).is_library &&
+			(node as FunctionNode).is_specialization
+		) {
+			return true;
+		}
+		return is_system_definition(node, structs, system_set);
+	}
 	if (emit_mode === "user") return !is_system_definition(node, structs, system_set);
 	return true;
 }

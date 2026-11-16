@@ -259,3 +259,128 @@ test("R9: the C backend builds the expanded program clean", () => {
 	const built = build(parsed.root, { arch: "c", platform: "linux" });
 	expect(built.errors ?? []).toEqual([]);
 });
+
+test("field.type.args exposes container element types for dispatch", () => {
+	const parsed = parse_src(`
+		mv struct Item {
+			var int n = 0
+		}
+		mv struct Holder {
+			var items = StableList<Item>()
+			var floats = StableList<float>()
+			var name = ""
+		}
+		func probe = () {
+			#for field of META.info(Holder).fields {
+				if field.type.arg_count > 0 {
+					if field.type.args[0] == "Item" {
+						Console.write_line(field.name + " is an Item list")
+					}
+					if field.type.args[0] == "float" {
+						Console.write_line(field.name + " is a float list")
+					}
+				} else {
+					Console.write_line(field.name + " has no type args")
+				}
+			}
+		}
+	`);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("field.type.args out of range is an error", () => {
+	const parsed = parse_src(`
+		struct Plain {
+			var name = ""
+		}
+		func probe = () {
+			#for field of META.info(Plain).fields {
+				Console.write_line(field.type.args[0])
+			}
+		}
+	`);
+	expect(
+		parsed.errors.some((e) => e.message.includes("out of range — type 'string' has 0 argument(s)")),
+	).toBe(true);
+});
+
+test("field.type.args needs a comptime index", () => {
+	const parsed = parse_src(`
+		mv struct Holder {
+			var items = StableList<int>()
+		}
+		func probe = (int i) {
+			#for field of META.info(Holder).fields {
+				Console.write_line(field.type.args[i])
+			}
+		}
+	`);
+	expect(parsed.errors.some((e) => e.message.includes("needs a comptime int index"))).toBe(true);
+});
+
+test("field.type.args nests recursively — args[0].args[0], .name, .arg_count", () => {
+	// The `else` arms call a nonexistent function: any error means a fold
+	// failed to eliminate the dead branch.
+	const parsed = parse_src(`
+		mv struct Leaf2 {
+			var int x = 0
+		}
+		mv struct Nest2 {
+			var grid = StableList<StableList<Leaf2>>()
+			var plain = StableList<float>()
+		}
+		func probe = () {
+			#for field of META.info(Nest2).fields {
+				if field.type.arg_count > 0 {
+					if field.type.args[0].arg_count > 0 {
+						if field.type.args[0].args[0] == "Leaf2" {
+							Console.write_line(field.name + ": nested Leaf2")
+						} else {
+							nonexistent_a()
+						}
+						if field.type.args[0].name == "StableList" {
+							Console.write_line(field.name + ": outer StableList")
+						} else {
+							nonexistent_b()
+						}
+					} else {
+						if field.type.args[0] == "float" {
+							Console.write_line(field.name + ": floats")
+						} else {
+							nonexistent_c()
+						}
+					}
+				} else {
+					nonexistent_d()
+				}
+			}
+		}
+	`);
+	expect(parsed.errors).toEqual([]);
+});
+
+test("reflection over a MONO struct keeps type args", () => {
+	const parsed = parse_src(`
+		mv struct Holder2<T> {
+			var items = StableList<T>()
+			var n = 0
+		}
+		func probe = () {
+			var h = Holder2<int>()
+			#for field of META.info(Holder2_int).fields {
+				if field.type.arg_count > 0 {
+					if field.type.args[0] == "int" {
+						Console.write_line(field.name + ": int args")
+					} else {
+						nonexistent_e()
+					}
+				} else {
+					if field.name == "items" {
+						nonexistent_f()
+					}
+				}
+			}
+		}
+	`);
+	expect(parsed.errors).toEqual([]);
+});

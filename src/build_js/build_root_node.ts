@@ -23,14 +23,6 @@ export default function build_root_node(root: RootNode, status: BuildStatus): vo
 				statement.node_type === "declare" &&
 				(statement as unknown as { declaration?: string }).declaration === "const"
 			) {
-				console.error(
-					"DEBUG lib const:",
-					(statement as any).name,
-					"value type:",
-					(statement as any).value?.node_type,
-					"vtype:",
-					(statement as any).value?.type?.name,
-				);
 				const outer_code = status.code;
 				const outer_indent = status.indent;
 				status.code = "";

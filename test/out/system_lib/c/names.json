@@ -35,6 +35,7 @@
 	"StableList_JsonNode",
 	"JsonTree",
 	"Json",
+	"JsonKeySpan",
 	"Regex",
 	"RegexMatch",
 	"RxProg",

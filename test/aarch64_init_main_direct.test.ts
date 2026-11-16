@@ -95,7 +95,8 @@ test("an if with no condition is reported, not crashed on", () => {
 import System
 
 pub func main = (Init init) {
-	if true {
+	var n = 1
+	if n > 0 {
 		Console.write("x")
 	}
 }

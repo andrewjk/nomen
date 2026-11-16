@@ -1,4 +1,5 @@
 import add_error from "../../add_error.ts";
+import { get_built_in_type } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -6,8 +7,10 @@ import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import { is_ast_node } from "../../nodes/child_nodes.ts";
 import clone_node from "../../nodes/clone_node.ts";
+import type FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
+import type IndexNode from "../../nodes/IndexNode.ts";
 import NestedBlockNode from "../../nodes/NestedBlockNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import PragmaForNode from "../../nodes/PragmaForNode.ts";
@@ -52,6 +55,9 @@ interface ComptimeField {
 	type_argument: string;
 	/** Attributes declared above the field (`@Name("x")` — stage 3). */
 	attrs?: AttributeMeta[];
+	/** The field's declared type — the root of comptime type expressions
+	 *  (`field.type.name`, `.arg_count`, `.args[i]`, recursively). */
+	type_value?: Type;
 }
 
 type ComptimeValue =
@@ -160,12 +166,32 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 	const type_argument = iterable_type_argument(node.iterable);
 	const iterations: BaseNode[] = [];
 	typed_fields.forEach((f, index) => {
+		// A mono-NAMED field type (Buffer<T> re-routed to Buffer_Feature)
+		// carries no type_args — the backend's spelling dispatch relies on
+		// name-only monos, so the args are recovered HERE for reflection
+		// (the struct's source_type_args), keeping the AST pristine.
+		const raw_type = f.type as Type;
+		let reflect_type: Type = raw_type;
+		if (!raw_type.type_args?.length && raw_type.name) {
+			const mono = status.structs.findLast((s) => s.name === raw_type.name);
+			const source_args = (mono as unknown as { source_type_args?: Type[] } | undefined)
+				?.source_type_args;
+			if (source_args?.length) {
+				const synthesized = new Type(raw_type.name);
+				synthesized.type_args = source_args.map((arg) => arg);
+				synthesized.is_ref = raw_type.is_ref;
+				synthesized.is_view = raw_type.is_view;
+				synthesized.is_nullable = raw_type.is_nullable;
+				reflect_type = synthesized;
+			}
+		}
 		const field: ComptimeField = {
 			name: f.name,
-			type_name: (f.type as Type).name,
+			type_name: raw_type.name,
 			index,
 			type_argument,
 			attrs: (f as unknown as { attrs?: AttributeMeta[] }).attrs,
+			type_value: reflect_type,
 		};
 		const body = (node.block.statements ?? []).map((s) => clone_node(s));
 		const rewritten: BaseNode[] = [];
@@ -324,6 +350,47 @@ function rewrite(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode {
+	// Comptime TYPE expressions rooted at the binding — `field.type`,
+	// `.name`, `.arg_count`, `.args[i]`, recursively (`.args[0].args[0]`).
+	// Resolved before the generic descent, whose bare `.type` link would
+	// error. Binding members (`.name` of the FIELD, `.get`, `.is_struct`)
+	// are separate, below.
+	if (node.node_type === "index" || node.node_type === "access") {
+		const resolved = resolve_type_member(node, binding, field.type_value);
+		if (resolved) {
+			if (resolved.kind === "error") {
+				add_error(status, resolved.error, resolved.error_start ?? node.start);
+				return node;
+			}
+			if (resolved.kind === "string") return comptime_string(node.start, resolved.value ?? "");
+			if (resolved.kind === "int") {
+				const literal = new ValueNode(node.start, String(resolved.int ?? 0));
+				literal.type = new Type("int", true);
+				return literal;
+			}
+			if (resolved.kind === "type") {
+				// `args[i]` (at any depth) denotes a TYPE — usable by name in
+				// comparisons (`args[0] == "Feature"`); a bare `field.type`
+				// has no value form at all.
+				const base = unwrap_grouped(node);
+				const is_base =
+					base.node_type === "access" &&
+					(base as AccessNode).access.node_type === "access_field" &&
+					((base as AccessNode).access as AccessFieldNode).name === "type";
+				if (!is_base) {
+					return comptime_string(node.start, resolved.type?.name ?? "");
+				}
+				add_error(
+					status,
+					`#for: '${binding}.type' is only valid as .name, .arg_count or .args[i]`,
+					node.start,
+				);
+				return node;
+			}
+			add_error(status, `#for: '${binding}.type.args' must be indexed — args[0]`, node.start);
+			return node;
+		}
+	}
 	if (node.node_type === "access") {
 		const access = node as AccessNode;
 		const target = unwrap_grouped(access.target);
@@ -352,20 +419,6 @@ function rewrite(
 		}
 		if (target.node_type === "value" && (target as ValueNode).value === binding) {
 			return rewrite_binding_access(node, access, statement_position, binding, field, status);
-		}
-		// `field.type.name` — a two-level chain: the OUTER node carries
-		// `.name`, its target is the bare `.type`. Match before the generic
-		// descent would rewrite the inner link into a literal.
-		if (
-			access.access.node_type === "access_field" &&
-			(access.access as AccessFieldNode).name === "name" &&
-			target.node_type === "access" &&
-			(target as AccessNode).access.node_type === "access_field" &&
-			((target as AccessNode).access as AccessFieldNode).name === "type" &&
-			unwrap_grouped((target as AccessNode).target).node_type === "value" &&
-			(unwrap_grouped((target as AccessNode).target) as ValueNode).value === binding
-		) {
-			return comptime_string(node.start, field.type_name);
 		}
 	}
 	if (node.node_type === "value" && (node as ValueNode).value === binding) {
@@ -421,6 +474,102 @@ function rewrite(
 		}
 	}
 	return node;
+}
+
+/** Classify a type name for the comptime predicates: a plain struct (not a
+ *  builtin, not generic/container), and a container (generic spelling or a
+ *  monomorphized container, which carries `source_type_args`). */
+function classify_type_name(
+	name: string,
+	status: CheckStatus,
+): { is_struct: boolean; is_container: boolean } {
+	const declared = resolve_declared_struct(name, status) as StructNode | undefined;
+	const is_builtin = !!get_built_in_type(name);
+	const generic_spelling = !!declared && declared.type_params.length > 0;
+	const mono_container =
+		!!declared &&
+		!!(declared as unknown as { source_type_args?: unknown[] }).source_type_args?.length;
+	return {
+		is_struct: !!declared && !is_builtin && !generic_spelling && !mono_container,
+		is_container: generic_spelling || mono_container,
+	};
+}
+
+/**
+ * Resolve a comptime TYPE expression rooted at the binding's field type:
+ *
+ *   field.type                -> { type }
+ *   field.type.name           -> { string }   (the type's name)
+ *   field.type.arg_count      -> { int }      (number of type arguments)
+ *   field.type.args           -> { list }     (indexable only)
+ *   field.type.args[i]        -> { type }     (the i-th argument)
+ *   ...recursively: field.type.args[0].args[0], .name, .arg_count
+ *
+ * Returns undefined for expressions not rooted at `field.type` (ordinary
+ * user expressions fall through untouched). Structural problems come back
+ * as `error` (with the offending start) for the caller to report.
+ */
+function resolve_type_member(
+	node: BaseNode,
+	binding: string,
+	field_type: Type | undefined,
+):
+	| { kind: "type"; type?: Type }
+	| { kind: "list"; items: Type[]; name?: string }
+	| { kind: "string"; value: string }
+	| { kind: "int"; int: number }
+	| { kind: "error"; error: string; error_start?: number }
+	| undefined {
+	const n = unwrap_grouped(node);
+	if (!n) return undefined;
+	if (n.node_type === "index") {
+		const index = n as IndexNode;
+		const target = resolve_type_member(index.target, binding, field_type);
+		if (!target) return undefined;
+		if (target.kind === "error") return target;
+		if (target.kind !== "list") {
+			return { kind: "error", error: "only '.args' can be indexed", error_start: n.start };
+		}
+		const folded = evaluate_comptime(index.index);
+		if (!folded || folded.kind !== "int") {
+			return {
+				kind: "error",
+				error: `#for: '${binding}.type.args[...]' needs a comptime int index`,
+				error_start: index.index?.start ?? n.start,
+			};
+		}
+		const items = target.items ?? [];
+		const at = folded.value;
+		if (at < 0 || at >= items.length) {
+			return {
+				kind: "error",
+				error: `#for: '${binding}.type.args[${at}]' out of range — type '${
+					target.name ?? "?"
+				}' has ${items.length} argument(s)`,
+				error_start: n.start,
+			};
+		}
+		return { kind: "type", type: items[at] };
+	}
+	if (n.node_type !== "access") return undefined;
+	const access = n as AccessNode;
+	if (access.access.node_type !== "access_field") return undefined;
+	const member = (access.access as AccessFieldNode).name;
+	const target = unwrap_grouped(access.target);
+	if (target.node_type === "value" && (target as ValueNode).value === binding) {
+		// The base: `field.type`.
+		if (member !== "type") return undefined;
+		return { kind: "type", type: field_type };
+	}
+	const inner = resolve_type_member(access.target, binding, field_type);
+	if (!inner) return undefined;
+	if (inner.kind === "error") return inner;
+	if (inner.kind !== "type") return undefined;
+	const t = inner.type as Type | undefined;
+	if (member === "name") return { kind: "string", value: t?.name ?? "" };
+	if (member === "arg_count") return { kind: "int", int: (t?.type_args ?? []).length };
+	if (member === "args") return { kind: "list", items: t?.type_args ?? [], name: t?.name };
+	return undefined;
 }
 
 function rewrite_binding_access(
@@ -495,17 +644,28 @@ function rewrite_binding_access(
 	if (field_name === "name") {
 		return comptime_string(node.start, field.name);
 	}
+	if (field_name === "is_struct") {
+		// comptime bool: the field's type is a NON-builtin, non-generic
+		// struct — a value the reflective decoder recurses into. Built-ins
+		// (string/int/…) and container instantiations (StableList<float>,
+		// StableList_Feature — source_type_args marks the mono) are false,
+		// so scalar and struct branches never double-fire.
+		const is_struct = classify_type_name(field.type_name, status).is_struct;
+		const literal = new ValueNode(node.start, is_struct ? "true" : "false");
+		literal.type = new Type("bool", true);
+		return literal;
+	}
 	if (field_name === "type") {
 		add_error(
 			status,
-			`#for: '${binding}.type' is only valid as '${binding}.type.name'`,
+			`#for: '${binding}.type' is only valid as '${binding}.type.name', '${binding}.type.arg_count' or '${binding}.type.args[i]'`,
 			access.access.start,
 		);
 		return node;
 	}
 	add_error(
 		status,
-		`#for binding '${binding}' supports .name, .type.name, .get(obj) and .set(obj, value) — not '.${field_name}'`,
+		`#for binding '${binding}' supports .name, .type.name, .type.arg_count, .type.args[i], .is_struct, .get(obj) and .set(obj, value) — not '.${field_name}'`,
 		access.access.start,
 	);
 	return node;
@@ -553,6 +713,94 @@ function literal_string(node: BaseNode): string | undefined {
 }
 
 /**
+ * Rewrite generic-construction calls (`T()`) through a specialization
+ * substitution map — the second half of the feature (the declaration pass
+ * leaves `T()` deferred: an unresolved call inside a generic body is
+ * silently skipped while `status.type_params` is non-empty).
+ *
+ * A struct target becomes an ordinary constructor call (`T()` -> `Item()`);
+ * a scalar target becomes its zero literal (`int` -> `0`, `float` -> `0.0`,
+ * `bool` -> `false`, `string` -> `""`) — a call has no scalar form. Names
+ * not in the map are untouched, so ordinary calls and enum shorthands pass
+ * through. Unchecked bodies (a `#for` arm that deferred as a whole) are
+ * covered too: any call whose name is a substituted type parameter can only
+ * be the generic construct — types are not callable otherwise.
+ */
+export function substitute_generic_constructs(
+	statements: BaseNode[],
+	substitution: Map<string, string>,
+): void {
+	const zero_literal = (target: string, start: number): ValueNode | undefined => {
+		const scalar_zero: Record<string, string> = {
+			int: "0",
+			int8: "0",
+			int16: "0",
+			int32: "0",
+			int64: "0",
+			uint: "0",
+			uint8: "0",
+			uint16: "0",
+			uint32: "0",
+			uint64: "0",
+			float: "0.0",
+			float32: "0.0",
+			float64: "0.0",
+			bool: "false",
+			string: '""',
+		};
+		const text = scalar_zero[target];
+		if (text === undefined) return undefined;
+		const literal = new ValueNode(start, text);
+		literal.type = new Type(target, true);
+		return literal;
+	};
+
+	const visit = (node: BaseNode): BaseNode => {
+		// Recurse first so nested lists (arms, bodies) are processed.
+		for (const key in node) {
+			if (key === "parent" || key === "scope") continue;
+			const value = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(value)) {
+				if (value.every(is_ast_node)) {
+					(node as unknown as Record<string, unknown>)[key] = (value as BaseNode[]).map((c) =>
+						visit(c),
+					);
+				}
+			} else if (is_ast_node(value)) {
+				(node as unknown as Record<string, unknown>)[key] = visit(value as BaseNode);
+			}
+		}
+		if (node.node_type !== "func_call") return node;
+		const call = node as FunctionCallNode;
+		if (call.is_enum_shorthand) return node;
+		const target = substitution.get(call.name);
+		if (target === undefined) return node;
+		const zero = zero_literal(target, node.start);
+		if (zero) return zero;
+		call.name = target;
+		return node;
+	};
+
+	const fold_statement = (stmt: BaseNode): BaseNode[] => {
+		const replaced = visit(stmt);
+		return replaced === stmt ? [stmt] : [replaced];
+	};
+
+	for (let i = 0; i < statements.length; i++) {
+		const stmt = statements[i];
+		// Statement lists inside statements are handled by visit's array case;
+		// a constructor statement (`T()` alone) may be replaced entirely.
+		if (stmt.node_type === "func_call") {
+			const replacement = fold_statement(stmt);
+			if (replacement[0] !== stmt) statements.splice(i, 1, ...replacement);
+			else visit(stmt);
+			continue;
+		}
+		visit(stmt);
+	}
+}
+
+/**
  * Rewrite `META.info(T).name` chains — in ANY statement position, not just
  * `#for` arms — into the reflected type's name as a comptime string
  * literal (R6). Runs per block before the statement walk, so re-checked
@@ -569,6 +817,55 @@ export function rewrite_meta_name_chains(
 ): void {
 	const visit = (node: BaseNode): BaseNode => {
 		const n = unwrap_grouped(node);
+		// META.name(T) / META.is_struct(T) / META.is_container(T) — comptime
+		// predicates over a TYPE (the element decoder dispatches on these).
+		if (
+			n.node_type === "access" &&
+			(n as AccessNode).access.node_type === "access_func" &&
+			unwrap_grouped((n as AccessNode).target).node_type === "value" &&
+			(unwrap_grouped((n as AccessNode).target) as ValueNode).value === "META"
+		) {
+			const predicate = (n as AccessNode).access as AccessFunctionCallNode;
+			const args = predicate.params ?? [];
+			const arg = unwrap_grouped(args[0]);
+			if (
+				args.length === 1 &&
+				arg.node_type === "value" &&
+				(predicate.name === "name" ||
+					predicate.name === "is_struct" ||
+					predicate.name === "is_container")
+			) {
+				let type_name = (arg as ValueNode).value;
+				if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
+				if (type_name.includes("StableList")) {
+					console.error(
+						"DBG classify:",
+						predicate.name,
+						type_name,
+						"declared:",
+						!!resolve_declared_struct(type_name, status),
+						"kind:",
+						JSON.stringify(classify_type_name(type_name, status)),
+					);
+				}
+				// Skip names that resolve to NOTHING: an unbound type parameter
+				// scanned from the outside (the per-block pass walks deferred
+				// generic bodies, where T has no binding yet). Classifying it
+				// would fold `META.is_struct(T)` to a wrong `false` before the
+				// specialization ever sees it.
+				const known =
+					!!get_built_in_type(type_name) || !!resolve_declared_struct(type_name, status);
+				if (!known) return n;
+				if (!status.type_params.includes(type_name)) {
+					if (predicate.name === "name") return comptime_string(n.start, type_name);
+					const kind = classify_type_name(type_name, status);
+					const value = predicate.name === "is_struct" ? kind.is_struct : kind.is_container;
+					const literal = new ValueNode(n.start, value ? "true" : "false");
+					literal.type = new Type("bool", true);
+					return literal;
+				}
+			}
+		}
 		if (
 			n.node_type === "access" &&
 			((n as AccessNode).access.node_type === "access_field" ||
@@ -646,9 +943,30 @@ export function rewrite_meta_name_chains(
 		}
 		return n === node ? node : node;
 	};
-	for (let i = 0; i < statements.length; i++) {
-		visit(statements[i]);
-	}
+	// Fold comptime-constant `if`s once their META predicates have become
+	// literals (`if META.name(T) == "int"`). Folded BEFORE checking, so a
+	// dead arm's type errors (e.g. an `mv` push of a scalar) never fire —
+	// the same contract the `#for` expansion gives its arms.
+	const fold_list = (list: BaseNode[]): void => {
+		for (let i = list.length - 1; i >= 0; i--) {
+			const stmt = list[i];
+			visit(stmt);
+			if (stmt.node_type !== "if") continue;
+			const if_else = stmt as IfElseNode;
+			const folded = evaluate_comptime(if_else.condition);
+			if (!folded || folded.kind !== "bool") continue;
+			const arm = folded.value
+				? (if_else.if_branch ?? { statements: [] as BaseNode[] })
+				: (if_else.else_branch ?? { statements: [] as BaseNode[] });
+			// Keep the arm's lexical SCOPE: destroying at the block end is
+			// observable (auto-free timing), so the fold wraps the kept
+			// statements in a block instead of splicing them into the parent.
+			const kept: BaseNode[] = [...(arm.statements ?? [])];
+			fold_list(kept);
+			list.splice(i, 1, new NestedBlockNode(stmt.start, kept));
+		}
+	};
+	fold_list(statements);
 }
 
 function evaluate_comptime(node: BaseNode | undefined): ComptimeValue | undefined {

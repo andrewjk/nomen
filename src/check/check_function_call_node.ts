@@ -31,6 +31,7 @@ import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import {
 	expand_pragma_fors_in_list,
 	rewrite_meta_name_chains,
+	substitute_generic_constructs,
 	substitute_pragma_iterables,
 } from "./utils/comptime.ts";
 import {
@@ -735,6 +736,7 @@ export function monomorphize(
 		// body as unchecked-but-retyped AST. First rewrite the iterable's
 		// type-parameter references (T -> the bound name), then expand.
 		substitute_pragma_iterables(cloned.statements, substitution);
+		substitute_generic_constructs(cloned.statements, substitution);
 		expand_pragma_fors_in_list(cloned.statements, status);
 		// Mono method clones are never re-checked, so `META.info(T).name`
 		// chains outside `#for` arms resolve here, through the substitution.
@@ -896,6 +898,7 @@ export function monomorphize(
 		// reference must be rewritten to the bound name first (the re-check
 		// runs with an empty type_params stack).
 		substitute_pragma_iterables(cloned.statements, substitution);
+		substitute_generic_constructs(cloned.statements, substitution);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = new Type(mono_name);
 		cloned.type_params = [];
@@ -3071,8 +3074,13 @@ function specialize_function(
 			) {
 				const arg_type = infer_arg_type(arg, status);
 				if (arg_type.name && !type_contains_unresolved_param(arg_type, status)) {
-					substitution.set(param.type.name, arg_type.name);
-					suffix_parts.push(arg_type.name);
+					// Flatten a container argument to its mono name
+					// (`StableList<Item>` -> `StableList_Item`): a bare `T`
+					// bound to the generic spelling can't be constructed
+					// (`T()` would become `StableList()` — no type args).
+					const flat = flatten_nested_generic_arg(arg_type, status);
+					substitution.set(param.type.name, flat.name);
+					suffix_parts.push(flat.name);
 				}
 			}
 			continue;
@@ -3088,7 +3096,10 @@ function specialize_function(
 			// name-only substitution stays concrete (`W` -> `List_int`, not
 			// the bare generic `List`).
 			type_args_for_struct = arg_type.type_args.map((t) => flatten_nested_generic_arg(t, status));
+			const forwards_param =
+				param.type.type_args?.some((t) => generic_func.type_params.includes(t.name)) ?? false;
 			for (let j = 0; j < generic_struct.type_params.length; j++) {
+				if (!forwards_param) break;
 				if (j < type_args_for_struct.length) {
 					substitution.set(generic_struct.type_params[j], type_args_for_struct[j].name);
 				}
@@ -3104,7 +3115,10 @@ function specialize_function(
 			const mono_struct = status.structs.findLast((s) => s.name === arg_type.name);
 			if (mono_struct?.source_type_args?.length) {
 				type_args_for_struct = mono_struct.source_type_args;
+				const forwards_param_b =
+					param.type.type_args?.some((t) => generic_func.type_params.includes(t.name)) ?? false;
 				for (let j = 0; j < generic_struct.type_params.length; j++) {
+					if (!forwards_param_b) break;
 					if (j < mono_struct.source_type_args.length) {
 						substitution.set(generic_struct.type_params[j], mono_struct.source_type_args[j].name);
 					}
@@ -3129,6 +3143,22 @@ function specialize_function(
 		suffix_parts.push(mono_name);
 	}
 
+	// A type parameter living only in the RETURN type (`func f<T> = (...,
+	// out T)`) has no argument to infer from — take it from the expected
+	// type of the call's context, but only as a FALLBACK (param-derived
+	// bindings must keep their canonical suffix order).
+	if (substitution.size === 0 && generic_func.return_type?.name) {
+		const ret_name = generic_func.return_type.name;
+		if (generic_func.type_params.includes(ret_name)) {
+			const expected = status.expected_type;
+			if (expected?.name && !type_contains_unresolved_param(expected, status)) {
+				const flat = flatten_nested_generic_arg(expected, status);
+				substitution.set(ret_name, flat.name);
+				suffix_parts.push(flat.name);
+			}
+		}
+	}
+
 	if (substitution.size === 0) {
 		add_error(
 			status,
@@ -3151,12 +3181,27 @@ function specialize_function(
 
 	const specialized_name = generic_func.name + "_" + suffix_parts.join("_");
 
-	const existing = status.functions.findLast((f) => f.name === specialized_name);
+	// Memoize over the SHARED tree, not status.functions: clone_status gives
+	// every function body its own slice of the functions table, so a
+	// specialization created for a call in one function is invisible to a
+	// call in another — each body would materialize its own clone and the
+	// C output would carry duplicate definitions (a call to the same
+	// generic free function from two functions used to break exactly this
+	// way). root.statements is where every clone is appended.
+	const root_for_memo = status.stack[0] as RootNode;
+	const existing = root_for_memo.statements.findLast(
+		(f) => f.node_type === "func" && (f as FunctionNode).name === specialized_name,
+	) as FunctionNode | undefined;
 	if (existing) return existing;
 
 	const cloned = clone_node(generic_func) as FunctionNode;
 	cloned.name = specialized_name;
 	cloned.is_generic = false;
+	// Emission routing for a specialization follows the concrete types it
+	// mentions (is_system_definition): a clone over user types is
+	// per-program code in the user TU, while `is_library` stays inherited so
+	// the checker's library trust still covers the body.
+	cloned.is_specialization = true;
 
 	for (const param of cloned.params) {
 		param.type = substitute_type(param.type, substitution);
@@ -3173,6 +3218,9 @@ function specialize_function(
 		// during this clone's re-check — but only if their iterable's type
 		// parameter reference is rewritten to the bound name first.
 		substitute_pragma_iterables(cloned.statements, substitution);
+		// `T()` generic construction: rename to the bound constructor (or a
+		// scalar zero literal) before the re-check resolves calls.
+		substitute_generic_constructs(cloned.statements, substitution);
 		// Same for `META.info(T).name` chains outside `#for` arms: rewrite
 		// T -> the bound name so the re-check (empty type_params stack)
 		// resolves them to literals.
@@ -3209,7 +3257,11 @@ function specialize_function(
 
 	check_function_node(cloned, root_status);
 
-	return status.functions.findLast((f) => f.name === specialized_name) || null;
+	return (
+		(root_for_memo.statements.findLast(
+			(f) => f.node_type === "func" && (f as FunctionNode).name === specialized_name,
+		) as FunctionNode | undefined) || null
+	);
 }
 
 function infer_arg_type(node: import("../nodes/BaseNode.ts").default, status: CheckStatus): Type {
@@ -3242,7 +3294,23 @@ function infer_arg_type(node: import("../nodes/BaseNode.ts").default, status: Ch
 		const access = node as import("../nodes/AccessNode.ts").default;
 		const inner = access.access;
 		if (inner.node_type === "access_field") {
-			return (inner as import("../nodes/AccessFieldNode.ts").default).type || new Type("");
+			const direct = (inner as import("../nodes/AccessFieldNode.ts").default).type;
+			if (direct?.name) return direct;
+			// An UNSTAMPED field access (the call is being resolved before the
+			// access itself is checked — e.g. `decode(ref obj.field)` where the
+			// field's value feeds a bare-`T` inference): resolve the target's
+			// declared type, then its field declaration.
+			const target_type = infer_arg_type(access.target, status);
+			if (target_type?.name) {
+				const struct = status.structs.findLast(
+					(s) => s.name === target_type.name || s.source_name === target_type.name,
+				);
+				const field = struct?.fields.find(
+					(f) => f.name === (inner as import("../nodes/AccessFieldNode.ts").default).name,
+				);
+				if (field?.type?.name) return field.type;
+			}
+			return direct || new Type("");
 		}
 	}
 	return new Type("");

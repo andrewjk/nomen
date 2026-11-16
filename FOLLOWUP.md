@@ -674,3 +674,52 @@ scan), or keep the rule and document "prefer attribute names that don't
 collide with library types" (current AGENTS.md guidance). The scan is
 textual by design (works pre-check), so the parser-side exclusion is the
 cleaner fix if it ever bites hard.
+
+## C backend: nested container monos emit incomplete struct fields
+
+`Buffer_StableList_Leaf` (a `Buffer<T>` whose element is itself a
+container mono) appears in `main.h` as a bare field type with only a
+forward declaration — `error: field has incomplete type`. Repro: a generic
+struct with a container-typed field instantiated over another container or
+a struct holding one (`Holder<Leaf>` where `Holder<T> { var items =
+StableList<T>() }`), built for C. The reflection/check phases are fine; the
+C emitter's struct-body emission loses the definition of that mono. Not on
+the serde path (which decodes concrete container fields), but it blocks
+user generics over containers.
+
+## ref-param assignment of an owned string leaks
+
+Assigning an owned string through a `ref` parameter LEAKS the string:
+
+```nomen
+func assign_it<T> = (ref T target) {
+	target = Json.deserialize("\"Ada\"")   // leaks one allocation
+}
+assign_it(ref p.name)
+```
+
+Direct `field.set(obj, …)` (also `obj.field = …`) and local assignment are
+clean, so the serde decoder stores through `field.set` and decodes list
+elements into locals. The checker/codegen should either transfer the value
+(single ownership) or free the old + own the new; today it does neither for
+the ref-param path. Found via the audit harness while building the container
+serde.
+
+## Nested StableList mono destroy leaks inner slabs
+
+`StableList<StableList<float>>`'s generated destroy frees the outer slab
+but not the inner containers' slabs (`test/json_serde.test.ts`'s nested
+container test runs with `audit: false` for that reason). The mono destroy
+needs to destroy each element (which is what `T_destroy` is for) — likely a
+missing element-destroy call in the nested-container instantiation.
+
+## Library serde performance: allocation-bound vs the DOM bench
+
+The stdlib `json_decode_into`/`json_encode` bench (json-serde-typed) is
+~8x slower than the JsonTree DOM bench on sample.json (0.62s vs 0.074s at
+25k iterations): per-field key escaping (`Json.serialize(key)` allocates a
+string per field on encode) and per-element container construction on
+decode (`T()` + a fresh `StableList` per nested array; the DOM reuses its
+pool). Key comparison already uses byte spans and floats use integer-math
+fixed-point. Next steps: comptime-escaped key literals, a reused element
+scratch, or a pool-backed container decode path.

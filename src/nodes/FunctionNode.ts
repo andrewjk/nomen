@@ -31,6 +31,15 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_static?: boolean;
 	is_generic?: boolean;
 	checked?: boolean;
+	/**
+	 * True for a monomorphization clone (specialize_function). The clone
+	 * keeps its generic's `is_library` stamp — the checker's library TRUST
+	 * (constraint skipping) must survive — but its EMISSION routing follows
+	 * the concrete types it mentions (see is_system_definition): a
+	 * specialization over user types is per-program code and belongs in the
+	 * user TU even when the generic lives in the library.
+	 */
+	is_specialization?: boolean;
 	is_inline?: boolean;
 	/**
 	 * True for an `foreign func` declaration: a body-less function whose body

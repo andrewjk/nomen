@@ -1,0 +1,73 @@
+import System
+
+// json-serde-typed benchmark — the compile-time-serde counterpart to
+// json-serde.nm. The whole decoder is the standard library's
+// `json_decode_into` (reflection generates the per-field dispatch at
+// compile time: no DOM, no tree walk, no runtime key map), and the
+// encoder is `json_encode`. The only application code left is the typed
+// shape of the document.
+//
+// Usage: json-serde-typed [sample.json] [n]
+// Prints the serialized length twice (first pass, then the accumulated
+// loop), mirroring json-serde.nm's verifiable-checksum protocol.
+
+mv struct Properties {
+	@rename("name")
+	var name = ""
+}
+
+mv struct Geometry {
+	@rename("type")
+	var kind = ""
+	var coordinates = StableList<StableList<StableList<float>>>()
+}
+
+mv struct Feature {
+	@rename("type")
+	var kind = ""
+	var properties = Properties()
+	var geometry = Geometry()
+}
+
+mv struct GeoData {
+	@rename("type")
+	var kind = ""
+	var features = StableList<Feature>()
+}
+
+pub func main = (Init init) {
+	var filename = "bench/sample.json"
+	if init.argc > 1 {
+		filename = init.args.at(1)
+	}
+	var n = 10
+	if init.argc > 2 {
+		n = parse_int(init.args.at(2))
+	}
+
+	var f = File()
+	match f.open(filename, "r") {
+		case .ok(did) {
+			match f.readAll() {
+				case .ok(text) {
+					var _ = f.close()
+					var first_geo = GeoData()
+					json_decode_into(text, ref first_geo)
+					var first = json_encode(first_geo)
+					Console.write_line(first.length.to_string())
+
+					var total = 0
+					var i = 0
+					while i < n; i += 1 {
+						var g = GeoData()
+						json_decode_into(text, ref g)
+						total = total + json_encode(g).length
+					}
+					Console.write_line(total.to_string())
+				}
+				case .fail(e) { panic("read failed") }
+			}
+		}
+		case .fail(e) { panic("open failed") }
+	}
+}
