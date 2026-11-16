@@ -7,6 +7,7 @@ import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_m
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { ref_string_slot_plan } from "../build_common/ref_string_slot.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_box_type } from "../check/utils/box.ts";
@@ -15,6 +16,7 @@ import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
@@ -254,6 +256,74 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		!status.current_nullable_call_flag;
 	const saved_call = wrap_nullable_call ? begin_code_scratch(status) : undefined;
 	let wrap_tmp: number | undefined;
+	// A `ref string` argument: the callee may ASSIGN through the pointer
+	// (`target = ...` inside a `ref T target` body), displacing the caller
+	// slot's current pair. The callee sees only `nomen_string *` and cannot
+	// know that pair's ownership — the caller does. Slots whose ownership
+	// the caller can vouch for get the old pair captured here (before the
+	// call text — the callee may read the target first) and freed after it,
+	// inside one GNU statement-expression so the temporaries' scope covers
+	// both sides and the call's value (if any) is forwarded out of it.
+	// Slots that cannot be vouched for (a borrowed local, a nested chain)
+	// keep the status quo. Skipped when another call-level wrapper hosts
+	// the expression (lambda-arg descriptors, the nullable-result splice) —
+	// sound: the displaced pair then leaks, exactly as before.
+	interface RefStringReclaim {
+		temp: string;
+		lvalue: string;
+	}
+	const ref_string_reclaims: RefStringReclaim[] = [];
+	if (!wrap_nullable_call && lambda_arg_temps.size === 0) {
+		for (const ri of node.ref_param_indices ?? []) {
+			const arg = node.params[ri];
+			if (!arg) continue;
+			const arg_type = type_from_value_node(arg);
+			if (
+				arg_type?.name !== "string" ||
+				arg_type.is_view ||
+				arg_type.is_array ||
+				arg_type.is_nullable
+			) {
+				continue;
+			}
+			const slot_plan = ref_string_slot_plan(arg, status, true);
+			if (slot_plan?.kind === "owned_local" || slot_plan?.kind === "owned_field") {
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				ref_string_reclaims.push({
+					temp: `_ref_old_${id}`,
+					lvalue: slot_plan.kind === "owned_local" ? slot_plan.name : slot_plan.access,
+				});
+			} else if (slot_plan?.kind === "adopting_local") {
+				// The slot held borrowed bytes — nothing to free. The callee's
+				// assignment makes the variable a full owner: clear the borrow
+				// record and re-register the declaration so the scope-exit
+				// auto_free releases the NEW value.
+				if (status.string_borrow_vars?.delete(slot_plan.name)) {
+					if (
+						!find_decl_in_c_scopes(status, slot_plan.name) &&
+						!status.function_ref_params?.has(slot_plan.name)
+					) {
+						const type = status.variable_types?.get(slot_plan.name);
+						if (type?.name === "string") {
+							status.scoped_declarations.push(
+								new DeclarationNode(arg.start, "private", "var", slot_plan.name, type),
+							);
+						}
+					}
+				}
+			}
+		}
+	}
+	let ref_string_reclaim_ret: string | undefined;
+	if (ref_string_reclaims.length > 0) {
+		const ret_c = c_return_type(node.type, status);
+		ref_string_reclaim_ret = ret_c && ret_c !== "void" ? next_lambda_ret_temp() : undefined;
+		status.code += `({ `;
+		for (const r of ref_string_reclaims) {
+			status.code += `nomen_string ${r.temp} = ${r.lvalue}; `;
+		}
+		if (ref_string_reclaim_ret) status.code += `${ret_c} ${ref_string_reclaim_ret} = `;
+	}
 	status.code += `${func_name}(${is_closure_callee ? "NULL" : ""}`;
 	if (is_closure_callee && node.params.length > 0) status.code += ", ";
 
@@ -835,6 +905,18 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 				build_node(swap_expr, status);
 			}
 		}
+	}
+
+	// The ref-string reclaim wrapper: the displaced pairs are borrowed-dead
+	// after the call — free them inside the wrapper and forward the call's
+	// value (when it has one) out of it.
+	if (ref_string_reclaims.length > 0) {
+		status.code += `; `;
+		for (const r of ref_string_reclaims) {
+			status.code += `free(${r.temp}.ptr); `;
+		}
+		if (ref_string_reclaim_ret) status.code += ref_string_reclaim_ret;
+		status.code += `})`;
 	}
 
 	// The inline capturing lambda args' descriptors are now borrowed-dead:

@@ -710,23 +710,27 @@ container mono. The plain-struct equivalents (json_serde's tests:
 generic-mono element pushed with `mv` is the trigger. `test/
 generic_container_field_push.test.ts` avoids the shape for now.
 
-## ref-param assignment of an owned string leaks
+## ref-param string residuals (the displaced-pair fix landed, these edges remain)
 
-Assigning an owned string through a `ref` parameter LEAKS the string:
+The main leak is fixed (the call site captures the displaced pair and frees
+it — `test/ref_param_string_assign.test.ts` audits the owned shapes on both
+backends). Two edges remain, sound but bounded:
 
-```nomen
-func assign_it<T> = (ref T target) {
-	target = Json.deserialize("\"Ada\"")   // leaks one allocation
-}
-assign_it(ref p.name)
-```
-
-Direct `field.set(obj, …)` (also `obj.field = …`) and local assignment are
-clean, so the serde decoder stores through `field.set` and decodes list
-elements into locals. The checker/codegen should either transfer the value
-(single ownership) or free the old + own the new; today it does neither for
-the ref-param path. Found via the audit harness while building the container
-serde.
+- **aarch64 loop-displaced rodata slots**: an aarch64 literal-initialized
+  string local holds the RODATA pair until re-owned, so the displaced pair
+  inside a loop cannot be freed statically (the first iteration's pair is
+  rodata; freeing it aborts). The slot adopts instead — every iteration but
+  the last leaks (the last is freed at scope exit through the recorded
+  heap ownership). A runtime owns-flag on the captured pair (the C
+  backend's `c_alias_owns_flags` pattern) would close it.
+- **aarch64: reading a `ref`-param string in a concat drops the len half**
+  (pre-existing, found while testing): `target = target + "x"` inside a
+  `ref T target` body loads only the target's PTR half for the left
+  operand — the len register still holds the right operand's length
+  (`"seed"` becomes `"s"`, so every bump produces `"sx"`). The C backend
+  lowers the same shape correctly. Fix shape: the aarch64 value lowering
+  for a deref-to-string operand must load both halves (and not clobber the
+  len across the right operand's build).
 
 ## Nested StableList mono destroy leaks inner slabs
 

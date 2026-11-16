@@ -9,6 +9,7 @@ import { direct_string_fields, owns_strings_uniformly } from "../build_common/ha
 import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_move_owners.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import { ref_string_slot_plan } from "../build_common/ref_string_slot.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
@@ -36,6 +37,7 @@ import {
 	mark_local_moved_flag,
 	mark_moved_if_struct,
 	find_anchor_slot,
+	mark_heap_string,
 	resolve_struct_name,
 	clear_heap_string_fields,
 	trait_class_for,
@@ -600,6 +602,9 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Collect `ref` class args whose caller-side anchor must be re-synced to
 		// the (possibly reassigned) slot value after the call returns.
 		const ref_class_sync_names: string[] = [];
+		// Frame offsets of captured `ref string` old pairs (see the ref-arg
+		// marshalling below) — freed right after the call returns.
+		const ref_string_reclaim_offsets: number[] = [];
 		// Collect `ref` class PARAMS forwarded to another `ref` param. The
 		// callee may have reassigned the caller's slot, so the param's
 		// callee-saved register (which still holds the pre-call instance) must
@@ -1141,6 +1146,36 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 						emit_var_address(status, "x0", arg_name);
 						ref_class_sync_names.push(arg_name);
 					} else {
+						// A `ref string` slot whose displaced pair the caller
+						// owns: capture the pair into a frame temp BEFORE the
+						// call (the callee may read the target first, and the
+						// callee sees only the pointer — it cannot know the old
+						// pair's ownership). Freed right after the bl.
+						const callee_params = node.resolved_function?.params?.filter((p) => !p.is_self_param);
+						const callee_param_type = callee_params?.[i]?.type;
+						if (
+							callee_param_type?.name === "string" &&
+							!callee_param_type.is_view &&
+							!callee_param_type.is_array &&
+							!callee_param_type.is_nullable
+						) {
+							const slot_plan = ref_string_slot_plan(arg, status, false);
+							if (slot_plan?.kind === "owned_local" || slot_plan?.kind === "owned_field") {
+								const capture_offset = allocate_stack_space(status, 16);
+								emit_address_of(arg, status);
+								emit_asm(status, `ldr x9, [x0]\n`);
+								emit_asm(status, `ldr x10, [x0, #8]\n`);
+								emit_asm(status, `str x9, [x29, #${capture_offset}]\n`);
+								emit_asm(status, `str x10, [x29, #${capture_offset + 8}]\n`);
+								ref_string_reclaim_offsets.push(capture_offset);
+							} else if (slot_plan?.kind === "adopting_local" && slot_plan.mark_heap) {
+								// The slot held rodata/borrowed bytes — nothing to
+								// free. The callee's assignment leaves an OWNED
+								// pair in the slot: record the heap ownership so
+								// the scope-exit free releases it.
+								mark_heap_string(status, slot_plan.name);
+							}
+						}
 						emit_address_of(arg, status);
 					}
 				} else if (
@@ -1617,6 +1652,22 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		}
 
 		emit_asm(status, `bl ${func_name}\n`);
+
+		// The captured `ref string` displaced pairs (see the ref-arg
+		// marshalling): the callee may have assigned through the slot, so
+		// the caller frees the pair it vouched for owning. x0/x1 hold the
+		// call's return value — preserve both across the free (a string
+		// return is the (ptr, len) pair).
+		if (ref_string_reclaim_offsets.length > 0) {
+			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_asm(status, `str x1, [sp, #-16]!\n`);
+			for (const offset of ref_string_reclaim_offsets) {
+				emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
+				emit_free(status);
+			}
+			emit_asm(status, `ldr x1, [sp], #16\n`);
+			emit_asm(status, `ldr x0, [sp], #16\n`);
+		}
 
 		// `ref` value-struct params: the callee's string-field stores write
 		// through to the caller's argument — transfer the callee's
