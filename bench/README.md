@@ -4,24 +4,28 @@
 
 These benchmarks have been converted to Nomen and are included in `benchmark.sh`.
 
-| Benchmark      | Nomen | Go  | Zig | Notes                                                                   |
-| -------------- | ----- | --- | --- | ----------------------------------------------------------------------- |
-| pidigits       | ✅    | ✅  | ✅  | BigInt digit computation                                                |
-| helloworld     | ✅    | ✅  | -   | Trivial startup test                                                    |
-| fannkuch-redux | ✅    | ✅  | -   | Permutation/flip counting (single-threaded)                             |
-| binarytrees    | ✅    | ✅  | -   | Recursive tree allocation using classes                                 |
-| merkletrees    | ✅    | ✅  | -   | Merkle tree hash computation using classes                              |
-| nsieve         | ✅    | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
-| lru            | ✅    | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
-| knucleotide    | ✅    | ✅  | -   | DNA k-mer frequency counting using File I/O, Buffer, and bit-packing    |
-| json-serde     | ✅    | ✅  | ✅  | GeoJSON parse + serialize via `Json.parse`/`Json.stringify` (see note)  |
-| regex-redux    | ✅    | ✅  | -   | FASTA sequence regex counting and substitution                          |
+| Benchmark        | Nomen | Go  | Zig | Notes                                                                   |
+| ---------------- | ----- | --- | --- | ----------------------------------------------------------------------- |
+| pidigits         | ✅    | ✅  | ✅  | BigInt digit computation                                                |
+| helloworld       | ✅    | ✅  | -   | Trivial startup test                                                    |
+| fannkuch-redux   | ✅    | ✅  | -   | Permutation/flip counting (single-threaded)                             |
+| binarytrees      | ✅    | ✅  | -   | Recursive tree allocation using classes                                 |
+| merkletrees      | ✅    | ✅  | -   | Merkle tree hash computation using classes                              |
+| nsieve           | ✅    | -   | -   | Sieve of Eratosthenes using Buffer (Go needs external `bitset` package) |
+| lru              | ✅    | ✅  | -   | LRU cache using Map and Buffer for access order tracking                |
+| knucleotide      | ✅    | ✅  | -   | DNA k-mer frequency counting using File I/O, Buffer, and bit-packing    |
+| json-serde       | ✅    | ✅  | ✅  | GeoJSON parse + serialize via generic JSON values (untyped/DOM row)     |
+| json-serde-typed | ✅    | ✅  | ✅  | GeoJSON decode into structs + encode (typed row)                        |
+| regex-redux      | ✅    | ✅  | -   | FASTA sequence regex counting and substitution                          |
 
-> **Note (json-serde):** the Nomen version parses the GeoJSON document into a
-> `JsonNode` tree and re-serializes it, like the Go/Zig versions. It does **not**
-> md5-hash the output (Nomen has no MD5 in the standard library yet); instead it
-> prints the serialized length as a verifiable checksum. The input is the
-> hard-coded `bench/sample.json`.
+> **Note (json-serde):** the benchmark runs in two rows over the same
+> `bench/sample.json` — the **untyped/DOM** row (Nomen `Json.parse` into a
+> `JsonTree` + `Json.stringify`; Go `map[string]interface{}`; Zig
+> `std.json.Value`; Rust `serde_json::Value`) and the **typed** row (Nomen
+> `json_decode_into`/`json_encode`; Go struct tags; Zig
+> `parseFromSlice(GeoData)`; Rust serde derive). The Nomen versions print the
+> serialized length as a verifiable checksum (Nomen has no MD5 in the
+> standard library yet); the Go/Zig/Rust versions md5-hash the output.
 
 ## Not Converted
 

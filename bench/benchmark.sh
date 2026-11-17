@@ -67,6 +67,10 @@ nomen_compare() {
 # Format: name|small_args|large_args|zig_src|rust_src
 # `$BENCH_DIR` in args expands now (at array-definition time).
 # NOTE: knucleotide/regex-redux only have one input file each, so small==large.
+# json-serde runs in two variants: the DOM row (generic tree parse + serialize:
+# Nomen JsonTree, Go/Zig map/Value, Rust serde_json::Value) and the typed row
+# (decode into structs: Nomen json_decode_into/json_encode, Go struct tags,
+# Zig parseFromSlice(T), Rust serde derive).
 #
 # Sizing rule: every tier's WORKLOAD should dominate process startup (~2ms for
 # every language here) and land Nomen/aarch64 inside ~20ms-5s. Tiers sized
@@ -85,6 +89,7 @@ BENCHES=(
 	"lru|100 1000000|1000 20000000|lru1.zig|lru1.rs"
 	"knucleotide|$BENCH_DIR/knucleotide_input.txt|$BENCH_DIR/knucleotide_input.txt|knucleotide1.zig|knucleotide8.rs"
 	"json-serde|$BENCH_DIR/sample.json 1000|$BENCH_DIR/sample.json 25000|json-serde1.zig|json-serde1.rs"
+	"json-serde-typed|$BENCH_DIR/sample.json 1000|$BENCH_DIR/sample.json 25000|json-serde-typed1.zig|json-serde-typed1.rs"
 	"regex-redux|$BENCH_DIR/25000_in|$BENCH_DIR/25000_in|regex-redux1.zig|regex-redux6.rs"
 	"nbody|500000|5000000|nbody1.zig|nbody1.rs"
 	"spectral-norm|500|1500|spectral-norm1.zig|spectral-norm1.rs"

@@ -654,7 +654,17 @@ temp StringBuilder + `to_string` copy — the comptime-escaped-key idea, done
 as a scan-then-raw-append since keys are plain identifiers), and the decode
 cursor is a plain `ref int` (no `Buffer<int>` malloc per decode, no
 `load_int`/`store_int` calls per position update). Both are strictly less
-work but bench-neutral — the cost is elsewhere:
+work but bench-neutral — the cost is elsewhere. The harness now runs both
+variants as separate rows (`json-serde` = untyped/DOM, `json-serde-typed` =
+typed, each with all four languages). Two harness bugs surfaced while
+wiring the typed row in, both fixed 2026-11-17: the Go benches appended
+".json" to the path argument, so benchmark.sh's full filename silently read
+nothing and hashed empty structs (the Go json-serde numbers were constant);
+and bench/compile_nomen.ts parsed without the target, so the aarch64 column
+built C-checked trees through the aarch64 backend (stage 5's per-target
+parse contract) — any bench whose core path crosses a target-selected raw
+arm emitted C text into the .s and failed to assemble. The cost is
+still elsewhere:
 
 - **Encode (~0.74s of the 0.89s) — the per-element load copy.**
   `json_encode_list`'s `var elem = list.at(i)` deep-copies every nested

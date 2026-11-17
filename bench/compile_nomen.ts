@@ -58,8 +58,11 @@ if (lib_arg) {
 const source = join(resolved, lib_path);
 const library = lib_path ? get_library(lib_path) : undefined;
 // Benchmarks are trusted System consumers: several drive Buffer's low-level
-// primitives directly, which `internal` hides from real user code.
-const parsed = parse(source, library, undefined, { allow_internal: true });
+// primitives directly, which `internal` hides from real user code. The parse
+// MUST carry the target (stage 5's per-target-parse contract): target-selected
+// raw arms fold at check, so a C-checked tree built through the aarch64
+// backend emits the C arms' text into the .s (and vice versa).
+const parsed = parse(source, library, undefined, { allow_internal: true, arch });
 
 if (parsed.errors.length) {
 	for (const error of parsed.errors) {

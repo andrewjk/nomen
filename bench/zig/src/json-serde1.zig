@@ -1,6 +1,10 @@
 const std = @import("std");
 const json = std.json;
 
+// json-serde (untyped): parse the GeoJSON document into a std.json.Value
+// tree and re-serialize it — the DOM counterpart to json-serde-typed1.zig's
+// parseFromSlice(GeoData) typed decode. The path argument is used as-is.
+
 pub fn main(init: std.process.Init) !void {
 	const io = init.io;
 	const gpa = init.gpa;
@@ -22,7 +26,7 @@ pub fn main(init: std.process.Init) !void {
 
 	// Parse once and serialize.
 	{
-		const parsed = try json.parseFromSlice(GeoData, gpa, json_str, .{});
+		const parsed = try json.parseFromSlice(std.json.Value, gpa, json_str, .{});
 		defer parsed.deinit();
 		const serialized = try std.json.Stringify.valueAlloc(gpa, parsed.value, .{});
 		defer gpa.free(serialized);
@@ -31,13 +35,14 @@ pub fn main(init: std.process.Init) !void {
 
 	// Re-parse n times into an array and serialize.
 	{
-		var array: std.ArrayList(GeoData) = .empty;
+		var array: std.ArrayList(std.json.Value) = .empty;
 		defer array.deinit(gpa);
 		var i: usize = 0;
 		while (i < n) : (i += 1) {
-			// Intentionally leak each parse: the array borrows slice pointers
-			// owned by `parsed`, so it must stay alive until after serialization.
-			const parsed = try json.parseFromSlice(GeoData, gpa, json_str, .{});
+			// Intentionally leak each parse: the array holds Values whose
+			// buffers are owned by `parsed`, so they must stay alive until
+			// after serialization.
+			const parsed = try json.parseFromSlice(std.json.Value, gpa, json_str, .{});
 			try array.append(gpa, parsed.value);
 		}
 		const serialized = try std.json.Stringify.valueAlloc(gpa, array.items, .{});
@@ -55,37 +60,3 @@ fn printHash(bytes: []const u8, stdout: *std.Io.File.Writer) !void {
 	const hex = std.fmt.bytesToHex(&hash, .lower);
 	try stdout.interface.print("{s}\n", .{&hex});
 }
-
-const GeoData = struct {
-	type: []const u8,
-	features: []const Feature,
-};
-const Feature = struct {
-	type: []const u8,
-	properties: Properties,
-	geometry: Geometry,
-};
-const Properties = struct { name: []const u8 };
-const Geometry = struct {
-	type: []const u8,
-	coordinates: []const []const [2]f64,
-
-	// Custom serialization to emit coordinates compactly (no inner spaces),
-	// matching the reference checksum.
-	pub fn jsonStringify(self: Geometry, jw: anytype) !void {
-		try jw.beginWriteRaw();
-		const w = jw.writer;
-		try w.print("{{\"type\":\"{s}\",\"coordinates\":[", .{self.type});
-		for (self.coordinates, 0..) |row, rowi| {
-			if (rowi != 0) try w.writeAll(",");
-			try w.writeAll("[");
-			for (row, 0..) |col, coli| {
-				if (coli != 0) try w.writeAll(",");
-				try w.print("[{d},{d}]", .{ col[0], col[1] });
-			}
-			try w.writeAll("]");
-		}
-		try w.writeAll("]}");
-		jw.endWriteRaw();
-	}
-};
