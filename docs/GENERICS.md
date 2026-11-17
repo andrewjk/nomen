@@ -336,11 +336,12 @@ clone:
   comptime META predicates instead.)
 - **No explicit type arguments at generic-function call sites.** `T` is
   always inferred from the call arguments; you cannot write `unwrap<int>(b)`.
-- **`type` arguments are bare names.** A generic instantiation cannot be
-  spelled at the call site (`zero(List<int>)` does not parse — expression
-  context resolves `<` as comparison); a mono is reachable by its mangled
-  name (`zero(List_int)`). Enums, traits and bitsets are rejected as `type`
-  arguments.
+- **`type` arguments accept instantiations.** `zero(List<int>)` names the
+  monomorphized struct directly — the argument materializes the mono if no
+  other use site exists yet, and nested spellings flatten
+  (`Wrapper<List<int>>` binds `Wrapper_List_int`). Bare generic names
+  (`zero(List)`) stay rejected with pointing guidance; enums, traits and
+  bitsets are rejected as `type` arguments.
 - **Forwarding threads through free-function specializations only.** A
   `type` argument forwarded from a monomorphized STRUCT body (whose clones
   are stamped checked without a re-check) does not resolve.

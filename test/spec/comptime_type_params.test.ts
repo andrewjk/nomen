@@ -83,3 +83,16 @@ test("a generic parameter forwards as a `type` argument", () => {
 	`;
 	expect(compile_module(body)).toEqual([]);
 });
+
+// Prose claims: a `type` argument may be a generic instantiation, which
+// flattens to the mono name and composes with reflection.
+
+test("a generic instantiation names the mono as a type argument", () => {
+	const body = `
+		func name_of = (type T, out string) {
+			return META.info(T).name
+		}
+		const s = name_of(List<int>)
+	`;
+	expect(compile_module(body)).toEqual([]);
+});

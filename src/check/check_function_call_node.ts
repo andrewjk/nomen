@@ -3165,6 +3165,58 @@ function specialize_function(
 			let type_name = (arg_node as ValueNode).value;
 			const forwarded = status.comptime_type_bindings?.get(type_name);
 			if (forwarded) type_name = forwarded;
+			const written_args = (arg_node as ValueNode).type_args;
+			if (written_args?.length) {
+				// A generic INSTANTIATION spelling — `List<int>` — names the
+				// monomorphized struct directly (the argument list materializes
+				// the mono, so the type is usable even with no other use site).
+				// A type argument still on the enclosing generic's param stack
+				// defers (R3) — the mono clone resolves it through the
+				// substitution map.
+				if (written_args.some((t) => type_contains_unresolved_param(t, status))) {
+					return null;
+				}
+				const generic = resolve_declared_struct(type_name, status) as StructNode | undefined;
+				if (!generic) {
+					add_error(
+						status,
+						get_built_in_type(type_name)
+							? `'${type_name}' takes no type arguments — a generic instantiation names a struct`
+							: `unknown type '${type_name}' — a 'type' parameter takes a struct or builtin type name`,
+						(arg_node as ValueNode).start,
+					);
+					return null;
+				}
+				if (generic.type_params.length === 0 && !generic.is_generic) {
+					add_error(
+						status,
+						`'${type_name}' is not generic — it takes no type arguments`,
+						(arg_node as ValueNode).start,
+					);
+					return null;
+				}
+				if (generic.type_params.length !== written_args.length) {
+					add_error(
+						status,
+						`'${type_name}' takes ${generic.type_params.length} type argument(s), got ${written_args.length}`,
+						(arg_node as ValueNode).start,
+					);
+					return null;
+				}
+				// Nested args materialize their inner monos first
+				// (`Wrapper<List<int>>` -> arg `List_int`).
+				const flat_args = written_args.map((t) => flatten_nested_generic_arg(t, status));
+				const mono = monomorphize(generic, flat_args, status);
+				if (!mono) {
+					add_error(
+						status,
+						`cannot materialize '${type_name}' instantiation — monomorphization failed`,
+						(arg_node as ValueNode).start,
+					);
+					return null;
+				}
+				type_name = mono.name;
+			}
 			const declared = resolve_declared_struct(type_name, status) as StructNode | undefined;
 			if (!declared && !get_built_in_type(type_name)) {
 				const kind = status.enums.some((e) => e.name === type_name)
@@ -3186,7 +3238,7 @@ function specialize_function(
 			if (declared && (declared.type_params.length > 0 || declared.is_generic)) {
 				add_error(
 					status,
-					`'${type_name}' is generic — pass a concrete instantiation (its monomorphized name, e.g. Holder_int)`,
+					`'${type_name}' is generic — pass a concrete instantiation (e.g. ${type_name}<int>, or its monomorphized name ${type_name}_int)`,
 					(arg_node as ValueNode).start,
 				);
 				return null;

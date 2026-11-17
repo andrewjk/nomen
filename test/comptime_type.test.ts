@@ -223,6 +223,132 @@ test("a type-param function specializes over a concrete struct with containers",
 });
 
 // ---------------------------------------------------------------------------
+// Generic instantiations as type arguments
+// ---------------------------------------------------------------------------
+
+test("a generic instantiation names the mono as a type argument", () => {
+	const lines = run_js(`
+		func name_of = (type T, out string) {
+			return META.info(T).name
+		}
+		pub func main = () {
+			var l = List<int>()
+			Console.write_line(name_of(List<int>))
+			Console.write_line(name_of(Map<string, int>))
+		}
+	`);
+	expect(lines).toEqual(["List_int", "Map_string_int"]);
+});
+
+test("a nested instantiation flattens in a type argument", () => {
+	const lines = run_js(`
+		func name_of = (type T, out string) {
+			return META.info(T).name
+		}
+		pub func main = () {
+			var l = List<List<int>>()
+			Console.write_line(name_of(List<List<int>>))
+		}
+	`);
+	expect(lines).toEqual(["List_List_int"]);
+});
+
+test("an instantiation argument materializes the mono without another use site", () => {
+	const parsed = parse_src(`
+		struct Wrapper<T> {
+			var T item
+		}
+		func name_of = (type T, out string) {
+			return META.info(T).name
+		}
+		pub func main = () {
+			Console.write_line(name_of(Wrapper<float>))
+		}
+	`);
+	expect(parsed.errors).toEqual([]);
+	const monos = (parsed.root.statements ?? []).map((s) => (s as { name?: string }).name);
+	expect(monos).toContain("Wrapper_float");
+	expect(monos).toContain("name_of_Wrapper_float");
+});
+
+test("instantiation type arguments compose with #for reflection", () => {
+	const lines = run_js(`
+		func describe = (type T, out string) {
+			var s = META.info(T).name + "("
+			var first = true
+			#for field of META.info(T).fields {
+				if !first {
+					s = s + ", "
+				}
+				first = false
+				s = s + field.name
+			}
+			return s + ")"
+		}
+		pub func main = () {
+			Console.write_line(describe(List<int>))
+		}
+	`);
+	expect(lines).toEqual(["List_int(length, items)"]);
+});
+
+test("lowercase operands keep the comparison reading", () => {
+	const lines = run_js(`
+		func both = (bool a, bool b, out string) {
+			var s = ""
+			if a {
+				s = s + "1"
+			} else {
+				s = s + "0"
+			}
+			if b {
+				s = s + "1"
+			} else {
+				s = s + "0"
+			}
+			return s
+		}
+		pub func main = () {
+			var x = 1
+			var y = 2
+			var z = 3
+			Console.write_line(both(x < y, z > y))
+			Console.write_line(both(y < x, z < y))
+		}
+	`);
+	expect(lines).toEqual(["11", "00"]);
+});
+
+test("a non-generic type takes no type arguments", () => {
+	const parsed = parse_src(`
+		struct Point {
+			var int x = 0
+		}
+		func f = (type T, out int) {
+			return 0
+		}
+		pub func main = () {
+			f(Point<int>)
+		}
+	`);
+	expect(parsed.errors.some((e) => e.message.includes("'Point' is not generic"))).toBe(true);
+});
+
+test("an instantiation arity mismatch errors at the call", () => {
+	const parsed = parse_src(`
+		func f = (type T, out int) {
+			return 0
+		}
+		pub func main = () {
+			f(List<int, string>)
+		}
+	`);
+	expect(parsed.errors.some((e) => e.message.includes("takes 1 type argument(s), got 2"))).toBe(
+		true,
+	);
+});
+
+// ---------------------------------------------------------------------------
 // Errors — loud, never silent
 // ---------------------------------------------------------------------------
 
@@ -356,6 +482,9 @@ test("the C backend builds the expanded program clean", () => {
 			var T x = T()
 			return x
 		}
+		func name_of = (type T, out string) {
+			return META.info(T).name
+		}
 		func describe = (type T, out string) {
 			var s = META.info(T).name + "("
 			var first = true
@@ -372,6 +501,7 @@ test("the C backend builds the expanded program clean", () => {
 		pub func main = () {
 			var p = zero(Point)
 			Console.write_line(describe(Sample))
+			Console.write_line(name_of(List<int>))
 			Console.write_line("\\{p.x}")
 		}
 	`,

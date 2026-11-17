@@ -76,9 +76,15 @@ function restructure_op(
 // closing is handled correctly.
 //
 // Returns the parsed type arguments when the `<` really opens a generic list
-// that is properly closed and immediately followed by `(` (a typed constructor
-// or call, e.g. `Array<int>(...)`) or `.` (method access on a generic type, e.g.
-// `Vec<int>.new`). Otherwise returns null after fully restoring parser state —
+// that is properly closed and immediately followed by
+//   `(` — a typed constructor or call, e.g. `Array<int>(...)`;
+//   `.` — method access on a generic type, e.g. `Vec<int>.new`;
+//   `)` or `,` — a bare generic instantiation used as a VALUE, e.g. the
+//       `List<int>` spelling of a comptime `type` argument
+//       (`zero(List<int>)`) — gated on a PascalCase base name so ordinary
+//       lowercase comparisons (`foo(a < b, c > d)`, `foo(a < b)`) keep
+//       parsing as comparisons.
+// Otherwise returns null after fully restoring parser state —
 // including any in-place `>>`-peeling mutations performed on tokens, and any
 // errors appended while probing — so the caller can treat the `<` as a
 // comparison/shift operator instead. This avoids the old greedy scan, which
@@ -93,7 +99,7 @@ function restructure_op(
 // nothing: no snapshot, no journal entry, no error to trim.
 const WORD_TOKEN_RE = /^[A-Za-z_]\w*$/;
 
-function try_parse_generic_args(status: ParseStatus): Type[] | null {
+function try_parse_generic_args(status: ParseStatus, base_name?: string): Type[] | null {
 	const saved_i = status.i;
 	// Journal token-value peels instead of snapshotting every token's value:
 	// the only in-place mutation a type-arg attempt performs is
@@ -132,11 +138,21 @@ function try_parse_generic_args(status: ParseStatus): Type[] | null {
 		return restore();
 	}
 	const follow = peek_current(status);
-	if (follow !== "(" && follow !== ".") {
-		return restore();
+	if (follow === "(" || follow === ".") {
+		status.value_journal = saved_journal;
+		return type_args;
 	}
-	status.value_journal = saved_journal;
-	return type_args;
+	// A bare generic instantiation as a VALUE — the `List<int>` spelling of a
+	// comptime `type` argument (`zero(List<int>)`, `f(List<int>, x)`). Only a
+	// PascalCase base qualifies: type names are capitalized, so every
+	// lowercase operand keeps its comparison reading (`foo(a < b)`,
+	// `foo(a < b, c > d)`), and a generic spelling still has to close right
+	// at the argument boundary (`)` or `,`) to win the probe.
+	if ((follow === ")" || follow === ",") && base_name && /^[A-Z]/.test(base_name)) {
+		status.value_journal = saved_journal;
+		return type_args;
+	}
+	return restore();
 }
 
 // Does the `(` at the current position start an anonymous function body —
@@ -437,7 +453,7 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 			}
 			case "<": {
 				if (node.node_type === "value") {
-					const type_args = try_parse_generic_args(status);
+					const type_args = try_parse_generic_args(status, (node as ValueNode).value);
 					if (type_args !== null) {
 						const name = (node as ValueNode).value;
 						// Attach type_args to the value node so subsequent .method() access

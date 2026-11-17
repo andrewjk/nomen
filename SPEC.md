@@ -3374,9 +3374,11 @@ function eliminates its dead arms before they are ever checked. A generic
 function may forward its own parameter as a `type` argument (`inner(T)`),
 binding at the outer specialization.
 
-A `type` argument must be a bare name denoting a concrete struct or
-builtin type — enums, traits, bitsets, and generic spellings are rejected,
-as is anything that is not a type name at all:
+A `type` argument is a bare name denoting a concrete struct or builtin
+type, or a generic instantiation — `List<int>` names the monomorphized
+struct directly (materialized on the spot if no other use site exists
+yet). Enums, traits, bitsets, and bare generic names are rejected, as is
+anything that is not a type name at all:
 
 ```
 func f = (type T, out int) {
@@ -3384,6 +3386,17 @@ func f = (type T, out int) {
 }
 const int bad = f("Point")
 // Error: a 'type' parameter takes a bare type name — f(T: type)
+```
+
+An instantiation argument flattens to the mono name, so it composes with
+reflection like any concrete type:
+
+```
+func name_of = (type T, out string) {
+    return META.info(T).name
+}
+
+const s = name_of(List<int>)
 ```
 
 `type` parameters are free-function only (methods cannot declare them —

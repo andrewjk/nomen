@@ -679,12 +679,6 @@ work but bench-neutral — the cost is elsewhere:
 
 ## `type` parameter residuals (COMPTIME_PLAN_2 stage 4)
 
-- **Generic instantiations cannot be spelled as `type` arguments.**
-  `zero(List<int>)` does not parse — expression-context `<` resolves as
-  comparison (`try_parse_generic_args` requires a `(`/`.` follow), so the
-  argument never forms. A mono IS reachable by its mangled name
-  (`zero(List_int)`). Lifting this means either a type-argument position in
-  the call grammar or widening the speculative-parse follow set.
 - **Forwarding threads through free-function specializations only.**
   `CheckStatus.comptime_type_bindings` is set on the re-check status built
   by `specialize_function`; a `type` argument forwarded from a
