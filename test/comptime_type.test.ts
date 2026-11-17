@@ -409,6 +409,71 @@ test("an instantiation arity mismatch errors at the call", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Default construction — T() over a struct whose fields lack defaults
+// ---------------------------------------------------------------------------
+
+test("T() zero-constructs a struct whose fields lack defaults", () => {
+	const lines = run_js(`
+		struct Pair {
+			var int a
+			var int b
+		}
+		func zero = (type T, out T) {
+			var T x = T()
+			return x
+		}
+		pub func main = () {
+			var p = zero(Pair)
+			Console.write_line("\\{p.a},\\{p.b}")
+		}
+	`);
+	expect(lines).toEqual(["0,0"]);
+});
+
+test("T() default construction recurses into nested structs", () => {
+	const lines = run_js(`
+		struct Inner {
+			var int a
+			var int b
+		}
+		struct Outer {
+			var Inner inner
+			var int n
+		}
+		func zero = (type T, out T) {
+			var T x = T()
+			return x
+		}
+		pub func main = () {
+			var o = zero(Outer)
+			Console.write_line("\\{o.n},\\{o.inner.a},\\{o.inner.b}")
+		}
+	`);
+	expect(lines).toEqual(["0,0,0"]);
+});
+
+test("T() zero-construction works inside a generic struct method", () => {
+	const lines = run_js(`
+		struct Pair {
+			var int a
+			var int b
+		}
+		struct Maker<T> {
+			var int n = 0
+			pub func make = (self, out T) {
+				return T()
+			}
+		}
+		pub func main = () {
+			var m = Maker<Pair>()
+			var p = m.make()
+			Console.write_line("\\{p.a},\\{p.b}")
+		}
+	`);
+	expect(lines).toEqual(["0,0"]);
+});
+
+// ---------------------------------------------------------------------------
 // Errors — loud, never silent
 // ---------------------------------------------------------------------------
 
@@ -538,6 +603,10 @@ test("the C backend builds the expanded program clean", () => {
 			var int count = 0
 			var string label = ""
 		}
+		struct Pair {
+			var int a
+			var int b
+		}
 		func zero = (type T, out T) {
 			var T x = T()
 			return x
@@ -566,10 +635,11 @@ test("the C backend builds the expanded program clean", () => {
 		}
 		pub func main = () {
 			var p = zero(Point)
+			var q = zero(Pair)
 			Console.write_line(describe(Sample))
 			Console.write_line(name_of(List<int>))
 			Console.write_line(Holder<int>(5).forward())
-			Console.write_line("\\{p.x}")
+			Console.write_line("\\{p.x},\\{q.a}")
 		}
 	`,
 		{ arch: "c", platform: "linux" },

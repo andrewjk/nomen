@@ -3345,8 +3345,9 @@ const p = zero(Point)
 
 Inside the body, `T` is usable wherever a type goes — declarations (`var x
 = T()`, or an initializer-less `var T x`), construction (`T()` — the
-struct constructor or the builtin's zero value; the type must be
-default-constructible), and return types. Because
+struct constructor, the builtin's zero value, or — when the struct's
+fields lack defaults — a zero-constructed value built field by field,
+recursively), and return types. Because
 `T` is a type, the whole reflection surface composes: `META.info(T)`,
 the comptime predicates, and `#for` all work against it, so one function
 serves every struct:

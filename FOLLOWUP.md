@@ -677,15 +677,6 @@ work but bench-neutral — the cost is elsewhere:
   pool-backed container decode path (the JsonTree approach) is the
   structural fix.
 
-## `type` parameter residuals (COMPTIME_PLAN_2 stage 4)
-
-- **`T()` needs a default-constructible binding.** `substitute_generic_constructs`
-  maps `T()` to the constructor call verbatim — a struct whose fields lack
-  defaults errors "Parameters missing" at the specialization (the same
-  behavior bare-`T` generics always had). A reflection-driven
-  default-construction (build the value field-by-field from META defaults)
-  would lift it.
-
 ## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
 
 - **A function mixing Nomen statements with raw arms for OTHER targets no

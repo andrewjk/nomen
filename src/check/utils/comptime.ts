@@ -8,7 +8,7 @@ import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import { is_ast_node } from "../../nodes/child_nodes.ts";
 import clone_node from "../../nodes/clone_node.ts";
-import type FunctionCallNode from "../../nodes/FunctionCallNode.ts";
+import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
 import type IndexNode from "../../nodes/IndexNode.ts";
@@ -750,34 +750,109 @@ function literal_string(node: BaseNode): string | undefined {
  * through. Unchecked bodies (a `#for` arm that deferred as a whole) are
  * covered too: any call whose name is a substituted type parameter can only
  * be the generic construct — types are not callable otherwise.
+ *
+ * With a `status`, a struct target whose constructor REQUIRES arguments
+ * (fields without defaults) gets reflection-driven default construction
+ * (COMPTIME_PLAN_2 stage 4 residual): the call synthesizes a zero value
+ * per required parameter, recursively — a scalar parameter becomes its
+ * zero literal, a nullable one `null`, a struct parameter a nested
+ * constructor call built the same way (`Pair(0, 0)`, `Outer(Inner(0))`).
+ * A shape the walk can't synthesize (variadic init, an enum/func/array
+ * parameter, a cycle) leaves the call untouched, so the constructor's own
+ * "Parameters missing" error surfaces — loud, never silently wrong.
  */
 export function substitute_generic_constructs(
 	statements: BaseNode[],
 	substitution: Map<string, string>,
+	status?: CheckStatus,
 ): void {
+	const scalar_zero: Record<string, string> = {
+		int: "0",
+		int8: "0",
+		int16: "0",
+		int32: "0",
+		int64: "0",
+		uint: "0",
+		uint8: "0",
+		uint16: "0",
+		uint32: "0",
+		uint64: "0",
+		float: "0.0",
+		float32: "0.0",
+		float64: "0.0",
+		bool: "false",
+		string: '""',
+	};
 	const zero_literal = (target: string, start: number): ValueNode | undefined => {
-		const scalar_zero: Record<string, string> = {
-			int: "0",
-			int8: "0",
-			int16: "0",
-			int32: "0",
-			int64: "0",
-			uint: "0",
-			uint8: "0",
-			uint16: "0",
-			uint32: "0",
-			uint64: "0",
-			float: "0.0",
-			float32: "0.0",
-			float64: "0.0",
-			bool: "false",
-			string: '""',
-		};
 		const text = scalar_zero[target];
 		if (text === undefined) return undefined;
 		const literal = new ValueNode(start, text);
 		literal.type = new Type(target, true);
 		return literal;
+	};
+
+	// The zero-value EXPRESSION for a required constructor parameter's type.
+	// `seen` is the per-path cycle guard: a value struct cannot contain
+	// itself (infinite size), but a synthesized recursion must never walk
+	// in circles — an impossible shape just fails the synthesis.
+	const zero_expr_for_type = (
+		t: Type | undefined,
+		start: number,
+		seen: Set<string>,
+	): BaseNode | undefined => {
+		if (!t?.name) return undefined;
+		const scalar = scalar_zero[t.name];
+		if (scalar !== undefined) {
+			const literal = new ValueNode(start, scalar);
+			literal.type = new Type(t.name, true);
+			return literal;
+		}
+		if (t.is_nullable) {
+			const literal = new ValueNode(start, "null");
+			literal.type = new Type("null", true);
+			return literal;
+		}
+		if (seen.has(t.name)) return undefined;
+		const struct = status!.structs.findLast((s) => s.name === t.name);
+		if (!struct || struct.is_generic) return undefined;
+		const init = struct.functions.find((f) => f.name === "#init");
+		if (!init || init.params.some((p) => p.is_variadic)) return undefined;
+		const required = init.params.filter(
+			(p) => !p.is_self_param && !p.default_value && !p.is_variadic,
+		);
+		const call = new FunctionCallNode(start, t.name);
+		if (required.length > 0) {
+			const inner_seen = new Set(seen);
+			inner_seen.add(t.name);
+			for (const param of required) {
+				const expr = zero_expr_for_type(param.type, start, inner_seen);
+				if (!expr) return undefined;
+				call.params.push(expr);
+			}
+		}
+		return call;
+	};
+
+	// Zero-value ARGUMENTS for a `T()` whose target's constructor requires
+	// them (`given` = arguments the call already carries). Returns [] when
+	// nothing is missing, undefined when the shape is out of scope.
+	const zero_args_for = (target: string, start: number, given: number): BaseNode[] | undefined => {
+		if (!status) return undefined;
+		const struct = status.structs.findLast((s) => s.name === target);
+		if (!struct || struct.is_generic) return undefined;
+		const init = struct.functions.find((f) => f.name === "#init");
+		if (!init || init.params.some((p) => p.is_variadic)) return undefined;
+		const required = init.params.filter(
+			(p) => !p.is_self_param && !p.default_value && !p.is_variadic,
+		);
+		if (given >= required.length) return [];
+		const args: BaseNode[] = [];
+		for (let i = given; i < required.length; i++) {
+			const expr = zero_expr_for_type(required[i].type, start, new Set([target]));
+			if (!expr) return undefined;
+			args.push(expr);
+		}
+		return args;
 	};
 
 	const visit = (node: BaseNode): BaseNode => {
@@ -803,6 +878,10 @@ export function substitute_generic_constructs(
 		const zero = zero_literal(target, node.start);
 		if (zero) return zero;
 		call.name = target;
+		// The bound struct's constructor needs arguments the call doesn't
+		// carry — synthesize the zero-value tail (default construction).
+		const zero_args = zero_args_for(target, node.start, call.params.length);
+		if (zero_args?.length) call.params.push(...zero_args);
 		return node;
 	};
 

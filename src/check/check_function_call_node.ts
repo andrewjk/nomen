@@ -745,7 +745,7 @@ export function monomorphize(
 		// body as unchecked-but-retyped AST. First rewrite the iterable's
 		// type-parameter references (T -> the bound name), then expand.
 		substitute_pragma_iterables(cloned.statements, substitution);
-		substitute_generic_constructs(cloned.statements, substitution);
+		substitute_generic_constructs(cloned.statements, substitution, status);
 		expand_pragma_fors_in_list(cloned.statements, status);
 		// Mono method clones are never re-checked, so `META.info(T).name`
 		// chains outside `#for` arms resolve here, through the substitution.
@@ -933,7 +933,7 @@ export function monomorphize(
 		// reference must be rewritten to the bound name first (the re-check
 		// runs with an empty type_params stack).
 		substitute_pragma_iterables(cloned.statements, substitution);
-		substitute_generic_constructs(cloned.statements, substitution);
+		substitute_generic_constructs(cloned.statements, substitution, status);
 		rename_local_labels(cloned, mono_name);
 		cloned.return_type = new Type(mono_name);
 		cloned.type_params = [];
@@ -3561,7 +3561,7 @@ function specialize_function(
 		substitute_pragma_iterables(cloned.statements, substitution);
 		// `T()` generic construction: rename to the bound constructor (or a
 		// scalar zero literal) before the re-check resolves calls.
-		substitute_generic_constructs(cloned.statements, substitution);
+		substitute_generic_constructs(cloned.statements, substitution, status);
 		// Same for `META.info(T).name` chains outside `#for` arms: rewrite
 		// T -> the bound name so the re-check (empty type_params stack)
 		// resolves them to literals.

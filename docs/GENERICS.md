@@ -241,7 +241,11 @@ comptime-only category R4 calls for. Concretely:
 - **Body composition**: everything downstream is the existing substitution
   machinery keyed by the parameter name — `substitute_body_types` rewrites
   `var T x` / `out T`, `substitute_generic_constructs` turns `T()` into the
-  constructor call or the builtin's zero literal, `substitute_pragma_iterables`
+  constructor call or the builtin's zero literal (a struct whose
+  constructor REQUIRES arguments — fields without defaults — gets a
+  zero-constructed call synthesized: each required parameter becomes its
+  zero literal, `null`, or a nested constructor call, recursively),
+  `substitute_pragma_iterables`
   - `rewrite_meta_name_chains` bind `META.info(T)` and the `#for` iterables,
     and the comptime predicates (`META.is_struct(T)`) fold so dead arms are
     dropped before the re-check.
