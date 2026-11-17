@@ -248,7 +248,14 @@ comptime-only category R4 calls for. Concretely:
 - **Forwarding**: the re-check status carries `comptime_type_bindings`
   (parameter name -> bound name, threaded through `clone_status`), so a call
   inside the clone can pass the parameter on to another generic's `type`
-  parameter (`inner(T)` inside `outer<T>` specialized over `int`).
+  parameter (`inner(T)` inside `outer<T>` specialized over `int`). A
+  monomorphized STRUCT body forwards its own type parameter the same way:
+  `inner(T)` inside a `Wrapper<T>` method defers at the declaration check
+  (the parameter is unbound there), and the mono clone chain resolves it —
+  the comptime argument rewrites through the substitution map and the
+  specialization runs on the spot (`resolve_deferred_type_param_calls`).
+  The re-checked custom `#init` and synthesized `copy` bodies receive the
+  same bindings, so they forward too.
 
 ## Generic traits
 
@@ -342,9 +349,6 @@ clone:
   (`Wrapper<List<int>>` binds `Wrapper_List_int`). Bare generic names
   (`zero(List)`) stay rejected with pointing guidance; enums, traits and
   bitsets are rejected as `type` arguments.
-- **Forwarding threads through free-function specializations only.** A
-  `type` argument forwarded from a monomorphized STRUCT body (whose clones
-  are stamped checked without a re-check) does not resolve.
 - **No monomorphization-level layout specialization.** Every `T` slot is
   8 bytes regardless of the concrete type. This is a deliberate consequence
   of the storage model (see [MEMORY.md](MEMORY.md)), not a bug, but it means

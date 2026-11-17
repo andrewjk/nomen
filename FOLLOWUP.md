@@ -679,12 +679,6 @@ work but bench-neutral — the cost is elsewhere:
 
 ## `type` parameter residuals (COMPTIME_PLAN_2 stage 4)
 
-- **Forwarding threads through free-function specializations only.**
-  `CheckStatus.comptime_type_bindings` is set on the re-check status built
-  by `specialize_function`; a `type` argument forwarded from a
-  monomorphized STRUCT body (clones stamped checked without a re-check —
-  custom `#init` re-checks, mono-method hooks) does not resolve. The
-  substitute_raw_in_node path would need the bindings threaded too.
 - **`T()` needs a default-constructible binding.** `substitute_generic_constructs`
   maps `T()` to the constructor call verbatim — a struct whose fields lack
   defaults errors "Parameters missing" at the specialization (the same

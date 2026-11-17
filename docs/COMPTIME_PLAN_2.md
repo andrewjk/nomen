@@ -356,8 +356,9 @@ Elevate it from "good long-term target" to the acceptance criterion.
    (JS runtime incl. forwarding + memoization, C build) and
    `test/spec/comptime_type_params.test.ts`; SPEC.md gained a "Type
    Parameters (`type T`)" section and README's Generics section an example.
-   Known gaps (recorded in GENERICS.md + FOLLOWUP.md): forwarding
-   threads through free-function specializations only.
+   Known gaps: none recorded — both stage-4 residuals (generic
+   instantiations as `type` arguments, forwarding through struct bodies)
+   are fixed; see GENERICS.md.
 5. **Unify `#arch`/`#platform` into `#if META`** (D2), once the raw-block
    shape and `aarch64_use_c` semantics are settled.
    **SHIPPED** — decisions: (D5-1) the C-vs-assembly dialect is a property

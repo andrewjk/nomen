@@ -750,6 +750,11 @@ export function monomorphize(
 		// Mono method clones are never re-checked, so `META.info(T).name`
 		// chains outside `#for` arms resolve here, through the substitution.
 		rewrite_meta_name_chains(cloned.statements, status, substitution);
+		// Deferred `type`-parameter forwarding calls (`inner(T)` inside a
+		// generic method body) resolve here for the same reason: the clone is
+		// never re-checked, so the comptime argument rewrites through the
+		// substitution and the specialization runs now.
+		resolve_deferred_type_param_calls(cloned.statements, substitution, status);
 		rename_local_labels(cloned, mono_name);
 		// Checker-hoisted call-argument temps (`const _param_N = <arg>` in
 		// func.allocations) are built as declarations ahead of the body — and
@@ -861,6 +866,19 @@ export function monomorphize(
 		return copy;
 	});
 
+	// Stage 4 composition (mirrors specialize_function): forward this
+	// mono's `type` bindings so a RE-CHECKED clone body can pass the
+	// struct's type parameter on to another generic's `type` parameter
+	// (`inner(T)` inside a custom #init or the synthesized copy). Only
+	// PARAMETER bindings forward — the substitution map's other entries are
+	// generic-STRUCT rewrites (`Buffer` -> `Buffer_int`), not type-argument
+	// spellings.
+	const mono_type_bindings = new Map<string, string>();
+	for (const tp of generic_struct.type_params) {
+		const bound = substitution.get(tp);
+		if (bound) mono_type_bindings.set(tp, bound);
+	}
+
 	const custom_inits = generic_struct.functions.filter((f) => f.name === "#init" && f.has_body);
 	// A variadic-tuple #init (`...[TK, TV] pairs`) whose tuple contains a
 	// CLASS/TRAIT element cannot be cloned for a reference-typed
@@ -968,6 +986,7 @@ export function monomorphize(
 			arch: status.arch,
 			library_boundary: status.library_boundary,
 			is_mono_body_recheck: true,
+			comptime_type_bindings: mono_type_bindings,
 		};
 		check_function_node(cloned, root_status);
 		cloned_inits.push(cloned);
@@ -1045,6 +1064,7 @@ export function monomorphize(
 			library_boundary: status.library_boundary,
 			arch: status.arch,
 			is_mono_body_recheck: true,
+			comptime_type_bindings: mono_type_bindings,
 		};
 		check_function_node(mono_copy, copy_status);
 	}
@@ -1230,6 +1250,10 @@ export function synthesize_generic_trait_defaults(struct: StructNode, status: Ch
 			// The builder keys field access off `status.current_struct`, not
 			// `func.scope`, so the synthesized override resolves `self.field`
 			// against the struct regardless.
+			// A deferred `type`-parameter forwarding call resolves here too:
+			// the clone is stamped checked without a re-check, so the trait
+			// parameter's comptime argument rewrites through the substitution.
+			resolve_deferred_type_param_calls(cloned.statements, substitution, status);
 			cloned.checked = true;
 			struct.functions.push(cloned);
 		}
@@ -1684,6 +1708,111 @@ function rederive_access_func_annotations(nodes: BaseNode[], status: CheckStatus
  */
 function resolve_free_func_calls(nodes: BaseNode[], status: CheckStatus) {
 	for (const node of nodes) resolve_free_calls_in_node(node, status);
+}
+
+/**
+ * Resolve deferred `type`-parameter forwarding calls in a monomorphized
+ * clone (COMPTIME_PLAN_2 stage 4 residual). A call to a generic function
+ * whose `type` argument is the STRUCT's type parameter (`inner(T)` inside
+ * `Wrapper<T>.m`) defers at the declaration check — the parameter is
+ * unbound there, so `specialize_function`'s R3 deferral leaves the call
+ * unresolved in the generic body. Method clones are stamped checked
+ * without a re-check, so the clone chain resolves the call HERE: rewrite
+ * the comptime argument through the substitution map (`T` -> the bound
+ * name, including inside a generic-instantiation spelling
+ * `List<T>` -> `List<int>`), then specialize — creating or reusing the
+ * concrete clone, which is checked against its OWN parameters, so no
+ * caller scope is needed — and stamp the call node the way
+ * `check_function_call` would: the specialized name, the substituted
+ * return type, and the resolved callee. Runtime arguments keep the shape
+ * the generic body's check gave them; the retype passes around this call
+ * site make them concrete.
+ */
+function resolve_deferred_type_param_calls(
+	statements: BaseNode[],
+	substitution: Map<string, string>,
+	status: CheckStatus,
+): void {
+	const substitute_param_in_type = (t: Type): void => {
+		const bound = substitution.get(t.name);
+		if (bound !== undefined) t.name = bound;
+		if (t.type_args?.length) for (const a of t.type_args) substitute_param_in_type(a);
+	};
+	const visit = (node: BaseNode | undefined | null): void => {
+		if (!node) return;
+		const any_node = node as any;
+		if (
+			node.node_type === "func_call" &&
+			!(any_node as import("../nodes/FunctionCallNode.ts").default).resolved_function
+		) {
+			const call = node as import("../nodes/FunctionCallNode.ts").default;
+			const func = find_free_function(status, call.name);
+			if (func?.is_generic && func.params.some((p) => p.is_comptime_type)) {
+				let rewrote = false;
+				for (const a of call.params) {
+					if (a.node_type !== "value") continue;
+					const value_node = a as import("../nodes/ValueNode.ts").default;
+					const bound = substitution.get(value_node.value);
+					if (bound !== undefined) {
+						value_node.value = bound;
+						rewrote = true;
+					}
+					// A generic-instantiation spelling over the parameter
+					// (`inner(List<T>)`) — the args rewrite through the same map
+					// so the comptime branch materializes the right mono.
+					if (value_node.type_args?.length) {
+						for (const t of value_node.type_args) substitute_param_in_type(t);
+						rewrote = true;
+					}
+				}
+				if (rewrote) {
+					const specialized = specialize_function(func, call, status);
+					if (specialized) {
+						call.name = specialized.name;
+						call.type = specialized.return_type;
+						set_resolved_function(call, specialized);
+					}
+				}
+			}
+		}
+		if (any_node.statements && Array.isArray(any_node.statements)) {
+			for (const child of any_node.statements) {
+				if (child && typeof child === "object" && "node_type" in child) {
+					visit(child);
+				}
+			}
+		}
+		if (any_node.params && Array.isArray(any_node.params)) {
+			for (const child of any_node.params) {
+				if (child && typeof child === "object" && "node_type" in child) {
+					visit(child);
+				}
+			}
+		}
+		if (any_node.value?.node_type) visit(any_node.value);
+		if (any_node.left_value?.node_type) visit(any_node.left_value);
+		if (any_node.right_value?.node_type) visit(any_node.right_value);
+		if (any_node.target?.node_type) visit(any_node.target);
+		if (any_node.index?.node_type) visit(any_node.index);
+		if (any_node.access?.node_type) visit(any_node.access);
+		if (any_node.condition?.node_type) visit(any_node.condition);
+		if (any_node.if_branch?.statements) {
+			for (const child of any_node.if_branch.statements) visit(child);
+		}
+		if (any_node.else_branch?.statements) {
+			for (const child of any_node.else_branch.statements) visit(child);
+		}
+		if (any_node.cases && Array.isArray(any_node.cases)) {
+			for (const c of any_node.cases) {
+				if (c?.branch?.statements) {
+					for (const child of c.branch.statements) visit(child);
+				}
+				if (c?.match_value?.node_type) visit(c.match_value);
+				if (c?.condition?.node_type) visit(c.condition);
+			}
+		}
+	};
+	for (const stmt of statements) visit(stmt);
 }
 
 function resolve_free_calls_in_node(node: BaseNode | undefined | null, status: CheckStatus) {
@@ -3216,6 +3345,13 @@ function specialize_function(
 					return null;
 				}
 				type_name = mono.name;
+			} else if (!forwarded && status.type_params.includes(type_name)) {
+				// R3 deferral: inside a generic body the parameter is unbound —
+				// the specialization happens when the enclosing generic's clone
+				// is materialized (monomorphize's resolution pass, or the
+				// re-checked #init's comptime_type_bindings). The call stays
+				// unresolved in the generic body, which is never emitted.
+				return null;
 			}
 			const declared = resolve_declared_struct(type_name, status) as StructNode | undefined;
 			if (!declared && !get_built_in_type(type_name)) {

@@ -206,6 +206,66 @@ test("forwarding: a type param passes through two generic levels", () => {
 	expect(lines).toEqual(["int <- int"]);
 });
 
+test("forwarding: a generic struct method passes its own parameter", () => {
+	const lines = run_js(`
+		func forwarder = (type T, out string) {
+			return META.info(T).name
+		}
+		struct Holder<T> {
+			var T value
+			pub func forward = (self, out string) {
+				return forwarder(T)
+			}
+		}
+		pub func main = () {
+			var h = Holder<int>(5)
+			Console.write_line(h.forward())
+		}
+	`);
+	expect(lines).toEqual(["int"]);
+});
+
+test("forwarding: through a custom #init of a generic struct", () => {
+	const lines = run_js(`
+		func label_of = (type T, out string) {
+			return "has:" + META.info(T).name
+		}
+		struct Wrap<T> {
+			var T item
+			pub func #init = (self, T item) {
+				self.item = item
+			}
+			pub func describe = (self, out string) {
+				return label_of(T)
+			}
+		}
+		pub func main = () {
+			var w = Wrap<int>(7)
+			Console.write_line(w.describe())
+		}
+	`);
+	expect(lines).toEqual(["has:int"]);
+});
+
+test("forwarding: an instantiation spelling rides the struct parameter", () => {
+	const lines = run_js(`
+		func size_of = (type T, out string) {
+			return META.info(T).name
+		}
+		struct Box<T> {
+			var T item
+			pub func probe = (self, out string) {
+				return size_of(List<T>)
+			}
+		}
+		pub func main = () {
+			var b = Box<int>(1)
+			Console.write_line(b.probe())
+		}
+	`);
+	expect(lines).toEqual(["List_int"]);
+});
+
 test("a type-param function specializes over a concrete struct with containers", () => {
 	const lines = run_js(`
 		mv struct Holder {
@@ -485,6 +545,12 @@ test("the C backend builds the expanded program clean", () => {
 		func name_of = (type T, out string) {
 			return META.info(T).name
 		}
+		struct Holder<T> {
+			var T value
+			pub func forward = (self, out string) {
+				return name_of(T)
+			}
+		}
 		func describe = (type T, out string) {
 			var s = META.info(T).name + "("
 			var first = true
@@ -502,6 +568,7 @@ test("the C backend builds the expanded program clean", () => {
 			var p = zero(Point)
 			Console.write_line(describe(Sample))
 			Console.write_line(name_of(List<int>))
+			Console.write_line(Holder<int>(5).forward())
 			Console.write_line("\\{p.x}")
 		}
 	`,
