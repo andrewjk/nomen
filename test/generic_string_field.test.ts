@@ -35,7 +35,7 @@ Console.write_line(bs.value)
 `;
 
 async function run_arch(arch: "c" | "aarch64", name: string) {
-	const parsed = parse_with_imports(INPUT);
+	const parsed = parse_with_imports(INPUT, { arch });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch, audit: false });
 	await check_output(name, result, "a!\n", { arch, audit: false });

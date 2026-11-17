@@ -280,9 +280,11 @@ class Users: Greetable<User> { ... }
   the body is rewritten. (Non-generic traits keep the shared default-body
   emission.)
 
-## Raw `#arch` blocks
+## Raw code blocks
 
-A generic struct's `#arch: c` / `#arch: aarch64` block is textually
+A generic struct's raw code blocks select their target through `#if`
+(stage 5: the `#raw { ... }` block is wrapped like any statement, e.g. an
+aarch64-asm arm under `#if META.arch == "aarch64"`), and are textually
 substituted at monomorphization (`substitute_raw_in_node`). Type-parameter
 identifiers are rewritten to valid C / asm spellings:
 

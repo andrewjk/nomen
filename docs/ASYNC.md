@@ -7,7 +7,7 @@ closure machinery the spawn seam is built on, see [CLOSURE.md](CLOSURE.md).
 ## Implementation status
 
 Shipped on both the C and aarch64 backends (Mutex, Task, Channel all have
-`#arch: aarch64` raw-asm blocks; the `#spawn` construction and `async` build
+aarch64 raw-asm arms (selected by the `#if META.arch` fold); the `#spawn` construction and `async` build
 phases emit aarch64 assembly + C companion, and the launch methods are
 library code with raw bodies). End-to-end usable for concurrency on both
 targets.

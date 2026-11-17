@@ -43,7 +43,7 @@ mv struct Cat: Speaker {
 `;
 
 function build_code(input: string, arch: "c" | "aarch64"): string {
-	const parsed = parse_raw(input);
+	const parsed = parse_raw(input, { arch });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch });
 	expect(result.errors ?? []).toEqual([]);

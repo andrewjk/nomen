@@ -17,7 +17,9 @@ function build_direct(
 	input: string,
 	options: Parameters<typeof build>[1] = {},
 ): ReturnType<typeof build> {
-	const parsed = parse_raw(input);
+	// Check with the target the build will use (stage 5: raw arms fold at
+	// check time).
+	const parsed = parse_raw(input, { arch: options.arch as string | undefined });
 	expect(parsed.errors).toEqual([]);
 	return build(parsed.root, { audit: true, ...options });
 }
@@ -69,7 +71,7 @@ pub func main = (Init init) {
 `;
 	const system_names = load_system_struct_names();
 	for (const arch of ["aarch64", "c"] as const) {
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch });
 		expect(parsed.errors).toEqual([]);
 		// Same split policy as build_and_check_output: user TU against the
 		// prebuilt system object when the cached build is fresh for this
@@ -101,7 +103,7 @@ pub func main = (Init init) {
 	}
 }
 `;
-	const parsed = parse_raw(input);
+	const parsed = parse_raw(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	// Simulate the desugar residue: an if node stripped of its condition.
 	const find_if = (n: any): any => {
@@ -129,7 +131,7 @@ pub func main = (Init init) {
 	Console.write("\\{x}")
 }
 `;
-	const parsed = parse_raw(input);
+	const parsed = parse_raw(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const main = parsed.root.statements.find((s: any) => s.node_type === "func" && s.name === "main");
 	expect(main).toBeDefined();

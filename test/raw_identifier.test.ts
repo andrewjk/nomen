@@ -3,7 +3,7 @@ import { describe, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 
 // `raw` was a reserved word, so it could not be an identifier. It is now a
-// CONTEXTUAL keyword: a fenced ``` #arch ``` block (whose body token shares
+// CONTEXTUAL keyword: a `#raw { ... }` block (whose body token shares
 // the `raw` token's start offset) still parses as a raw block, and is still
 // rejected in user code; every other `raw` is an ordinary name.
 

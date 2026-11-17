@@ -47,7 +47,7 @@ pub func main = () {
 	Console.write("\\{echo("hi")}")
 }
 `;
-	const parsed = parse(input, system, undefined, { allow_internal: true });
+	const parsed = parse(input, system, undefined, { arch: "aarch64", allow_internal: true });
 	expect(parsed.errors).toEqual([]);
 	// The gather runs inside build (per-block pre-pass); build mutates but
 	// the AST stamps survive on the nodes.
@@ -125,7 +125,7 @@ pub func main = () {
 	Console.write("\\{pick(names)}")
 }
 `;
-	const parsed = parse(input, system, undefined, { allow_internal: true });
+	const parsed = parse(input, system, undefined, { arch: "aarch64", allow_internal: true });
 	expect(parsed.errors).toEqual([]);
 	build(parsed.root, { arch: "aarch64" });
 

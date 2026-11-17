@@ -1,3 +1,4 @@
+import { is_raw_directive_at, scan_raw_body_end } from "./raw_block.ts";
 import type Token from "./types/Token.ts";
 
 export const COMPOUND_SYMBOLS = [
@@ -68,6 +69,85 @@ export default function tokenize(input: string, preserve_source = false): Token[
 				}
 			} else {
 				let value = input[status.i];
+				// `#raw` — a raw code block (C / assembly spliced verbatim).
+				// The tokenizer isolates the whole construct: `#`, `raw`, an
+				// optional `("dialect", "scope")` argument list tokenized
+				// normally, the opening `{`, a `raw` marker + the BODY as one
+				// token, and the closing `}`. The parser (parse_raw) consumes
+				// them. The body scan is brace-aware (strings/comments are
+				// stepped over — see src/raw_block.ts).
+				if (value === "#" && is_raw_directive_at(input, status.i)) {
+					const directive_start = status.i;
+					status.tokens.push({ value: "#", i: directive_start });
+					status.tokens.push({ value: "raw", i: directive_start + 1 });
+					let k = directive_start + 4;
+					const skip_space = () => {
+						while (k < input.length && is_whitespace_char(input, k)) k++;
+					};
+					skip_space();
+					if (input[k] === "(") {
+						status.tokens.push({ value: "(", i: k });
+						k++;
+						while (k < input.length && input[k] !== ")") {
+							if (is_whitespace_char(input, k)) {
+								k++;
+								continue;
+							}
+							if (input[k] === '"') {
+								// A plain literal (`"c"`, `"file"`): no interpolation
+								// can appear in a #raw argument.
+								const quote_start = k;
+								k++;
+								while (k < input.length && input[k] !== '"') {
+									if (input[k] === "\\") k++;
+									k++;
+								}
+								if (k < input.length) k++;
+								status.tokens.push({ value: input.substring(quote_start, k), i: quote_start });
+								continue;
+							}
+							if (input[k] === ",") {
+								status.tokens.push({ value: ",", i: k });
+								k++;
+								continue;
+							}
+							if (is_word_char(input, k)) {
+								const word_start = k;
+								while (k < input.length && is_word_char(input, k)) k++;
+								status.tokens.push({ value: input.substring(word_start, k), i: word_start });
+								continue;
+							}
+							// Unknown argument character: let the parser report it
+							// via a token it can see rather than looping here.
+							status.tokens.push({ value: input[k], i: k });
+							k++;
+						}
+						if (k < input.length) {
+							status.tokens.push({ value: ")", i: k });
+							k++;
+						}
+					}
+					skip_space();
+					if (input[k] === "{") {
+						status.tokens.push({ value: "{", i: k });
+						const body_start = k + 1;
+						const close = scan_raw_body_end(input, body_start);
+						const body = input.substring(body_start, close);
+						// The marker shares the body's offset, mirroring the
+						// historic fence marker the parser keys on.
+						status.tokens.push({ value: "raw", i: body_start });
+						status.tokens.push({ value: body, i: body_start });
+						if (close < input.length) status.tokens.push({ value: "}", i: close });
+						status.i = close;
+						status.start = status.i + 1;
+						continue;
+					}
+					// No `{`: leave the opener tokens in place; parse_raw
+					// reports the missing brace.
+					status.i = k - 1;
+					status.start = status.i + 1;
+					continue;
+				}
 				// The symbol's own offset. `status.start` still names the last
 				// WORD's start here, so pushing with it stamped every
 				// word-adjacent symbol with the wrong position (a `)` right
@@ -234,7 +314,10 @@ export default function tokenize(input: string, preserve_source = false): Token[
 					status.i = end - 1;
 					continue;
 				} else if (value === "`" && input.substring(status.i, status.i + 3) === "```") {
-					// It's raw C code -- process until the next ```
+					// LEGACY fence (retired): ``` bodies became `#raw { … }`.
+					// The scan is kept so the stream stays in sync and the
+					// parser can point at the replacement; the marker value is
+					// distinct so nothing treats it as a real raw block.
 					for (let j = status.i + 1; j < input.length; j++) {
 						if (input[j] === "`" && input.substring(j, j + 3) === "```") {
 							value = input.substring(status.i + 3, j);
@@ -242,8 +325,7 @@ export default function tokenize(input: string, preserve_source = false): Token[
 							break;
 						}
 					}
-					// Pop a "raw" token before the value so we can find it when parsing
-					status.tokens.push({ value: "raw", i: symbol_start });
+					status.tokens.push({ value: "raw_legacy", i: symbol_start });
 				}
 				status.tokens.push({ value, i: symbol_start });
 			}

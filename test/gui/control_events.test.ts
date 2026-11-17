@@ -50,37 +50,37 @@ mv struct FocusApp : App {
 	// begins editing the field (its field editor becomes first responder —
 	// the focus snapshot maps the editor back to the control).
 	pub func focus_a_now = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		((id(*)(id, SEL, id))objc_msgSend)(
-			(id)win->handle, sel_registerName("makeFirstResponder:"),
-			(id)self->field_a.handle);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		((id(*)(id, SEL, id))objc_msgSend)(
-			(id)win->handle, sel_registerName("makeFirstResponder:"),
-			(id)self->field_a.handle);
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((id(*)(id, SEL, id))objc_msgSend)(
+					(id)win->handle, sel_registerName("makeFirstResponder:"),
+					(id)self->field_a.handle);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((id(*)(id, SEL, id))objc_msgSend)(
+					(id)win->handle, sel_registerName("makeFirstResponder:"),
+					(id)self->field_a.handle);
+			}
+		}
 	}
 
 	pub func focus_b_now = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		((id(*)(id, SEL, id))objc_msgSend)(
-			(id)win->handle, sel_registerName("makeFirstResponder:"),
-			(id)self->field_b.handle);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		((id(*)(id, SEL, id))objc_msgSend)(
-			(id)win->handle, sel_registerName("makeFirstResponder:"),
-			(id)self->field_b.handle);
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((id(*)(id, SEL, id))objc_msgSend)(
+					(id)win->handle, sel_registerName("makeFirstResponder:"),
+					(id)self->field_b.handle);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((id(*)(id, SEL, id))objc_msgSend)(
+					(id)win->handle, sel_registerName("makeFirstResponder:"),
+					(id)self->field_b.handle);
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

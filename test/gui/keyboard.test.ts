@@ -63,36 +63,36 @@ mv struct KeyboardApp : App {
 	// posted into NSApp's queue: the NEXT frame's pump stamps the record,
 	// and that frame's drains run the arms.
 	pub func poke_key = (ref self, ref Window win {}, bool down) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		CGEventRef cge = CGEventCreateKeyboardEvent(NULL, 49, down); // 49 = Space
-		id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
-			(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
-		CFRelease(cge);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		CGEventRef cge = CGEventCreateKeyboardEvent(NULL, 49, down); // 49 = Space
-		id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
-			(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
-		CFRelease(cge);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				CGEventRef cge = CGEventCreateKeyboardEvent(NULL, 49, down); // 49 = Space
+				id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
+					(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
+				CFRelease(cge);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				CGEventRef cge = CGEventCreateKeyboardEvent(NULL, 49, down); // 49 = Space
+				id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
+					(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
+				CFRelease(cge);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

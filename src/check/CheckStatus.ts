@@ -313,6 +313,25 @@ export default interface CheckStatus {
 	comptime_type_bindings?: Map<string, string>;
 
 	/**
+	 * Compile target this check runs for (`#if META.arch` folding and the
+	 * raw-block dialect defaults key off it — stage 5, docs/
+	 * COMPTIME_PLAN_2.md). Defaults to the C backend's target, matching
+	 * check()'s fold consts. Callers that build for another target MUST
+	 * check with the same one.
+	 */
+	arch?: string;
+
+	/**
+	 * COMPTIME_PLAN_2 stage 5: how many raw statements were folded away
+	 * from this function's body because their `#if` arm did not hold for
+	 * the target (stamped by fold_pragma_ifs). The stage-5 replacement for
+	 * the tag-era coverage error: a raw-only implementation whose every arm
+	 * folded away has an empty body on this target — callers would `bl`
+	 * into nothing — rejected in check_function_node.
+	 */
+	folded_away_raws?: number;
+
+	/**
 	 * True while re-checking a MONOMORPHIZED generic body (the clone pass in
 	 * check_function_call_node, where substituted concrete types replace the
 	 * type params and `type_params` is empty). Memory-model gates that rely

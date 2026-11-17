@@ -27,7 +27,7 @@ import { fold_asm_constants } from "./fold_asm_constants.ts";
 
 // A line that *starts* with a label — including label+data forms the
 // emitters produce (`_str_1: .asciz "..."`, `VT_Trait: .quad fn`) and the
-// numeric local labels raw `#arch: aarch64` blocks use (`1:`). These are
+// numeric local labels aarch64 raw blocks use (`1:`). These are
 // join points and data, never instructions, so dead-code scans must stop
 // at them.
 const LABEL_PREFIX_RE = /^(?:[A-Za-z_.$][\w.$]*|\d+):/;

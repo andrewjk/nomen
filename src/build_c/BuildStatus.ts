@@ -142,7 +142,7 @@ export default interface BuildStatus {
 	 */
 	module_init_statements?: BaseNode[];
 	/**
-	 * Functions whose bodies are compiled as C (via `aarch64_use_c`).
+	 * Functions whose bodies are compiled as C (via companion-C `#c` blocks).
 	 * Each entry records the function node, mv struct (if any), and the
 	 * concatenated raw C code — used to generate the companion file.
 	 * `bridge_c_abi` relocates the C body under a `_c` label so the aarch64
@@ -279,7 +279,7 @@ export default interface BuildStatus {
 	function_param_regs?: Map<string, string>;
 	function_param_vars?: Set<string>;
 	/**
-	 * aarch64 only. The current function's raw `#arch: aarch64` param-reload
+	 * aarch64 only. The current function's aarch64 raw param-reload
 	 * plan (see build_aarch64/utils/raw_reload.ts): a raw asm block spliced
 	 * anywhere other than the body's entry point must reload its parameters'
 	 * entry ABI registers from the prologue homes before its first

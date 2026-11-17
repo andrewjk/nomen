@@ -32,7 +32,7 @@ async function expect_deadlock_abort(
 	arch: "c" | "aarch64",
 	stderr_fragments: string[],
 ): Promise<void> {
-	const parsed = parse_raw(input);
+	const parsed = parse_raw(input, { arch });
 	expect(parsed.errors).toEqual([]);
 	const options = { arch, audit: false };
 	const result = build(parsed.root, options);
@@ -149,7 +149,7 @@ pub func main = () {
 }
 `;
 		for (const arch of ARCHITECTURES) {
-			const parsed = parse_raw(input);
+			const parsed = parse_raw(input, { arch });
 			expect(parsed.errors).toEqual([]);
 			const options = { arch, audit: true };
 			const result = build(parsed.root, options);

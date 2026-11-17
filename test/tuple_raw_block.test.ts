@@ -17,14 +17,14 @@ describe("tuple-returning raw-block free function", () => {
 import System
 
 func dims = (int a, int b, out [int, int]) {
-	\`\`\`
-	#arch: c, aarch64_use_c
-	#platform: macos
-	struct _Tuple_int_int r;
-	r._0 = a * 2;
-	r._1 = b * 3;
-	return r;
-	\`\`\`
+	#if META.platform == "macos" {
+		#raw("c") {
+			struct _Tuple_int_int r;
+			r._0 = a * 2;
+			r._1 = b * 3;
+			return r;
+		}
+	}
 }
 
 pub func main = () {
@@ -40,14 +40,14 @@ pub func main = () {
 import System
 
 func dims = (int a, out [int, int]) {
-	\`\`\`
-	#arch: c, aarch64_use_c
-	#platform: macos
-	struct _Tuple_int_int r;
-	r._0 = a + 1;
-	r._1 = a + 2;
-	return r;
-	\`\`\`
+	#if META.platform == "macos" {
+		#raw("c") {
+			struct _Tuple_int_int r;
+			r._0 = a + 1;
+			r._1 = a + 2;
+			return r;
+		}
+	}
 }
 
 pub func main = () {

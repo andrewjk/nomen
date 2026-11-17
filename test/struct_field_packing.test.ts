@@ -42,7 +42,7 @@ function build_c(source: string): string {
 }
 
 function build_aarch64(source: string): string {
-	const parsed = parse_program(source);
+	const parsed = parse_program(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: false });
 	expect(result.errors ?? []).toEqual([]);

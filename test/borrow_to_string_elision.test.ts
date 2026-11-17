@@ -14,7 +14,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 /** Parse + check a FULL program (import System, main, …) and build it for one
  *  arch, returning the emitted code. */
 function build_code(input: string, arch: "aarch64" | "c"): string {
-	const parsed = parse(input, system, undefined, { allow_user_raw: true });
+	const parsed = parse(input, system, undefined, { allow_user_raw: true, arch });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch, audit: false });
 	expect(result.errors ?? []).toEqual([]);
@@ -24,23 +24,28 @@ function build_code(input: string, arch: "aarch64" | "c"): string {
 /** Compile + run a full program on BOTH backends and pin its stdout. Mirrors
  *  bench helpers: link the precompiled system object when available. */
 async function run_program(input: string, name: string, expected: string) {
-	const parsed = parse(input, system, undefined, { allow_user_raw: true });
-	expect(parsed.errors).toEqual([]);
+	// Per-target parses: the `#if META.arch` fold selects raw arms at check
+	// time (stage 5), so each backend's build needs its own checked tree.
+	const parsed_a64 = parse(input, system, undefined, { allow_user_raw: true, arch: "aarch64" });
+	expect(parsed_a64.errors).toEqual([]);
+	const parsed_c = parse(input, system, undefined, { allow_user_raw: true, arch: "c" });
+	expect(parsed_c.errors).toEqual([]);
 	// A STALE system object (library edit the prebuild worker never rebuilt)
 	// is treated like a MISSING one: single TU — pairing a stale system.o
 	// with a fresh user TU is the struct-layout-crash hazard.
 	const split_available = (arch: "aarch64" | "c") =>
-		!build_needs_objc(parsed.root, default_platform()) && system_lib_fresh(arch, true);
+		!build_needs_objc(parsed_a64.root, default_platform()) && system_lib_fresh(arch, true);
 	for (const arch of ["aarch64", "c"] as const) {
 		const options = { arch, audit: true };
+		const root = arch === "aarch64" ? parsed_a64.root : parsed_c.root;
 		const split = split_available(arch);
 		const result = split
-			? build(parsed.root, {
+			? build(root, {
 					...options,
 					emit_mode: "user",
 					system_struct_names: load_system_struct_names(),
 				})
-			: build(parsed.root, options);
+			: build(root, options);
 		await check_output(name, result, expected, {
 			...options,
 			system_lib: split,
@@ -72,15 +77,17 @@ func consume = (string s, out int) {
 // Writes through the param's pointer — opaque to the AST scan on BOTH
 // backends (C indexes the char*, asm stores through x0).
 func raw_touch = (string p) {
-	\`\`\`
-	#arch: c
-	p.ptr[0] = 'J';
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	mov w2, #74
-	strb w2, [x0]
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			p.ptr[0] = 'J';
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			mov w2, #74
+			strb w2, [x0]
+		}
+	}
 }
 
 pub func main = () {
@@ -106,15 +113,17 @@ import System
 func raw_touch = (string p) {
 	switch {
 		case true {
-			\`\`\`
-			#arch: c
-			p.ptr[0] = 'J';
-			\`\`\`
-			\`\`\`
-			#arch: aarch64
-			mov w2, #74
-			strb w2, [x0]
-			\`\`\`
+			#if META.arch == "c" {
+				#raw {
+					p.ptr[0] = 'J';
+				}
+			}
+			#if META.arch == "aarch64" {
+				#raw {
+					mov w2, #74
+					strb w2, [x0]
+				}
+			}
 		}
 	}
 }
@@ -146,15 +155,17 @@ func forward = (string p, out int) {
 }
 
 func raw_touch = (string p) {
-	\`\`\`
-	#arch: c
-	p.ptr[0] = 'Z';
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	mov w2, #90
-	strb w2, [x0]
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			p.ptr[0] = 'Z';
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			mov w2, #90
+			strb w2, [x0]
+		}
+	}
 }
 
 func forward_touch = (string p) {
@@ -259,15 +270,17 @@ test("raw-mutating callee keeps its owned copy (gate pin, both backends)", () =>
 import System
 
 func raw_touch = (string p) {
-	\`\`\`
-	#arch: c
-	p.ptr[0] = 'J';
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	mov w2, #74
-	strb w2, [x0]
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			p.ptr[0] = 'J';
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			mov w2, #74
+			strb w2, [x0]
+		}
+	}
 }
 
 pub func main = () {
@@ -287,15 +300,17 @@ test("transitive raw mutator keeps its owned copy (gate pin, both backends)", ()
 import System
 
 func raw_touch = (string p) {
-	\`\`\`
-	#arch: c
-	p.ptr[0] = 'J';
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	mov w2, #74
-	strb w2, [x0]
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			p.ptr[0] = 'J';
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			mov w2, #74
+			strb w2, [x0]
+		}
+	}
 }
 
 func forward_touch = (string p) {
@@ -355,32 +370,36 @@ test("raw-body consumer: printf-style passes the scan, indexing-style does not",
 import System
 
 func raw_print = (string p) {
-	\`\`\`
-	#arch: c
-	printf("%s", p);
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	mov x2, x0
-	adr x0, .Lfmt_raw_print_test
-	mov x1, x2
-	bl _printf
-	b .Lend_raw_print_test
-	.Lfmt_raw_print_test: .asciz "%s"
-	.p2align 2
-	.Lend_raw_print_test:
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			printf("%s", p);
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			mov x2, x0
+			adr x0, .Lfmt_raw_print_test
+			mov x1, x2
+			bl _printf
+			b .Lend_raw_print_test
+			.Lfmt_raw_print_test: .asciz "%s"
+			.p2align 2
+			.Lend_raw_print_test:
+		}
+	}
 }
 
 func raw_peek = (string p, out int) {
-	\`\`\`
-	#arch: c
-	return p.ptr[0];
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	ldrb w0, [x0]
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			return p.ptr[0];
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			ldrb w0, [x0]
+		}
+	}
 }
 
 pub func main = () {
@@ -391,11 +410,14 @@ pub func main = () {
 }
 `;
 	// raw_print is provably non-mutating (no stores; printf reads only) —
-	// its argument elides. raw_peek indexes the param in its C body — the
-	// conservative textual rule rejects the elision and the copy stays.
-	// Count: the declaration + raw_peek's copy + the D3 `string_copy` helper.
+	// its argument elides. On aarch64, raw_peek's surviving arm (`ldrb`)
+	// is read-only too, so its argument elides as well (stage 5: the C
+	// body — whose pointer indexing forced the conservative copy — folded
+	// away; the tag-era count was 3). On the C target the indexing body is
+	// live and the copy stays.
+	// Count: the declaration + the D3 `string_copy` helper (aarch64).
 	const a64 = build_code(input, "aarch64");
-	expect(count(a64, "bl string_to_string")).toBe(3);
+	expect(count(a64, "bl string_to_string")).toBe(2);
 	const c = build_code(input, "c");
 	expect(count(c, "string_to_string(s)")).toBe(1);
 });

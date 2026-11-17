@@ -72,7 +72,7 @@ Console.write_line("\\{s.length}")
 
 for (const shape of SHAPES) {
 	test(`churn shape: ${shape.name}`, { timeout: 120_000 }, async () => {
-		const parsed = parse_with_imports(shape.source);
+		const parsed = parse_with_imports(shape.source, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output(

@@ -597,7 +597,7 @@ mv struct Box {
 var Box? a = null
 Console.write("ok")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).not.toContain("adr x0, null");

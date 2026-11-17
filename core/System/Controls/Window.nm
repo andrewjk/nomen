@@ -12,176 +12,176 @@ pub mv struct Window: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, string title, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		// Set up NSApplication first
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		((void(*)(id, SEL, long))objc_msgSend)(app, sel_registerName("setActivationPolicy:"), 0);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(app, sel_registerName("activateIgnoringOtherApps:"), 1);
-		// Install AppKit's default Apple Event handlers (Dock Quit and the
-		// rest): without finishLaunching there is no handler for the quit
-		// event, so Dock Quit is silently ignored (-1708). Once per process.
-		static BOOL nomen_finished_launching = 0;
-		if (!nomen_finished_launching) {
-			((void(*)(id, SEL))objc_msgSend)(app, sel_registerName("finishLaunching"));
-			nomen_finished_launching = 1;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				// Set up NSApplication first
+				id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				((void(*)(id, SEL, long))objc_msgSend)(app, sel_registerName("setActivationPolicy:"), 0);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(app, sel_registerName("activateIgnoringOtherApps:"), 1);
+				// Install AppKit's default Apple Event handlers (Dock Quit and the
+				// rest): without finishLaunching there is no handler for the quit
+				// event, so Dock Quit is silently ignored (-1708). Once per process.
+				static BOOL nomen_finished_launching = 0;
+				if (!nomen_finished_launching) {
+					((void(*)(id, SEL))objc_msgSend)(app, sel_registerName("finishLaunching"));
+					nomen_finished_launching = 1;
+				}
+				// Create window
+				unsigned long style = 1 | 2 | 4 | 8;
+				id win = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
+					sel_registerName("initWithContentRect:styleMask:backing:defer:"),
+					0.0, 0.0, (double)width, (double)height,
+					style, 2, 0);
+				((id(*)(id, SEL, id))objc_msgSend)(
+					win, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+				((void(*)(id, SEL, double, double))objc_msgSend)(
+					win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
+				((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+				// Survive close: on macOS the app outlives its last window and a
+				// Dock click reopens it, so a closed window's handle must stay
+				// valid (the default releases the NSWindow on close).
+				((void(*)(id, SEL, BOOL))objc_msgSend)(win, sel_registerName("setReleasedWhenClosed:"), 0);
+				// The content view must resize with the window and autoresize its
+				// subviews so each control's autoresizingMask takes effect during a
+				// live resize (AppKit's blocking drag loop bypasses our event loop).
+				id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
+				self.handle = (uint64_t)win;
+			}
 		}
-		// Create window
-		unsigned long style = 1 | 2 | 4 | 8;
-		id win = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
-			sel_registerName("initWithContentRect:styleMask:backing:defer:"),
-			0.0, 0.0, (double)width, (double)height,
-			style, 2, 0);
-		((id(*)(id, SEL, id))objc_msgSend)(
-			win, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		((void(*)(id, SEL, double, double))objc_msgSend)(
-			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
-		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
-		// Survive close: on macOS the app outlives its last window and a
-		// Dock click reopens it, so a closed window's handle must stay
-		// valid (the default releases the NSWindow on close).
-		((void(*)(id, SEL, BOOL))objc_msgSend)(win, sel_registerName("setReleasedWhenClosed:"), 0);
-		// The content view must resize with the window and autoresize its
-		// subviews so each control's autoresizingMask takes effect during a
-		// live resize (AppKit's blocking drag loop bypasses our event loop).
-		id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
-		self.handle = (uint64_t)win;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		// Set up NSApplication first
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		((void(*)(id, SEL, long))objc_msgSend)(app, sel_registerName("setActivationPolicy:"), 0);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(app, sel_registerName("activateIgnoringOtherApps:"), 1);
-		// Install AppKit's default Apple Event handlers (Dock Quit and the
-		// rest): without finishLaunching there is no handler for the quit
-		// event, so Dock Quit is silently ignored (-1708). Once per process.
-		static BOOL nomen_finished_launching = 0;
-		if (!nomen_finished_launching) {
-			((void(*)(id, SEL))objc_msgSend)(app, sel_registerName("finishLaunching"));
-			nomen_finished_launching = 1;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				// Set up NSApplication first
+				id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				((void(*)(id, SEL, long))objc_msgSend)(app, sel_registerName("setActivationPolicy:"), 0);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(app, sel_registerName("activateIgnoringOtherApps:"), 1);
+				// Install AppKit's default Apple Event handlers (Dock Quit and the
+				// rest): without finishLaunching there is no handler for the quit
+				// event, so Dock Quit is silently ignored (-1708). Once per process.
+				static BOOL nomen_finished_launching = 0;
+				if (!nomen_finished_launching) {
+					((void(*)(id, SEL))objc_msgSend)(app, sel_registerName("finishLaunching"));
+					nomen_finished_launching = 1;
+				}
+				((void(*)(id, SEL))objc_msgSend)(app, sel_registerName("finishLaunching"));
+				// Create window
+				unsigned long style = 1 | 2 | 4 | 8;
+				id win = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
+					sel_registerName("initWithContentRect:styleMask:backing:defer:"),
+					0.0, 0.0, (double)width, (double)height,
+					style, 2, 0);
+				((id(*)(id, SEL, id))objc_msgSend)(
+					win, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+				((void(*)(id, SEL, double, double))objc_msgSend)(
+					win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
+				((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
+				// Survive close: on macOS the app outlives its last window and a
+				// Dock click reopens it, so a closed window's handle must stay
+				// valid (the default releases the NSWindow on close).
+				((void(*)(id, SEL, BOOL))objc_msgSend)(win, sel_registerName("setReleasedWhenClosed:"), 0);
+				// The content view must resize with the window and autoresize its
+				// subviews so each control's autoresizingMask takes effect during a
+				// live resize (AppKit's blocking drag loop bypasses our event loop).
+				id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
+				self->handle = (uint64_t)win;
+			}
 		}
-		((void(*)(id, SEL))objc_msgSend)(app, sel_registerName("finishLaunching"));
-		// Create window
-		unsigned long style = 1 | 2 | 4 | 8;
-		id win = ((id(*)(id, SEL, double, double, double, double, unsigned long, unsigned long, BOOL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSWindow"), sel_registerName("alloc")),
-			sel_registerName("initWithContentRect:styleMask:backing:defer:"),
-			0.0, 0.0, (double)width, (double)height,
-			style, 2, 0);
-		((id(*)(id, SEL, id))objc_msgSend)(
-			win, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		((void(*)(id, SEL, double, double))objc_msgSend)(
-			win, sel_registerName("setFrameTopLeftPoint:"), 100.0, 100.0);
-		((void(*)(id, SEL, id))objc_msgSend)(win, sel_registerName("makeKeyAndOrderFront:"), (id)0);
-		// Survive close: on macOS the app outlives its last window and a
-		// Dock click reopens it, so a closed window's handle must stay
-		// valid (the default releases the NSWindow on close).
-		((void(*)(id, SEL, BOOL))objc_msgSend)(win, sel_registerName("setReleasedWhenClosed:"), 0);
-		// The content view must resize with the window and autoresize its
-		// subviews so each control's autoresizingMask takes effect during a
-		// live resize (AppKit's blocking drag loop bypasses our event loop).
-		id cv = ((id(*)(id, SEL))objc_msgSend)(win, sel_registerName("contentView"));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(cv, sel_registerName("setAutoresizingMask:"), 18UL);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(cv, sel_registerName("setAutoresizesSubviews:"), 1);
-		self->handle = (uint64_t)win;
-		```
-		```
-		#arch: c
-		#platform: ios
-		id win = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
-		((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
-		self.handle = (uint64_t)win;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id win = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
-		((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
-		self->handle = (uint64_t)win;
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id win = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+				((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
+				self.handle = (uint64_t)win;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id win = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(objc_getClass("UIWindow"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+				((void(*)(id, SEL))objc_msgSend)(win, sel_registerName("makeKeyAndVisible"));
+				self->handle = (uint64_t)win;
+			}
+		}
 	}
 
 	pub func show = (self) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndOrderFront:"), 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("makeKeyAndVisible"));
+			}
+		}
 	}
 
 	pub func set_title = (self, string title) {
-		```
-		#arch: c
-		#platform: macos
-		((id(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((id(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((id(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((id(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
 	}
 
 	pub func run = () {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		UIApplicationMain(0, 0, 0, 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		UIApplicationMain(0, 0, 0, 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication")), sel_registerName("run"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				UIApplicationMain(0, 0, 0, 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				UIApplicationMain(0, 0, 0, 0);
+			}
+		}
 	}
 
 	// Process pending events without blocking. Returns 1 if a left-mouse-down
@@ -193,401 +193,399 @@ pub mv struct Window: Control {
 	// Container.take_right_click reads it). Also runs the run
 	// loop briefly to process Apple Events (e.g. dock Quit).
 	pub func process_events = (out int) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		// The most recent mouse-down (NSLeftMouseDown = 1 or NSRightMouseDown = 3)
-		// among the events the latest process_events call pumped, in the event
-		// window's content coordinates (top-left origin). Written by the pump;
-		// read by click_x/click_y. click_x/click_y deliberately do NOT read the
-		// live currentEvent: any event after the click in the same batch (a
-		// mouse-move, drag, or key) would make the coordinates stale or missing,
-		// so hit-tests would intermittently miss.
-		static int nomen_last_click_x = -1;
-		static int nomen_last_click_y = -1;
-		// The same record's button kind (0 none / 1 left / 2 right), stamped
-		// by every pump — a quiet pump stamps 0, so the edge expires with
-		// the frame. External linkage (NOT static, unlike the coordinates):
-		// Container's take_right_click drain externs it from another TU —
-		// the focus snapshot's sharing pattern (nomen_window_focus_poll).
-		int nomen_last_click_kind = 0;
-		// The full mouse-down record for THIS pump (the exhaustive input
-		// surface — every button, not just left/right): 1-based button
-		// number (0 = no mouse-down this frame), AppKit clickCount, and the
-		// device-independent modifier flags (Command = 0x100000, Option =
-		// 0x80000, Control = 0x40000, Shift = 0x20000). Zeroed by every
-		// pump, so the edge expires with the frame. External linkage:
-		// Container.take_mouse_down externs the button from another TU.
-		int nomen_last_click_button = 0;
-		int nomen_last_click_count = 0;
-		int nomen_last_click_modifiers = 0;
-		// Scroll-wheel deltas accumulated across this pump's events
-		// (trackpads emit many small events per frame; momentum counts).
-		// Zeroed by every pump. External linkage: Scrollable.take_scroll
-		// externs them from another TU.
-		double nomen_scroll_dx_acc = 0.0;
-		double nomen_scroll_dy_acc = 0.0;
-		// The keyboard record for THIS pump: the hardware keycode of the
-		// last key-down (NSEventTypeKeyDown = 10) and key-up (type 11),
-		// -1 = none this frame; the modifiers at key-down; and whether the
-		// key-down was an auto-repeat (a held key). Zeroed by every pump.
-		// External linkage: Container.take_key_down / take_key_up extern
-		// them from another TU. Text entry does NOT flow here (the field
-		// editor feeds TextBox.on_input) — this record is for shortcuts and
-		// raw key handling.
-		int nomen_last_key_code = -1;
-		int nomen_last_key_modifiers = 0;
-		int nomen_last_key_repeat = 0;
-		int nomen_last_key_up_code = -1;
-		// The pointer-MOVE record for THIS pump (NSEventTypeMouseMoved = 5,
-		// plus the dragged variants 6/7/26 while a button is held): the last
-		// seen position, -1 = no move this frame. Zeroed by every pump.
-		// External linkage: Container.take_mouse_move externs it. Requires
-		// setAcceptsMouseMovedEvents (armed by every pump below) — without
-		// it AppKit delivers no move events at all.
-		int nomen_last_mouse_move_x = -1;
-		int nomen_last_mouse_move_y = -1;
-		// Frame time: the pump's wall-clock interval, persisted across
-		// pumps (NOT zeroed — the first frame reports 0). Read by win.dt().
-		double nomen_last_pump_time = 0.0;
-		double nomen_last_dt_ms = 0.0;
-		// The window-resize record for THIS frame, stamped by Window.run's
-		// resize detection (not by the pump). External linkage:
-		// Container.take_resize externs the edge from another TU; the size
-		// getters (resize_width/resize_height) are Window methods reading
-		// these directly.
-		int nomen_last_resized = 0;
-		int nomen_last_resize_w = 0;
-		int nomen_last_resize_h = 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		// The most recent mouse-down (NSLeftMouseDown = 1 or NSRightMouseDown = 3)
-		// among the events the latest process_events call pumped, in the event
-		// window's content coordinates (top-left origin). Written by the pump;
-		// read by click_x/click_y. click_x/click_y deliberately do NOT read the
-		// live currentEvent: any event after the click in the same batch (a
-		// mouse-move, drag, or key) would make the coordinates stale or missing,
-		// so hit-tests would intermittently miss.
-		static int nomen_last_click_x = -1;
-		static int nomen_last_click_y = -1;
-		// The same record's button kind (0 none / 1 left / 2 right), stamped
-		// by every pump — a quiet pump stamps 0, so the edge expires with
-		// the frame. External linkage (NOT static, unlike the coordinates):
-		// Container's take_right_click drain externs it from another TU —
-		// the focus snapshot's sharing pattern (nomen_window_focus_poll).
-		int nomen_last_click_kind = 0;
-		// The full mouse-down record for THIS pump (the exhaustive input
-		// surface — every button, not just left/right): 1-based button
-		// number (0 = no mouse-down this frame), AppKit clickCount, and the
-		// device-independent modifier flags (Command = 0x100000, Option =
-		// 0x80000, Control = 0x40000, Shift = 0x20000). Zeroed by every
-		// pump, so the edge expires with the frame. External linkage:
-		// Container.take_mouse_down externs the button from another TU.
-		int nomen_last_click_button = 0;
-		int nomen_last_click_count = 0;
-		int nomen_last_click_modifiers = 0;
-		// Scroll-wheel deltas accumulated across this pump's events
-		// (trackpads emit many small events per frame; momentum counts).
-		// Zeroed by every pump. External linkage: Scrollable.take_scroll
-		// externs them from another TU.
-		double nomen_scroll_dx_acc = 0.0;
-		double nomen_scroll_dy_acc = 0.0;
-		// The keyboard record for THIS pump: the hardware keycode of the
-		// last key-down (NSEventTypeKeyDown = 10) and key-up (type 11),
-		// -1 = none this frame; the modifiers at key-down; and whether the
-		// key-down was an auto-repeat (a held key). Zeroed by every pump.
-		// External linkage: Container.take_key_down / take_key_up extern
-		// them from another TU. Text entry does NOT flow here (the field
-		// editor feeds TextBox.on_input) — this record is for shortcuts and
-		// raw key handling.
-		int nomen_last_key_code = -1;
-		int nomen_last_key_modifiers = 0;
-		int nomen_last_key_repeat = 0;
-		int nomen_last_key_up_code = -1;
-		// The pointer-MOVE record for THIS pump (NSEventTypeMouseMoved = 5,
-		// plus the dragged variants 6/7/26 while a button is held): the last
-		// seen position, -1 = no move this frame. Zeroed by every pump.
-		// External linkage: Container.take_mouse_move externs it. Requires
-		// setAcceptsMouseMovedEvents (armed by every pump below) — without
-		// it AppKit delivers no move events at all.
-		int nomen_last_mouse_move_x = -1;
-		int nomen_last_mouse_move_y = -1;
-		// Frame time: the pump's wall-clock interval, persisted across
-		// pumps (NOT zeroed — the first frame reports 0). Read by win.dt().
-		double nomen_last_pump_time = 0.0;
-		double nomen_last_dt_ms = 0.0;
-		// The window-resize record for THIS frame, stamped by Window.run's
-		// resize detection (not by the pump). External linkage:
-		// Container.take_resize externs the edge from another TU; the size
-		// getters (resize_width/resize_height) are Window methods reading
-		// these directly.
-		int nomen_last_resized = 0;
-		int nomen_last_resize_w = 0;
-		int nomen_last_resize_h = 0;
-		```
-		```
-		#arch: c
-		#platform: macos
-		// A manual event loop has no autorelease pool of its own: AppKit
-		// autoreleases objects on every pump (events, strings, cell caches)
-		// and without a pool they accumulate for the process lifetime — the
-		// loop leaked tens of MB per second and a busy window eventually
-		// died. One pool per pump; the returned had_click is a plain int.
-		id pool = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc")),
-			sel_registerName("init"));
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
-		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
-			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
-		int had_click = 0;
-		// This pump's mouse record: zeroed first, so a quiet pump expires
-		// the previous frame's edge — the getters and drains read these,
-		// and 0 means "no mouse-down / no scroll this frame".
-		nomen_last_click_button = 0;
-		nomen_last_click_count = 0;
-		nomen_last_click_modifiers = 0;
-		nomen_scroll_dx_acc = 0.0;
-		nomen_scroll_dy_acc = 0.0;
-		nomen_last_key_code = -1;
-		nomen_last_key_modifiers = 0;
-		nomen_last_key_repeat = 0;
-		nomen_last_key_up_code = -1;
-		nomen_last_mouse_move_x = -1;
-		nomen_last_mouse_move_y = -1;
-		while (1) {
-			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
-				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
-				0xFFFFFFFFFFFFFFFFULL, // NSEventMaskAny
-				distant_past,          // untilDate — returns immediately if no events
-				default_mode,          // inMode
-				1);                    // dequeue
-			if (!event) break;
-			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
-			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-			// A mouse-down (left = 1, right = 3, other/middle/extra = 25):
-			// record where it landed and which button. locationInWindow is
-			// in the event's own window's coordinates (bottom-left origin);
-			// flip y against that window's content height to match the
-			// layout's top-left origin. buttonNumber is 0-based (0 left, 1
-			// right, 2 middle, 3+ extras) — stored 1-based to match
-			// FrameEvents.click's 1 = left / 2 = right contract. clickCount
-			// gives double/triple clicks; modifierFlags are masked to the
-			// device-independent bits.
-			if (type == 1 || type == 3 || type == 25) {
-				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
-				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
-				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-				nomen_last_click_x = (int)loc.x;
-				nomen_last_click_y = (int)(frame.size.height - loc.y);
-				nomen_last_click_button = (int)(((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("buttonNumber"))) + 1;
-				nomen_last_click_count = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("clickCount"));
-				nomen_last_click_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				// The most recent mouse-down (NSLeftMouseDown = 1 or NSRightMouseDown = 3)
+				// among the events the latest process_events call pumped, in the event
+				// window's content coordinates (top-left origin). Written by the pump;
+				// read by click_x/click_y. click_x/click_y deliberately do NOT read the
+				// live currentEvent: any event after the click in the same batch (a
+				// mouse-move, drag, or key) would make the coordinates stale or missing,
+				// so hit-tests would intermittently miss.
+				static int nomen_last_click_x = -1;
+				static int nomen_last_click_y = -1;
+				// The same record's button kind (0 none / 1 left / 2 right), stamped
+				// by every pump — a quiet pump stamps 0, so the edge expires with
+				// the frame. External linkage (NOT static, unlike the coordinates):
+				// Container's take_right_click drain externs it from another TU —
+				// the focus snapshot's sharing pattern (nomen_window_focus_poll).
+				int nomen_last_click_kind = 0;
+				// The full mouse-down record for THIS pump (the exhaustive input
+				// surface — every button, not just left/right): 1-based button
+				// number (0 = no mouse-down this frame), AppKit clickCount, and the
+				// device-independent modifier flags (Command = 0x100000, Option =
+				// 0x80000, Control = 0x40000, Shift = 0x20000). Zeroed by every
+				// pump, so the edge expires with the frame. External linkage:
+				// Container.take_mouse_down externs the button from another TU.
+				int nomen_last_click_button = 0;
+				int nomen_last_click_count = 0;
+				int nomen_last_click_modifiers = 0;
+				// Scroll-wheel deltas accumulated across this pump's events
+				// (trackpads emit many small events per frame; momentum counts).
+				// Zeroed by every pump. External linkage: Scrollable.take_scroll
+				// externs them from another TU.
+				double nomen_scroll_dx_acc = 0.0;
+				double nomen_scroll_dy_acc = 0.0;
+				// The keyboard record for THIS pump: the hardware keycode of the
+				// last key-down (NSEventTypeKeyDown = 10) and key-up (type 11),
+				// -1 = none this frame; the modifiers at key-down; and whether the
+				// key-down was an auto-repeat (a held key). Zeroed by every pump.
+				// External linkage: Container.take_key_down / take_key_up extern
+				// them from another TU. Text entry does NOT flow here (the field
+				// editor feeds TextBox.on_input) — this record is for shortcuts and
+				// raw key handling.
+				int nomen_last_key_code = -1;
+				int nomen_last_key_modifiers = 0;
+				int nomen_last_key_repeat = 0;
+				int nomen_last_key_up_code = -1;
+				// The pointer-MOVE record for THIS pump (NSEventTypeMouseMoved = 5,
+				// plus the dragged variants 6/7/26 while a button is held): the last
+				// seen position, -1 = no move this frame. Zeroed by every pump.
+				// External linkage: Container.take_mouse_move externs it. Requires
+				// setAcceptsMouseMovedEvents (armed by every pump below) — without
+				// it AppKit delivers no move events at all.
+				int nomen_last_mouse_move_x = -1;
+				int nomen_last_mouse_move_y = -1;
+				// Frame time: the pump's wall-clock interval, persisted across
+				// pumps (NOT zeroed — the first frame reports 0). Read by win.dt().
+				double nomen_last_pump_time = 0.0;
+				double nomen_last_dt_ms = 0.0;
+				// The window-resize record for THIS frame, stamped by Window.run's
+				// resize detection (not by the pump). External linkage:
+				// Container.take_resize externs the edge from another TU; the size
+				// getters (resize_width/resize_height) are Window methods reading
+				// these directly.
+				int nomen_last_resized = 0;
+				int nomen_last_resize_w = 0;
+				int nomen_last_resize_h = 0;
 			}
-			// A scroll-wheel event (NSEventTypeScrollWheel = 22): accumulate
-			// the deltas for this frame. AppKit deltaY is positive scrolling
-			// up/away from the user; deltaX is positive scrolling right.
-			if (type == 22) {
-				nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
-				nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
-			}
-			// A key-down (NSEventTypeKeyDown = 10): record the hardware
-			// keycode (Space = 49, Return = 36, Delete = 51, Esc = 53,
-			// arrows = 123–126, letters a…z = 0–25), the modifiers, and
-			// whether this is an auto-repeat (a held key — filter it for
-			// first-press-only shortcuts).
-			if (type == 10) {
-				nomen_last_key_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
-				nomen_last_key_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
-				nomen_last_key_repeat = ((BOOL(*)(id, SEL))objc_msgSend)(event, sel_registerName("isARepeat")) ? 1 : 0;
-			}
-			// A key-up (NSEventTypeKeyUp = 11): press-and-hold handling.
-			if (type == 11) {
-				nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
-			}
-			// A pointer move (NSMouseMoved = 5; the dragged variants 6/7/26
-			// while a button is held): record where the pointer is now.
-			if (type == 5 || type == 6 || type == 7 || type == 26) {
-				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
-				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
-				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-				nomen_last_mouse_move_x = (int)loc.x;
-				nomen_last_mouse_move_y = (int)(frame.size.height - loc.y);
-			}
-			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
-			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
 		}
-		// Process run loop sources (Apple Events, timers) so that dock Quit
-		// and other system interactions work without NSApplication.run().
-		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
-		// Frame time: the interval since the previous pump (0 on the first).
-		double now = CFAbsoluteTimeGetCurrent();
-		if (nomen_last_pump_time != 0.0) {
-			nomen_last_dt_ms = (now - nomen_last_pump_time) * 1000.0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				// The most recent mouse-down (NSLeftMouseDown = 1 or NSRightMouseDown = 3)
+				// among the events the latest process_events call pumped, in the event
+				// window's content coordinates (top-left origin). Written by the pump;
+				// read by click_x/click_y. click_x/click_y deliberately do NOT read the
+				// live currentEvent: any event after the click in the same batch (a
+				// mouse-move, drag, or key) would make the coordinates stale or missing,
+				// so hit-tests would intermittently miss.
+				static int nomen_last_click_x = -1;
+				static int nomen_last_click_y = -1;
+				// The same record's button kind (0 none / 1 left / 2 right), stamped
+				// by every pump — a quiet pump stamps 0, so the edge expires with
+				// the frame. External linkage (NOT static, unlike the coordinates):
+				// Container's take_right_click drain externs it from another TU —
+				// the focus snapshot's sharing pattern (nomen_window_focus_poll).
+				int nomen_last_click_kind = 0;
+				// The full mouse-down record for THIS pump (the exhaustive input
+				// surface — every button, not just left/right): 1-based button
+				// number (0 = no mouse-down this frame), AppKit clickCount, and the
+				// device-independent modifier flags (Command = 0x100000, Option =
+				// 0x80000, Control = 0x40000, Shift = 0x20000). Zeroed by every
+				// pump, so the edge expires with the frame. External linkage:
+				// Container.take_mouse_down externs the button from another TU.
+				int nomen_last_click_button = 0;
+				int nomen_last_click_count = 0;
+				int nomen_last_click_modifiers = 0;
+				// Scroll-wheel deltas accumulated across this pump's events
+				// (trackpads emit many small events per frame; momentum counts).
+				// Zeroed by every pump. External linkage: Scrollable.take_scroll
+				// externs them from another TU.
+				double nomen_scroll_dx_acc = 0.0;
+				double nomen_scroll_dy_acc = 0.0;
+				// The keyboard record for THIS pump: the hardware keycode of the
+				// last key-down (NSEventTypeKeyDown = 10) and key-up (type 11),
+				// -1 = none this frame; the modifiers at key-down; and whether the
+				// key-down was an auto-repeat (a held key). Zeroed by every pump.
+				// External linkage: Container.take_key_down / take_key_up extern
+				// them from another TU. Text entry does NOT flow here (the field
+				// editor feeds TextBox.on_input) — this record is for shortcuts and
+				// raw key handling.
+				int nomen_last_key_code = -1;
+				int nomen_last_key_modifiers = 0;
+				int nomen_last_key_repeat = 0;
+				int nomen_last_key_up_code = -1;
+				// The pointer-MOVE record for THIS pump (NSEventTypeMouseMoved = 5,
+				// plus the dragged variants 6/7/26 while a button is held): the last
+				// seen position, -1 = no move this frame. Zeroed by every pump.
+				// External linkage: Container.take_mouse_move externs it. Requires
+				// setAcceptsMouseMovedEvents (armed by every pump below) — without
+				// it AppKit delivers no move events at all.
+				int nomen_last_mouse_move_x = -1;
+				int nomen_last_mouse_move_y = -1;
+				// Frame time: the pump's wall-clock interval, persisted across
+				// pumps (NOT zeroed — the first frame reports 0). Read by win.dt().
+				double nomen_last_pump_time = 0.0;
+				double nomen_last_dt_ms = 0.0;
+				// The window-resize record for THIS frame, stamped by Window.run's
+				// resize detection (not by the pump). External linkage:
+				// Container.take_resize externs the edge from another TU; the size
+				// getters (resize_width/resize_height) are Window methods reading
+				// these directly.
+				int nomen_last_resized = 0;
+				int nomen_last_resize_w = 0;
+				int nomen_last_resize_h = 0;
+			}
 		}
-		nomen_last_pump_time = now;
-		int result = had_click;
-		// Stamp the kind for the drains (Container.take_right_click reads
-		// it in the handle_events pass that follows this pump).
-		nomen_last_click_kind = had_click;
-		((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
-		return result;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		// A manual event loop has no autorelease pool of its own: AppKit
-		// autoreleases objects on every pump (events, strings, cell caches)
-		// and without a pool they accumulate for the process lifetime — the
-		// loop leaked tens of MB per second and a busy window eventually
-		// died. One pool per pump; the returned had_click is a plain int.
-		id pool = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc")),
-			sel_registerName("init"));
-		id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
-		id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
-			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
-		int had_click = 0;
-		// This pump's mouse record: zeroed first, so a quiet pump expires
-		// the previous frame's edge — the getters and drains read these,
-		// and 0 means "no mouse-down / no scroll this frame".
-		nomen_last_click_button = 0;
-		nomen_last_click_count = 0;
-		nomen_last_click_modifiers = 0;
-		nomen_scroll_dx_acc = 0.0;
-		nomen_scroll_dy_acc = 0.0;
-		nomen_last_key_code = -1;
-		nomen_last_key_modifiers = 0;
-		nomen_last_key_repeat = 0;
-		nomen_last_key_up_code = -1;
-		nomen_last_mouse_move_x = -1;
-		nomen_last_mouse_move_y = -1;
-		while (1) {
-			id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
-				app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
-				0xFFFFFFFFFFFFFFFFULL, // NSEventMaskAny
-				distant_past,          // untilDate — returns immediately if no events
-				default_mode,          // inMode
-				1);                    // dequeue
-			if (!event) break;
-			((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
-			long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
-			// A mouse-down (left = 1, right = 3, other/middle/extra = 25):
-			// record where it landed and which button. locationInWindow is
-			// in the event's own window's coordinates (bottom-left origin);
-			// flip y against that window's content height to match the
-			// layout's top-left origin. buttonNumber is 0-based (0 left, 1
-			// right, 2 middle, 3+ extras) — stored 1-based to match
-			// FrameEvents.click's 1 = left / 2 = right contract. clickCount
-			// gives double/triple clicks; modifierFlags are masked to the
-			// device-independent bits.
-			if (type == 1 || type == 3 || type == 25) {
-				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
-				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
-				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-				nomen_last_click_x = (int)loc.x;
-				nomen_last_click_y = (int)(frame.size.height - loc.y);
-				nomen_last_click_button = (int)(((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("buttonNumber"))) + 1;
-				nomen_last_click_count = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("clickCount"));
-				nomen_last_click_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				// A manual event loop has no autorelease pool of its own: AppKit
+				// autoreleases objects on every pump (events, strings, cell caches)
+				// and without a pool they accumulate for the process lifetime — the
+				// loop leaked tens of MB per second and a busy window eventually
+				// died. One pool per pump; the returned had_click is a plain int.
+				id pool = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc")),
+					sel_registerName("init"));
+				id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
+				id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
+					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
+				int had_click = 0;
+				// This pump's mouse record: zeroed first, so a quiet pump expires
+				// the previous frame's edge — the getters and drains read these,
+				// and 0 means "no mouse-down / no scroll this frame".
+				nomen_last_click_button = 0;
+				nomen_last_click_count = 0;
+				nomen_last_click_modifiers = 0;
+				nomen_scroll_dx_acc = 0.0;
+				nomen_scroll_dy_acc = 0.0;
+				nomen_last_key_code = -1;
+				nomen_last_key_modifiers = 0;
+				nomen_last_key_repeat = 0;
+				nomen_last_key_up_code = -1;
+				nomen_last_mouse_move_x = -1;
+				nomen_last_mouse_move_y = -1;
+				while (1) {
+					id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
+						app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
+						0xFFFFFFFFFFFFFFFFULL, // NSEventMaskAny
+						distant_past,          // untilDate — returns immediately if no events
+						default_mode,          // inMode
+						1);                    // dequeue
+					if (!event) break;
+					((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
+					long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+					// A mouse-down (left = 1, right = 3, other/middle/extra = 25):
+					// record where it landed and which button. locationInWindow is
+					// in the event's own window's coordinates (bottom-left origin);
+					// flip y against that window's content height to match the
+					// layout's top-left origin. buttonNumber is 0-based (0 left, 1
+					// right, 2 middle, 3+ extras) — stored 1-based to match
+					// FrameEvents.click's 1 = left / 2 = right contract. clickCount
+					// gives double/triple clicks; modifierFlags are masked to the
+					// device-independent bits.
+					if (type == 1 || type == 3 || type == 25) {
+						id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+						id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+						CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+						CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+						nomen_last_click_x = (int)loc.x;
+						nomen_last_click_y = (int)(frame.size.height - loc.y);
+						nomen_last_click_button = (int)(((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("buttonNumber"))) + 1;
+						nomen_last_click_count = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("clickCount"));
+						nomen_last_click_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+					}
+					// A scroll-wheel event (NSEventTypeScrollWheel = 22): accumulate
+					// the deltas for this frame. AppKit deltaY is positive scrolling
+					// up/away from the user; deltaX is positive scrolling right.
+					if (type == 22) {
+						nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
+						nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
+					}
+					// A key-down (NSEventTypeKeyDown = 10): record the hardware
+					// keycode (Space = 49, Return = 36, Delete = 51, Esc = 53,
+					// arrows = 123–126, letters a…z = 0–25), the modifiers, and
+					// whether this is an auto-repeat (a held key — filter it for
+					// first-press-only shortcuts).
+					if (type == 10) {
+						nomen_last_key_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
+						nomen_last_key_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+						nomen_last_key_repeat = ((BOOL(*)(id, SEL))objc_msgSend)(event, sel_registerName("isARepeat")) ? 1 : 0;
+					}
+					// A key-up (NSEventTypeKeyUp = 11): press-and-hold handling.
+					if (type == 11) {
+						nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
+					}
+					// A pointer move (NSMouseMoved = 5; the dragged variants 6/7/26
+					// while a button is held): record where the pointer is now.
+					if (type == 5 || type == 6 || type == 7 || type == 26) {
+						id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+						id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+						CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+						CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+						nomen_last_mouse_move_x = (int)loc.x;
+						nomen_last_mouse_move_y = (int)(frame.size.height - loc.y);
+					}
+					if (type == 1) had_click = 1; // NSLeftMouseDown = 1
+					if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
+				}
+				// Process run loop sources (Apple Events, timers) so that dock Quit
+				// and other system interactions work without NSApplication.run().
+				CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
+				// Frame time: the interval since the previous pump (0 on the first).
+				double now = CFAbsoluteTimeGetCurrent();
+				if (nomen_last_pump_time != 0.0) {
+					nomen_last_dt_ms = (now - nomen_last_pump_time) * 1000.0;
+				}
+				nomen_last_pump_time = now;
+				int result = had_click;
+				// Stamp the kind for the drains (Container.take_right_click reads
+				// it in the handle_events pass that follows this pump).
+				nomen_last_click_kind = had_click;
+				((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
+				return result;
 			}
-			// A scroll-wheel event (NSEventTypeScrollWheel = 22): accumulate
-			// the deltas for this frame. AppKit deltaY is positive scrolling
-			// up/away from the user; deltaX is positive scrolling right.
-			if (type == 22) {
-				nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
-				nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
-			}
-			// A key-down (NSEventTypeKeyDown = 10): record the hardware
-			// keycode (Space = 49, Return = 36, Delete = 51, Esc = 53,
-			// arrows = 123–126, letters a…z = 0–25), the modifiers, and
-			// whether this is an auto-repeat (a held key — filter it for
-			// first-press-only shortcuts).
-			if (type == 10) {
-				nomen_last_key_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
-				nomen_last_key_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
-				nomen_last_key_repeat = ((BOOL(*)(id, SEL))objc_msgSend)(event, sel_registerName("isARepeat")) ? 1 : 0;
-			}
-			// A key-up (NSEventTypeKeyUp = 11): press-and-hold handling.
-			if (type == 11) {
-				nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
-			}
-			// A pointer move (NSMouseMoved = 5; the dragged variants 6/7/26
-			// while a button is held): record where the pointer is now.
-			if (type == 5 || type == 6 || type == 7 || type == 26) {
-				id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
-				id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
-				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-				CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
-				nomen_last_mouse_move_x = (int)loc.x;
-				nomen_last_mouse_move_y = (int)(frame.size.height - loc.y);
-			}
-			if (type == 1) had_click = 1; // NSLeftMouseDown = 1
-			if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
 		}
-		// Process run loop sources (Apple Events, timers) so that dock Quit
-		// and other system interactions work without NSApplication.run().
-		CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
-		// Frame time: the interval since the previous pump (0 on the first).
-		double now = CFAbsoluteTimeGetCurrent();
-		if (nomen_last_pump_time != 0.0) {
-			nomen_last_dt_ms = (now - nomen_last_pump_time) * 1000.0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				// A manual event loop has no autorelease pool of its own: AppKit
+				// autoreleases objects on every pump (events, strings, cell caches)
+				// and without a pool they accumulate for the process lifetime — the
+				// loop leaked tens of MB per second and a busy window eventually
+				// died. One pool per pump; the returned had_click is a plain int.
+				id pool = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc")),
+					sel_registerName("init"));
+				id app = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				id distant_past = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSDate"), sel_registerName("distantPast"));
+				id default_mode = ((id(*)(id, SEL, const char*))objc_msgSend)(
+					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "kCFRunLoopDefaultMode");
+				int had_click = 0;
+				// This pump's mouse record: zeroed first, so a quiet pump expires
+				// the previous frame's edge — the getters and drains read these,
+				// and 0 means "no mouse-down / no scroll this frame".
+				nomen_last_click_button = 0;
+				nomen_last_click_count = 0;
+				nomen_last_click_modifiers = 0;
+				nomen_scroll_dx_acc = 0.0;
+				nomen_scroll_dy_acc = 0.0;
+				nomen_last_key_code = -1;
+				nomen_last_key_modifiers = 0;
+				nomen_last_key_repeat = 0;
+				nomen_last_key_up_code = -1;
+				nomen_last_mouse_move_x = -1;
+				nomen_last_mouse_move_y = -1;
+				while (1) {
+					id event = ((id(*)(id, SEL, unsigned long long, id, id, BOOL))objc_msgSend)(
+						app, sel_registerName("nextEventMatchingMask:untilDate:inMode:dequeue:"),
+						0xFFFFFFFFFFFFFFFFULL, // NSEventMaskAny
+						distant_past,          // untilDate — returns immediately if no events
+						default_mode,          // inMode
+						1);                    // dequeue
+					if (!event) break;
+					((void(*)(id, SEL, id))objc_msgSend)(app, sel_registerName("sendEvent:"), event);
+					long type = ((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("type"));
+					// A mouse-down (left = 1, right = 3, other/middle/extra = 25):
+					// record where it landed and which button. locationInWindow is
+					// in the event's own window's coordinates (bottom-left origin);
+					// flip y against that window's content height to match the
+					// layout's top-left origin. buttonNumber is 0-based (0 left, 1
+					// right, 2 middle, 3+ extras) — stored 1-based to match
+					// FrameEvents.click's 1 = left / 2 = right contract. clickCount
+					// gives double/triple clicks; modifierFlags are masked to the
+					// device-independent bits.
+					if (type == 1 || type == 3 || type == 25) {
+						id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+						id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+						CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+						CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+						nomen_last_click_x = (int)loc.x;
+						nomen_last_click_y = (int)(frame.size.height - loc.y);
+						nomen_last_click_button = (int)(((long(*)(id, SEL))objc_msgSend)(event, sel_registerName("buttonNumber"))) + 1;
+						nomen_last_click_count = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("clickCount"));
+						nomen_last_click_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+					}
+					// A scroll-wheel event (NSEventTypeScrollWheel = 22): accumulate
+					// the deltas for this frame. AppKit deltaY is positive scrolling
+					// up/away from the user; deltaX is positive scrolling right.
+					if (type == 22) {
+						nomen_scroll_dy_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaY"));
+						nomen_scroll_dx_acc += ((double(*)(id, SEL))objc_msgSend)(event, sel_registerName("deltaX"));
+					}
+					// A key-down (NSEventTypeKeyDown = 10): record the hardware
+					// keycode (Space = 49, Return = 36, Delete = 51, Esc = 53,
+					// arrows = 123–126, letters a…z = 0–25), the modifiers, and
+					// whether this is an auto-repeat (a held key — filter it for
+					// first-press-only shortcuts).
+					if (type == 10) {
+						nomen_last_key_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
+						nomen_last_key_modifiers = (int)(((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("modifierFlags")) & 0xFFF00000ULL);
+						nomen_last_key_repeat = ((BOOL(*)(id, SEL))objc_msgSend)(event, sel_registerName("isARepeat")) ? 1 : 0;
+					}
+					// A key-up (NSEventTypeKeyUp = 11): press-and-hold handling.
+					if (type == 11) {
+						nomen_last_key_up_code = (int)((unsigned long(*)(id, SEL))objc_msgSend)(event, sel_registerName("keyCode"));
+					}
+					// A pointer move (NSMouseMoved = 5; the dragged variants 6/7/26
+					// while a button is held): record where the pointer is now.
+					if (type == 5 || type == 6 || type == 7 || type == 26) {
+						id evwin = ((id(*)(id, SEL))objc_msgSend)(event, sel_registerName("window"));
+						id cv = ((id(*)(id, SEL))objc_msgSend)(evwin, sel_registerName("contentView"));
+						CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+						CGPoint loc = ((CGPoint(*)(id, SEL))objc_msgSend)(event, sel_registerName("locationInWindow"));
+						nomen_last_mouse_move_x = (int)loc.x;
+						nomen_last_mouse_move_y = (int)(frame.size.height - loc.y);
+					}
+					if (type == 1) had_click = 1; // NSLeftMouseDown = 1
+					if (type == 3) had_click = 2; // NSRightMouseDown = 3 (reported as 2)
+				}
+				// Process run loop sources (Apple Events, timers) so that dock Quit
+				// and other system interactions work without NSApplication.run().
+				CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, 1);
+				// Frame time: the interval since the previous pump (0 on the first).
+				double now = CFAbsoluteTimeGetCurrent();
+				if (nomen_last_pump_time != 0.0) {
+					nomen_last_dt_ms = (now - nomen_last_pump_time) * 1000.0;
+				}
+				nomen_last_pump_time = now;
+				int result = had_click;
+				// Stamp the kind for the drains (Container.take_right_click reads
+				// it in the handle_events pass that follows this pump).
+				nomen_last_click_kind = had_click;
+				((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
+				return result;
+			}
 		}
-		nomen_last_pump_time = now;
-		int result = had_click;
-		// Stamp the kind for the drains (Container.take_right_click reads
-		// it in the handle_events pass that follows this pump).
-		nomen_last_click_kind = had_click;
-		((void(*)(id, SEL))objc_msgSend)(pool, sel_registerName("drain"));
-		return result;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// Returns true if the window is still on screen. Use this to exit a
 	// manual event loop when the user closes the window.
 	pub func is_visible = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
-		return vis;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
-		return vis;
-		```
-		```
-		#arch: c
-		#platform: ios
-		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
-		return vis;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
-		return vis;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
+				return vis;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVisible"));
+				return vis;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
+				return vis;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				BOOL vis = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isKeyWindow"));
+				return vis;
+			}
+		}
 	}
 
 	// Returns the x coordinate (in the window's content view) of the most
@@ -596,52 +594,52 @@ pub mv struct Window: Control {
 	// follow in the same batch cannot make them stale. Call after
 	// process_events returned 1 or 2 (-1 before any click was ever seen).
 	pub func click_x = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_click_x;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_click_x;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_click_x;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_click_x;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return -1;
+			}
+		}
 	}
 
 	// Returns the y coordinate (flipped to top-left origin) of the most
 	// recent mouse-down, in the window's content view. Captured by the pump;
 	// see click_x.
 	pub func click_y = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_click_y;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_click_y;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_click_y;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_click_y;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return -1;
+			}
+		}
 	}
 
 	// ── The full mouse record (this frame's pump) ──
@@ -659,72 +657,72 @@ pub mv struct Window: Control {
 	// Control = 0x40000, Shift = 0x20000, Function = 0x800000.
 
 	pub func mouse_button = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_click_button;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_click_button;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_click_button;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_click_button;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func mouse_click_count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_click_count;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_click_count;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_click_count;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_click_count;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func mouse_modifiers = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_click_modifiers;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_click_modifiers;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_click_modifiers;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_click_modifiers;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// This frame's accumulated scroll deltas (AppKit deltaY/deltaX: dy is
@@ -733,49 +731,49 @@ pub mv struct Window: Control {
 	// batch — a trackpad frame sums every small event — and expire with the
 	// frame. `Scrollable.on_scroll` is the registered-handler form.
 	pub func scroll_dx = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)nomen_scroll_dx_acc;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)nomen_scroll_dx_acc;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)nomen_scroll_dx_acc;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)nomen_scroll_dx_acc;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func scroll_dy = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)nomen_scroll_dy_acc;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)nomen_scroll_dy_acc;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)nomen_scroll_dy_acc;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)nomen_scroll_dy_acc;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// ── The keyboard record (this frame's pump) ──
@@ -787,95 +785,95 @@ pub mv struct Window: Control {
 	// -1 = no key-down/key-up this frame.
 
 	pub func key_code = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_key_code;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_key_code;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_key_code;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_key_code;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return -1;
+			}
+		}
 	}
 
 	pub func key_modifiers = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_key_modifiers;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_key_modifiers;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_key_modifiers;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_key_modifiers;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func key_repeat = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_key_repeat != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_key_repeat != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_key_repeat != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_key_repeat != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func key_up_code = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_key_up_code;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_key_up_code;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_key_up_code;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_key_up_code;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return -1;
+			}
+		}
 	}
 
 	// ── The pointer-move record (this frame's pump) ──
@@ -885,49 +883,49 @@ pub mv struct Window: Control {
 	// cursors, and tooltips hit-test this against Container.contains.
 
 	pub func mouse_x = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_mouse_move_x;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_mouse_move_x;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_mouse_move_x;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_mouse_move_x;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return -1;
+			}
+		}
 	}
 
 	pub func mouse_y = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_mouse_move_y;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_mouse_move_y;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_mouse_move_y;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_mouse_move_y;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return -1;
+			}
+		}
 	}
 
 	// ── Frame time ──
@@ -935,26 +933,26 @@ pub mv struct Window: Control {
 	// animation clock. `FrameEvents.dt` carries the same value.
 
 	pub func dt = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)nomen_last_dt_ms;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)nomen_last_dt_ms;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)nomen_last_dt_ms;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)nomen_last_dt_ms;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// ── Window resize ──
@@ -969,84 +967,84 @@ pub mv struct Window: Control {
 	// record lives in C statics shared with Container.take_resize; params
 	// because raw blocks in deep control flow can only address them).
 	func stamp_resize = (self, bool on, int w, int h) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_resized;
-		extern int nomen_last_resize_w;
-		extern int nomen_last_resize_h;
-		nomen_last_resized = on ? 1 : 0;
-		if (on) {
-			nomen_last_resize_w = w;
-			nomen_last_resize_h = h;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_resized;
+				extern int nomen_last_resize_w;
+				extern int nomen_last_resize_h;
+				nomen_last_resized = on ? 1 : 0;
+				if (on) {
+					nomen_last_resize_w = w;
+					nomen_last_resize_h = h;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_resized;
-		extern int nomen_last_resize_w;
-		extern int nomen_last_resize_h;
-		nomen_last_resized = on ? 1 : 0;
-		if (on) {
-			nomen_last_resize_w = w;
-			nomen_last_resize_h = h;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_resized;
+				extern int nomen_last_resize_w;
+				extern int nomen_last_resize_h;
+				nomen_last_resized = on ? 1 : 0;
+				if (on) {
+					nomen_last_resize_w = w;
+					nomen_last_resize_h = h;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+			}
+		}
 	}
 
 	pub func resize_width = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_resize_w;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_resize_w;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_resize_w;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_resize_w;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func resize_height = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return nomen_last_resize_h;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return nomen_last_resize_h;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return nomen_last_resize_h;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return nomen_last_resize_h;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// ── Close interception ──
@@ -1056,51 +1054,51 @@ pub mv struct Window: Control {
 	// next frame. Programmatic `close()` is forced and bypasses this.
 
 	pub func close_pending = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_close_pending;
-		return nomen_close_pending != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_close_pending;
-		return nomen_close_pending != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_close_pending;
+				return nomen_close_pending != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_close_pending;
+				return nomen_close_pending != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func clear_close_pending = (self) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_close_pending;
-		nomen_close_pending = 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_close_pending;
-		nomen_close_pending = 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_close_pending;
+				nomen_close_pending = 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_close_pending;
+				nomen_close_pending = 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+			}
+		}
 	}
 
 	// ── App lifetime ─────────────────────────────────────────────────────
@@ -1112,28 +1110,28 @@ pub mv struct Window: Control {
 
 	// True when the app has been asked to quit (Window.quit()).
 	pub func quit_requested = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_app_quit;
-		return nomen_app_quit != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_app_quit;
-		return nomen_app_quit != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_app_quit;
+				return nomen_app_quit != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_app_quit;
+				return nomen_app_quit != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The default Dock icon: the Nomen logo (core/assets/nomen.png, a
@@ -1158,18 +1156,18 @@ pub mv struct Window: Control {
 	// Sets the app-quit flag (raw-only body: aarch64 replaces the whole
 	// body with its raw blocks).
 	func set_quit_flag = (self) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_app_quit;
-		nomen_app_quit = 1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_app_quit;
-		nomen_app_quit = 1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_app_quit;
+				nomen_app_quit = 1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_app_quit;
+				nomen_app_quit = 1;
+			}
+		}
 	}
 
 	// Pump events until the app quits. Called by `run` after the last
@@ -1187,126 +1185,126 @@ pub mv struct Window: Control {
 	// True when the Dock was clicked while every window was closed —
 	// Window.run resumes the frame loop for the reopened window.
 	pub func reopen_flag = (out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_app_reopen;
-		return nomen_app_reopen != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_app_reopen;
-		return nomen_app_reopen != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_app_reopen;
+				return nomen_app_reopen != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_app_reopen;
+				return nomen_app_reopen != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The raw app-quit flag behind `quit_requested`/`keep_alive`.
 	func quit_flag = (out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_app_quit;
-		return nomen_app_quit != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_app_quit;
-		return nomen_app_quit != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_app_quit;
+				return nomen_app_quit != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_app_quit;
+				return nomen_app_quit != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// Returns the width of the window's content view.
 	pub func content_width = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.width;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.width;
-		```
-		```
-		#arch: c
-		#platform: ios
-		id cv = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.width;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id cv = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.width;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.width;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.width;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id cv = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.width;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id cv = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.width;
+			}
+		}
 	}
 
 	// Returns the height of the window's content view (for coordinate flipping).
 	pub func content_height = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.height;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.height;
-		```
-		```
-		#arch: c
-		#platform: ios
-		id cv = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.height;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id cv = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		return (int)frame.size.height;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.height;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id cv = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("contentView"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.height;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id cv = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.height;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id cv = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				return (int)frame.size.height;
+			}
+		}
 	}
 
 	// Resize the window's content area to width x height (displayed). The
@@ -1314,32 +1312,32 @@ pub mv struct Window: Control {
 	// windowDidResize: notifications (and the Container resize delegate), so
 	// tests can exercise resize relayout headlessly.
 	pub func set_size = (self, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, double, double))objc_msgSend)(
-			(id)self->handle, sel_registerName("setContentSize:"), (double)width, (double)height);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, double, double))objc_msgSend)(
-			(id)self->handle, sel_registerName("setContentSize:"), (double)width, (double)height);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, double, double))objc_msgSend)(
+					(id)self->handle, sel_registerName("setContentSize:"), (double)width, (double)height);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, double, double))objc_msgSend)(
+					(id)self->handle, sel_registerName("setContentSize:"), (double)width, (double)height);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, (double)width, (double)height));
+			}
+		}
 	}
 
 	// ── The App run loop (see App.nm) ──
@@ -1350,46 +1348,44 @@ pub mv struct Window: Control {
 	// (an app field — registration stores its address). Call from
 	// App.start; also arms the resize delegate's target pair.
 	pub func set_content = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		static void *nomen_run_root_grid = 0;
-		static void *nomen_run_root_win = 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static void *nomen_run_root_grid = 0;
-		static void *nomen_run_root_win = 0;
-		```
-		```
-		#arch: c
-		#platform: macos
-		extern void nomen_set_resize_target(void *, void *);
-		nomen_run_root_grid = (void *)grid;
-		nomen_run_root_win = (void *)self;
-		nomen_set_resize_target((void *)grid, (void *)self);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern void nomen_set_resize_target(void *, void *);
-		nomen_run_root_grid = (void *)grid;
-		nomen_run_root_win = (void *)self;
-		nomen_set_resize_target((void *)grid, (void *)self);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				static void *nomen_run_root_grid = 0;
+				static void *nomen_run_root_win = 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static void *nomen_run_root_grid = 0;
+				static void *nomen_run_root_win = 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern void nomen_set_resize_target(void *, void *);
+				nomen_run_root_grid = (void *)grid;
+				nomen_run_root_win = (void *)self;
+				nomen_set_resize_target((void *)grid, (void *)self);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern void nomen_set_resize_target(void *, void *);
+				nomen_run_root_grid = (void *)grid;
+				nomen_run_root_win = (void *)self;
+				nomen_set_resize_target((void *)grid, (void *)self);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// One framework relayout pass: the registered root Container, then every
@@ -1398,40 +1394,40 @@ pub mv struct Window: Control {
 	// split panes re-frame when THIS pass frames their host view — the app
 	// cannot know the moment, so registration hands the timing here).
 	func relayout = (self, int first) {
-		```
-		#arch: c
-		#platform: macos
-		extern void nomen_layout_thunk(struct Container *, struct Window *);
-		extern void nomen_scroll_relayout_all(void *, long);
-		extern void nomen_pane_relayout_all(void);
-		if (nomen_run_root_grid) {
-			nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern void nomen_layout_thunk(struct Container *, struct Window *);
+				extern void nomen_scroll_relayout_all(void *, long);
+				extern void nomen_pane_relayout_all(void);
+				if (nomen_run_root_grid) {
+					nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
+				}
+				nomen_scroll_relayout_all((void *)self, first);
+				nomen_pane_relayout_all();
+			}
 		}
-		nomen_scroll_relayout_all((void *)self, first);
-		nomen_pane_relayout_all();
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern void nomen_layout_thunk(struct Container *, struct Window *);
-		extern void nomen_scroll_relayout_all(void *, long);
-		extern void nomen_pane_relayout_all(void);
-		if (nomen_run_root_grid) {
-			nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern void nomen_layout_thunk(struct Container *, struct Window *);
+				extern void nomen_scroll_relayout_all(void *, long);
+				extern void nomen_pane_relayout_all(void);
+				if (nomen_run_root_grid) {
+					nomen_layout_thunk((struct Container *)nomen_run_root_grid, (struct Window *)self);
+				}
+				nomen_scroll_relayout_all((void *)self, first);
+				nomen_pane_relayout_all();
+			}
 		}
-		nomen_scroll_relayout_all((void *)self, first);
-		nomen_pane_relayout_all();
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Arm mouse-MOVED delivery. AppKit sends move events only when the
@@ -1439,26 +1435,26 @@ pub mv struct Window: Control {
 	// pumping process_events directly call this once after creating the
 	// window. Idempotent.
 	pub func arm_mouse_moves = (self) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setAcceptsMouseMovedEvents:"), 1);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setAcceptsMouseMovedEvents:"), 1);
-		```
-		```
-		#arch: c
-		#platform: ios
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setAcceptsMouseMovedEvents:"), 1);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setAcceptsMouseMovedEvents:"), 1);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+			}
+		}
 	}
 
 	// Close the window (the programmatic stand-in for the red button) — the
@@ -1482,153 +1478,153 @@ pub mv struct Window: Control {
 	// window shares the single Dock tile, so this is static for call-site
 	// ergonomics (`Window.set_icon(png)`).
 	pub func set_icon = (string png) {
-		```
-		#arch: c
-		#platform: macos
-		#include <math.h>
-		id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
-			(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
-			(const void *)png.ptr, (unsigned long)png.len);
-		id source = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
-		source = ((id(*)(id, SEL, id))objc_msgSend)(source, sel_registerName("initWithData:"), data);
-		if (!source) return;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				#include <math.h>
+				id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
+					(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
+					(const void *)png.ptr, (unsigned long)png.len);
+				id source = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+				source = ((id(*)(id, SEL, id))objc_msgSend)(source, sel_registerName("initWithData:"), data);
+				if (!source) return;
 
-		const double canvas = 1024.0;
-		const double body = 824.0;
-		const double inset = (canvas - body) / 2.0;
-		id image = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
-		image = ((id(*)(id, SEL, NSSize))objc_msgSend)(image, sel_registerName("initWithSize:"), NSMakeSize(canvas, canvas));
-		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("lockFocus"));
-		((void(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColor"), sel_registerName("clearColor")),
-			sel_registerName("set"));
-		NSRectFill(NSMakeRect(0.0, 0.0, canvas, canvas));
+				const double canvas = 1024.0;
+				const double body = 824.0;
+				const double inset = (canvas - body) / 2.0;
+				id image = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+				image = ((id(*)(id, SEL, NSSize))objc_msgSend)(image, sel_registerName("initWithSize:"), NSMakeSize(canvas, canvas));
+				((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("lockFocus"));
+				((void(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColor"), sel_registerName("clearColor")),
+					sel_registerName("set"));
+				NSRectFill(NSMakeRect(0.0, 0.0, canvas, canvas));
 
-		// Squircle: a superellipse (n = 5) matching Apple's continuous
-		// corners, fitted to the 824px body.
-		id clip = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBezierPath"), sel_registerName("bezierPath"));
-		for (int step = 0; step < 240; step++) {
-			const double angle = ((double)step / 240.0) * 6.283185307179586;
-			const double cos_angle = cos(angle);
-			const double sin_angle = sin(angle);
-			const double x = canvas / 2.0 + (body / 2.0) * (cos_angle < 0.0 ? -pow(-cos_angle, 0.4) : pow(cos_angle, 0.4));
-			const double y = canvas / 2.0 + (body / 2.0) * (sin_angle < 0.0 ? -pow(-sin_angle, 0.4) : pow(sin_angle, 0.4));
-			if (step == 0) {
-				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("moveToPoint:"), NSMakePoint(x, y));
-			} else {
-				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("lineToPoint:"), NSMakePoint(x, y));
+				// Squircle: a superellipse (n = 5) matching Apple's continuous
+				// corners, fitted to the 824px body.
+				id clip = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBezierPath"), sel_registerName("bezierPath"));
+				for (int step = 0; step < 240; step++) {
+					const double angle = ((double)step / 240.0) * 6.283185307179586;
+					const double cos_angle = cos(angle);
+					const double sin_angle = sin(angle);
+					const double x = canvas / 2.0 + (body / 2.0) * (cos_angle < 0.0 ? -pow(-cos_angle, 0.4) : pow(cos_angle, 0.4));
+					const double y = canvas / 2.0 + (body / 2.0) * (sin_angle < 0.0 ? -pow(-sin_angle, 0.4) : pow(sin_angle, 0.4));
+					if (step == 0) {
+						((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("moveToPoint:"), NSMakePoint(x, y));
+					} else {
+						((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("lineToPoint:"), NSMakePoint(x, y));
+					}
+				}
+				((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("closePath"));
+				((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("addClip"));
+
+				// Aspect-fit the source art inside the body (square icons fill it).
+				const NSSize source_size = ((NSSize(*)(id, SEL))objc_msgSend)(source, sel_registerName("size"));
+				const double longest = source_size.width > source_size.height ? source_size.width : source_size.height;
+				const double scale = longest > 0.0 ? body / longest : 1.0;
+				const double width = source_size.width * scale;
+				const double height = source_size.height * scale;
+				((void(*)(id, SEL, NSRect))objc_msgSend)(
+					source, sel_registerName("drawInRect:"),
+					NSMakeRect(inset + (body - width) / 2.0, inset + (body - height) / 2.0, width, height));
+				((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("unlockFocus"));
+
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), image);
 			}
 		}
-		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("closePath"));
-		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("addClip"));
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				#include <math.h>
+				id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
+					(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
+					(const void *)png.ptr, (unsigned long)png.len);
+				id source = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+				source = ((id(*)(id, SEL, id))objc_msgSend)(source, sel_registerName("initWithData:"), data);
+				if (!source) return;
 
-		// Aspect-fit the source art inside the body (square icons fill it).
-		const NSSize source_size = ((NSSize(*)(id, SEL))objc_msgSend)(source, sel_registerName("size"));
-		const double longest = source_size.width > source_size.height ? source_size.width : source_size.height;
-		const double scale = longest > 0.0 ? body / longest : 1.0;
-		const double width = source_size.width * scale;
-		const double height = source_size.height * scale;
-		((void(*)(id, SEL, NSRect))objc_msgSend)(
-			source, sel_registerName("drawInRect:"),
-			NSMakeRect(inset + (body - width) / 2.0, inset + (body - height) / 2.0, width, height));
-		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("unlockFocus"));
+				const double canvas = 1024.0;
+				const double body = 824.0;
+				const double inset = (canvas - body) / 2.0;
+				id image = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
+				image = ((id(*)(id, SEL, NSSize))objc_msgSend)(image, sel_registerName("initWithSize:"), NSMakeSize(canvas, canvas));
+				((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("lockFocus"));
+				((void(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColor"), sel_registerName("clearColor")),
+					sel_registerName("set"));
+				NSRectFill(NSMakeRect(0.0, 0.0, canvas, canvas));
 
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), image);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#include <math.h>
-		id data = ((id(*)(id, SEL, const void*, unsigned long))objc_msgSend)(
-			(id)objc_getClass("NSData"), sel_registerName("dataWithBytes:length:"),
-			(const void *)png.ptr, (unsigned long)png.len);
-		id source = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
-		source = ((id(*)(id, SEL, id))objc_msgSend)(source, sel_registerName("initWithData:"), data);
-		if (!source) return;
+				// Squircle: a superellipse (n = 5) matching Apple's continuous
+				// corners, fitted to the 824px body.
+				id clip = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBezierPath"), sel_registerName("bezierPath"));
+				for (int step = 0; step < 240; step++) {
+					const double angle = ((double)step / 240.0) * 6.283185307179586;
+					const double cos_angle = cos(angle);
+					const double sin_angle = sin(angle);
+					const double x = canvas / 2.0 + (body / 2.0) * (cos_angle < 0.0 ? -pow(-cos_angle, 0.4) : pow(cos_angle, 0.4));
+					const double y = canvas / 2.0 + (body / 2.0) * (sin_angle < 0.0 ? -pow(-sin_angle, 0.4) : pow(sin_angle, 0.4));
+					if (step == 0) {
+						((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("moveToPoint:"), NSMakePoint(x, y));
+					} else {
+						((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("lineToPoint:"), NSMakePoint(x, y));
+					}
+				}
+				((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("closePath"));
+				((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("addClip"));
 
-		const double canvas = 1024.0;
-		const double body = 824.0;
-		const double inset = (canvas - body) / 2.0;
-		id image = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSImage"), sel_registerName("alloc"));
-		image = ((id(*)(id, SEL, NSSize))objc_msgSend)(image, sel_registerName("initWithSize:"), NSMakeSize(canvas, canvas));
-		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("lockFocus"));
-		((void(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColor"), sel_registerName("clearColor")),
-			sel_registerName("set"));
-		NSRectFill(NSMakeRect(0.0, 0.0, canvas, canvas));
+				// Aspect-fit the source art inside the body (square icons fill it).
+				const NSSize source_size = ((NSSize(*)(id, SEL))objc_msgSend)(source, sel_registerName("size"));
+				const double longest = source_size.width > source_size.height ? source_size.width : source_size.height;
+				const double scale = longest > 0.0 ? body / longest : 1.0;
+				const double width = source_size.width * scale;
+				const double height = source_size.height * scale;
+				((void(*)(id, SEL, NSRect))objc_msgSend)(
+					source, sel_registerName("drawInRect:"),
+					NSMakeRect(inset + (body - width) / 2.0, inset + (body - height) / 2.0, width, height));
+				((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("unlockFocus"));
 
-		// Squircle: a superellipse (n = 5) matching Apple's continuous
-		// corners, fitted to the 824px body.
-		id clip = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBezierPath"), sel_registerName("bezierPath"));
-		for (int step = 0; step < 240; step++) {
-			const double angle = ((double)step / 240.0) * 6.283185307179586;
-			const double cos_angle = cos(angle);
-			const double sin_angle = sin(angle);
-			const double x = canvas / 2.0 + (body / 2.0) * (cos_angle < 0.0 ? -pow(-cos_angle, 0.4) : pow(cos_angle, 0.4));
-			const double y = canvas / 2.0 + (body / 2.0) * (sin_angle < 0.0 ? -pow(-sin_angle, 0.4) : pow(sin_angle, 0.4));
-			if (step == 0) {
-				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("moveToPoint:"), NSMakePoint(x, y));
-			} else {
-				((void(*)(id, SEL, NSPoint))objc_msgSend)(clip, sel_registerName("lineToPoint:"), NSMakePoint(x, y));
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), image);
 			}
 		}
-		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("closePath"));
-		((void(*)(id, SEL))objc_msgSend)(clip, sel_registerName("addClip"));
-
-		// Aspect-fit the source art inside the body (square icons fill it).
-		const NSSize source_size = ((NSSize(*)(id, SEL))objc_msgSend)(source, sel_registerName("size"));
-		const double longest = source_size.width > source_size.height ? source_size.width : source_size.height;
-		const double scale = longest > 0.0 ? body / longest : 1.0;
-		const double width = source_size.width * scale;
-		const double height = source_size.height * scale;
-		((void(*)(id, SEL, NSRect))objc_msgSend)(
-			source, sel_registerName("drawInRect:"),
-			NSMakeRect(inset + (body - width) / 2.0, inset + (body - height) / 2.0, width, height));
-		((void(*)(id, SEL))objc_msgSend)(image, sel_registerName("unlockFocus"));
-
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setApplicationIconImage:"), image);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS */
+			}
+		}
 	}
 
 	pub func close = (self) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_close_forced;
-		nomen_close_forced = 1;
-		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
-		nomen_close_forced = 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_close_forced;
-		nomen_close_forced = 1;
-		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
-		nomen_close_forced = 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_close_forced;
+				nomen_close_forced = 1;
+				((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
+				nomen_close_forced = 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_close_forced;
+				nomen_close_forced = 1;
+				((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("performClose:"), (id)0);
+				nomen_close_forced = 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Run the app: the framework owns everything from here until the window
@@ -1753,75 +1749,75 @@ pub mv struct Window: Control {
 	}
 
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		// NSWindow has no plain `setFrame:` (that is NSView's) — the window
-		// API takes the display flag.
-		((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:display:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height),
-			1);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		// NSWindow has no plain `setFrame:` (that is NSView's) — the window
-		// API takes the display flag.
-		((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:display:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height),
-			1);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				// NSWindow has no plain `setFrame:` (that is NSView's) — the window
+				// API takes the display flag.
+				((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:display:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height),
+					1);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				// NSWindow has no plain `setFrame:` (that is NSView's) — the window
+				// API takes the display flag.
+				((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:display:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height),
+					1);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
 	}
 }
 
@@ -1851,83 +1847,81 @@ pub mv struct Window: Control {
 // Idempotent per frame; the synthesized focus dispatcher calls it once
 // before the arms.
 pub func nomen_window_focus_poll = (uint64 window) {
-	```
-	#arch: c
-	#platform: macos
-	#scope: file
-	// Shared with the take_focus / take_blur drains (same TU): the snapshot
-	// has external linkage and ONE definition (here); the drains declare it
-	// extern.
-	unsigned long long nomen_focus_prev = 0;
-	unsigned long long nomen_focus_cur = 0;
-	void *nomen_focus_window = 0;
-	static id nomen_focus_responder(void *win) {
-		id fr = ((id(*)(id, SEL))objc_msgSend)((id)win, sel_registerName("firstResponder"));
-		// While a text control is being edited, the first responder is the
-		// window's FIELD EDITOR — map it back to the editing control (the
-		// editor's delegate) so focus edges name the control.
-		if (((BOOL(*)(id, SEL, id))objc_msgSend)(fr, sel_registerName("isKindOfClass:"), (id)objc_getClass("NSTextView"))) {
-			id d = ((id(*)(id, SEL))objc_msgSend)(fr, sel_registerName("delegate"));
-			if (d) fr = d;
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw("file") {
+			// Shared with the take_focus / take_blur drains (same TU): the snapshot
+			// has external linkage and ONE definition (here); the drains declare it
+			// extern.
+			unsigned long long nomen_focus_prev = 0;
+			unsigned long long nomen_focus_cur = 0;
+			void *nomen_focus_window = 0;
+			static id nomen_focus_responder(void *win) {
+				id fr = ((id(*)(id, SEL))objc_msgSend)((id)win, sel_registerName("firstResponder"));
+				// While a text control is being edited, the first responder is the
+				// window's FIELD EDITOR — map it back to the editing control (the
+				// editor's delegate) so focus edges name the control.
+				if (((BOOL(*)(id, SEL, id))objc_msgSend)(fr, sel_registerName("isKindOfClass:"), (id)objc_getClass("NSTextView"))) {
+					id d = ((id(*)(id, SEL))objc_msgSend)(fr, sel_registerName("delegate"));
+					if (d) fr = d;
+				}
+				return fr;
+			}
 		}
-		return fr;
 	}
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	#scope: file
-	unsigned long long nomen_focus_prev = 0;
-	unsigned long long nomen_focus_cur = 0;
-	void *nomen_focus_window = 0;
-	static id nomen_focus_responder(void *win) {
-		id fr = ((id(*)(id, SEL))objc_msgSend)((id)win, sel_registerName("firstResponder"));
-		if (((BOOL(*)(id, SEL, id))objc_msgSend)(fr, sel_registerName("isKindOfClass:"), (id)objc_getClass("NSTextView"))) {
-			id d = ((id(*)(id, SEL))objc_msgSend)(fr, sel_registerName("delegate"));
-			if (d) fr = d;
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c", "file") {
+			unsigned long long nomen_focus_prev = 0;
+			unsigned long long nomen_focus_cur = 0;
+			void *nomen_focus_window = 0;
+			static id nomen_focus_responder(void *win) {
+				id fr = ((id(*)(id, SEL))objc_msgSend)((id)win, sel_registerName("firstResponder"));
+				if (((BOOL(*)(id, SEL, id))objc_msgSend)(fr, sel_registerName("isKindOfClass:"), (id)objc_getClass("NSTextView"))) {
+					id d = ((id(*)(id, SEL))objc_msgSend)(fr, sel_registerName("delegate"));
+					if (d) fr = d;
+				}
+				return fr;
+			}
 		}
-		return fr;
 	}
-	```
-	```
-	#arch: c
-	#platform: macos
-	void *win = (void *)window;
-	id fr = nomen_focus_responder(win);
-	if (nomen_focus_window != win) {
-		// A different window took the snapshot: re-baseline (no edge).
-		nomen_focus_window = win;
-		nomen_focus_cur = (unsigned long long)(void *)fr;
-		nomen_focus_prev = nomen_focus_cur;
-	} else {
-		nomen_focus_prev = nomen_focus_cur;
-		nomen_focus_cur = (unsigned long long)(void *)fr;
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			void *win = (void *)window;
+			id fr = nomen_focus_responder(win);
+			if (nomen_focus_window != win) {
+				// A different window took the snapshot: re-baseline (no edge).
+				nomen_focus_window = win;
+				nomen_focus_cur = (unsigned long long)(void *)fr;
+				nomen_focus_prev = nomen_focus_cur;
+			} else {
+				nomen_focus_prev = nomen_focus_cur;
+				nomen_focus_cur = (unsigned long long)(void *)fr;
+			}
+		}
 	}
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	void *win = (void *)window;
-	id fr = nomen_focus_responder(win);
-	if (nomen_focus_window != win) {
-		nomen_focus_window = win;
-		nomen_focus_cur = (unsigned long long)(void *)fr;
-		nomen_focus_prev = nomen_focus_cur;
-	} else {
-		nomen_focus_prev = nomen_focus_cur;
-		nomen_focus_cur = (unsigned long long)(void *)fr;
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			void *win = (void *)window;
+			id fr = nomen_focus_responder(win);
+			if (nomen_focus_window != win) {
+				nomen_focus_window = win;
+				nomen_focus_cur = (unsigned long long)(void *)fr;
+				nomen_focus_prev = nomen_focus_cur;
+			} else {
+				nomen_focus_prev = nomen_focus_cur;
+				nomen_focus_cur = (unsigned long long)(void *)fr;
+			}
+		}
 	}
-	```
-	```
-	#arch: c
-	#platform: ios
-	/* TODO: iOS (first responder via UITextField delegates) */
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	/* TODO: iOS (see #arch: c) */
-	```
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			/* TODO: iOS (first responder via UITextField delegates) */
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			/* TODO: iOS (see #arch: c) */
+		}
+	}
 }
 
 // Whether the most recent pump saw a right-mouse-down (the same record
@@ -1941,133 +1935,129 @@ pub func nomen_window_focus_poll = (uint64 window) {
 // click through the dispatch window (win.click_x()/click_y()), translate
 // for scrollables (content_click), hit-test children (contains).
 pub func nomen_window_had_right_click = (out bool) {
-	```
-	#arch: c
-	#platform: macos
-	// One definition lives in process_events' file-scope block (this file);
-	// the extern keeps this function's TU-independent (split builds).
-	extern int nomen_last_click_kind;
-	return nomen_last_click_kind == 2;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	extern int nomen_last_click_kind;
-	return nomen_last_click_kind == 2;
-	```
-	```
-	#arch: c
-	#platform: ios
-	return 0;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	return 0;
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			// One definition lives in process_events' file-scope block (this file);
+			// the extern keeps this function's TU-independent (split builds).
+			extern int nomen_last_click_kind;
+			return nomen_last_click_kind == 2;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			extern int nomen_last_click_kind;
+			return nomen_last_click_kind == 2;
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			return 0;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			return 0;
+		}
+	}
 }
 
 // Focus EDGE drain: true when `handle` GAINED first-responder status this
 // frame. Pure snapshot compare — no state update, so any number of
 // focus/blur arms can poll the same frame in any order.
 pub func nomen_control_take_focus = (uint64 handle, out bool) {
-	```
-	#arch: c
-	#platform: macos
-	#scope: file
-	extern unsigned long long nomen_focus_prev;
-	extern unsigned long long nomen_focus_cur;
-	extern void *nomen_focus_window;
-	static id nomen_focus_responder(void *win);
-	```
-	```
-	#arch: c
-	#platform: macos
-	int known = nomen_focus_window != 0;
-	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
-	int gained =
-		known && ((unsigned long long)(void *)fr == handle) && (nomen_focus_prev != handle);
-	return gained;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	#scope: file
-	extern unsigned long long nomen_focus_prev;
-	extern unsigned long long nomen_focus_cur;
-	extern void *nomen_focus_window;
-	static id nomen_focus_responder(void *win);
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	int known = nomen_focus_window != 0;
-	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
-	int gained =
-		known && ((unsigned long long)(void *)fr == handle) && (nomen_focus_prev != handle);
-	return gained;
-	```
-	```
-	#arch: c
-	#platform: ios
-	return 0;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	return 0;
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw("file") {
+			extern unsigned long long nomen_focus_prev;
+			extern unsigned long long nomen_focus_cur;
+			extern void *nomen_focus_window;
+			static id nomen_focus_responder(void *win);
+		}
+	}
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			int known = nomen_focus_window != 0;
+			id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+			int gained =
+				known && ((unsigned long long)(void *)fr == handle) && (nomen_focus_prev != handle);
+			return gained;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c", "file") {
+			extern unsigned long long nomen_focus_prev;
+			extern unsigned long long nomen_focus_cur;
+			extern void *nomen_focus_window;
+			static id nomen_focus_responder(void *win);
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			int known = nomen_focus_window != 0;
+			id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+			int gained =
+				known && ((unsigned long long)(void *)fr == handle) && (nomen_focus_prev != handle);
+			return gained;
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			return 0;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			return 0;
+		}
+	}
 }
 
 // Blur EDGE drain: true when `handle` LOST first-responder status this
 // frame (it was focused on the previous poll and is not now).
 pub func nomen_control_take_blur = (uint64 handle, out bool) {
-	```
-	#arch: c
-	#platform: macos
-	#scope: file
-	extern unsigned long long nomen_focus_prev;
-	extern unsigned long long nomen_focus_cur;
-	extern void *nomen_focus_window;
-	static id nomen_focus_responder(void *win);
-	```
-	```
-	#arch: c
-	#platform: macos
-	int known = nomen_focus_window != 0;
-	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
-	int lost =
-		known && (nomen_focus_prev == handle) && ((unsigned long long)(void *)fr != handle);
-	return lost;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	#scope: file
-	extern unsigned long long nomen_focus_prev;
-	extern unsigned long long nomen_focus_cur;
-	extern void *nomen_focus_window;
-	static id nomen_focus_responder(void *win);
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	int known = nomen_focus_window != 0;
-	id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
-	int lost =
-		known && (nomen_focus_prev == handle) && ((unsigned long long)(void *)fr != handle);
-	return lost;
-	```
-	```
-	#arch: c
-	#platform: ios
-	return 0;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	return 0;
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw("file") {
+			extern unsigned long long nomen_focus_prev;
+			extern unsigned long long nomen_focus_cur;
+			extern void *nomen_focus_window;
+			static id nomen_focus_responder(void *win);
+		}
+	}
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			int known = nomen_focus_window != 0;
+			id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+			int lost =
+				known && (nomen_focus_prev == handle) && ((unsigned long long)(void *)fr != handle);
+			return lost;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c", "file") {
+			extern unsigned long long nomen_focus_prev;
+			extern unsigned long long nomen_focus_cur;
+			extern void *nomen_focus_window;
+			static id nomen_focus_responder(void *win);
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			int known = nomen_focus_window != 0;
+			id fr = known ? nomen_focus_responder(nomen_focus_window) : 0;
+			int lost =
+				known && (nomen_focus_prev == handle) && ((unsigned long long)(void *)fr != handle);
+			return lost;
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			return 0;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			return 0;
+		}
+	}
 }
 
 // Text-INPUT edge drain: true when the control's text changed since the
@@ -2075,198 +2065,194 @@ pub func nomen_control_take_blur = (uint64 handle, out bool) {
 // control's stringValue while typing, so each keystroke is one edge).
 // Last-seen text is tracked per handle.
 pub func nomen_control_take_input = (uint64 handle, out bool) {
-	```
-	#arch: c
-	#platform: macos
-	#scope: file
-	struct nomen_input_seen {
-		void *handle;
-		char *last;
-	};
-	static struct nomen_input_seen nomen_input_seen[32];
-	static int nomen_input_seen_count = 0;
-	```
-	```
-	#arch: c
-	#platform: macos
-	struct nomen_input_seen *e = 0;
-	for (int i = 0; i < nomen_input_seen_count; i++) {
-		if (nomen_input_seen[i].handle == (void *)handle) {
-			e = &nomen_input_seen[i];
-			break;
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw("file") {
+			struct nomen_input_seen {
+				void *handle;
+				char *last;
+			};
+			static struct nomen_input_seen nomen_input_seen[32];
+			static int nomen_input_seen_count = 0;
 		}
 	}
-	if (!e && nomen_input_seen_count < 32) {
-		e = &nomen_input_seen[nomen_input_seen_count++];
-		e->handle = (void *)handle;
-		e->last = 0;
-	}
-	if (!e) return 0;
-	// stringValue returns the live text (the field editor writes through to
-	// it while typing); UTF8String goes through the returned NSString.
-	id s = ((id(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("stringValue"));
-	const char *cur = ((const char *(*)(id, SEL))objc_msgSend)(s, sel_registerName("UTF8String"));
-	// First sight of a handle: record the baseline silently — no edge.
-	if (!e->last) {
-		e->last = strdup(cur);
-		return 0;
-	}
-	int changed = strcmp(e->last, cur) != 0;
-	if (changed) {
-		free(e->last);
-		e->last = strdup(cur);
-	}
-	return changed;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	#scope: file
-	struct nomen_input_seen {
-		void *handle;
-		char *last;
-	};
-	static struct nomen_input_seen nomen_input_seen[32];
-	static int nomen_input_seen_count = 0;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	struct nomen_input_seen *e = 0;
-	for (int i = 0; i < nomen_input_seen_count; i++) {
-		if (nomen_input_seen[i].handle == (void *)handle) {
-			e = &nomen_input_seen[i];
-			break;
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			struct nomen_input_seen *e = 0;
+			for (int i = 0; i < nomen_input_seen_count; i++) {
+				if (nomen_input_seen[i].handle == (void *)handle) {
+					e = &nomen_input_seen[i];
+					break;
+				}
+			}
+			if (!e && nomen_input_seen_count < 32) {
+				e = &nomen_input_seen[nomen_input_seen_count++];
+				e->handle = (void *)handle;
+				e->last = 0;
+			}
+			if (!e) return 0;
+			// stringValue returns the live text (the field editor writes through to
+			// it while typing); UTF8String goes through the returned NSString.
+			id s = ((id(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("stringValue"));
+			const char *cur = ((const char *(*)(id, SEL))objc_msgSend)(s, sel_registerName("UTF8String"));
+			// First sight of a handle: record the baseline silently — no edge.
+			if (!e->last) {
+				e->last = strdup(cur);
+				return 0;
+			}
+			int changed = strcmp(e->last, cur) != 0;
+			if (changed) {
+				free(e->last);
+				e->last = strdup(cur);
+			}
+			return changed;
 		}
 	}
-	if (!e && nomen_input_seen_count < 32) {
-		e = &nomen_input_seen[nomen_input_seen_count++];
-		e->handle = (void *)handle;
-		e->last = 0;
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c", "file") {
+			struct nomen_input_seen {
+				void *handle;
+				char *last;
+			};
+			static struct nomen_input_seen nomen_input_seen[32];
+			static int nomen_input_seen_count = 0;
+		}
 	}
-	if (!e) return 0;
-	// stringValue returns the live text (the field editor writes through to
-	// it while typing); UTF8String goes through the returned NSString.
-	id s = ((id(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("stringValue"));
-	const char *cur = ((const char *(*)(id, SEL))objc_msgSend)(s, sel_registerName("UTF8String"));
-	// First sight of a handle: record the baseline silently — no edge.
-	if (!e->last) {
-		e->last = strdup(cur);
-		return 0;
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			struct nomen_input_seen *e = 0;
+			for (int i = 0; i < nomen_input_seen_count; i++) {
+				if (nomen_input_seen[i].handle == (void *)handle) {
+					e = &nomen_input_seen[i];
+					break;
+				}
+			}
+			if (!e && nomen_input_seen_count < 32) {
+				e = &nomen_input_seen[nomen_input_seen_count++];
+				e->handle = (void *)handle;
+				e->last = 0;
+			}
+			if (!e) return 0;
+			// stringValue returns the live text (the field editor writes through to
+			// it while typing); UTF8String goes through the returned NSString.
+			id s = ((id(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("stringValue"));
+			const char *cur = ((const char *(*)(id, SEL))objc_msgSend)(s, sel_registerName("UTF8String"));
+			// First sight of a handle: record the baseline silently — no edge.
+			if (!e->last) {
+				e->last = strdup(cur);
+				return 0;
+			}
+			int changed = strcmp(e->last, cur) != 0;
+			if (changed) {
+				free(e->last);
+				e->last = strdup(cur);
+			}
+			return changed;
+		}
 	}
-	int changed = strcmp(e->last, cur) != 0;
-	if (changed) {
-		free(e->last);
-		e->last = strdup(cur);
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			return 0;
+		}
 	}
-	return changed;
-	```
-	```
-	#arch: c
-	#platform: ios
-	return 0;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	return 0;
-	```
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			return 0;
+		}
+	}
 }
 
 pub func nomen_window_clicks_init = (uint64 handle) {
-	```
-	#arch: c
-	#platform: macos
-	#scope: file
-	// The armed set: handles this process already armed (a desugar dispatch
-	// arm re-calls per frame; re-arming would stack recognizers).
-	static unsigned long long nomen_armed_handles[128];
-	static int nomen_armed_count = 0;
-	// The shared gesture target (one class pair per process; the handler
-	// reads the gesture's view — the Nomen handle — and pushes the same
-	// ring the button family's target/action uses).
-	static void nomen_view_click_gesture(id self, SEL cmd, id gesture) {
-		(void)self; (void)cmd;
-		id view = ((id(*)(id, SEL))objc_msgSend)(gesture, sel_registerName("view"));
-		nomen_click_push((unsigned long long)(void *)view);
-	}
-	static void nomen_window_click_arm(unsigned long long handle) {
-		for (int i = 0; i < nomen_armed_count; i++) {
-			if (nomen_armed_handles[i] == handle) return;
-		}
-		if (nomen_armed_count < 128) nomen_armed_handles[nomen_armed_count++] = handle;
-		Class Tc = objc_getClass("NomenViewClickTarget");
-		if (!Tc) {
-			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenViewClickTarget", 0);
-			if (Tc) {
-				class_addMethod(Tc, sel_registerName("viewClickGesture:"), (IMP)nomen_view_click_gesture, "v@:@");
-				objc_registerClassPair(Tc);
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw("file") {
+			// The armed set: handles this process already armed (a desugar dispatch
+			// arm re-calls per frame; re-arming would stack recognizers).
+			static unsigned long long nomen_armed_handles[128];
+			static int nomen_armed_count = 0;
+			// The shared gesture target (one class pair per process; the handler
+			// reads the gesture's view — the Nomen handle — and pushes the same
+			// ring the button family's target/action uses).
+			static void nomen_view_click_gesture(id self, SEL cmd, id gesture) {
+				(void)self; (void)cmd;
+				id view = ((id(*)(id, SEL))objc_msgSend)(gesture, sel_registerName("view"));
+				nomen_click_push((unsigned long long)(void *)view);
+			}
+			static void nomen_window_click_arm(unsigned long long handle) {
+				for (int i = 0; i < nomen_armed_count; i++) {
+					if (nomen_armed_handles[i] == handle) return;
+				}
+				if (nomen_armed_count < 128) nomen_armed_handles[nomen_armed_count++] = handle;
+				Class Tc = objc_getClass("NomenViewClickTarget");
+				if (!Tc) {
+					Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenViewClickTarget", 0);
+					if (Tc) {
+						class_addMethod(Tc, sel_registerName("viewClickGesture:"), (IMP)nomen_view_click_gesture, "v@:@");
+						objc_registerClassPair(Tc);
+					}
+				}
+				if (!Tc) return;
+				id target = ((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+				id rec = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSClickGestureRecognizer"), sel_registerName("alloc"));
+				rec = ((id(*)(id, SEL, id, SEL))objc_msgSend)(
+					rec, sel_registerName("initWithTarget:action:"), (id)target, sel_registerName("viewClickGesture:"));
+				((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("addGestureRecognizer:"), (id)rec);
 			}
 		}
-		if (!Tc) return;
-		id target = ((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
-		id rec = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSClickGestureRecognizer"), sel_registerName("alloc"));
-		rec = ((id(*)(id, SEL, id, SEL))objc_msgSend)(
-			rec, sel_registerName("initWithTarget:action:"), (id)target, sel_registerName("viewClickGesture:"));
-		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("addGestureRecognizer:"), (id)rec);
 	}
-	```
-	```
-	#arch: c
-	#platform: macos
-	nomen_window_click_arm(handle);
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	#scope: file
-	// The armed set: handles this process already armed (a desugar dispatch
-	// arm re-calls per frame; re-arming would stack recognizers).
-	static unsigned long long nomen_armed_handles[128];
-	static int nomen_armed_count = 0;
-	// Forward declaration: the ring lives in Control.nm's file-scope
-	// block, whose carrier may hoist AFTER this one (build order, not
-	// source order).
-	static void nomen_click_push(unsigned long long h);
-	static void nomen_view_click_gesture(id self, SEL cmd, id gesture) {
-		(void)self; (void)cmd;
-		id view = ((id(*)(id, SEL))objc_msgSend)(gesture, sel_registerName("view"));
-		nomen_click_push((unsigned long long)(void *)view);
-	}
-	static void nomen_window_click_arm(unsigned long long handle) {
-		for (int i = 0; i < nomen_armed_count; i++) {
-			if (nomen_armed_handles[i] == handle) return;
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			nomen_window_click_arm(handle);
 		}
-		if (nomen_armed_count < 128) nomen_armed_handles[nomen_armed_count++] = handle;
-		Class Tc = objc_getClass("NomenViewClickTarget");
-		if (!Tc) {
-			Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenViewClickTarget", 0);
-			if (Tc) {
-				class_addMethod(Tc, sel_registerName("viewClickGesture:"), (IMP)nomen_view_click_gesture, "v@:@");
-				objc_registerClassPair(Tc);
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c", "file") {
+			// The armed set: handles this process already armed (a desugar dispatch
+			// arm re-calls per frame; re-arming would stack recognizers).
+			static unsigned long long nomen_armed_handles[128];
+			static int nomen_armed_count = 0;
+			// Forward declaration: the ring lives in Control.nm's file-scope
+			// block, whose carrier may hoist AFTER this one (build order, not
+			// source order).
+			static void nomen_click_push(unsigned long long h);
+			static void nomen_view_click_gesture(id self, SEL cmd, id gesture) {
+				(void)self; (void)cmd;
+				id view = ((id(*)(id, SEL))objc_msgSend)(gesture, sel_registerName("view"));
+				nomen_click_push((unsigned long long)(void *)view);
+			}
+			static void nomen_window_click_arm(unsigned long long handle) {
+				for (int i = 0; i < nomen_armed_count; i++) {
+					if (nomen_armed_handles[i] == handle) return;
+				}
+				if (nomen_armed_count < 128) nomen_armed_handles[nomen_armed_count++] = handle;
+				Class Tc = objc_getClass("NomenViewClickTarget");
+				if (!Tc) {
+					Tc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenViewClickTarget", 0);
+					if (Tc) {
+						class_addMethod(Tc, sel_registerName("viewClickGesture:"), (IMP)nomen_view_click_gesture, "v@:@");
+						objc_registerClassPair(Tc);
+					}
+				}
+				if (!Tc) return;
+				id target = ((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
+				id rec = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSClickGestureRecognizer"), sel_registerName("alloc"));
+				rec = ((id(*)(id, SEL, id, SEL))objc_msgSend)(
+					rec, sel_registerName("initWithTarget:action:"), (id)target, sel_registerName("viewClickGesture:"));
+				((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("addGestureRecognizer:"), (id)rec);
 			}
 		}
-		if (!Tc) return;
-		id target = ((id(*)(id, SEL))objc_msgSend)((id)Tc, sel_registerName("new"));
-		id rec = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSClickGestureRecognizer"), sel_registerName("alloc"));
-		rec = ((id(*)(id, SEL, id, SEL))objc_msgSend)(
-			rec, sel_registerName("initWithTarget:action:"), (id)target, sel_registerName("viewClickGesture:"));
-		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("addGestureRecognizer:"), (id)rec);
 	}
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	nomen_window_click_arm(handle);
-	```
-	```
-	#arch: c
-	#platform: ios
-	/* TODO: iOS (UITapGestureRecognizer shape; see nomen_control_arm_clicks) */
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	/* TODO: iOS (UITapGestureRecognizer shape; see nomen_control_arm_clicks) */
-	```
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			nomen_window_click_arm(handle);
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			/* TODO: iOS (UITapGestureRecognizer shape; see nomen_control_arm_clicks) */
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			/* TODO: iOS (UITapGestureRecognizer shape; see nomen_control_arm_clicks) */
+		}
+	}
 }

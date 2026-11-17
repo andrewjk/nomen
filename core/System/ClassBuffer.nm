@@ -45,17 +45,19 @@ pub struct ClassBuffer<T> {
 	}
 
 	internal inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
-		```
-		#arch: c
-		return ((long*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x1, x1, #3
-		add x0, x0, x1
-		ldr x0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((long*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x1, x1, #3
+				add x0, x0, x1
+				ldr x0, [x0]
+			}
+		}
 	}
 
 	// Address of slot `i` (library-only): the ELEMENT BORROW primitive for
@@ -66,20 +68,22 @@ pub struct ClassBuffer<T> {
 	// stored word, not the slot's address. Library-internal: bounds are the
 	// caller's obligation (the List wrapper constrains them).
 	internal func slot_ptr = (ref self {}, int i, out ptr T) {
-		```
-		#arch: c
-		// The slot's address: through the alias, reads and writes hit the
-		// stored handle word. void* converts to the caller's `T*` spelling.
-		return (void *)&((unsigned long long *)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		// 8-byte slots: the address of slot i — loading through it yields
-		// the stored handle.
-		ldr x8, [x19, #8]
-		lsl x9, x1, #3
-		add x0, x9, x8
-		```
+		#if META.arch == "c" {
+			#raw {
+				// The slot's address: through the alias, reads and writes hit the
+				// stored handle word. void* converts to the caller's `T*` spelling.
+				return (void *)&((unsigned long long *)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// 8-byte slots: the address of slot i — loading through it yields
+				// the stored handle.
+				ldr x8, [x19, #8]
+				lsl x9, x1, #3
+				add x0, x9, x8
+			}
+		}
 	}
 
 	// Generic (T-typed) counterparts of the _int primitives. ClassBuffer only
@@ -105,17 +109,19 @@ pub struct ClassBuffer<T> {
 	}
 
 	inline func load = (self, int i: i >= 0 && i < self.cap, out T) {
-		```
-		#arch: c
-		return (void*)((long*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x1, x1, #3
-		add x0, x0, x1
-		ldr x0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return (void*)((long*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x1, x1, #3
+				add x0, x0, x1
+				ldr x0, [x0]
+			}
+		}
 	}
 
 	// Labeled delegation point for raw-body callers in other containers
@@ -137,17 +143,19 @@ pub struct ClassBuffer<T> {
 	// leaks that instance. Use replace (or replace_int) to overwrite a live
 	// slot.
 	internal inline func store = (ref self {}, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
-		```
-		#arch: c
-		((long*)(unsigned long long)self->data)[i] = (long)val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x0, x0, x3
-		str x2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((long*)(unsigned long long)self->data)[i] = (long)val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x0, x0, x3
+				str x2, [x0]
+			}
+		}
 	}
 
 	// Initialize this buffer as a VIEW over a foreign slab (INTERNAL — the
@@ -195,21 +203,23 @@ pub struct ClassBuffer<T> {
 	// container — load returns a BORROW (the slot is unchanged) and storing
 	// it elsewhere would create shared ownership (double-free at destroy).
 	inline func move = (ref self {}, int i: i >= 0 && i < self.cap, mv out T) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		void *val = (void*)slots[i];
-		slots[i] = 0;
-		return val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x3, x0, x3
-		ldr x0, [x3]
-		str xzr, [x3]
-		```
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				void *val = (void*)slots[i];
+				slots[i] = 0;
+				return val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x3, x0, x3
+				ldr x0, [x3]
+				str xzr, [x3]
+			}
+		}
 	}
 
 	// Apply `f` to slot `i` in place — the mv-counterpart of Buffer's
@@ -226,101 +236,109 @@ pub struct ClassBuffer<T> {
 	// sole ownership and `f`'s return is not retained elsewhere. NOT
 	// `inline`: the body calls through the fn pointer.
 	func modify = (ref self {}, int i: i >= 0 && i < self.cap, func(T, out T) f) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		void *old = (void*)slots[i];
-		void *new_value = (void*)((void *(*)(void *, void *))f->code)(f->env, old);
-		slots[i] = (long)new_value;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x2 = f (a closure descriptor — env goes in x0,
-		// the old slot value shifts to x1). Class slots are one pointer wide.
-		// `old` is MOVED into f — the callee's mv-param contract reclaims
-		// it; this body frees nothing.
-		stp x20, x21, [sp, #-16]!
-		stp x22, x23, [sp, #-16]!
-		stp x24, x25, [sp, #-16]!
-		mov x22, x2
-		ldr x9, [x19, #8]
-		lsl x3, x1, #3
-		add x20, x9, x3
-		ldr x24, [x22]
-		ldr x0, [x22, #8]
-		ldr x1, [x20]
-		blr x24
-		mov x23, x0
-		str x23, [x20]
-		ldp x24, x25, [sp], #16
-		ldp x22, x23, [sp], #16
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				void *old = (void*)slots[i];
+				void *new_value = (void*)((void *(*)(void *, void *))f->code)(f->env, old);
+				slots[i] = (long)new_value;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x2 = f (a closure descriptor — env goes in x0,
+				// the old slot value shifts to x1). Class slots are one pointer wide.
+				// `old` is MOVED into f — the callee's mv-param contract reclaims
+				// it; this body frees nothing.
+				stp x20, x21, [sp, #-16]!
+				stp x22, x23, [sp, #-16]!
+				stp x24, x25, [sp, #-16]!
+				mov x22, x2
+				ldr x9, [x19, #8]
+				lsl x3, x1, #3
+				add x20, x9, x3
+				ldr x24, [x22]
+				ldr x0, [x22, #8]
+				ldr x1, [x20]
+				blr x24
+				mov x23, x0
+				str x23, [x20]
+				ldp x24, x25, [sp], #16
+				ldp x22, x23, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	internal inline func store_int = (ref self {}, int i: i >= 0 && i < self.cap, int val: val != 0) {
-		```
-		#arch: c
-		((long*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x0, x0, x3
-		str x2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((long*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x0, x0, x3
+				str x2, [x0]
+			}
+		}
 	}
 
 	internal inline func move_int = (ref self {}, int i: i >= 0 && i < self.cap, out int) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		long val = slots[i];
-		slots[i] = 0;
-		return val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x3, x0, x3
-		ldr x0, [x3]
-		str xzr, [x3]
-		```
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				long val = slots[i];
+				slots[i] = 0;
+				return val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x3, x0, x3
+				ldr x0, [x3]
+				str xzr, [x3]
+			}
+		}
 	}
 
 	// Store into a slot, freeing the previous value (it is an owned class
 	// pointer): run its destroy then free it before overwriting.
 	internal func replace_int = (ref self {}, int i: i >= 0 && i < self.cap, int val: val != 0) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		if (slots[i]) {
-			T_destroy((void*)slots[i]);
-			free((void*)slots[i]);
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				if (slots[i]) {
+					T_destroy((void*)slots[i]);
+					free((void*)slots[i]);
+				}
+				slots[i] = val;
+			}
 		}
-		slots[i] = val;
-		```
-		```
-		#arch: aarch64
-		stp x20, x21, [sp, #-16]!
-		str x22, [sp, #-16]!
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x21, x0, x3
-		mov x20, x2
-		ldr x0, [x21]
-		cbz x0, .Lcb_replace_store
-		mov x22, x0
-		bl T_destroy
-		mov x0, x22
-		bl _free
-		.Lcb_replace_store:
-		str x20, [x21]
-		ldr x22, [sp], #16
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				stp x20, x21, [sp, #-16]!
+				str x22, [sp, #-16]!
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x21, x0, x3
+				mov x20, x2
+				ldr x0, [x21]
+				cbz x0, .Lcb_replace_store
+				mov x22, x0
+				bl T_destroy
+				mov x0, x22
+				bl _free
+				.Lcb_replace_store:
+				str x20, [x21]
+				ldr x22, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	// Reclaim slot i's owned class pointer (destroy + free) WITHOUT writing
@@ -330,31 +348,33 @@ pub struct ClassBuffer<T> {
 	// the slot immediately afterwards. Contract: the slot must be
 	// overwritten before it is read or destroyed again.
 	internal func destroy_at = (ref self {}, int i: i >= 0 && i < self.cap) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		if (slots[i]) {
-			T_destroy((void*)slots[i]);
-			free((void*)slots[i]);
-			slots[i] = 0;
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				if (slots[i]) {
+					T_destroy((void*)slots[i]);
+					free((void*)slots[i]);
+					slots[i] = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		stp x20, x21, [sp, #-16]!
-		ldr x20, [x19, #8]
-		lsl x3, x1, #3
-		add x20, x20, x3
-		ldr x0, [x20]
-		cbz x0, .Lcb_destroy_at_done
-		mov x21, x0
-		bl T_destroy
-		mov x0, x21
-		bl _free
-		str xzr, [x20]
-		.Lcb_destroy_at_done:
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				stp x20, x21, [sp, #-16]!
+				ldr x20, [x19, #8]
+				lsl x3, x1, #3
+				add x20, x20, x3
+				ldr x0, [x20]
+				cbz x0, .Lcb_destroy_at_done
+				mov x21, x0
+				bl T_destroy
+				mov x0, x21
+				bl _free
+				str xzr, [x20]
+				.Lcb_destroy_at_done:
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	// T-typed alias of replace_int: free the outgoing class pointer (destroy +
@@ -363,34 +383,36 @@ pub struct ClassBuffer<T> {
 	// Overwrite a live slot: destroy + free the displaced instance, then take
 	// OWNERSHIP of `val` (`mv`) — same transfer rule as store.
 	func replace = (ref self {}, int i: i >= 0 && i < self.cap, mv T val: val != 0) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		if (slots[i]) {
-			T_destroy((void*)slots[i]);
-			free((void*)slots[i]);
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				if (slots[i]) {
+					T_destroy((void*)slots[i]);
+					free((void*)slots[i]);
+				}
+				slots[i] = (long)val;
+			}
 		}
-		slots[i] = (long)val;
-		```
-		```
-		#arch: aarch64
-		stp x20, x21, [sp, #-16]!
-		str x22, [sp, #-16]!
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x21, x0, x3
-		mov x20, x2
-		ldr x0, [x21]
-		cbz x0, .Lcb_replace_T_store
-		mov x22, x0
-		bl T_destroy
-		mov x0, x22
-		bl _free
-		.Lcb_replace_T_store:
-		str x20, [x21]
-		ldr x22, [sp], #16
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				stp x20, x21, [sp, #-16]!
+				str x22, [sp, #-16]!
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x21, x0, x3
+				mov x20, x2
+				ldr x0, [x21]
+				cbz x0, .Lcb_replace_T_store
+				mov x22, x0
+				bl T_destroy
+				mov x0, x22
+				bl _free
+				.Lcb_replace_T_store:
+				str x20, [x21]
+				ldr x22, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	// Move slot src into slot dst: reclaim dst's previous instance (destroy +
@@ -403,43 +425,45 @@ pub struct ClassBuffer<T> {
 		int dst: dst >= 0 && dst < self.cap,
 		int src: src >= 0 && src < self.cap
 	) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		if (dst != src) {
-			if (slots[dst]) {
-				T_destroy((void*)slots[dst]);
-				free((void*)slots[dst]);
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				if (dst != src) {
+					if (slots[dst]) {
+						T_destroy((void*)slots[dst]);
+						free((void*)slots[dst]);
+					}
+					slots[dst] = slots[src];
+					slots[src] = 0;
+				}
 			}
-			slots[dst] = slots[src];
-			slots[src] = 0;
 		}
-		```
-		```
-		#arch: aarch64
-		stp x20, x21, [sp, #-16]!
-		str x22, [sp, #-16]!
-		ldr x9, [x19, #8]
-		lsl x3, x1, #3
-		add x20, x9, x3
-		lsl x3, x2, #3
-		add x21, x9, x3
-		cmp x20, x21
-		b.eq .Lcb_shift_T_done
-		ldr x0, [x20]
-		cbz x0, .Lcb_shift_T_move
-		mov x22, x0
-		bl T_destroy
-		mov x0, x22
-		bl _free
-		.Lcb_shift_T_move:
-		ldr x9, [x21]
-		str x9, [x20]
-		str xzr, [x21]
-		.Lcb_shift_T_done:
-		ldr x22, [sp], #16
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				stp x20, x21, [sp, #-16]!
+				str x22, [sp, #-16]!
+				ldr x9, [x19, #8]
+				lsl x3, x1, #3
+				add x20, x9, x3
+				lsl x3, x2, #3
+				add x21, x9, x3
+				cmp x20, x21
+				b.eq .Lcb_shift_T_done
+				ldr x0, [x20]
+				cbz x0, .Lcb_shift_T_move
+				mov x22, x0
+				bl T_destroy
+				mov x0, x22
+				bl _free
+				.Lcb_shift_T_move:
+				ldr x9, [x21]
+				str x9, [x20]
+				str xzr, [x21]
+				.Lcb_shift_T_done:
+				ldr x22, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	// Bulk transfer for backward-shift deletion — the ClassBuffer
@@ -456,43 +480,45 @@ pub struct ClassBuffer<T> {
 		int src: src >= dst,
 		int count: count >= 0 && src + count <= self.cap
 	) {
-		```
-		#arch: c
-		if (count > 0) {
-			long *slots = (long*)(unsigned long long)self->data;
-			memmove((void*)&slots[dst], (void*)&slots[src],
-				(unsigned long long)count * sizeof(long));
-			memset((void*)&slots[dst + count], 0,
-				(unsigned long long)(src - dst) * sizeof(long));
+		#if META.arch == "c" {
+			#raw {
+				if (count > 0) {
+					long *slots = (long*)(unsigned long long)self->data;
+					memmove((void*)&slots[dst], (void*)&slots[src],
+						(unsigned long long)count * sizeof(long));
+					memset((void*)&slots[dst + count], 0,
+						(unsigned long long)(src - dst) * sizeof(long));
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = dst, x2 = src, x3 = count. x0-x18 die across the
-		// bl calls, so the block math parks on the stack around _memmove.
-		cbz x3, .Lcb_move_range_T_end
-		ldr x4, [x19, #8]
-		lsl x5, x1, #3
-		add x6, x4, x5
-		lsl x5, x2, #3
-		add x7, x4, x5
-		lsl x9, x3, #3
-		sub x10, x2, x1
-		lsl x10, x10, #3
-		stp x6, x9, [sp, #-16]!
-		str x10, [sp, #-16]!
-		mov x0, x6
-		mov x1, x7
-		mov x2, x9
-		bl _memmove
-		ldr x10, [sp], #16
-		ldp x6, x9, [sp], #16
-		add x0, x6, x9
-		mov x1, #0
-		mov x2, x10
-		bl _memset
-		.Lcb_move_range_T_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = dst, x2 = src, x3 = count. x0-x18 die across the
+				// bl calls, so the block math parks on the stack around _memmove.
+				cbz x3, .Lcb_move_range_T_end
+				ldr x4, [x19, #8]
+				lsl x5, x1, #3
+				add x6, x4, x5
+				lsl x5, x2, #3
+				add x7, x4, x5
+				lsl x9, x3, #3
+				sub x10, x2, x1
+				lsl x10, x10, #3
+				stp x6, x9, [sp, #-16]!
+				str x10, [sp, #-16]!
+				mov x0, x6
+				mov x1, x7
+				mov x2, x9
+				bl _memmove
+				ldr x10, [sp], #16
+				ldp x6, x9, [sp], #16
+				add x0, x6, x9
+				mov x1, #0
+				mov x2, x10
+				bl _memset
+				.Lcb_move_range_T_end:
+			}
+		}
 	}
 
 	// A non-mv (ptr, len) slice [start, end) over this buffer's class
@@ -505,71 +531,75 @@ pub struct ClassBuffer<T> {
 		int end: end >= start && end <= self.cap,
 		out view T
 	) {
-		```
-		#arch: c
-		nomen_view _r;
-		_r.ptr = (void*)((long*)(unsigned long long)self->data + start);
-		_r.len = (long)(end - start);
-		return _r;
-		```
-		```
-		#arch: aarch64
-		// x19 = self (ClassBuffer struct ptr), x1 = start, x2 = end.
-		// self->data at [x19, #8]. Return (ptr, len) in x0/x1.
-		ldr x0, [x19, #8]
-		mov x3, #8
-		madd x0, x1, x3, x0
-		sub x1, x2, x1
-		```
+		#if META.arch == "c" {
+			#raw {
+				nomen_view _r;
+				_r.ptr = (void*)((long*)(unsigned long long)self->data + start);
+				_r.len = (long)(end - start);
+				return _r;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (ClassBuffer struct ptr), x1 = start, x2 = end.
+				// self->data at [x19, #8]. Return (ptr, len) in x0/x1.
+				ldr x0, [x19, #8]
+				mov x3, #8
+				madd x0, x1, x3, x0
+				sub x1, x2, x1
+			}
+		}
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		if (self->data) {
-			long *slots = (long*)(unsigned long long)self->data;
-			for (int i = 0; i < self->cap; i++) {
-				if (slots[i]) {
-					T_destroy((void*)slots[i]);
-					free((void*)slots[i]);
+		#if META.arch == "c" {
+			#raw {
+				if (self->data) {
+					long *slots = (long*)(unsigned long long)self->data;
+					for (int i = 0; i < self->cap; i++) {
+						if (slots[i]) {
+							T_destroy((void*)slots[i]);
+							free((void*)slots[i]);
+						}
+					}
+					free(slots);
 				}
+				self->data = 0;
+				self->cap = 0;
 			}
-			free(slots);
 		}
-		self->data = 0;
-		self->cap = 0;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbz x0, .Lcb_destroy_end
-		stp x20, x21, [sp, #-16]!
-		str x22, [sp, #-16]!
-		mov x20, x0
-		ldr x21, [x19, #16]
-		mov x22, #0
-		.Lcb_destroy_loop:
-		cmp x22, x21
-		b.ge .Lcb_destroy_done
-		ldr x0, [x20, x22, lsl #3]
-		cbz x0, .Lcb_destroy_skip
-		str x0, [sp, #-16]!
-		bl T_destroy
-		ldr x0, [sp], #16
-		bl _free
-		.Lcb_destroy_skip:
-		add x22, x22, #1
-		b .Lcb_destroy_loop
-		.Lcb_destroy_done:
-		ldr x22, [sp], #16
-		ldp x20, x21, [sp], #16
-		.Lcb_destroy_end:
-		ldr x0, [x19, #8]
-		cbz x0, .Lcb_destroy_free_done
-		bl _free
-		.Lcb_destroy_free_done:
-		str xzr, [x19, #8]
-		str xzr, [x19, #16]
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				cbz x0, .Lcb_destroy_end
+				stp x20, x21, [sp, #-16]!
+				str x22, [sp, #-16]!
+				mov x20, x0
+				ldr x21, [x19, #16]
+				mov x22, #0
+				.Lcb_destroy_loop:
+				cmp x22, x21
+				b.ge .Lcb_destroy_done
+				ldr x0, [x20, x22, lsl #3]
+				cbz x0, .Lcb_destroy_skip
+				str x0, [sp, #-16]!
+				bl T_destroy
+				ldr x0, [sp], #16
+				bl _free
+				.Lcb_destroy_skip:
+				add x22, x22, #1
+				b .Lcb_destroy_loop
+				.Lcb_destroy_done:
+				ldr x22, [sp], #16
+				ldp x20, x21, [sp], #16
+				.Lcb_destroy_end:
+				ldr x0, [x19, #8]
+				cbz x0, .Lcb_destroy_free_done
+				bl _free
+				.Lcb_destroy_free_done:
+				str xzr, [x19, #8]
+				str xzr, [x19, #16]
+			}
+		}
 	}
 }

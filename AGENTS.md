@@ -229,22 +229,56 @@ valid example must compile with **no errors**.
   (add/modify/delete the test) so the suite continues to reflect the spec.
 - Run them with `npm test test/readme/` (or `npx vp test test/readme/`).
 
-### Inline code blocks (`#arch:` directives)
+### Inline code blocks (`#raw`)
 
 Raw code blocks let a function bypass the Nomen codegen and emit assembly or C
-directly. Use the directive that matches the backend:
+directly. Target selection is the ordinary `#if` fold (below) — the raw block
+is wrapped like any other statement — and the opener names the block's own
+nature:
 
-- `#arch: c` — C source, used by the C backend (`build_c`).
-- `#arch: aarch64` — raw AArch64 assembly, emitted inline by the aarch64
-  backend. This is the mechanism to use for performance-critical primitives
-  (e.g. `umulh`, `get`/`set` limb accessors). The build links with `clang`, so
+```
+#if META.arch == "c" {
+    #raw {
+        return ((unsigned int*)(unsigned long long)self->data)[i];
+    }
+}
+#if META.arch == "aarch64" {
+    #raw {
+        ldr x0, [x19, #8]
+    }
+}
+```
+
+Each raw arm names its target explicitly — **do not use `else` for a raw
+arm**. `else` means "every other target", and for `META.arch` that includes
+`"js"`, whose backend consumes neither native dialect (it ignores raw blocks
+wholesale): the `else` arm would put aarch64 assembly (or C) into a
+JS-checked tree. With explicit arms, a target that has no raw arm simply gets
+an empty body (the JS case is exempt from the "no implementation for this
+target" guard for exactly this reason; the C/aarch64 backends still error if
+a raw-only function's arm is missing).
+
+- **`#raw` (no arguments)** is the target's default dialect: raw AArch64
+  assembly on the aarch64 backend (emitted inline), C source on the C
+  backend. Use the aarch64 arm for performance-critical primitives (e.g.
+  `umulh`, `get`/`set` limb accessors). The build links with `clang`, so
   compiler-rt builtins are available — a `bl ___udivti3` (or similar) call
   resolves at link time.
-- `#arch: aarch64_use_c` — C source compiled via the companion file. **This is
-  reserved for interfacing with UI/AppKit/UIKit code only** (see
-  `core/System/Controls/`). Do **not** use `aarch64_use_c` to optimize
-  non-UI hot paths — use `#arch: aarch64` raw asm (or a `bl` to a builtin)
-  instead.
+- **`#raw("c")`** marks C source that the aarch64 backend compiles via the
+  companion file. **This is reserved for interfacing with UI/AppKit/UIKit
+  code only** (see `core/System/Controls/`). Do **not** use companion-C to
+  optimize non-UI hot paths — use an unmarked raw-asm arm (or a `bl` to a
+  builtin) instead.
+- **`#raw(…, "file")`** hoists the block to file scope (companion file /
+  headers) instead of splicing it at its statement.
+- The body is delimited by braces; braces inside strings and comments do not
+  count (the tokenizer shares one scanner with the formatter — see
+  `src/raw_block.ts`). The old ``` fence is **gone** — it is a parse error
+  pointing here — as are the in-band `#c` / `#scope:` header lines (the
+  opener's arguments replace them). Target selection lives in the `#if`
+  (stage 5, docs/COMPTIME_PLAN_2.md): a `#if`-selected block is checked only
+  for its target, and a raw-only function whose every arm folds away is an
+  error ("no implementation for this target").
 
 ### Compile-time conditionals (`#if` / `#switch`)
 

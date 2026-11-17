@@ -122,10 +122,15 @@ pub func main = () {
 	Console.write_line("\\{b.value}")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
+		const parsed_c = parse_raw(input, { arch: "c" });
+		expect(parsed_c.errors).toEqual([]);
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
 		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: true });
+			const built = build(arch === "aarch64" ? parsed_a64.root : parsed_c.root, {
+				arch,
+				audit: true,
+			});
 			await check_output("box_basic_" + arch, built, "7\n", { arch, audit: true });
 		}
 	});
@@ -157,10 +162,15 @@ pub func main = () {
 	Console.write_line("\\{s.get(1).value}")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
+		const parsed_c = parse_raw(input, { arch: "c" });
+		expect(parsed_c.errors).toEqual([]);
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
 		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: true });
+			const built = build(arch === "aarch64" ? parsed_a64.root : parsed_c.root, {
+				arch,
+				audit: true,
+			});
 			await check_output("box_call_result_" + arch, built, "9\n", { arch, audit: true });
 		}
 	});
@@ -182,10 +192,15 @@ pub func main = () {
 	Console.write_line("\\{head.next.value}")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
+		const parsed_c = parse_raw(input, { arch: "c" });
+		expect(parsed_c.errors).toEqual([]);
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
 		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: true });
+			const built = build(arch === "aarch64" ? parsed_a64.root : parsed_c.root, {
+				arch,
+				audit: true,
+			});
 			await check_output("box_chain_" + arch, built, "10\n20\n", { arch, audit: true });
 		}
 	});
@@ -213,10 +228,15 @@ pub func main = () {
 	Console.write_line("\\{c.name} \\{c.value}")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
+		const parsed_c = parse_raw(input, { arch: "c" });
+		expect(parsed_c.errors).toEqual([]);
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
 		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: true });
+			const built = build(arch === "aarch64" ? parsed_a64.root : parsed_c.root, {
+				arch,
+				audit: true,
+			});
 			await check_output("box_in_place_" + arch, built, "hi 7\nyo 9\n", { arch, audit: true });
 		}
 	});
@@ -235,10 +255,15 @@ pub func main = () {
 	Console.write_line("\\{head.next.value}")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
+		const parsed_c = parse_raw(input, { arch: "c" });
+		expect(parsed_c.errors).toEqual([]);
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
 		for (const arch of ["c", "aarch64"] as const) {
-			const built = build(parsed.root, { arch, audit: true });
+			const built = build(arch === "aarch64" ? parsed_a64.root : parsed_c.root, {
+				arch,
+				audit: true,
+			});
 			await check_output("box_in_place_tree_" + arch, built, "2\n", { arch, audit: true });
 		}
 	});
@@ -283,7 +308,7 @@ pub func main = () {
 	Console.write_line("\\{head.next.value}")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const built = build(parsed.root, { arch: "aarch64" });
 		// Exactly ONE `Box_Node_init` call remains — the named donor's

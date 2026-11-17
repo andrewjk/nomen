@@ -19,7 +19,6 @@ import EnumNode from "../nodes/EnumNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import { parse_raw_directives } from "../raw_directives.ts";
 import { emit_address_of, emit_direct_field_load } from "./build_access_node.ts";
 import { get_source_address } from "./build_assignment_node.ts";
 import { emit_nursery_joins_on_return_a64 } from "./build_async_block_node.ts";
@@ -211,8 +210,7 @@ function func_statements_call_free(
 	for (const stmt of statements) {
 		if ((stmt as unknown as { node_type?: string }).node_type === "raw") {
 			const text = (stmt as unknown as { value?: string }).value ?? "";
-			const { should_emit, code } = parse_raw_directives(text, "aarch64", status.platform);
-			if (should_emit && code && /\bbl\b|\bblr\b/.test(code)) return false;
+			if (text && /\bbl\b|\bblr\b/.test(text)) return false;
 		} else if (!tree_is_call_free(stmt, status, seen)) {
 			return false;
 		}

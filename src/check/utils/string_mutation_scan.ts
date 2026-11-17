@@ -191,7 +191,7 @@ function scan_param_reaches(
 	// block must come back clean for a "no reach" verdict.
 	for (const stmt of func.statements) {
 		for (const raw of collect_raw_nodes(stmt)) {
-			if (raw_block_may_mutate(raw.value, pname)) return true;
+			if (raw_block_may_mutate(raw.value, !!raw.is_c, pname, status.arch)) return true;
 		}
 	}
 	for (const stmt of func.statements) {
@@ -200,9 +200,9 @@ function scan_param_reaches(
 	return false;
 }
 
-function collect_raw_nodes(node: BaseNode): { value: string }[] {
-	if (node.node_type === "raw") return [node as unknown as { value: string }];
-	const out: { value: string }[] = [];
+function collect_raw_nodes(node: BaseNode): { value: string; is_c?: boolean }[] {
+	if (node.node_type === "raw") return [node as unknown as { value: string; is_c?: boolean }];
+	const out: { value: string; is_c?: boolean }[] = [];
 	for (const child of child_nodes(node)) {
 		out.push(...collect_raw_nodes(child));
 	}
@@ -372,64 +372,32 @@ function method_self_is_ref(access_func: AccessFunctionCallNode, status: CheckSt
 // ---------------------------------------------------------------------------
 
 /**
- * Conservative textual reach test for one raw block. The block must come back
- * clean for EVERY target text the backends may emit: a block whose arch list
- * covers both backends must pass both rules.
+ * Conservative textual reach test for the raw block (one block per fence —
+ * the `#if` fold already selected the target's arm). The dialect decides
+ * which rule applies:
  *
- * - aarch64 asm: a byte/word STORE (or RMW/atomic) is the only way to write
- *   memory, and `bl` into a free/mutator can corrupt the caller's bytes. Any
- *   store mnemonic or mutating call target ⇒ reach. (Register spills store
- *   the POINTER, not through it — still conservatively a reach.)
- * - C: the raw body receives the param as a fat `nomen_string` value; writes
- *   go through the `.ptr` half (or `->ptr` for a `ref string`). Any use of
- *   the pointer half (index/deref — reads and writes are indistinguishable at
- *   this granularity) or the byte-writing libc surface ⇒ reach.
+ * - aarch64 asm (unmarked block on the aarch64 target): a byte/word STORE
+ *   (or RMW/atomic) is the only way to write memory, and `bl` into a
+ *   free/mutator can corrupt the caller's bytes. Any store mnemonic or
+ *   mutating call target ⇒ reach. (Register spills store the POINTER, not
+ *   through it — still conservatively a reach.)
+ * - C (a `#c` block, or any block on the C target): the raw body receives
+ *   the param as a fat `nomen_string` value; writes go through the `.ptr`
+ *   half (or `->ptr` for a `ref string`). Any use of the pointer half
+ *   (index/deref — reads and writes are indistinguishable at this
+ *   granularity) or the byte-writing libc surface ⇒ reach.
  */
-function raw_block_may_mutate(content: string, pname: string): boolean {
-	for (const block of split_raw_blocks(content)) {
-		if (block.arches === undefined || block.arches.includes("aarch64")) {
-			if (asm_block_may_mutate(block.code)) return true;
-		}
-		if (
-			block.arches === undefined ||
-			block.arches.some((a) => a === "c" || a === "aarch64_use_c")
-		) {
-			if (c_block_may_mutate(block.code, pname)) return true;
-		}
+function raw_block_may_mutate(
+	content: string,
+	is_c: boolean,
+	pname: string,
+	arch: string | undefined,
+): boolean {
+	if (!content) return false;
+	if (is_c || arch !== "aarch64") {
+		return c_block_may_mutate(content, pname);
 	}
-	return false;
-}
-
-interface RawBlock {
-	arches: string[] | undefined;
-	code: string;
-}
-
-function split_raw_blocks(content: string): RawBlock[] {
-	const blocks: RawBlock[] = [];
-	const lines = content.split("\n");
-	let arches: string[] | undefined;
-	let current: string[] = [];
-	const flush = () => {
-		if (current.length) blocks.push({ arches, code: current.join("\n") });
-		current = [];
-	};
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (trimmed.startsWith("#arch:")) {
-			flush();
-			arches = trimmed
-				.substring(6)
-				.split(",")
-				.map((a) => a.trim())
-				.filter((a) => a.length > 0);
-			continue;
-		}
-		if (trimmed.startsWith("#platform:") || trimmed.startsWith("#scope:")) continue;
-		current.push(line);
-	}
-	flush();
-	return blocks;
+	return asm_block_may_mutate(content);
 }
 
 const ASM_STORE_RE =

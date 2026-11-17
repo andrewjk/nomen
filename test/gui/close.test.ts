@@ -68,56 +68,56 @@ mv struct LifecycleApp : App {
 	// Red-button simulation: performClose: WITHOUT the forced flag — the
 	// delegate refuses it and sets the pending flag for run to consult.
 	pub func poke_close = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("performClose:"), (id)0);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("performClose:"), (id)0);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("performClose:"), (id)0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("performClose:"), (id)0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// A window resize: setFrame:display: changes the content rect — the
 	// delegate relayouts the registered roots synchronously, and the next
 	// frame's resize detection stamps the record for the drain.
 	pub func poke_resize = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
-			(id)win->handle, sel_registerName("setFrame:display:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0.0, 0.0, 300.0, 200.0), 1);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
-			(id)win->handle, sel_registerName("setFrame:display:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0.0, 0.0, 300.0, 200.0), 1);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
+					(id)win->handle, sel_registerName("setFrame:display:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0.0, 0.0, 300.0, 200.0), 1);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect, BOOL))objc_msgSend)(
+					(id)win->handle, sel_registerName("setFrame:display:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0.0, 0.0, 300.0, 200.0), 1);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

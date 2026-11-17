@@ -2,6 +2,7 @@ import add_error from "../../add_error.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import type FunctionNode from "../../nodes/FunctionNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import PragmaIfNode from "../../nodes/PragmaIfNode.ts";
@@ -173,32 +174,73 @@ function const_type_name(value: ConstValue): string {
  * — downstream still sees sane AST. No matching arm (and no `#else`)
  * removes the pragma entirely, which is the feature: code for other
  * targets disappears without a trace.
+ *
+ * Stage 5: when the list belongs to a FUNCTION, raw statements that fold
+ * away (a raw-only implementation whose every arm missed the target) are
+ * counted on `FunctionNode.folded_away_raws` — check_function_node turns
+ * that into the empty-implementation error, replacing the tag-era
+ * "no aarch64 block found" coverage error.
  */
-export function fold_pragma_ifs(node: unknown, consts: PragmaConsts, status: CheckStatus): void {
+export function fold_pragma_ifs(
+	node: unknown,
+	consts: PragmaConsts,
+	status: CheckStatus,
+	owner_func?: FunctionNode,
+): void {
 	if (!node || typeof node !== "object") return;
 	if (Array.isArray(node)) {
-		for (const child of node) fold_pragma_ifs(child, consts, status);
+		for (const child of node) fold_pragma_ifs(child, consts, status, owner_func);
 		return;
 	}
 	const any_node = node as Record<string, unknown>;
 	if (Array.isArray(any_node.statements)) {
 		const list = any_node.statements as BaseNode[];
+		// A function's own statement list is the coverage boundary (matching
+		// the tag-era scanner): nested functions are their own owner, but
+		// pragma arms INSIDE this list keep the owner.
+		const is_func_list = any_node.node_type === "func";
+		const list_owner = is_func_list ? (node as FunctionNode) : owner_func;
 		for (let i = list.length - 1; i >= 0; i--) {
 			const child = list[i] as BaseNode | undefined;
 			// Recurse first so nested statement lists (pragma arms, function
 			// bodies, struct bodies, inner blocks) are already folded when we
 			// splice — the spliced-in statements are fold-free.
-			fold_pragma_ifs(child, consts, status);
+			fold_pragma_ifs(child, consts, status, list_owner);
 			if (!child || typeof child !== "object" || child.node_type !== "pragma_if") continue;
 			const inner = select_pragma_branch(child as PragmaIfNode, consts, status);
+			if (list_owner && list === list_owner.statements) {
+				const dropped = count_dropped_raws(child as PragmaIfNode, consts);
+				if (dropped > 0) {
+					list_owner.folded_away_raws = (list_owner.folded_away_raws ?? 0) + dropped;
+				}
+			}
 			list.splice(i, 1, ...inner);
 		}
 	}
 	for (const key of Object.keys(node)) {
 		if (key === "parent" || key === "scope" || key === "statements") continue;
 		const value = any_node[key];
-		if (value && typeof value === "object") fold_pragma_ifs(value, consts, status);
+		if (value && typeof value === "object") fold_pragma_ifs(value, consts, status, owner_func);
 	}
+}
+
+/**
+ * How many raw statements the pragma's unselected arms would have spliced —
+ * the raw-only-implementation coverage signal. Evaluator failures already
+ * reported through select_pragma_branch are counted conservatively (a block
+ * that vanished is a block that vanished).
+ */
+function count_dropped_raws(pragma: PragmaIfNode, consts: PragmaConsts): number {
+	let dropped = 0;
+	for (const branch of pragma.branches) {
+		if (!branch.condition) continue;
+		const result = evaluate_pragma_condition(branch.condition, consts);
+		if (result.ok && typeof result.value === "boolean" && result.value) continue;
+		for (const stmt of branch.block.statements ?? []) {
+			if (stmt.node_type === "raw") dropped++;
+		}
+	}
+	return dropped;
 }
 
 /** Pick the first matching arm of a folded pragma and return its statements. */

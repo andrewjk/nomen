@@ -249,14 +249,14 @@ test("raw blocks inside #switch arms select per target", () => {
 		func raw_probe = () {
 			#switch {
 				case META.arch == "c" {
-				\`\`\`
-				#c_target_marker
-				\`\`\`
+				#raw {
+					#c_target_marker
+				}
 				}
 				case META.arch == "aarch64" {
-				\`\`\`
-				#arm_target_marker
-				\`\`\`
+				#raw {
+					#arm_target_marker
+				}
 				}
 			}
 		}

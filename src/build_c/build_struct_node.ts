@@ -1015,7 +1015,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 
 		// Define the function
 		// HACK: Need to map names to types
-		// Raw `#arch: c` bodies see fat `nomen_string` values directly —
+		// Raw C bodies see fat `nomen_string` values directly —
 		// the function emits under its REAL label with its fat signature,
 		// and a C `char*` is an explicit `.ptr` (see docs/MEMORY.md).
 		// The signature builds into a scratch buffer so its text can be

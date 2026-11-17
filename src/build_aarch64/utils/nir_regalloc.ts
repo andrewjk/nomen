@@ -19,7 +19,6 @@ import type BaseNode from "../../nodes/BaseNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import type Type from "../../nodes/Type.ts";
 import type ValueNode from "../../nodes/ValueNode.ts";
-import { parse_raw_directives } from "../../raw_directives.ts";
 import { tree_is_call_free } from "../build_operation_node.ts";
 import { publish_slp_pairs, slp_pair_enabled, slp_pair_hints } from "../slp_pair.ts";
 import { value_number_loops } from "../value_number.ts";
@@ -697,17 +696,17 @@ function collect_nir_index_args(stmts: readonly NirStmt[], into: Map<unknown, Ni
 /**
  * Comment-stripped aarch64 text of a raw-only method body, or null when the
  * body has any non-raw statement, matched no aarch64 arm (a C/companion
- * path emits a real call), or matched only a `aarch64_use_c` block.
+ * path emits a real call), or is a companion-C (`#c`) block.
  */
-function raw_only_asm(func: FunctionNode, status: BuildStatus): string | null {
+function raw_only_asm(func: FunctionNode): string | null {
 	let asm = "";
 	let saw_arm = false;
 	for (const stmt of func.statements ?? []) {
 		if ((stmt as unknown as { node_type?: string }).node_type !== "raw") return null;
-		const text = (stmt as unknown as { value?: string }).value ?? "";
-		const { should_emit, code, is_c } = parse_raw_directives(text, "aarch64", status.platform);
-		if (!should_emit || !code) continue;
-		if (is_c) return null;
+		const raw = stmt as unknown as { value?: string; is_c?: boolean };
+		const code = raw.value ?? "";
+		if (!code) continue;
+		if (raw.is_c) return null;
 		asm += (asm ? "\n" : "") + code;
 		saw_arm = true;
 	}
@@ -763,7 +762,7 @@ function inline_call_scratch_safe(
 		return false;
 	}
 	if (func.params.length > 4) return false;
-	const asm = raw_only_asm(func, status);
+	const asm = raw_only_asm(func);
 	if (asm === null) return false;
 	return !/\bx[4-8]\b/.test(asm);
 }

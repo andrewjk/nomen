@@ -135,7 +135,7 @@ constructions", "The construction special form: `#spawn`"), not here.
 
 ## Raw bodies and the descriptor ABI
 
-Raw `#arch: c` bodies that invoke func-typed parameters (`modify_T` and
+Raw C bodies that invoke func-typed parameters (`modify_T` and
 friends) route through the descriptor: call
 `((Ret (*)(void *, Ps))f->code)(f->env, args…)`. The `modify_T`
 return-shape contract is unchanged: the function's returned mv fields

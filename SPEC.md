@@ -3107,7 +3107,7 @@ See [MEMORY.md](MEMORY.md) for the full memory model description.
 `unsafe` is a minimal typed-pointer subset reserved for the **System
 library** — it exists so the memory primitives (`Buffer`, `Array` inline
 storage, `StringBuilder`, `BigInt` limb access, …) can be written once as
-plain Nomen instead of duplicated `#arch: c` + `#arch: aarch64` raw blocks
+plain Nomen instead of duplicated per-target `#if META.arch` raw-block arms
 (see [CORE_RAW.md](docs/CORE_RAW.md)). Using it in user code is a compile
 error:
 
@@ -3121,7 +3121,7 @@ unsafe {
 
 The lockdown is airtight by construction: `unsafe` declarations/blocks,
 `ptr` types (locals, fields, parameters, return types), pointer casts and
-indexing, the per-instantiation constants, **and raw `#arch:` code blocks**
+indexing, the per-instantiation constants, **and raw code blocks**
 (which subsume everything `unsafe` offers) are all reserved for the System
 library source. There is no user-reachable expression whose type is a
 pointer, so user code cannot hold — let alone dereference — one.
@@ -3168,9 +3168,9 @@ them with literals and folds the dead arm of any `if` they guard.
 ## Compile-Time Conditionals
 
 Compile-time conditionals select code per compilation target **before any
-checking happens** — part of the same `#` directive family as the raw-block
-tags (`#arch:` / `#platform:`), but operating on ordinary Nomen code, with
-the language's own keywords. Conditions consult the `META` namespace and
+checking happens** — the same mechanism that selects a target's raw code
+block, operating on ordinary Nomen code with the language's own keywords.
+Conditions consult the `META` namespace and
 must be compile-time constants. The multi-arm form is `#switch`, spelled
 exactly like the runtime switch:
 
@@ -3193,10 +3193,12 @@ For a single binary choice, `#if` with a bare `else` mirrors the runtime if:
 }
 ```
 
-`META.arch` is the compilation target — `"c"`, `"aarch64"` or `"js"`, the
-same vocabulary the raw-block `#arch:` tags match. `META.platform` is the
+`META.arch` is the compilation target — `"c"`, `"aarch64"` or `"js"`. The
+raw-block dialect is separate: `#raw` is the target's default (assembly on
+aarch64, C on the C backend), and `#raw("c")` marks companion-compiled C
+source (see "Unsafe Code"). `META.platform` is the
 target platform — `"macos"`, `"linux"` or `"windows"` by default, or
-whatever `--platform` passes, the same vocabulary `#platform:` accepts.
+whatever `--platform` passes.
 Conditions compose with `==`, `!=`, `&&`, `||`, `!` and parentheses. A bare
 `META` value is an error — conditions must be bools, so compare:
 
@@ -3205,6 +3207,12 @@ Conditions compose with `==`, `!=`, `&&`, `||`, `!` and parentheses. A bare
     Console.write_line("portable path")
 }
 ```
+
+A target-exclusive **raw** arm names its target explicitly — `#if META.arch
+== "aarch64" { #raw { ... } }` — rather than using `else`: the `else` arm is
+"every other target", which includes `"js"`, and a raw body has no meaning
+there (the JS backend ignores raw blocks wholesale, so an explicit arm simply
+contributes nothing).
 
 ```
 #if META.arch { }
@@ -3432,10 +3440,11 @@ name links it exactly as if the source had mentioned it — snake_case
 names rarely collide, but prefer names that don't.
 
 Stage-1 limits: pragmas are valid at file scope and in function bodies
-(not inside struct/trait bodies), `META` exists only inside pragma
-conditions (it is not a runtime value), and raw `#arch:` / `#platform:`
-blocks keep their own tags — a later stage unifies them under `#if META`
-(see `docs/COMPTIME_PLAN_2.md`).
+(not inside struct/trait bodies), and `META` exists only inside pragma
+conditions (it is not a runtime value). Raw code blocks select their target
+through the same `#if` fold (stage 5 — see "Unsafe Code" and
+`docs/COMPTIME_PLAN_2.md`); the `#raw` opener carries only the block's own
+nature (`#raw("c")` dialect, `#raw(…, "file")` scope).
 
 ## Standard Library
 

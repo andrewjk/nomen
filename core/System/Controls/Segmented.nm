@@ -13,220 +13,220 @@ pub mv struct Segmented: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, int count) {
-		```
-		#arch: c
-		#platform: macos
-		id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSegmentedControl"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
-		((void(*)(id, SEL, long))objc_msgSend)(
-			seg, sel_registerName("setSegmentCount:"), (long)count);
-		((void(*)(id, SEL, long))objc_msgSend)(
-			seg, sel_registerName("setSelectedSegment:"), 0);
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), seg);
-		// NSSegmentedControl sends its action on USER segment clicks — arm
-		// it so on_select drains fire (programmatic setSelectedSegment
-		// stays silent).
-		extern void nomen_control_arm_selects(unsigned long long);
-		nomen_control_arm_selects((unsigned long long)seg);
-		self.handle = (uint64_t)seg;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSegmentedControl"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
-		((void(*)(id, SEL, long))objc_msgSend)(
-			seg, sel_registerName("setSegmentCount:"), (long)count);
-		((void(*)(id, SEL, long))objc_msgSend)(
-			seg, sel_registerName("setSelectedSegment:"), 0);
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), seg);
-		extern void nomen_control_arm_selects(unsigned long long) __asm__("nomen_control_arm_selects");
-		nomen_control_arm_selects((unsigned long long)seg);
-		self->handle = (uint64_t)seg;
-		```
-		```
-		#arch: c
-		#platform: ios
-		id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISegmentedControl"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 32));
-		// UISegmentedControl grows by insertion (no setSegmentCount:); fill it
-		// with empty titled segments so indices line up with the macOS API.
-		for (long i = 0; i < (long)count; i++) {
-			((void(*)(id, SEL, id, long, BOOL))objc_msgSend)(
-				seg, sel_registerName("insertSegmentWithTitle:atIndex:animated:"),
-				((id(*)(id, SEL, const char*))objc_msgSend)(
-					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""),
-				i, 0);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSegmentedControl"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
+				((void(*)(id, SEL, long))objc_msgSend)(
+					seg, sel_registerName("setSegmentCount:"), (long)count);
+				((void(*)(id, SEL, long))objc_msgSend)(
+					seg, sel_registerName("setSelectedSegment:"), 0);
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), seg);
+				// NSSegmentedControl sends its action on USER segment clicks — arm
+				// it so on_select drains fire (programmatic setSelectedSegment
+				// stays silent).
+				extern void nomen_control_arm_selects(unsigned long long);
+				nomen_control_arm_selects((unsigned long long)seg);
+				self.handle = (uint64_t)seg;
+			}
 		}
-		id parentView = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(
-				(id)window->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			parentView, sel_registerName("addSubview:"), seg);
-		self.handle = (uint64_t)seg;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISegmentedControl"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 32));
-		// UISegmentedControl grows by insertion (no setSegmentCount:); fill it
-		// with empty titled segments so indices line up with the macOS API.
-		for (long i = 0; i < (long)count; i++) {
-			((void(*)(id, SEL, id, long, BOOL))objc_msgSend)(
-				seg, sel_registerName("insertSegmentWithTitle:atIndex:animated:"),
-				((id(*)(id, SEL, const char*))objc_msgSend)(
-					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""),
-				i, 0);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSegmentedControl"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 24));
+				((void(*)(id, SEL, long))objc_msgSend)(
+					seg, sel_registerName("setSegmentCount:"), (long)count);
+				((void(*)(id, SEL, long))objc_msgSend)(
+					seg, sel_registerName("setSelectedSegment:"), 0);
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), seg);
+				extern void nomen_control_arm_selects(unsigned long long) __asm__("nomen_control_arm_selects");
+				nomen_control_arm_selects((unsigned long long)seg);
+				self->handle = (uint64_t)seg;
+			}
 		}
-		id parentView = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(
-				(id)window->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			parentView, sel_registerName("addSubview:"), seg);
-		self->handle = (uint64_t)seg;
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISegmentedControl"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 32));
+				// UISegmentedControl grows by insertion (no setSegmentCount:); fill it
+				// with empty titled segments so indices line up with the macOS API.
+				for (long i = 0; i < (long)count; i++) {
+					((void(*)(id, SEL, id, long, BOOL))objc_msgSend)(
+						seg, sel_registerName("insertSegmentWithTitle:atIndex:animated:"),
+						((id(*)(id, SEL, const char*))objc_msgSend)(
+							(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""),
+						i, 0);
+				}
+				id parentView = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(
+						(id)window->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					parentView, sel_registerName("addSubview:"), seg);
+				self.handle = (uint64_t)seg;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id seg = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UISegmentedControl"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 32));
+				// UISegmentedControl grows by insertion (no setSegmentCount:); fill it
+				// with empty titled segments so indices line up with the macOS API.
+				for (long i = 0; i < (long)count; i++) {
+					((void(*)(id, SEL, id, long, BOOL))objc_msgSend)(
+						seg, sel_registerName("insertSegmentWithTitle:atIndex:animated:"),
+						((id(*)(id, SEL, const char*))objc_msgSend)(
+							(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""),
+						i, 0);
+				}
+				id parentView = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(
+						(id)window->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					parentView, sel_registerName("addSubview:"), seg);
+				self->handle = (uint64_t)seg;
+			}
+		}
 	}
 
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
 	}
 
 	pub func set_label = (self, int index, string title) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setLabel:forSegment:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			(long)index);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setLabel:forSegment:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			(long)index);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, id, unsigned long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:forSegmentAtIndex:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			(unsigned long)index);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, id, unsigned long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:forSegmentAtIndex:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			(unsigned long)index);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setLabel:forSegment:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					(long)index);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setLabel:forSegment:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					(long)index);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, id, unsigned long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:forSegmentAtIndex:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					(unsigned long)index);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, id, unsigned long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:forSegmentAtIndex:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					(unsigned long)index);
+			}
+		}
 	}
 
 	pub func set_selected = (self, int index) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setSelectedSegment:"), (long)index);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setSelectedSegment:"), (long)index);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setSelectedSegmentIndex:"), (long)index);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setSelectedSegmentIndex:"), (long)index);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setSelectedSegment:"), (long)index);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setSelectedSegment:"), (long)index);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setSelectedSegmentIndex:"), (long)index);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setSelectedSegmentIndex:"), (long)index);
+			}
+		}
 	}
 
 	// The selected segment's index, or -1 when nothing is selected.
 	pub func selected_index = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectedSegment"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectedSegment"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectedSegmentIndex"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectedSegmentIndex"));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectedSegment"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectedSegment"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectedSegmentIndex"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectedSegmentIndex"));
+			}
+		}
 	}
 
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the user
@@ -235,82 +235,82 @@ pub mv struct Segmented: Control {
 	// not for programmatic setSelectedSegment. The handler body reads the
 	// segment through selected_index().
 	pub func take_select = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->handle);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->handle);
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->handle);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->handle);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("segmentCount"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("segmentCount"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("numberOfSegments"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("numberOfSegments"));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("segmentCount"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("segmentCount"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("numberOfSegments"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("numberOfSegments"));
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -340,41 +340,41 @@ pub mv struct Segmented: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
 	}
 }

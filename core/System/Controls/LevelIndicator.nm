@@ -14,236 +14,236 @@ pub mv struct LevelIndicator: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
-		```
-		#arch: c
-		#platform: macos
-		id li = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSLevelIndicator"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 80, 22));
-		((void(*)(id, SEL, long))objc_msgSend)(
-			li, sel_registerName("setLevelIndicatorStyle:"), 3); // NSRatingLevelIndicatorStyle = 3
-		((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMinValue:"), 0.0);
-		((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMaxValue:"), 5.0);
-		((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setDoubleValue:"), 0.0);
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), li);
-		self.handle = (uint64_t)li;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id li = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSLevelIndicator"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 80, 22));
-		((void(*)(id, SEL, long))objc_msgSend)(
-			li, sel_registerName("setLevelIndicatorStyle:"), 3); // NSRatingLevelIndicatorStyle = 3
-		((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMinValue:"), 0.0);
-		((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMaxValue:"), 5.0);
-		((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setDoubleValue:"), 0.0);
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), li);
-		self->handle = (uint64_t)li;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — no native level indicator (see GUI_PLAN Tier 1 #16;
-		 * compose from a Button row of symbols if needed). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS — no native level indicator (see GUI_PLAN Tier 1 #16;
-		 * compose from a Button row of symbols if needed). */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id li = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSLevelIndicator"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 80, 22));
+				((void(*)(id, SEL, long))objc_msgSend)(
+					li, sel_registerName("setLevelIndicatorStyle:"), 3); // NSRatingLevelIndicatorStyle = 3
+				((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMinValue:"), 0.0);
+				((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMaxValue:"), 5.0);
+				((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setDoubleValue:"), 0.0);
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), li);
+				self.handle = (uint64_t)li;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id li = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSLevelIndicator"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 80, 22));
+				((void(*)(id, SEL, long))objc_msgSend)(
+					li, sel_registerName("setLevelIndicatorStyle:"), 3); // NSRatingLevelIndicatorStyle = 3
+				((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMinValue:"), 0.0);
+				((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setMaxValue:"), 5.0);
+				((void(*)(id, SEL, double))objc_msgSend)(li, sel_registerName("setDoubleValue:"), 0.0);
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), li);
+				self->handle = (uint64_t)li;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — no native level indicator (see GUI_PLAN Tier 1 #16;
+				 * compose from a Button row of symbols if needed). */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS — no native level indicator (see GUI_PLAN Tier 1 #16;
+				 * compose from a Button row of symbols if needed). */
+			}
+		}
 	}
 
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// 0 relevancy, 1 discrete capacity, 2 continuous capacity, 3 rating stars.
 	pub func set_style = (self, int style) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setLevelIndicatorStyle:"), (long)style);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setLevelIndicatorStyle:"), (long)style);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setLevelIndicatorStyle:"), (long)style);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setLevelIndicatorStyle:"), (long)style);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func set_max = (self, float max) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, double))objc_msgSend)(
-			(id)self->handle, sel_registerName("setMaxValue:"), max);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, double))objc_msgSend)(
-			(id)self->handle, sel_registerName("setMaxValue:"), max);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, double))objc_msgSend)(
+					(id)self->handle, sel_registerName("setMaxValue:"), max);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, double))objc_msgSend)(
+					(id)self->handle, sel_registerName("setMaxValue:"), max);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func set_value = (self, float value) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, double))objc_msgSend)(
-			(id)self->handle, sel_registerName("setDoubleValue:"), value);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, double))objc_msgSend)(
-			(id)self->handle, sel_registerName("setDoubleValue:"), value);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, double))objc_msgSend)(
+					(id)self->handle, sel_registerName("setDoubleValue:"), value);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, double))objc_msgSend)(
+					(id)self->handle, sel_registerName("setDoubleValue:"), value);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func value = (self, out float) {
-		```
-		#arch: c
-		#platform: macos
-		return ((double(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("doubleValue"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return ((double(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("doubleValue"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0.0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0.0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return ((double(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("doubleValue"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return ((double(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("doubleValue"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0.0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0.0;
+			}
+		}
 	}
 
 	pub func max = (self, out float) {
-		```
-		#arch: c
-		#platform: macos
-		return ((double(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("maxValue"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return ((double(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("maxValue"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0.0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0.0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return ((double(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("maxValue"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return ((double(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("maxValue"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0.0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0.0;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -273,33 +273,33 @@ pub mv struct LevelIndicator: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

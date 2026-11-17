@@ -613,6 +613,7 @@ export function monomorphize(
 				undefined,
 				status.traits,
 				{ enums: status.enums, bitsets: status.bitsets },
+				status.arch,
 			);
 		}
 		mono_field.is_library = field.is_library;
@@ -725,10 +726,17 @@ export function monomorphize(
 		if (func.name === "#init") continue;
 		if (func.name === "copy" && has_ref_type_arg) continue;
 		const cloned = clone_node(func) as FunctionNode;
-		substitute_raw_types(cloned, substitution, status.structs, status.traits, {
-			enums: status.enums,
-			bitsets: status.bitsets,
-		});
+		substitute_raw_types(
+			cloned,
+			substitution,
+			status.structs,
+			status.traits,
+			{
+				enums: status.enums,
+				bitsets: status.bitsets,
+			},
+			status.arch,
+		);
 		fold_substituted_constant_ifs(cloned.statements);
 		// Compile-time `#for` loops deferred inside the generic method body
 		// unroll HERE: method clones are stamped `checked = true` (never
@@ -797,6 +805,7 @@ export function monomorphize(
 					undefined,
 					status.traits,
 					{ enums: status.enums, bitsets: status.bitsets },
+					status.arch,
 				);
 			}
 		}
@@ -889,10 +898,17 @@ export function monomorphize(
 		// variadic tuple param materializes against the concrete type args and
 		// its body resolves self.method() against the monomorphized struct.
 		const cloned = clone_node(generic_init) as FunctionNode;
-		substitute_raw_types(cloned, substitution, status.structs, status.traits, {
-			enums: status.enums,
-			bitsets: status.bitsets,
-		});
+		substitute_raw_types(
+			cloned,
+			substitution,
+			status.structs,
+			status.traits,
+			{
+				enums: status.enums,
+				bitsets: status.bitsets,
+			},
+			status.arch,
+		);
 		fold_substituted_constant_ifs(cloned.statements);
 		// The cloned #init body IS re-checked, so its deferred compile-time
 		// `#for` loops expand then — but the iterable's type-parameter
@@ -914,6 +930,7 @@ export function monomorphize(
 					undefined,
 					status.traits,
 					{ enums: status.enums, bitsets: status.bitsets },
+					status.arch,
 				);
 			}
 		}
@@ -948,6 +965,7 @@ export function monomorphize(
 			function_emission_names: status.function_emission_names,
 			// Preserve the trusted-internal opt-in across the clone check.
 			allow_internal: status.allow_internal,
+			arch: status.arch,
 			library_boundary: status.library_boundary,
 			is_mono_body_recheck: true,
 		};
@@ -1025,6 +1043,7 @@ export function monomorphize(
 			function_emission_names: status.function_emission_names,
 			allow_internal: status.allow_internal,
 			library_boundary: status.library_boundary,
+			arch: status.arch,
 			is_mono_body_recheck: true,
 		};
 		check_function_node(mono_copy, copy_status);
@@ -2499,6 +2518,7 @@ function substitute_raw_types(
 	structs: StructNode[],
 	traits: { name: string }[],
 	tables: NullableTypeTables,
+	arch?: string,
 ) {
 	// Compute params whose type resolves to a non-simple struct: in the C
 	// backend those are passed by pointer (`struct T *value`), but raw C
@@ -2519,7 +2539,7 @@ function substitute_raw_types(
 		}
 	}
 	for (const stmt of func.statements) {
-		substitute_raw_in_node(stmt, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(stmt, substitution, structs, deref_params, traits, tables, arch);
 	}
 }
 
@@ -2661,33 +2681,6 @@ function raw_c_type_name(name: string): string {
 	return get_built_in_type(name)?.c_type ?? name;
 }
 
-/**
- * Whether a raw block's content is pure aarch64 assembly (`#arch: aarch64`).
- * asm immediates (`mov x3, #T_SIZE`) need the compiler's numeric layout
- * size; every other target (`#arch: c`, `aarch64_use_c`, or untagged) is C
- * source, where the size must be `sizeof(T)` — C lays out structs with
- * natural alignment (tail padding), so the compiler's unpadded numeric size
- * would disagree with C's own `sizeof`/pointer-arithmetic strides and
- * undersize heap slabs (heap-buffer-overflow on wide-struct elements).
- */
-function raw_block_is_pure_asm(value: string): boolean {
-	for (const line of value.split("\n")) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
-		if (trimmed.startsWith("#arch:")) {
-			const arches = trimmed
-				.substring(6)
-				.split(",")
-				.map((a) => a.trim())
-				.filter((a) => a.length > 0);
-			return arches.length > 0 && arches.every((a) => a === "aarch64");
-		}
-		if (trimmed.startsWith("#platform:") || trimmed.startsWith("#scope:")) continue;
-		break;
-	}
-	return false;
-}
-
 function is_reference_type_arg(
 	t: Type,
 	structs: StructNode[],
@@ -2706,6 +2699,7 @@ function substitute_raw_in_node(
 	deref_params: Set<string> = new Set(),
 	traits: { name: string }[] = [],
 	tables: NullableTypeTables = { enums: [], bitsets: [] },
+	arch?: string,
 ) {
 	// `unsafe` Nomen bodies use the same per-instantiation constants the raw
 	// blocks do — `T_SIZE` (element byte size), `T_NEEDS_STRDUP`/`T_FAT`
@@ -2767,6 +2761,15 @@ function substitute_raw_in_node(
 	if (node.node_type === "raw") {
 		const raw = node as RawNode;
 		let value = raw.value;
+		// Whether this block's content is ASSEMBLY for this target: asm
+		// immediates (`mov x3, #T_SIZE`) need the compiler's numeric layout
+		// size, while C source is substituted with `sizeof(T)` — C lays out
+		// structs with natural alignment (tail padding), and the compiler's
+		// unpadded numeric size would disagree with C's own `sizeof`/
+		// pointer-arithmetic strides and undersize heap slabs (heap-buffer-
+		// overflow on wide-struct elements). `#raw("c")` is companion-C; an
+		// unmarked block is the target's default dialect.
+		const pure_asm = !raw.is_c && arch === "aarch64";
 		for (const [param, type] of substitution) {
 			// In raw C blocks, T must become a valid C type name.
 			// - `string` is not a C type → substitute `char*`
@@ -2791,7 +2794,7 @@ function substitute_raw_in_node(
 			// the pointer width anyway, so substitute sizeof(void *).
 			const size = raw_type_size(type, structs, tables);
 			const is_handle_element = struct_node?.is_class || traits.some((t) => t.name === type);
-			const size_expr = raw_block_is_pure_asm(value)
+			const size_expr = pure_asm
 				? String(size)
 				: is_handle_element
 					? "sizeof(void *)"
@@ -2865,7 +2868,7 @@ function substitute_raw_in_node(
 		// constant `mov xN, #T_SIZE`) and power-of-two stride multiplies
 		// (madd/mul → lsl). C-source blocks are left alone — the C compiler
 		// folds them itself.
-		if (raw_block_is_pure_asm(value)) {
+		if (pure_asm) {
 			value = fold_asm_constants(value);
 		}
 		raw.value = value;
@@ -2954,26 +2957,34 @@ function substitute_raw_in_node(
 	if (any_node.allocations && Array.isArray(any_node.allocations)) {
 		for (const child of any_node.allocations) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables, arch);
 			}
 		}
 	}
 	if (any_node.statements && Array.isArray(any_node.statements)) {
 		for (const child of any_node.statements) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables, arch);
 			}
 		}
 	}
 	if (any_node.params && Array.isArray(any_node.params)) {
 		for (const child of any_node.params) {
 			if (child && typeof child === "object" && "node_type" in child) {
-				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables);
+				substitute_raw_in_node(child, substitution, structs, deref_params, traits, tables, arch);
 			}
 		}
 	}
 	if (any_node.value && any_node.value.node_type) {
-		substitute_raw_in_node(any_node.value, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.value,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	if (any_node.left_value?.node_type) {
 		substitute_raw_in_node(
@@ -2983,6 +2994,7 @@ function substitute_raw_in_node(
 			deref_params,
 			traits,
 			tables,
+			arch,
 		);
 	}
 	if (any_node.right_value?.node_type) {
@@ -2993,22 +3005,63 @@ function substitute_raw_in_node(
 			deref_params,
 			traits,
 			tables,
+			arch,
 		);
 	}
 	if (any_node.target?.node_type) {
-		substitute_raw_in_node(any_node.target, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.target,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	if (any_node.access?.node_type) {
-		substitute_raw_in_node(any_node.access, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.access,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	if (any_node.swap?.node_type) {
-		substitute_raw_in_node(any_node.swap, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.swap,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	if (any_node.condition?.node_type) {
-		substitute_raw_in_node(any_node.condition, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.condition,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	if (any_node.index?.node_type) {
-		substitute_raw_in_node(any_node.index, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.index,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	// Branch bodies. The walk above covers an if's CONDITION (that is what
 	// fold_substituted_constant_ifs dispatches on) but not its branches — a
@@ -3021,7 +3074,15 @@ function substitute_raw_in_node(
 	// is an exact-match rewrite, so re-visiting already-folded statements is
 	// harmless.
 	if (any_node.if_branch?.node_type) {
-		substitute_raw_in_node(any_node.if_branch, substitution, structs, deref_params, traits, tables);
+		substitute_raw_in_node(
+			any_node.if_branch,
+			substitution,
+			structs,
+			deref_params,
+			traits,
+			tables,
+			arch,
+		);
 	}
 	if (any_node.else_branch?.node_type) {
 		substitute_raw_in_node(
@@ -3031,18 +3092,35 @@ function substitute_raw_in_node(
 			deref_params,
 			traits,
 			tables,
+			arch,
 		);
 	}
 	if (Array.isArray(any_node.cases)) {
 		for (const c of any_node.cases) {
 			if (c?.condition?.node_type) {
-				substitute_raw_in_node(c.condition, substitution, structs, deref_params, traits, tables);
+				substitute_raw_in_node(
+					c.condition,
+					substitution,
+					structs,
+					deref_params,
+					traits,
+					tables,
+					arch,
+				);
 			}
 			if (c?.match_value?.node_type) {
-				substitute_raw_in_node(c.match_value, substitution, structs, deref_params, traits, tables);
+				substitute_raw_in_node(
+					c.match_value,
+					substitution,
+					structs,
+					deref_params,
+					traits,
+					tables,
+					arch,
+				);
 			}
 			if (c?.branch?.node_type) {
-				substitute_raw_in_node(c.branch, substitution, structs, deref_params, traits, tables);
+				substitute_raw_in_node(c.branch, substitution, structs, deref_params, traits, tables, arch);
 			}
 		}
 	}
@@ -3340,6 +3418,7 @@ function specialize_function(
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
 		is_mono_body_recheck: true,
+		arch: status.arch,
 		comptime_type_bindings: function_type_bindings,
 	};
 

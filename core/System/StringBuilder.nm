@@ -33,54 +33,56 @@ pub struct StringBuilder {
 
 	// Append a single byte (char).
 	pub inline func append_char = (ref self {}, char c) {
-		```
-		#arch: c
-		int idx = self->len;
-		if (idx + 1 >= self->cap) {
-			int nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < idx + 2) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
+		#if META.arch == "c" {
+			#raw {
+				int idx = self->len;
+				if (idx + 1 >= self->cap) {
+					int nc = self->cap;
+					if (nc == 0) nc = 16;
+					while (nc < idx + 2) nc *= 2;
+					self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+					self->cap = nc;
+				}
+				((unsigned char*)(unsigned long long)self->data)[idx] = (unsigned char)c;
+				self->len = idx + 1;
+			}
 		}
-		((unsigned char*)(unsigned long long)self->data)[idx] = (unsigned char)c;
-		self->len = idx + 1;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, w1 = c (low byte)
-		// Save c across the ensure/grow call.
-		sub sp, sp, #16
-		str w1, [sp, #0]
-		ldr x1, [x19, #16]        // len
-		add x1, x1, #2            // need len + 2 bytes (char + null terminator room)
-		// inline ensure
-		ldr x2, [x19, #24]        // cap
-		cmp x2, x1
-		b.ge .Lsb_ac_store
-		mov x3, #16
-		cmp x2, #0
-		csel x3, x3, x2, eq
-		.Lsb_ac_loop:
-		cmp x3, x1
-		b.ge .Lsb_ac_grow
-		lsl x3, x3, #1
-		b .Lsb_ac_loop
-		.Lsb_ac_grow:
-		str x3, [x19, #24]        // cap = new_cap
-		ldr x0, [x19, #8]
-		mov x1, x3
-		bl _realloc
-		str x0, [x19, #8]
-		.Lsb_ac_store:
-		ldr w1, [sp, #0]          // c
-		ldr x0, [x19, #8]         // data
-		ldr x2, [x19, #16]        // len
-		strb w1, [x0, x2]
-		add x2, x2, #1
-		str x2, [x19, #16]        // len = len + 1
-		add sp, sp, #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, w1 = c (low byte)
+				// Save c across the ensure/grow call.
+				sub sp, sp, #16
+				str w1, [sp, #0]
+				ldr x1, [x19, #16]        // len
+				add x1, x1, #2            // need len + 2 bytes (char + null terminator room)
+				// inline ensure
+				ldr x2, [x19, #24]        // cap
+				cmp x2, x1
+				b.ge .Lsb_ac_store
+				mov x3, #16
+				cmp x2, #0
+				csel x3, x3, x2, eq
+				.Lsb_ac_loop:
+				cmp x3, x1
+				b.ge .Lsb_ac_grow
+				lsl x3, x3, #1
+				b .Lsb_ac_loop
+				.Lsb_ac_grow:
+				str x3, [x19, #24]        // cap = new_cap
+				ldr x0, [x19, #8]
+				mov x1, x3
+				bl _realloc
+				str x0, [x19, #8]
+				.Lsb_ac_store:
+				ldr w1, [sp, #0]          // c
+				ldr x0, [x19, #8]         // data
+				ldr x2, [x19, #16]        // len
+				strb w1, [x0, x2]
+				add x2, x2, #1
+				str x2, [x19, #16]        // len = len + 1
+				add sp, sp, #16
+			}
+		}
 	}
 
 	// Append a base-10 integer WITHOUT materializing a string: the digits are
@@ -90,189 +92,193 @@ pub struct StringBuilder {
 	// instructions against the buffer. The raw body is spliced per call site
 	// (labels renamed by the splicer), so the digit loop is truly inline.
 	pub inline func append_int = (ref self {}, int n) {
-		```
-		#arch: c
-		long v = n;
-		char tmp[24];
-		int pos = 24;
-		// Magnitude via the two's-complement negate (u stays correct for
-		// INT64_MIN, whose positive counterpart is not representable).
-		unsigned long long u = v < 0 ? (unsigned long long)(-(v + 1)) + 1ULL : (unsigned long long)v;
-		do {
-			tmp[--pos] = (char)('0' + (int)(u % 10));
-			u /= 10;
-		} while (u != 0);
-		if (v < 0) tmp[--pos] = '-';
-		long sl = 24 - pos;
-		long idx = self->len;
-		if (idx + sl + 1 > self->cap) {
-			long nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < idx + sl + 1) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
+		#if META.arch == "c" {
+			#raw {
+				long v = n;
+				char tmp[24];
+				int pos = 24;
+				// Magnitude via the two's-complement negate (u stays correct for
+				// INT64_MIN, whose positive counterpart is not representable).
+				unsigned long long u = v < 0 ? (unsigned long long)(-(v + 1)) + 1ULL : (unsigned long long)v;
+				do {
+					tmp[--pos] = (char)('0' + (int)(u % 10));
+					u /= 10;
+				} while (u != 0);
+				if (v < 0) tmp[--pos] = '-';
+				long sl = 24 - pos;
+				long idx = self->len;
+				if (idx + sl + 1 > self->cap) {
+					long nc = self->cap;
+					if (nc == 0) nc = 16;
+					while (nc < idx + sl + 1) nc *= 2;
+					self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+					self->cap = nc;
+				}
+				memcpy((void*)((unsigned long long)self->data + (unsigned long long)idx), tmp + pos, (size_t)sl);
+				self->len = idx + sl;
+			}
 		}
-		memcpy((void*)((unsigned long long)self->data + (unsigned long long)idx), tmp + pos, (size_t)sl);
-		self->len = idx + sl;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = n. Format into a 24-byte scratch at [sp+40..64)
-		// (20 chars for INT64_MIN), then copy into the buffer
-		// (capacity-checked inline, like append_char). Saves live below the
-		// scratch: [sp]=pos, [sp+8]=sl, [sp+16]=idx, [sp+24]=new_cap.
-		sub sp, sp, #64
-		mov x9, x1                 // v = n
-		mov x10, x9
-		cmp x9, #0
-		b.ge .Lsb_ai_pos
-		neg x10, x10               // magnitude (wraps correctly for INT64_MIN)
-		.Lsb_ai_pos:
-		add x11, sp, #64           // pos = end of scratch
-		mov x12, x11
-		.Lsb_ai_digit:
-		mov x13, #10
-		udiv x14, x10, x13
-		msub x15, x14, x13, x10    // rem = v - q*10
-		add x15, x15, #48
-		sub x12, x12, #1
-		strb w15, [x12]
-		mov x10, x14
-		cbnz x10, .Lsb_ai_digit
-		cmp x9, #0
-		b.ge .Lsb_ai_store
-		sub x12, x12, #1
-		mov w15, #45               // '-'
-		strb w15, [x12]
-		.Lsb_ai_store:
-		sub x1, x11, x12           // sl = end - pos
-		ldr x2, [x19, #16]         // len
-		add x3, x2, x1
-		add x3, x3, #1             // needed
-		ldr x4, [x19, #24]         // cap
-		cmp x4, x3
-		b.ge .Lsb_ai_copy
-		mov x5, #16
-		cmp x4, #0
-		csel x5, x5, x4, eq
-		.Lsb_ai_grow:
-		cmp x5, x3
-		b.ge .Lsb_ai_realloc
-		lsl x5, x5, #1
-		b .Lsb_ai_grow
-		.Lsb_ai_realloc:
-		str x12, [sp, #0]          // pos
-		str x1, [sp, #8]           // sl
-		str x2, [sp, #16]          // idx
-		str x5, [sp, #24]          // new_cap
-		ldr x0, [x19, #8]
-		mov x1, x5
-		bl _realloc
-		str x0, [x19, #8]
-		ldr x5, [sp, #24]
-		str x5, [x19, #24]
-		ldr x12, [sp, #0]
-		ldr x1, [sp, #8]
-		ldr x2, [sp, #16]
-		.Lsb_ai_copy:
-		ldr x0, [x19, #8]          // data
-		add x0, x0, x2             // dst = data + idx
-		mov x3, x1
-		.Lsb_ai_cl:
-		cbz x3, .Lsb_ai_done
-		ldrb w4, [x12]
-		strb w4, [x0]
-		add x12, x12, #1
-		add x0, x0, #1
-		sub x3, x3, #1
-		b .Lsb_ai_cl
-		.Lsb_ai_done:
-		add x2, x2, x1             // len += sl
-		str x2, [x19, #16]
-		add sp, sp, #64
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = n. Format into a 24-byte scratch at [sp+40..64)
+				// (20 chars for INT64_MIN), then copy into the buffer
+				// (capacity-checked inline, like append_char). Saves live below the
+				// scratch: [sp]=pos, [sp+8]=sl, [sp+16]=idx, [sp+24]=new_cap.
+				sub sp, sp, #64
+				mov x9, x1                 // v = n
+				mov x10, x9
+				cmp x9, #0
+				b.ge .Lsb_ai_pos
+				neg x10, x10               // magnitude (wraps correctly for INT64_MIN)
+				.Lsb_ai_pos:
+				add x11, sp, #64           // pos = end of scratch
+				mov x12, x11
+				.Lsb_ai_digit:
+				mov x13, #10
+				udiv x14, x10, x13
+				msub x15, x14, x13, x10    // rem = v - q*10
+				add x15, x15, #48
+				sub x12, x12, #1
+				strb w15, [x12]
+				mov x10, x14
+				cbnz x10, .Lsb_ai_digit
+				cmp x9, #0
+				b.ge .Lsb_ai_store
+				sub x12, x12, #1
+				mov w15, #45               // '-'
+				strb w15, [x12]
+				.Lsb_ai_store:
+				sub x1, x11, x12           // sl = end - pos
+				ldr x2, [x19, #16]         // len
+				add x3, x2, x1
+				add x3, x3, #1             // needed
+				ldr x4, [x19, #24]         // cap
+				cmp x4, x3
+				b.ge .Lsb_ai_copy
+				mov x5, #16
+				cmp x4, #0
+				csel x5, x5, x4, eq
+				.Lsb_ai_grow:
+				cmp x5, x3
+				b.ge .Lsb_ai_realloc
+				lsl x5, x5, #1
+				b .Lsb_ai_grow
+				.Lsb_ai_realloc:
+				str x12, [sp, #0]          // pos
+				str x1, [sp, #8]           // sl
+				str x2, [sp, #16]          // idx
+				str x5, [sp, #24]          // new_cap
+				ldr x0, [x19, #8]
+				mov x1, x5
+				bl _realloc
+				str x0, [x19, #8]
+				ldr x5, [sp, #24]
+				str x5, [x19, #24]
+				ldr x12, [sp, #0]
+				ldr x1, [sp, #8]
+				ldr x2, [sp, #16]
+				.Lsb_ai_copy:
+				ldr x0, [x19, #8]          // data
+				add x0, x0, x2             // dst = data + idx
+				mov x3, x1
+				.Lsb_ai_cl:
+				cbz x3, .Lsb_ai_done
+				ldrb w4, [x12]
+				strb w4, [x0]
+				add x12, x12, #1
+				add x0, x0, #1
+				sub x3, x3, #1
+				b .Lsb_ai_cl
+				.Lsb_ai_done:
+				add x2, x2, x1             // len += sl
+				str x2, [x19, #16]
+				add sp, sp, #64
+			}
+		}
 	}
 
 	// Append a float with the SAME text `float.to_string` produces ("%f"):
 	// one snprintf into a stack scratch, then a bulk copy into the buffer —
 	// no sizing pass and no intermediate string allocation.
 	pub inline func append_float = (ref self {}, float f) {
-		```
-		#arch: c
-		char tmp[360];
-		int sl = snprintf(tmp, sizeof(tmp), "%f", f);
-		long idx = self->len;
-		if (idx + sl + 1 > self->cap) {
-			long nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < idx + sl + 1) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
+		#if META.arch == "c" {
+			#raw {
+				char tmp[360];
+				int sl = snprintf(tmp, sizeof(tmp), "%f", f);
+				long idx = self->len;
+				if (idx + sl + 1 > self->cap) {
+					long nc = self->cap;
+					if (nc == 0) nc = 16;
+					while (nc < idx + sl + 1) nc *= 2;
+					self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+					self->cap = nc;
+				}
+				memcpy((void*)((unsigned long long)self->data + (unsigned long long)idx), tmp, (size_t)sl);
+				self->len = idx + sl;
+			}
 		}
-		memcpy((void*)((unsigned long long)self->data + (unsigned long long)idx), tmp, (size_t)sl);
-		self->len = idx + sl;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = f (raw bits — float params ride integer
-		// registers). Scratch [sp+16..sp+376); [sp+0] is snprintf's
-		// variadic slot, reused after the call for `sl`; [sp+8] = idx across
-		// the grow call; [sp+376] = new_cap.
-		sub sp, sp, #384
-		fmov d0, x1                // f bits (capture before x1 is reused)
-		str d0, [sp, #0]           // variadic double slot
-		add x0, sp, #16
-		mov x1, #360
-		adr x2, .Lsb_af_fmt
-		bl _snprintf
-		str x0, [sp, #0]           // sl
-		ldr x2, [x19, #16]         // idx = len
-		add x3, x2, x0
-		add x3, x3, #1             // needed
-		ldr x4, [x19, #24]         // cap
-		cmp x4, x3
-		b.ge .Lsb_af_copy
-		mov x5, #16
-		cmp x4, #0
-		csel x5, x5, x4, eq
-		.Lsb_af_grow:
-		cmp x5, x3
-		b.ge .Lsb_af_realloc
-		lsl x5, x5, #1
-		b .Lsb_af_grow
-		.Lsb_af_realloc:
-		str x2, [sp, #8]           // idx
-		str x5, [sp, #376]         // new_cap (above the scratch)
-		ldr x0, [x19, #8]
-		mov x1, x5
-		bl _realloc
-		str x0, [x19, #8]
-		ldr x5, [sp, #376]
-		str x5, [x19, #24]
-		ldr x2, [sp, #8]
-		.Lsb_af_copy:
-		ldr x0, [x19, #8]          // data
-		add x0, x0, x2             // dst = data + idx
-		add x4, sp, #16            // src = scratch
-		ldr x1, [sp, #0]           // sl
-		mov x3, x1
-		.Lsb_af_cl:
-		cbz x3, .Lsb_af_done
-		ldrb w5, [x4]
-		strb w5, [x0]
-		add x4, x4, #1
-		add x0, x0, #1
-		sub x3, x3, #1
-		b .Lsb_af_cl
-		.Lsb_af_done:
-		add x2, x2, x1             // len += sl
-		str x2, [x19, #16]
-		add sp, sp, #384
-		b .Lsb_af_after
-		.Lsb_af_fmt: .asciz "%f"
-		.p2align 2
-		.Lsb_af_after:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = f (raw bits — float params ride integer
+				// registers). Scratch [sp+16..sp+376); [sp+0] is snprintf's
+				// variadic slot, reused after the call for `sl`; [sp+8] = idx across
+				// the grow call; [sp+376] = new_cap.
+				sub sp, sp, #384
+				fmov d0, x1                // f bits (capture before x1 is reused)
+				str d0, [sp, #0]           // variadic double slot
+				add x0, sp, #16
+				mov x1, #360
+				adr x2, .Lsb_af_fmt
+				bl _snprintf
+				str x0, [sp, #0]           // sl
+				ldr x2, [x19, #16]         // idx = len
+				add x3, x2, x0
+				add x3, x3, #1             // needed
+				ldr x4, [x19, #24]         // cap
+				cmp x4, x3
+				b.ge .Lsb_af_copy
+				mov x5, #16
+				cmp x4, #0
+				csel x5, x5, x4, eq
+				.Lsb_af_grow:
+				cmp x5, x3
+				b.ge .Lsb_af_realloc
+				lsl x5, x5, #1
+				b .Lsb_af_grow
+				.Lsb_af_realloc:
+				str x2, [sp, #8]           // idx
+				str x5, [sp, #376]         // new_cap (above the scratch)
+				ldr x0, [x19, #8]
+				mov x1, x5
+				bl _realloc
+				str x0, [x19, #8]
+				ldr x5, [sp, #376]
+				str x5, [x19, #24]
+				ldr x2, [sp, #8]
+				.Lsb_af_copy:
+				ldr x0, [x19, #8]          // data
+				add x0, x0, x2             // dst = data + idx
+				add x4, sp, #16            // src = scratch
+				ldr x1, [sp, #0]           // sl
+				mov x3, x1
+				.Lsb_af_cl:
+				cbz x3, .Lsb_af_done
+				ldrb w5, [x4]
+				strb w5, [x0]
+				add x4, x4, #1
+				add x0, x0, #1
+				sub x3, x3, #1
+				b .Lsb_af_cl
+				.Lsb_af_done:
+				add x2, x2, x1             // len += sl
+				str x2, [x19, #16]
+				add sp, sp, #384
+				b .Lsb_af_after
+				.Lsb_af_fmt: .asciz "%f"
+				.p2align 2
+				.Lsb_af_after:
+			}
+		}
 	}
 
 	// Append a borrowed view without materializing it.
@@ -392,63 +398,65 @@ pub struct StringBuilder {
 	// (`mv out string` — the raw body mallocs the result, so the caller
 	// owns it by signature, like `Console.read_line`.)
 	pub func take_since = (ref self {}, int mark, mv out string) {
-		```
-		#arch: c
-		int start = mark;
-		if (start < 0) start = 0;
-		if (start > self->len) start = self->len;
-		int n = self->len - start;
-		char* buf = (char*)malloc((size_t)n + 1);
-		if (n > 0) memcpy(buf, (void*)(unsigned long long)(self->data + start), n);
-		buf[n] = 0;
-		self->len = start;
-		// Fat-string ABI: return the (ptr, len) pair — no strlen.
-		return (nomen_string){ buf, n };
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = mark. Clamp start to [0, len]; malloc(n+1),
-		// copy the tail, null-terminate, rewind len. Live values live in a
-		// 32-byte (16-aligned) frame across the calls (x0-x18 are
-		// caller-saved): [sp]=start, [sp+8]=n, [sp+16]=buf.
-		ldr x2, [x19, #16]          // len
-		mov x3, x1                  // start = mark
-		cmp x3, #0
-		b.ge .Lsb_tk_hi
-		mov x3, #0
-		.Lsb_tk_hi:
-		cmp x3, x2
-		b.le .Lsb_tk_ok
-		mov x3, x2                  // start = min(start, len)
-		.Lsb_tk_ok:
-		sub x4, x2, x3              // n = len - start
-		sub sp, sp, #32
-		str x3, [sp, #0]            // start
-		str x4, [sp, #8]            // n
-		add x0, x4, #1
-		// buf = malloc(n + 1) — bare call line: the audit pass rewrites
-		// `bl _malloc` (line-exact) to the counter-wrapped allocator.
-		bl _malloc
-		str x0, [sp, #16]
-		ldr x1, [sp, #8]            // n
-		cbz x1, .Lsb_tk_copied
-		ldr x0, [sp, #16]           // dst = buf
-		ldr x3, [x19, #8]           // data
-		ldr x4, [sp, #0]            // start
-		add x1, x3, x4              // src = data + start
-		ldr x2, [sp, #8]            // n
-		bl _memcpy
-		.Lsb_tk_copied:
-		ldr x0, [sp, #16]           // buf
-		ldr x1, [sp, #8]            // n
-		add x2, x0, x1
-		strb wzr, [x2]              // buf[n] = 0
-		ldr x3, [sp, #0]            // start
-		str x3, [x19, #16]          // len = start
-		ldr x0, [sp, #16]           // return pair: (buf, n)
-		ldr x1, [sp, #8]
-		add sp, sp, #32
-		```
+		#if META.arch == "c" {
+			#raw {
+				int start = mark;
+				if (start < 0) start = 0;
+				if (start > self->len) start = self->len;
+				int n = self->len - start;
+				char* buf = (char*)malloc((size_t)n + 1);
+				if (n > 0) memcpy(buf, (void*)(unsigned long long)(self->data + start), n);
+				buf[n] = 0;
+				self->len = start;
+				// Fat-string ABI: return the (ptr, len) pair — no strlen.
+				return (nomen_string){ buf, n };
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = mark. Clamp start to [0, len]; malloc(n+1),
+				// copy the tail, null-terminate, rewind len. Live values live in a
+				// 32-byte (16-aligned) frame across the calls (x0-x18 are
+				// caller-saved): [sp]=start, [sp+8]=n, [sp+16]=buf.
+				ldr x2, [x19, #16]          // len
+				mov x3, x1                  // start = mark
+				cmp x3, #0
+				b.ge .Lsb_tk_hi
+				mov x3, #0
+				.Lsb_tk_hi:
+				cmp x3, x2
+				b.le .Lsb_tk_ok
+				mov x3, x2                  // start = min(start, len)
+				.Lsb_tk_ok:
+				sub x4, x2, x3              // n = len - start
+				sub sp, sp, #32
+				str x3, [sp, #0]            // start
+				str x4, [sp, #8]            // n
+				add x0, x4, #1
+				// buf = malloc(n + 1) — bare call line: the audit pass rewrites
+				// `bl _malloc` (line-exact) to the counter-wrapped allocator.
+				bl _malloc
+				str x0, [sp, #16]
+				ldr x1, [sp, #8]            // n
+				cbz x1, .Lsb_tk_copied
+				ldr x0, [sp, #16]           // dst = buf
+				ldr x3, [x19, #8]           // data
+				ldr x4, [sp, #0]            // start
+				add x1, x3, x4              // src = data + start
+				ldr x2, [sp, #8]            // n
+				bl _memcpy
+				.Lsb_tk_copied:
+				ldr x0, [sp, #16]           // buf
+				ldr x1, [sp, #8]            // n
+				add x2, x0, x1
+				strb wzr, [x2]              // buf[n] = 0
+				ldr x3, [sp, #0]            // start
+				str x3, [x19, #16]          // len = start
+				ldr x0, [sp, #16]           // return pair: (buf, n)
+				ldr x1, [sp, #8]
+				add sp, sp, #32
+			}
+		}
 	}
 
 	// Finalize: null-terminate, return the byte buffer as a string, and
@@ -460,58 +468,60 @@ pub struct StringBuilder {
 	// builder's primary read-back — the contract should not depend on the
 	// default.
 	pub func to_string = (ref self {}, out string) {
-		```
-		#arch: c
-		int idx = self->len;
-		int needed = idx + 1;
-		if (needed > self->cap) {
-			int nc = self->cap;
-			if (nc == 0) nc = 16;
-			while (nc < needed) nc *= 2;
-			self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
-			self->cap = nc;
+		#if META.arch == "c" {
+			#raw {
+				int idx = self->len;
+				int needed = idx + 1;
+				if (needed > self->cap) {
+					int nc = self->cap;
+					if (nc == 0) nc = 16;
+					while (nc < needed) nc *= 2;
+					self->data = (unsigned long long)realloc((void*)(unsigned long long)self->data, nc);
+					self->cap = nc;
+				}
+				((unsigned char*)(unsigned long long)self->data)[idx] = 0;
+				unsigned long long result = self->data;
+				self->data = 0;
+				self->len = 0;
+				self->cap = 0;
+				return (nomen_string){ (char*)result, (long)idx };
+			}
 		}
-		((unsigned char*)(unsigned long long)self->data)[idx] = 0;
-		unsigned long long result = self->data;
-		self->data = 0;
-		self->len = 0;
-		self->cap = 0;
-		return (nomen_string){ (char*)result, (long)idx };
-		```
-		```
-		#arch: aarch64
-		// x19 = self
-		ldr x1, [x19, #16]        // len
-		add x1, x1, #1            // need len + 1
-		ldr x2, [x19, #24]
-		cmp x2, x1
-		b.ge .Lsb_ts_store
-		mov x3, #16
-		cmp x2, #0
-		csel x3, x3, x2, eq
-		.Lsb_ts_loop:
-		cmp x3, x1
-		b.ge .Lsb_ts_grow
-		lsl x3, x3, #1
-		b .Lsb_ts_loop
-		.Lsb_ts_grow:
-		str x3, [x19, #24]
-		ldr x0, [x19, #8]
-		mov x1, x3
-		bl _realloc
-		str x0, [x19, #8]
-		.Lsb_ts_store:
-		ldr x0, [x19, #8]         // x0 = data (this is what we return)
-		ldr x1, [x19, #16]        // len
-		strb wzr, [x0, x1]        // data[len] = 0
-		// transfer ownership: clear self->data. x0 retains the old ptr.
-		str xzr, [x19, #8]
-		// reset the stale bookkeeping so reuse yields a valid empty builder
-		// (a stale cap would skip the append's grow against the null buffer)
-		str xzr, [x19, #16]
-		str xzr, [x19, #24]
-		// Fat-string ABI: (x0 = data, x1 = len) is already the return pair.
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self
+				ldr x1, [x19, #16]        // len
+				add x1, x1, #1            // need len + 1
+				ldr x2, [x19, #24]
+				cmp x2, x1
+				b.ge .Lsb_ts_store
+				mov x3, #16
+				cmp x2, #0
+				csel x3, x3, x2, eq
+				.Lsb_ts_loop:
+				cmp x3, x1
+				b.ge .Lsb_ts_grow
+				lsl x3, x3, #1
+				b .Lsb_ts_loop
+				.Lsb_ts_grow:
+				str x3, [x19, #24]
+				ldr x0, [x19, #8]
+				mov x1, x3
+				bl _realloc
+				str x0, [x19, #8]
+				.Lsb_ts_store:
+				ldr x0, [x19, #8]         // x0 = data (this is what we return)
+				ldr x1, [x19, #16]        // len
+				strb wzr, [x0, x1]        // data[len] = 0
+				// transfer ownership: clear self->data. x0 retains the old ptr.
+				str xzr, [x19, #8]
+				// reset the stale bookkeeping so reuse yields a valid empty builder
+				// (a stale cap would skip the append's grow against the null buffer)
+				str xzr, [x19, #16]
+				str xzr, [x19, #24]
+				// Fat-string ABI: (x0 = data, x1 = len) is already the return pair.
+			}
+		}
 	}
 
 	// Drop the buffer without finalizing (free the byte buffer outright).

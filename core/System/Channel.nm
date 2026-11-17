@@ -43,98 +43,102 @@ pub mv struct Channel {
 	pub var uint64 waiters = 0
 
 	pub func #init = (self) {
-		```
-		#arch: c
-		#scope: file
-		#include <pthread.h>
-	struct nomen_channel_node {
-		unsigned long long value;
-		unsigned long long len;
-		unsigned long long kind; // 0 = uint64 payload, 1 = owned string
-		struct nomen_channel_node *next;
-	};
-		```
-		```
-		#arch: c
-		// The constructor's `self` is the INLINE instance (a local value in
-		// the C lowering — methods take the pointer form, the ctor does not),
-		// so this body uses the `.` accessor; the aarch64 body writes through
-		// x19 = &instance as always.
-		self.mu = (unsigned long long)malloc(sizeof(pthread_mutex_t));
-		self.not_empty_cv = (unsigned long long)malloc(sizeof(pthread_cond_t));
-		pthread_mutex_init((pthread_mutex_t *)self.mu, NULL);
-		pthread_cond_init((pthread_cond_t *)self.not_empty_cv, NULL);
-		self.head = 0;
-		self.tail = 0;
-		self.waiters = 0;
-		```
-		```
-		#arch: aarch64
-		mov x0, #64
-		bl _malloc
-		str x0, [x19, #8]
-		mov x1, #0
-		bl _pthread_mutex_init
-		mov x0, #64
-		bl _malloc
-		str x0, [x19, #16]
-		mov x1, #0
-		bl _pthread_cond_init
-		str xzr, [x19, #24]
-		str xzr, [x19, #32]
-		str xzr, [x19, #40]
-		```
+		#if META.arch == "c" {
+			#raw("file") {
+					#include <pthread.h>
+				struct nomen_channel_node {
+					unsigned long long value;
+					unsigned long long len;
+					unsigned long long kind; // 0 = uint64 payload, 1 = owned string
+					struct nomen_channel_node *next;
+				};
+			}
+		}
+		#if META.arch == "c" {
+			#raw {
+				// The constructor's `self` is the INLINE instance (a local value in
+				// the C lowering — methods take the pointer form, the ctor does not),
+				// so this body uses the `.` accessor; the aarch64 body writes through
+				// x19 = &instance as always.
+				self.mu = (unsigned long long)malloc(sizeof(pthread_mutex_t));
+				self.not_empty_cv = (unsigned long long)malloc(sizeof(pthread_cond_t));
+				pthread_mutex_init((pthread_mutex_t *)self.mu, NULL);
+				pthread_cond_init((pthread_cond_t *)self.not_empty_cv, NULL);
+				self.head = 0;
+				self.tail = 0;
+				self.waiters = 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				mov x0, #64
+				bl _malloc
+				str x0, [x19, #8]
+				mov x1, #0
+				bl _pthread_mutex_init
+				mov x0, #64
+				bl _malloc
+				str x0, [x19, #16]
+				mov x1, #0
+				bl _pthread_cond_init
+				str xzr, [x19, #24]
+				str xzr, [x19, #32]
+				str xzr, [x19, #40]
+			}
+		}
 	}
 
 	pub func send = (self, uint64 value) {
-		```
-		#arch: c
-		struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
-		n->value = value;
-		n->len = 0;
-		n->kind = 0;
-		n->next = NULL;
-		pthread_mutex_lock((pthread_mutex_t *)self->mu);
-		if (self->tail) {
-			((struct nomen_channel_node *)self->tail)->next = n;
-		} else {
-			self->head = (unsigned long long)n;
+		#if META.arch == "c" {
+			#raw {
+				struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
+				n->value = value;
+				n->len = 0;
+				n->kind = 0;
+				n->next = NULL;
+				pthread_mutex_lock((pthread_mutex_t *)self->mu);
+				if (self->tail) {
+					((struct nomen_channel_node *)self->tail)->next = n;
+				} else {
+					self->head = (unsigned long long)n;
+				}
+				self->tail = (unsigned long long)n;
+				pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
+				__nomen_fiber_waitq_wake((struct nomen_fiber **)&self->waiters);
+				pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+			}
 		}
-		self->tail = (unsigned long long)n;
-		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
-		__nomen_fiber_waitq_wake((struct nomen_fiber **)&self->waiters);
-		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
-		```
-		```
-		#arch: aarch64
-		// x19 = self (set by prologue), x1 = value
-		str x1, [sp, #-16]!       // save value on stack
-		mov x0, #32               // node = { value, len, kind, next }
-		bl _malloc                // x0 = node
-		ldr x1, [sp], #16         // restore value
-		str x1, [x0, #0]          // node->value = value
-		str xzr, [x0, #8]         // node->len = 0
-		str xzr, [x0, #16]        // node->kind = 0 (uint64 payload)
-		str xzr, [x0, #24]        // node->next = NULL
-		str x0, [sp, #-16]!       // save node on stack
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_lock
-		ldr x2, [sp], #16         // restore node
-		ldr x1, [x19, #32]        // tail
-		cbz x1, .Lchannel_send_empty
-		str x2, [x1, #24]         // tail->next = node
-		b .Lchannel_send_enqueued
-		.Lchannel_send_empty:
-		str x2, [x19, #24]        // head = node
-		.Lchannel_send_enqueued:
-		str x2, [x19, #32]        // tail = node
-		ldr x0, [x19, #16]        // not_empty_cv
-		bl _pthread_cond_signal
-		add x0, x19, #40          // &self->waiters
-		bl ___nomen_fiber_waitq_wake
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_unlock
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (set by prologue), x1 = value
+				str x1, [sp, #-16]!       // save value on stack
+				mov x0, #32               // node = { value, len, kind, next }
+				bl _malloc                // x0 = node
+				ldr x1, [sp], #16         // restore value
+				str x1, [x0, #0]          // node->value = value
+				str xzr, [x0, #8]         // node->len = 0
+				str xzr, [x0, #16]        // node->kind = 0 (uint64 payload)
+				str xzr, [x0, #24]        // node->next = NULL
+				str x0, [sp, #-16]!       // save node on stack
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_lock
+				ldr x2, [sp], #16         // restore node
+				ldr x1, [x19, #32]        // tail
+				cbz x1, .Lchannel_send_empty
+				str x2, [x1, #24]         // tail->next = node
+				b .Lchannel_send_enqueued
+				.Lchannel_send_empty:
+				str x2, [x19, #24]        // head = node
+				.Lchannel_send_enqueued:
+				str x2, [x19, #32]        // tail = node
+				ldr x0, [x19, #16]        // not_empty_cv
+				bl _pthread_cond_signal
+				add x0, x19, #40          // &self->waiters
+				bl ___nomen_fiber_waitq_wake
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_unlock
+			}
+		}
 	}
 
 	// Pass a fat string through the channel. The value is DUPLICATED into the
@@ -142,125 +146,129 @@ pub mv struct Channel {
 	// message survives the sender's scope exit intact (true len, embedded
 	// NULs and all). Receive it with receive_string.
 	pub func send_string = (self, string value) {
-		```
-		#arch: c
-		struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
-		nomen_string _v = value.ptr ? nomen_str_dup(value) : (nomen_string){0, 0};
-		n->value = (unsigned long long)_v.ptr;
-		n->len = (unsigned long long)_v.len;
-		n->kind = 1;
-		n->next = NULL;
-		pthread_mutex_lock((pthread_mutex_t *)self->mu);
-		if (self->tail) {
-			((struct nomen_channel_node *)self->tail)->next = n;
-		} else {
-			self->head = (unsigned long long)n;
+		#if META.arch == "c" {
+			#raw {
+				struct nomen_channel_node *n = (struct nomen_channel_node *)malloc(sizeof(struct nomen_channel_node));
+				nomen_string _v = value.ptr ? nomen_str_dup(value) : (nomen_string){0, 0};
+				n->value = (unsigned long long)_v.ptr;
+				n->len = (unsigned long long)_v.len;
+				n->kind = 1;
+				n->next = NULL;
+				pthread_mutex_lock((pthread_mutex_t *)self->mu);
+				if (self->tail) {
+					((struct nomen_channel_node *)self->tail)->next = n;
+				} else {
+					self->head = (unsigned long long)n;
+				}
+				self->tail = (unsigned long long)n;
+				pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
+				__nomen_fiber_waitq_wake((struct nomen_fiber **)&self->waiters);
+				pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+			}
 		}
-		self->tail = (unsigned long long)n;
-		pthread_cond_signal((pthread_cond_t *)self->not_empty_cv);
-		__nomen_fiber_waitq_wake((struct nomen_fiber **)&self->waiters);
-		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
-		```
-		```
-		#arch: aarch64
-		// x19 = self (set by prologue), x1 = value.ptr, x2 = value.len
-		stp x1, x2, [sp, #-32]!   // [sp]=ptr [sp+8]=len [sp+16]=node scratch
-		mov x0, #32               // node = { value, len, kind, next }
-		bl _malloc                // x0 = node
-		str x0, [sp, #16]         // save node across the strdup call
-		ldr x1, [sp, #0]          // value.ptr
-		cbz x1, .Lchannel_send_str_zero
-		mov x0, x1
-		bl _strdup                // x0 = owned copy (node owns its buffer)
-		b .Lchannel_send_str_have
-		.Lchannel_send_str_zero:
-		mov x0, #0
-		.Lchannel_send_str_have:
-		ldr x2, [sp, #16]         // node
-		str x0, [x2, #0]          // node->value = copied ptr
-		ldr x1, [sp, #8]          // value.len
-		str x1, [x2, #8]          // node->len = len
-		mov x1, #1
-		str x1, [x2, #16]         // node->kind = 1 (owned string payload)
-		str xzr, [x2, #24]        // node->next = NULL
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_lock
-		ldr x2, [sp, #16]         // restore node
-		ldr x1, [x19, #32]        // tail
-		cbz x1, .Lchannel_send_str_empty
-		str x2, [x1, #24]         // tail->next = node
-		b .Lchannel_send_str_enqueued
-		.Lchannel_send_str_empty:
-		str x2, [x19, #24]        // head = node
-		.Lchannel_send_str_enqueued:
-		str x2, [x19, #32]        // tail = node
-		ldr x0, [x19, #16]        // not_empty_cv
-		bl _pthread_cond_signal
-		add x0, x19, #40          // &self->waiters — wake parked fibers
-		bl ___nomen_fiber_waitq_wake
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_unlock
-		add sp, sp, #32
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (set by prologue), x1 = value.ptr, x2 = value.len
+				stp x1, x2, [sp, #-32]!   // [sp]=ptr [sp+8]=len [sp+16]=node scratch
+				mov x0, #32               // node = { value, len, kind, next }
+				bl _malloc                // x0 = node
+				str x0, [sp, #16]         // save node across the strdup call
+				ldr x1, [sp, #0]          // value.ptr
+				cbz x1, .Lchannel_send_str_zero
+				mov x0, x1
+				bl _strdup                // x0 = owned copy (node owns its buffer)
+				b .Lchannel_send_str_have
+				.Lchannel_send_str_zero:
+				mov x0, #0
+				.Lchannel_send_str_have:
+				ldr x2, [sp, #16]         // node
+				str x0, [x2, #0]          // node->value = copied ptr
+				ldr x1, [sp, #8]          // value.len
+				str x1, [x2, #8]          // node->len = len
+				mov x1, #1
+				str x1, [x2, #16]         // node->kind = 1 (owned string payload)
+				str xzr, [x2, #24]        // node->next = NULL
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_lock
+				ldr x2, [sp, #16]         // restore node
+				ldr x1, [x19, #32]        // tail
+				cbz x1, .Lchannel_send_str_empty
+				str x2, [x1, #24]         // tail->next = node
+				b .Lchannel_send_str_enqueued
+				.Lchannel_send_str_empty:
+				str x2, [x19, #24]        // head = node
+				.Lchannel_send_str_enqueued:
+				str x2, [x19, #32]        // tail = node
+				ldr x0, [x19, #16]        // not_empty_cv
+				bl _pthread_cond_signal
+				add x0, x19, #40          // &self->waiters — wake parked fibers
+				bl ___nomen_fiber_waitq_wake
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_unlock
+				add sp, sp, #32
+			}
+		}
 	}
 
 	pub func receive = (self, out uint64) {
-		```
-		#arch: c
-		pthread_mutex_lock((pthread_mutex_t *)self->mu);
-		while (!self->head) {
-			// Fibers park instead of blocking; a cancelled fiber returns the
-			// zero value rather than waiting forever (cooperative cancel).
-			if (!__nomen_fiber_waitq_park(
-					(struct nomen_fiber **)&self->waiters, (void *)self->mu, (void *)self->not_empty_cv)) {
+		#if META.arch == "c" {
+			#raw {
+				pthread_mutex_lock((pthread_mutex_t *)self->mu);
+				while (!self->head) {
+					// Fibers park instead of blocking; a cancelled fiber returns the
+					// zero value rather than waiting forever (cooperative cancel).
+					if (!__nomen_fiber_waitq_park(
+							(struct nomen_fiber **)&self->waiters, (void *)self->mu, (void *)self->not_empty_cv)) {
+						pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+						return 0;
+					}
+				}
+				struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
+				self->head = (unsigned long long)n->next;
+				if (!self->head) self->tail = 0;
+				unsigned long long v = n->value;
+				free(n);
 				pthread_mutex_unlock((pthread_mutex_t *)self->mu);
-				return 0;
+				return v;
 			}
 		}
-		struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
-		self->head = (unsigned long long)n->next;
-		if (!self->head) self->tail = 0;
-		unsigned long long v = n->value;
-		free(n);
-		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
-		return v;
-		```
-		```
-		#arch: aarch64
-		// x19 = self (set by prologue)
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_lock
-		.Lchannel_receive_wait:
-		ldr x1, [x19, #24]        // head
-		cbnz x1, .Lchannel_receive_got
-		add x0, x19, #40          // &self->waiters
-		ldr x1, [x19, #8]         // mu
-		ldr x2, [x19, #16]        // not_empty_cv
-		bl ___nomen_fiber_waitq_park
-		cbz x0, .Lchannel_receive_cancelled
-		b .Lchannel_receive_wait
-		.Lchannel_receive_cancelled:
-		// Cancelled while waiting: return the zero value.
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_unlock
-		mov x0, #0
-		b .Lchannel_receive_end
-		.Lchannel_receive_got:
-		// x1 = node
-		ldr x2, [x1, #24]         // node->next
-		str x2, [x19, #24]        // head = node->next
-		cbnz x2, .Lchannel_receive_not_empty
-		str xzr, [x19, #32]       // tail = 0
-		.Lchannel_receive_not_empty:
-		ldr x0, [x1, #0]          // x0 = value
-		str x0, [sp, #-16]!       // push value
-		mov x0, x1                // x0 = node (for free)
-		bl _free
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_unlock
-		ldr x0, [sp], #16         // pop value → x0 (return)
-		.Lchannel_receive_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (set by prologue)
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_lock
+				.Lchannel_receive_wait:
+				ldr x1, [x19, #24]        // head
+				cbnz x1, .Lchannel_receive_got
+				add x0, x19, #40          // &self->waiters
+				ldr x1, [x19, #8]         // mu
+				ldr x2, [x19, #16]        // not_empty_cv
+				bl ___nomen_fiber_waitq_park
+				cbz x0, .Lchannel_receive_cancelled
+				b .Lchannel_receive_wait
+				.Lchannel_receive_cancelled:
+				// Cancelled while waiting: return the zero value.
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_unlock
+				mov x0, #0
+				b .Lchannel_receive_end
+				.Lchannel_receive_got:
+				// x1 = node
+				ldr x2, [x1, #24]         // node->next
+				str x2, [x19, #24]        // head = node->next
+				cbnz x2, .Lchannel_receive_not_empty
+				str xzr, [x19, #32]       // tail = 0
+				.Lchannel_receive_not_empty:
+				ldr x0, [x1, #0]          // x0 = value
+				str x0, [sp, #-16]!       // push value
+				mov x0, x1                // x0 = node (for free)
+				bl _free
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_unlock
+				ldr x0, [sp], #16         // pop value → x0 (return)
+				.Lchannel_receive_end:
+			}
+		}
 	}
 
 	// Block until a message is available, then return it as an OWNED string
@@ -268,134 +276,138 @@ pub mv struct Channel {
 	// second receive of the same message is not possible). The fat (ptr, len)
 	// pair survives intact. Pair with send_string.
 	pub func receive_string = (self, mv out string) {
-		```
-		#arch: c
-		pthread_mutex_lock((pthread_mutex_t *)self->mu);
-		while (!self->head) {
-			if (!__nomen_fiber_waitq_park(
-					(struct nomen_fiber **)&self->waiters, (void *)self->mu, (void *)self->not_empty_cv)) {
+		#if META.arch == "c" {
+			#raw {
+				pthread_mutex_lock((pthread_mutex_t *)self->mu);
+				while (!self->head) {
+					if (!__nomen_fiber_waitq_park(
+							(struct nomen_fiber **)&self->waiters, (void *)self->mu, (void *)self->not_empty_cv)) {
+						pthread_mutex_unlock((pthread_mutex_t *)self->mu);
+						return (nomen_string){ 0, 0 };
+					}
+				}
+				struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
+				self->head = (unsigned long long)n->next;
+				if (!self->head) self->tail = 0;
+				nomen_string v = { (char *)n->value, (long)n->len };
+				n->value = 0;
+				n->len = 0;
+				free(n);
 				pthread_mutex_unlock((pthread_mutex_t *)self->mu);
-				return (nomen_string){ 0, 0 };
+				return v;
 			}
 		}
-		struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
-		self->head = (unsigned long long)n->next;
-		if (!self->head) self->tail = 0;
-		nomen_string v = { (char *)n->value, (long)n->len };
-		n->value = 0;
-		n->len = 0;
-		free(n);
-		pthread_mutex_unlock((pthread_mutex_t *)self->mu);
-		return v;
-		```
-		```
-		#arch: aarch64
-		// x19 = self (set by prologue); returns the fat pair in x0/x1
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_lock
-		.Lchannel_receive_str_wait:
-		ldr x1, [x19, #24]        // head
-		cbnz x1, .Lchannel_receive_str_got
-		add x0, x19, #40          // &self->waiters
-		ldr x1, [x19, #8]         // mu
-		ldr x2, [x19, #16]        // not_empty_cv
-		bl ___nomen_fiber_waitq_park
-		cbz x0, .Lchannel_receive_str_cancelled
-		b .Lchannel_receive_str_wait
-		.Lchannel_receive_str_cancelled:
-		// Cancelled while waiting: return the empty fat string (x0 = ptr,
-		// x1 = len).
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_unlock
-		mov x0, #0
-		mov x1, #0
-		b .Lchannel_receive_str_end
-		.Lchannel_receive_str_got:
-		// x1 = node
-		ldr x2, [x1, #24]         // node->next
-		str x2, [x19, #24]        // head = node->next
-		cbnz x2, .Lchannel_receive_str_not_empty
-		str xzr, [x19, #32]       // tail = 0
-		.Lchannel_receive_str_not_empty:
-		ldr x0, [x1, #0]          // value.ptr
-		ldr x2, [x1, #8]          // value.len
-		stp x0, x2, [sp, #-16]!   // push pair
-		str xzr, [x1, #0]         // payload moves out of the node
-		str xzr, [x1, #8]
-		mov x0, x1                // x0 = node (for free)
-		bl _free
-		ldr x0, [x19, #8]         // self->mu
-		bl _pthread_mutex_unlock
-		ldp x0, x1, [sp], #16     // pop pair → x0/x1 (return)
-		.Lchannel_receive_str_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (set by prologue); returns the fat pair in x0/x1
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_lock
+				.Lchannel_receive_str_wait:
+				ldr x1, [x19, #24]        // head
+				cbnz x1, .Lchannel_receive_str_got
+				add x0, x19, #40          // &self->waiters
+				ldr x1, [x19, #8]         // mu
+				ldr x2, [x19, #16]        // not_empty_cv
+				bl ___nomen_fiber_waitq_park
+				cbz x0, .Lchannel_receive_str_cancelled
+				b .Lchannel_receive_str_wait
+				.Lchannel_receive_str_cancelled:
+				// Cancelled while waiting: return the empty fat string (x0 = ptr,
+				// x1 = len).
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_unlock
+				mov x0, #0
+				mov x1, #0
+				b .Lchannel_receive_str_end
+				.Lchannel_receive_str_got:
+				// x1 = node
+				ldr x2, [x1, #24]         // node->next
+				str x2, [x19, #24]        // head = node->next
+				cbnz x2, .Lchannel_receive_str_not_empty
+				str xzr, [x19, #32]       // tail = 0
+				.Lchannel_receive_str_not_empty:
+				ldr x0, [x1, #0]          // value.ptr
+				ldr x2, [x1, #8]          // value.len
+				stp x0, x2, [sp, #-16]!   // push pair
+				str xzr, [x1, #0]         // payload moves out of the node
+				str xzr, [x1, #8]
+				mov x0, x1                // x0 = node (for free)
+				bl _free
+				ldr x0, [x19, #8]         // self->mu
+				bl _pthread_mutex_unlock
+				ldp x0, x1, [sp], #16     // pop pair → x0/x1 (return)
+				.Lchannel_receive_str_end:
+			}
+		}
 	}
 
 	pub func #destroy = () {
-		```
-		#arch: c
-		if (self->mu) {
-			// Drain any pending nodes. A string payload (kind = 1) that was
-			// never received still owns its buffer — free it with the node.
-			// A uint64 payload (kind = 0) is a raw value, never a pointer.
-			struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
-			while (n) {
-				struct nomen_channel_node *next = n->next;
-				if (n->kind == 1 && n->value) free((void *)n->value);
-				free(n);
-				n = next;
+		#if META.arch == "c" {
+			#raw {
+				if (self->mu) {
+					// Drain any pending nodes. A string payload (kind = 1) that was
+					// never received still owns its buffer — free it with the node.
+					// A uint64 payload (kind = 0) is a raw value, never a pointer.
+					struct nomen_channel_node *n = (struct nomen_channel_node *)self->head;
+					while (n) {
+						struct nomen_channel_node *next = n->next;
+						if (n->kind == 1 && n->value) free((void *)n->value);
+						free(n);
+						n = next;
+					}
+					pthread_mutex_destroy((pthread_mutex_t *)self->mu);
+					pthread_cond_destroy((pthread_cond_t *)self->not_empty_cv);
+					free((void *)self->mu);
+					free((void *)self->not_empty_cv);
+					self->mu = 0;
+					self->not_empty_cv = 0;
+					self->head = 0;
+					self->tail = 0;
+				}
 			}
-			pthread_mutex_destroy((pthread_mutex_t *)self->mu);
-			pthread_cond_destroy((pthread_cond_t *)self->not_empty_cv);
-			free((void *)self->mu);
-			free((void *)self->not_empty_cv);
-			self->mu = 0;
-			self->not_empty_cv = 0;
-			self->head = 0;
-			self->tail = 0;
 		}
-		```
-		```
-		#arch: aarch64
-		// x19 = self (set by prologue)
-		ldr x0, [x19, #8]         // self->mu
-		cbz x0, .Lchannel_destroy_done
-		// Drain nodes (freeing only owned-string payloads; a uint64
-		// payload is a raw value, never a pointer)
-		ldr x1, [x19, #24]        // head
-		.Lchannel_destroy_drain:
-		cbz x1, .Lchannel_destroy_drained
-		ldr x2, [x1, #24]         // next (before calls clobber x1)
-		stp x1, x2, [sp, #-16]!   // save node + next
-		ldr x3, [x1, #16]         // payload kind (1 = owned string)
-		ldr x0, [x1, #0]          // payload ptr
-		cbz x0, .Lchannel_destroy_no_payload
-		cmp x3, #1
-		b.ne .Lchannel_destroy_no_payload
-		bl _free
-		.Lchannel_destroy_no_payload:
-		ldr x0, [sp, #0]          // node
-		bl _free
-		ldr x1, [sp, #8]          // next
-		add sp, sp, #16
-		b .Lchannel_destroy_drain
-		.Lchannel_destroy_drained:
-		// Destroy mutex and condvar
-		ldr x0, [x19, #8]
-		bl _pthread_mutex_destroy
-		ldr x0, [x19, #16]
-		bl _pthread_cond_destroy
-		// Free mutex and condvar allocations
-		ldr x0, [x19, #8]
-		bl _free
-		ldr x0, [x19, #16]
-		bl _free
-		// Zero all fields
-		str xzr, [x19, #8]
-		str xzr, [x19, #16]
-		str xzr, [x19, #24]
-		str xzr, [x19, #32]
-		.Lchannel_destroy_done:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (set by prologue)
+				ldr x0, [x19, #8]         // self->mu
+				cbz x0, .Lchannel_destroy_done
+				// Drain nodes (freeing only owned-string payloads; a uint64
+				// payload is a raw value, never a pointer)
+				ldr x1, [x19, #24]        // head
+				.Lchannel_destroy_drain:
+				cbz x1, .Lchannel_destroy_drained
+				ldr x2, [x1, #24]         // next (before calls clobber x1)
+				stp x1, x2, [sp, #-16]!   // save node + next
+				ldr x3, [x1, #16]         // payload kind (1 = owned string)
+				ldr x0, [x1, #0]          // payload ptr
+				cbz x0, .Lchannel_destroy_no_payload
+				cmp x3, #1
+				b.ne .Lchannel_destroy_no_payload
+				bl _free
+				.Lchannel_destroy_no_payload:
+				ldr x0, [sp, #0]          // node
+				bl _free
+				ldr x1, [sp, #8]          // next
+				add sp, sp, #16
+				b .Lchannel_destroy_drain
+				.Lchannel_destroy_drained:
+				// Destroy mutex and condvar
+				ldr x0, [x19, #8]
+				bl _pthread_mutex_destroy
+				ldr x0, [x19, #16]
+				bl _pthread_cond_destroy
+				// Free mutex and condvar allocations
+				ldr x0, [x19, #8]
+				bl _free
+				ldr x0, [x19, #16]
+				bl _free
+				// Zero all fields
+				str xzr, [x19, #8]
+				str xzr, [x19, #16]
+				str xzr, [x19, #24]
+				str xzr, [x19, #32]
+				.Lchannel_destroy_done:
+			}
+		}
 	}
 }

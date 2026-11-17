@@ -698,3 +698,35 @@ work but bench-neutral — the cost is elsewhere:
   default-construction (build the value field-by-field from META defaults)
   would lift it.
 
+## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
+
+- **A function mixing Nomen statements with raw arms for OTHER targets no
+  longer errors.** The tag era rejected any function whose raw blocks all
+  targeted a different arch (`has_other_arch && !has_match`), even when the
+  body had ordinary statements. Under the `#if` fold those arms simply
+  disappear (the documented `#if` contract: code for other targets vanishes
+  without a trace). The dangerous shape — a raw-ONLY implementation whose
+  every arm folded away, leaving callers to `bl` into nothing — is still an
+  error, raised at check time via `FunctionNode.folded_away_raws` +
+  `check_function_node` ("no implementation for this target").
+- **Ownership classification is per-target.** A `#destroy` whose only
+  release sits in one target's raw arm makes the struct copyable on the
+  target where the arm folded away (the tree really has no destroy there).
+  The `memory_errors` "Filey" fixture now pins the C target, where the
+  release exists. Cross-target policy convergence would need the ownership
+  scan to count dead-arm releases — deliberately not done (the arms are
+  gone before check by design).
+- **The string-mutation scan is target-precise.** A raw consumer whose
+  aarch64 arm is read-only no longer inherits the conservative rule from
+  its C arm's pointer indexing — the argument elides on aarch64
+  (`borrow_to_string_elision`'s pinned count went 3 → 2). Sound: the
+  surviving aarch64 body performs no stores.
+- **`nomen format` and `#raw` body indentation.** Raw bodies are emitted
+  verbatim (one shared body scanner with the tokenizer), so the formatter
+  never re-indents them; a one-off pass normalized `core/` and the test
+  fixtures to `#raw` indent + one level with internal structure preserved
+  (the compiler strips per-line leading whitespace from raw text anyway —
+  emitted C/asm is unindented). The formatter's layout check compares the
+  tokenized BODY text, so teaching it to re-indent would need the tokenizer
+  to normalize body whitespace first; a future `nomen format` pass could do
+  that, purely cosmetically.

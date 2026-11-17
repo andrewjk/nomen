@@ -13,199 +13,199 @@ pub mv struct GroupBox: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window, string title) {
-		```
-		#arch: c
-		#platform: macos
-		id box = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBox"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 240, 120));
-		((void(*)(id, SEL, long))objc_msgSend)(
-			box, sel_registerName("setBoxType:"), 0); // NSBoxPrimary = 0
-		((void(*)(id, SEL, id))objc_msgSend)(
-			box, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), box);
-		self.handle = (uint64_t)box;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id box = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBox"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 240, 120));
-		((void(*)(id, SEL, long))objc_msgSend)(
-			box, sel_registerName("setBoxType:"), 0); // NSBoxPrimary = 0
-		((void(*)(id, SEL, id))objc_msgSend)(
-			box, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), box);
-		self->handle = (uint64_t)box;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — no native boxed group view (see GUI_PLAN Tier 1 #17;
-		 * compose from a titled border drawn by the layout layer if needed). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS — no native boxed group view (see GUI_PLAN Tier 1 #17;
-		 * compose from a titled border drawn by the layout layer if needed). */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id box = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBox"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 240, 120));
+				((void(*)(id, SEL, long))objc_msgSend)(
+					box, sel_registerName("setBoxType:"), 0); // NSBoxPrimary = 0
+				((void(*)(id, SEL, id))objc_msgSend)(
+					box, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), box);
+				self.handle = (uint64_t)box;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id box = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSBox"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 240, 120));
+				((void(*)(id, SEL, long))objc_msgSend)(
+					box, sel_registerName("setBoxType:"), 0); // NSBoxPrimary = 0
+				((void(*)(id, SEL, id))objc_msgSend)(
+					box, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), box);
+				self->handle = (uint64_t)box;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — no native boxed group view (see GUI_PLAN Tier 1 #17;
+				 * compose from a titled border drawn by the layout layer if needed). */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS — no native boxed group view (see GUI_PLAN Tier 1 #17;
+				 * compose from a titled border drawn by the layout layer if needed). */
+			}
+		}
 	}
 
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func set_title = (self, string title) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func get_title = (self, out string) {
-		```
-		#arch: c
-		#platform: macos
-		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("title"));
-		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-			str, sel_registerName("UTF8String"));
-		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("title"));
-		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-			str, sel_registerName("UTF8String"));
-		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id str = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("title"));
+				const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+					str, sel_registerName("UTF8String"));
+				return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id str = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("title"));
+				const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+					str, sel_registerName("UTF8String"));
+				return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
 	}
 
 	// The NSBoxType (0 = primary/boxed) — exposes the native style for tests
 	// and diagnostics.
 	pub func box_type = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("boxType"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("boxType"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("boxType"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("boxType"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -235,33 +235,33 @@ pub mv struct GroupBox: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

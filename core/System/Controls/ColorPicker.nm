@@ -22,222 +22,222 @@ pub mv struct ColorPicker: Control {
 	var uint64 handle = 0
 
 	pub func #init = (self, Window window) {
-		```
-		#arch: c
-		#platform: macos
-		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColorWell"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 24));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), well);
-		self.handle = (uint64_t)well;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColorWell"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 24));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), well);
-		self->handle = (uint64_t)well;
-		```
-		```
-		#arch: c
-		#platform: ios
-		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIColorWell"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 44));
-		id parentView = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(
-				(id)window->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			parentView, sel_registerName("addSubview:"), well);
-		self.handle = (uint64_t)well;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIColorWell"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 44));
-		id parentView = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(
-				(id)window->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			parentView, sel_registerName("addSubview:"), well);
-		self->handle = (uint64_t)well;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColorWell"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 24));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), well);
+				self.handle = (uint64_t)well;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSColorWell"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 24));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), well);
+				self->handle = (uint64_t)well;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIColorWell"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 44));
+				id parentView = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(
+						(id)window->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					parentView, sel_registerName("addSubview:"), well);
+				self.handle = (uint64_t)well;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id well = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIColorWell"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 44, 44));
+				id parentView = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(
+						(id)window->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					parentView, sel_registerName("addSubview:"), well);
+				self->handle = (uint64_t)well;
+			}
+		}
 	}
 
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
 	}
 
 	// Set the well's color from 0-255 components.
 	pub func set_rgb = (self, int red, int green, int blue) {
-		```
-		#arch: c
-		#platform: macos
-		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
-			(id)objc_getClass("NSColor"), sel_registerName("colorWithCalibratedRed:green:blue:alpha:"),
-			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setColor:"), color);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
-			(id)objc_getClass("NSColor"), sel_registerName("colorWithCalibratedRed:green:blue:alpha:"),
-			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setColor:"), color);
-		```
-		```
-		#arch: c
-		#platform: ios
-		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
-			(id)objc_getClass("UIColor"), sel_registerName("colorWithRed:green:blue:alpha:"),
-			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setColor:"), color);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
-			(id)objc_getClass("UIColor"), sel_registerName("colorWithRed:green:blue:alpha:"),
-			(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setColor:"), color);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+					(id)objc_getClass("NSColor"), sel_registerName("colorWithCalibratedRed:green:blue:alpha:"),
+					(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setColor:"), color);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+					(id)objc_getClass("NSColor"), sel_registerName("colorWithCalibratedRed:green:blue:alpha:"),
+					(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setColor:"), color);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+					(id)objc_getClass("UIColor"), sel_registerName("colorWithRed:green:blue:alpha:"),
+					(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setColor:"), color);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id color = ((id(*)(id, SEL, double, double, double, double))objc_msgSend)(
+					(id)objc_getClass("UIColor"), sel_registerName("colorWithRed:green:blue:alpha:"),
+					(double)red / 255.0, (double)green / 255.0, (double)blue / 255.0, 1.0);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setColor:"), color);
+			}
+		}
 	}
 
 	// The well's current color as 0-255 components ([red, green, blue]).
 	// A color the user picked from the panel can land between two 255ths —
 	// the components round to the nearest.
 	pub func rgb = (self, out Rgb) {
-		```
-		#arch: c
-		#platform: macos
-		id color = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("color"));
-		double r = 0, g = 0, b = 0, a = 0;
-		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
-			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
-		struct Rgb result;
-		result.red = (int)(r * 255.0 + 0.5);
-		result.green = (int)(g * 255.0 + 0.5);
-		result.blue = (int)(b * 255.0 + 0.5);
-		return result;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id color = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("color"));
-		double r = 0, g = 0, b = 0, a = 0;
-		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
-			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
-		struct Rgb result;
-		result.red = (int)(r * 255.0 + 0.5);
-		result.green = (int)(g * 255.0 + 0.5);
-		result.blue = (int)(b * 255.0 + 0.5);
-		return result;
-		```
-		```
-		#arch: c
-		#platform: ios
-		id color = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("color"));
-		double r = 0, g = 0, b = 0, a = 0;
-		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
-			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
-		struct Rgb result;
-		result.red = (int)(r * 255.0 + 0.5);
-		result.green = (int)(g * 255.0 + 0.5);
-		result.blue = (int)(b * 255.0 + 0.5);
-		return result;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id color = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("color"));
-		double r = 0, g = 0, b = 0, a = 0;
-		((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
-			color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
-		struct Rgb result;
-		result.red = (int)(r * 255.0 + 0.5);
-		result.green = (int)(g * 255.0 + 0.5);
-		result.blue = (int)(b * 255.0 + 0.5);
-		return result;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id color = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("color"));
+				double r = 0, g = 0, b = 0, a = 0;
+				((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+					color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+				struct Rgb result;
+				result.red = (int)(r * 255.0 + 0.5);
+				result.green = (int)(g * 255.0 + 0.5);
+				result.blue = (int)(b * 255.0 + 0.5);
+				return result;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id color = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("color"));
+				double r = 0, g = 0, b = 0, a = 0;
+				((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+					color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+				struct Rgb result;
+				result.red = (int)(r * 255.0 + 0.5);
+				result.green = (int)(g * 255.0 + 0.5);
+				result.blue = (int)(b * 255.0 + 0.5);
+				return result;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id color = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("color"));
+				double r = 0, g = 0, b = 0, a = 0;
+				((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+					color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+				struct Rgb result;
+				result.red = (int)(r * 255.0 + 0.5);
+				result.green = (int)(g * 255.0 + 0.5);
+				result.blue = (int)(b * 255.0 + 0.5);
+				return result;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id color = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("color"));
+				double r = 0, g = 0, b = 0, a = 0;
+				((void(*)(id, SEL, double*, double*, double*, double*))objc_msgSend)(
+					color, sel_registerName("getRed:green:blue:alpha:"), &r, &g, &b, &a);
+				struct Rgb result;
+				result.red = (int)(r * 255.0 + 0.5);
+				result.green = (int)(g * 255.0 + 0.5);
+				result.blue = (int)(b * 255.0 + 0.5);
+				return result;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -267,41 +267,41 @@ pub mv struct ColorPicker: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
 	}
 }

@@ -1,12 +1,14 @@
-# Core library raw blocks (`#arch:`) — inventory and plain-Nomen rewrite analysis
+# Core library raw blocks — inventory and plain-Nomen rewrite analysis
 
 The core library (`core/System/*.nm`) implements most functions as raw
-`#arch: c` (C source for the C backend) + `#arch: aarch64` (assembly for the
-aarch64 backend) block pairs. This document inventories every raw block
-outside `Controls/` (which is UI code — `aarch64_use_c` territory, out of
-scope), classifies why each is raw, and identifies which could become plain
-Nomen code without regressing the **C backend** benchmarks (the aarch64
-backend is not at parity and is explicitly not the target here).
+block pairs selected by `#if META.arch`: a C arm for the C backend and an
+assembly arm for the aarch64 backend (stage 5 unified target selection
+under `#if`; the old in-band `#arch:` tags are gone). This document
+inventories every raw block outside `Controls/` (which is UI code —
+companion-C (`#raw("c")`) territory, out of scope), classifies why each is raw,
+and identifies which could become plain Nomen code without regressing the
+**C backend** benchmarks (the aarch64 backend is not at parity and is
+explicitly not the target here).
 
 **Status: roadmap item 2 (`unsafe`) is implemented, and a first tranche of
 memory primitives has been rewritten — see "Unsafe outcomes" below for what
@@ -123,7 +125,7 @@ inexpressible.
 - `Console.read_line`/`read_char` (getline/fgetc), everything in `Stream/`,
   `Task`, `Mutex`, `Time`, `Channel` — thin libc/OS wrappers where a Nomen
   rewrite would just re-express the same calls with more code.
-- `Controls/` — UI layer; `aarch64_use_c` there is by policy (AGENTS.md).
+- `Controls/` — UI layer; companion-C (`#raw("c")`) there is by policy (AGENTS.md).
 
 ## Roadmap: language features to retire the remaining raw blocks
 
@@ -302,7 +304,7 @@ No regressions beyond noise on either backend. The BigInt experiment
   "make an Array value" expression.
 - `Console.platform` (OS detection) and the `Task`/`Channel` pool internals
   unless externs (pthread) + unsafe (node structs) are pushed through them.
-- `Controls/` (UI, `aarch64_use_c` by policy).
+- `Controls/` (UI, companion-C by policy).
 - Remaining category A blocks not yet migrated: `ClassBuffer`
   load/store/move/replace/shift (per-element inline splices —
   convertible via naked_inline once their bounds-constraint locals fit
@@ -339,7 +341,7 @@ _faster_. Regex.nm is now pure Nomen end to end.
 ## Procedure for future rewrites
 
 1. Convert one function (or one family, e.g. all identity hashes) at a
-   time; delete **both** the `#arch: c` and `#arch: aarch64` blocks and
+   time; delete **both** the C and aarch64 `#if` arms and
    write the Nomen body.
 2. `npm run check` and `npm test` (the `test/spec/` and `tests/` suites
    cover core behavior).

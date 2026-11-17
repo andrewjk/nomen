@@ -9,7 +9,7 @@ import parse_with_imports from "./parse_with_imports";
 const opts = { arch: "aarch64", audit: false } as const;
 
 async function run(name: string, input: string, expected: string) {
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	await check_output(name, result, expected, opts);

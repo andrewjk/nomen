@@ -13,7 +13,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 /** Parse + check a FULL program (import System, main, …) and build it for one
  *  arch, returning the emitted code. */
 function build_code(input: string, arch: "aarch64" | "c"): string {
-	const parsed = parse(input, system, undefined, { allow_user_raw: true });
+	const parsed = parse(input, system, undefined, { allow_user_raw: true, arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch, audit: false });
 	expect(result.errors ?? []).toEqual([]);
@@ -23,23 +23,31 @@ function build_code(input: string, arch: "aarch64" | "c"): string {
 /** Compile + run a full program on BOTH backends and pin its stdout. Mirrors
  *  bench helpers: link the precompiled system object when available. */
 async function run_program(input: string, name: string, expected: string) {
-	const parsed = parse(input, system, undefined, { allow_user_raw: true });
-	expect(parsed.errors).toEqual([]);
+	// Per-target parses: the `#if META.arch` fold selects raw arms at check
+	// time (stage 5), so each backend's build needs its own checked tree.
+	const parsed_a64 = parse(input, system, undefined, {
+		allow_user_raw: true,
+		arch: "aarch64",
+	});
+	expect(parsed_a64.errors).toEqual([]);
+	const parsed_c = parse(input, system, undefined, { allow_user_raw: true, arch: "c" });
+	expect(parsed_c.errors).toEqual([]);
 	// A STALE system object (library edit the prebuild worker never rebuilt)
 	// is treated like a MISSING one: single TU — pairing a stale system.o
 	// with a fresh user TU is the struct-layout-crash hazard.
 	const split_available = (arch: "aarch64" | "c") =>
-		!build_needs_objc(parsed.root, default_platform()) && system_lib_fresh(arch, true);
+		!build_needs_objc(parsed_a64.root, default_platform()) && system_lib_fresh(arch, true);
 	for (const arch of ["aarch64", "c"] as const) {
 		const options = { arch, audit: true };
+		const root = arch === "aarch64" ? parsed_a64.root : parsed_c.root;
 		const split = split_available(arch);
 		const result = split
-			? build(parsed.root, {
+			? build(root, {
 					...options,
 					emit_mode: "user",
 					system_struct_names: load_system_struct_names(),
 				})
-			: build(parsed.root, options);
+			: build(root, options);
 		await check_output(name, result, expected, {
 			...options,
 			system_lib: split,
@@ -69,18 +77,20 @@ import System
 func raw_touch = (string p, ref uint8 sink) {
 	switch {
 		case true {
-			\`\`\`
-			#arch: c
-			p.ptr[0] = 'X';
-			*sink = (unsigned char)p.ptr[0];
-			\`\`\`
-			\`\`\`
-			#arch: aarch64
-			mov w4, #88
-			strb w4, [x0]
-			ldrb w3, [x0]
-			strb w3, [x2]
-			\`\`\`
+			#if META.arch == "c" {
+				#raw {
+					p.ptr[0] = 'X';
+					*sink = (unsigned char)p.ptr[0];
+				}
+			}
+			#if META.arch == "aarch64" {
+				#raw {
+					mov w4, #88
+					strb w4, [x0]
+					ldrb w3, [x0]
+					strb w3, [x2]
+				}
+			}
 		}
 	}
 }
@@ -107,15 +117,17 @@ import System
 
 func raw_read_at = (string p, int i, ref uint8 seen) {
 	if i >= 0 {
-		\`\`\`
-		#arch: c
-		*seen = (unsigned char)p.ptr[i];
-		\`\`\`
-		\`\`\`
-		#arch: aarch64
-		ldrb w4, [x0, x2]
-		strb w4, [x3]
-		\`\`\`
+		#if META.arch == "c" {
+			#raw {
+				*seen = (unsigned char)p.ptr[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldrb w4, [x0, x2]
+				strb w4, [x3]
+			}
+		}
 	}
 }
 
@@ -141,16 +153,18 @@ import System
 func raw_count = (int n, ref int total) {
 	var i = 0
 	while i < 3 {
-		\`\`\`
-		#arch: c
-		*total = *total + n;
-		\`\`\`
-		\`\`\`
-		#arch: aarch64
-		ldr w4, [x1]
-		add w4, w4, w0
-		str w4, [x1]
-		\`\`\`
+		#if META.arch == "c" {
+			#raw {
+				*total = *total + n;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr w4, [x1]
+				add w4, w4, w0
+				str w4, [x1]
+			}
+		}
 		i = i + 1
 	}
 }
@@ -176,18 +190,20 @@ import System
 struct Toucher {
 	pub func poke = (self, string p, ref uint8 sink) {
 		if p.length > 0 {
-			\`\`\`
-			#arch: c
-			p.ptr[0] = 'X';
-			*sink = (unsigned char)p.ptr[0];
-			\`\`\`
-			\`\`\`
-			#arch: aarch64
-			mov w4, #88
-			strb w4, [x1]
-			ldrb w5, [x1]
-			strb w5, [x3]
-			\`\`\`
+			#if META.arch == "c" {
+				#raw {
+					p.ptr[0] = 'X';
+					*sink = (unsigned char)p.ptr[0];
+				}
+			}
+			#if META.arch == "aarch64" {
+				#raw {
+					mov w4, #88
+					strb w4, [x1]
+					ldrb w5, [x1]
+					strb w5, [x3]
+				}
+			}
 		}
 	}
 }
@@ -230,14 +246,16 @@ func spin = (int n, ref int seen) {
 	}
 	var checksum = n + n + n + n + n + t
 	if checksum > n {
-		\`\`\`
-		#arch: c
-		*seen = n;
-		\`\`\`
-		\`\`\`
-		#arch: aarch64
-		str w0, [x1]
-		\`\`\`
+		#if META.arch == "c" {
+			#raw {
+				*seen = n;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				str w0, [x1]
+			}
+		}
 	}
 }
 
@@ -267,14 +285,16 @@ func fscale = (float a, float b, ref float seen) {
 		i = i + 1
 	}
 	if acc < 0.0 {
-		\`\`\`
-		#arch: c
-		*seen = a;
-		\`\`\`
-		\`\`\`
-		#arch: aarch64
-		str x0, [x2]
-		\`\`\`
+		#if META.arch == "c" {
+			#raw {
+				*seen = a;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				str x0, [x2]
+			}
+		}
 	}
 }
 
@@ -299,15 +319,17 @@ import System
 pub func main = () {
 	func inner = (string p, ref uint8 sink) {
 		if p.length > 0 {
-			\`\`\`
-			#arch: c
-			*sink = (unsigned char)p.ptr[0];
-			\`\`\`
-			\`\`\`
-			#arch: aarch64
-			ldrb w4, [x0]
-			strb w4, [x2]
-			\`\`\`
+			#if META.arch == "c" {
+				#raw {
+					*sink = (unsigned char)p.ptr[0];
+				}
+			}
+			#if META.arch == "aarch64" {
+				#raw {
+					ldrb w4, [x0]
+					strb w4, [x2]
+				}
+			}
 		}
 	}
 	var s = "hello".to_string()
@@ -328,15 +350,17 @@ test("entry-position raw block gets no reload lines", () => {
 import System
 
 func raw_first = (string p, ref uint8 sink) {
-	\`\`\`
-	#arch: c
-	*sink = (unsigned char)p.ptr[0];
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	ldrb w3, [x0]
-	strb w3, [x2]
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			*sink = (unsigned char)p.ptr[0];
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			ldrb w3, [x0]
+			strb w3, [x2]
+		}
+	}
 }
 
 pub func main = () {

@@ -1,10 +1,14 @@
 import RawNode from "../nodes/RawNode.ts";
-import { parse_raw_directives } from "../raw_directives.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_raw_node(node: RawNode, status: BuildStatus) {
-	const { should_emit, code, scope } = parse_raw_directives(node.value, "c", status.platform);
-	if (should_emit && code) {
+	// Target selection happened at the fold (stage 5, docs/COMPTIME_PLAN_2.md)
+	// — only blocks that exist for this target survive to the backends. On
+	// the C backend every surviving block is C source; the `#raw("c")`
+	// dialect is the aarch64 companion's concern.
+	const code = node.value;
+	const scope = node.scope ?? "block";
+	if (code) {
 		if (scope === "file") {
 			if (!status.emitted_file_scope_blocks) {
 				status.emitted_file_scope_blocks = new Set();

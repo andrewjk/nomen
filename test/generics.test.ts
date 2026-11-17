@@ -253,7 +253,7 @@ func printBox<T> = (Box<T> box) {
 
 printBox(Box<int>(99))
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printBox_Box_int");
@@ -276,7 +276,7 @@ func printFirst<T, U> = (Pair<T, U> p) {
 printFirst(Pair<int, string>(10, "a"))
 printFirst(Pair<int, string>(20, "b"))
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const built = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(built.code).toContain("printFirst_Pair_int_string");

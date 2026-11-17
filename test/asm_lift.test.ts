@@ -157,7 +157,7 @@ if f > 1.0 {
 	Console.write("big\\n")
 }
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -181,7 +181,7 @@ q.div_to(a, b, ref rem)
 Console.write((q.get(0) as int).to_string())
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

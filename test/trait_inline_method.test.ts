@@ -35,7 +35,7 @@ mv struct Rect: Shape {
 `;
 
 function build_aarch64(input: string): string {
-	const parsed = parse_raw(`import System\n${input}`);
+	const parsed = parse_raw(`import System\n${input}`, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect(result.errors ?? []).toEqual([]);

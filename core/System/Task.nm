@@ -45,20 +45,22 @@ pub mv struct Task<T> : Awaitable {
 	// reads `self->future`), so the ABI is unchanged; the bare spelling is
 	// what lets the read-only `Awaitable` dispatch form typecheck.
 	pub func wait = (self) {
-		```
-		#arch: c
-		if (self->future) {
-			__nomen_future_wait((struct nomen_future *)self->future);
+		#if META.arch == "c" {
+			#raw {
+				if (self->future) {
+					__nomen_future_wait((struct nomen_future *)self->future);
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// if (self->future) __nomen_future_wait(self->future)
-		ldr x0, [x19, #24]
-		cbz x0, .Lwait_done
-		bl ___nomen_future_wait
-		.Lwait_done:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// if (self->future) __nomen_future_wait(self->future)
+				ldr x0, [x19, #24]
+				cbz x0, .Lwait_done
+				bl ___nomen_future_wait
+				.Lwait_done:
+			}
+		}
 	}
 
 	// Block until the task finishes, then return its result as T. The spawn
@@ -72,46 +74,48 @@ pub mv struct Task<T> : Awaitable {
 	// rather than reading through a null pointer. For tasks with no return
 	// value (void functions), returns the zero value.
 	pub func result = (ref self {}, mv out T) {
-		```
-		#arch: c
-		if (self->future) {
-			__nomen_future_wait((struct nomen_future *)self->future);
+		#if META.arch == "c" {
+			#raw {
+				if (self->future) {
+					__nomen_future_wait((struct nomen_future *)self->future);
+				}
+				// An empty or already-consumed handle owns no result cell — return
+				// the zero value instead of reading through a null slot.
+				if (!self->result_slot) {
+					T _z;
+					memset(&_z, 0, sizeof(T));
+					return _z;
+				}
+				T _r = *(T *)self->result_slot;
+				memset((void *)self->result_slot, 0, sizeof(T));
+				return _r;
+			}
 		}
-		// An empty or already-consumed handle owns no result cell — return
-		// the zero value instead of reading through a null slot.
-		if (!self->result_slot) {
-			T _z;
-			memset(&_z, 0, sizeof(T));
-			return _z;
+		#if META.arch == "aarch64" {
+			#raw {
+				// Wait for completion (same as wait method)
+				ldr x0, [x19, #24]
+				cbz x0, .Lresult_read
+				bl ___nomen_future_wait
+				.Lresult_read:
+				// An empty or already-consumed handle owns no result cell: return
+				// the zero T instead of reading through a null slot.
+				ldr x8, [x19, #8]
+				cbz x8, .Lresult_zero
+				// The result cell is always 16 bytes (see the spawn build phase):
+				// load the full pair — a fat string returns (ptr, len) in x0/x1, a
+				// scalar returns its word in x0 — then zero the cell (the value is
+				// moved out; a second call observes the zero).
+				ldr x0, [x8]
+				ldr x1, [x8, #8]
+				stp xzr, xzr, [x8]
+				b .Lresult_end
+				.Lresult_zero:
+				mov x0, #0
+				mov x1, #0
+				.Lresult_end:
+			}
 		}
-		T _r = *(T *)self->result_slot;
-		memset((void *)self->result_slot, 0, sizeof(T));
-		return _r;
-		```
-		```
-		#arch: aarch64
-		// Wait for completion (same as wait method)
-		ldr x0, [x19, #24]
-		cbz x0, .Lresult_read
-		bl ___nomen_future_wait
-		.Lresult_read:
-		// An empty or already-consumed handle owns no result cell: return
-		// the zero T instead of reading through a null slot.
-		ldr x8, [x19, #8]
-		cbz x8, .Lresult_zero
-		// The result cell is always 16 bytes (see the spawn build phase):
-		// load the full pair — a fat string returns (ptr, len) in x0/x1, a
-		// scalar returns its word in x0 — then zero the cell (the value is
-		// moved out; a second call observes the zero).
-		ldr x0, [x8]
-		ldr x1, [x8, #8]
-		stp xzr, xzr, [x8]
-		b .Lresult_end
-		.Lresult_zero:
-		mov x0, #0
-		mov x1, #0
-		.Lresult_end:
-		```
 	}
 
 	// Block until the task finishes, then return its result as a uint64.
@@ -119,37 +123,39 @@ pub mv struct Task<T> : Awaitable {
 	// Like result(), it zeroes the cell as the value leaves (one end state
 	// for a consumed handle), and an empty handle returns zero.
 	pub func result_uint64 = (ref self {}, out uint64) {
-		```
-		#arch: c
-		if (self->future) {
-			__nomen_future_wait((struct nomen_future *)self->future);
+		#if META.arch == "c" {
+			#raw {
+				if (self->future) {
+					__nomen_future_wait((struct nomen_future *)self->future);
+				}
+				if (!self->result_slot) {
+					return 0;
+				}
+				unsigned long long _r = *(unsigned long long *)self->result_slot;
+				*(unsigned long long *)self->result_slot = 0;
+				return _r;
+			}
 		}
-		if (!self->result_slot) {
-			return 0;
+		#if META.arch == "aarch64" {
+			#raw {
+				// Wait for completion
+				ldr x0, [x19, #24]
+				cbz x0, .Lru64_read
+				bl ___nomen_future_wait
+				.Lru64_read:
+				// An empty or already-consumed handle owns no result cell: return
+				// zero instead of reading through a null slot. Otherwise zero the
+				// cell as the value leaves (matching result()'s end state).
+				ldr x8, [x19, #8]
+				cbz x8, .Lru64_zero
+				ldr x0, [x8]
+				str xzr, [x8]
+				b .Lru64_end
+				.Lru64_zero:
+				mov x0, #0
+				.Lru64_end:
+			}
 		}
-		unsigned long long _r = *(unsigned long long *)self->result_slot;
-		*(unsigned long long *)self->result_slot = 0;
-		return _r;
-		```
-		```
-		#arch: aarch64
-		// Wait for completion
-		ldr x0, [x19, #24]
-		cbz x0, .Lru64_read
-		bl ___nomen_future_wait
-		.Lru64_read:
-		// An empty or already-consumed handle owns no result cell: return
-		// zero instead of reading through a null slot. Otherwise zero the
-		// cell as the value leaves (matching result()'s end state).
-		ldr x8, [x19, #8]
-		cbz x8, .Lru64_zero
-		ldr x0, [x8]
-		str xzr, [x8]
-		b .Lru64_end
-		.Lru64_zero:
-		mov x0, #0
-		.Lru64_end:
-		```
 	}
 
 	// Has the task finished? A poll — never blocks. True once the task's
@@ -158,59 +164,65 @@ pub mv struct Task<T> : Awaitable {
 	// between wait (blocking) and cancel (cooperative): event loops use it
 	// to notice a finished task without parking the UI thread.
 	pub func is_done = (ref self {}, out bool) {
-		```
-		#arch: c
-		return __nomen_future_is_done((struct nomen_future *)self->future);
-		```
-		```
-		#arch: aarch64
-		// x0 = self->future; result in x0.
-		ldr x0, [x19, #24]
-		bl ___nomen_future_is_done
-		```
+		#if META.arch == "c" {
+			#raw {
+				return __nomen_future_is_done((struct nomen_future *)self->future);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = self->future; result in x0.
+				ldr x0, [x19, #24]
+				bl ___nomen_future_is_done
+			}
+		}
 	}
 
 	// Request that the task stop. Cooperative — the task observes this via
 	// `Task.current_cancelled()` at its own checkpoints. No preemption.
 	pub func cancel = (ref self {}) {
-		```
-		#arch: c
-		// Sets the flag and wakes any fiber parked on this task's future, so
-		// a parked task comes back to observe the cancellation.
-		if (self->future) {
-			__nomen_future_cancel((struct nomen_future *)self->future);
-		} else if (self->cancel_flag) {
-			*(unsigned long long *)self->cancel_flag = 1;
+		#if META.arch == "c" {
+			#raw {
+				// Sets the flag and wakes any fiber parked on this task's future, so
+				// a parked task comes back to observe the cancellation.
+				if (self->future) {
+					__nomen_future_cancel((struct nomen_future *)self->future);
+				} else if (self->cancel_flag) {
+					*(unsigned long long *)self->cancel_flag = 1;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// if (self->future) __nomen_future_cancel(self->future);
-		// else if (self->cancel_flag) *(self->cancel_flag) = 1
-		ldr x0, [x19, #24]
-		cbz x0, .Lcancel_flag_path
-		bl ___nomen_future_cancel
-		b .Lcancel_done
-		.Lcancel_flag_path:
-		ldr x0, [x19, #16]
-		cbz x0, .Lcancel_done
-		mov x1, #1
-		str x1, [x0]
-		.Lcancel_done:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// if (self->future) __nomen_future_cancel(self->future);
+				// else if (self->cancel_flag) *(self->cancel_flag) = 1
+				ldr x0, [x19, #24]
+				cbz x0, .Lcancel_flag_path
+				bl ___nomen_future_cancel
+				b .Lcancel_done
+				.Lcancel_flag_path:
+				ldr x0, [x19, #16]
+				cbz x0, .Lcancel_done
+				mov x1, #1
+				str x1, [x0]
+				.Lcancel_done:
+			}
+		}
 	}
 
 	// Has the currently-running task been asked to cancel? Returns false
 	// when called from outside any spawned task (e.g. main thread).
 	pub func current_cancelled = (out bool) {
-		```
-		#arch: c
-		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag;
-		```
-		```
-		#arch: aarch64_use_c
-		return __nomen_current_cancel_flag && *__nomen_current_cancel_flag;
-		```
+		#if META.arch == "c" {
+			#raw {
+				return __nomen_current_cancel_flag && *__nomen_current_cancel_flag;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw("c") {
+				return __nomen_current_cancel_flag && *__nomen_current_cancel_flag;
+			}
+		}
 	}
 
 	// Configure the worker pool size. Must be called before the first spawn
@@ -219,32 +231,34 @@ pub mv struct Task<T> : Awaitable {
 	// every worker is busy). No-op if called after init (silent; check the
 	// return value to detect). Returns 1 if the size was set, 0 otherwise.
 	pub func set_pool_size = (int n, out int) {
-		```
-		#arch: c
-		if (__nomen_pool_init || n <= 0) return 0;
-		__nomen_pool_size = n;
-		return 1;
-		```
-		```
-		#arch: aarch64
-		// x0 = n (first arg)
-		// if (__nomen_pool_init || n <= 0) return 0
-		adrp x1, ___nomen_pool_init@PAGE
-		add x1, x1, ___nomen_pool_init@PAGEOFF
-		ldr w2, [x1]
-		cbnz w2, .Lsps_zero
-		cmp x0, #0
-		b.le .Lsps_zero
-		// __nomen_pool_size = n
-		adrp x1, ___nomen_pool_size@PAGE
-		add x1, x1, ___nomen_pool_size@PAGEOFF
-		str w0, [x1]
-		mov x0, #1
-		b .Lsps_done
-		.Lsps_zero:
-		mov x0, #0
-		.Lsps_done:
-		```
+		#if META.arch == "c" {
+			#raw {
+				if (__nomen_pool_init || n <= 0) return 0;
+				__nomen_pool_size = n;
+				return 1;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = n (first arg)
+				// if (__nomen_pool_init || n <= 0) return 0
+				adrp x1, ___nomen_pool_init@PAGE
+				add x1, x1, ___nomen_pool_init@PAGEOFF
+				ldr w2, [x1]
+				cbnz w2, .Lsps_zero
+				cmp x0, #0
+				b.le .Lsps_zero
+				// __nomen_pool_size = n
+				adrp x1, ___nomen_pool_size@PAGE
+				add x1, x1, ___nomen_pool_size@PAGEOFF
+				str w0, [x1]
+				mov x0, #1
+				b .Lsps_done
+				.Lsps_zero:
+				mov x0, #0
+				.Lsps_done:
+			}
+		}
 	}
 
 	// Shut the worker pool down: drain the queue, join every worker, and
@@ -255,14 +269,16 @@ pub mv struct Task<T> : Awaitable {
 	// Do NOT call from a spawned task (a worker joining its coworkers
 	// deadlocks).
 	pub func shutdown_pool = () {
-		```
-		#arch: c
-		__nomen_pool_shutdown();
-		```
-		```
-		#arch: aarch64
-		bl ___nomen_pool_shutdown
-		```
+		#if META.arch == "c" {
+			#raw {
+				__nomen_pool_shutdown();
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				bl ___nomen_pool_shutdown
+			}
+		}
 	}
 
 	// ---- User-defined async primitive seam (ASYNC.md, "User-defined async
@@ -280,45 +296,51 @@ pub mv struct Task<T> : Awaitable {
 	// worker pool. The closure must come from a construction of an
 	// Awaitable-conforming spawnable — it is not callable.
 	pub func pool_submit = (uint64 closure) {
-		```
-		#arch: c
-		__nomen_pool_submit((struct nomen_closure *)(void *)closure);
-		```
-		```
-		#arch: aarch64
-		// x0 = closure
-		bl ___nomen_pool_submit
-		```
+		#if META.arch == "c" {
+			#raw {
+				__nomen_pool_submit((struct nomen_closure *)(void *)closure);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = closure
+				bl ___nomen_pool_submit
+			}
+		}
 	}
 
 	// Park until the task completes (in a fiber this parks the fiber and
 	// frees its worker; on a raw thread it blocks). Idempotent once done.
 	pub func future_wait = (uint64 future) {
-		```
-		#arch: c
-		__nomen_future_wait((struct nomen_future *)(void *)future);
-		```
-		```
-		#arch: aarch64
-		// x0 = future
-		bl ___nomen_future_wait
-		```
+		#if META.arch == "c" {
+			#raw {
+				__nomen_future_wait((struct nomen_future *)(void *)future);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = future
+				bl ___nomen_future_wait
+			}
+		}
 	}
 
 	// Read the uint64 result the task stored. The launch's ref accounting
 	// must still hold a reference (see future_set_refs) — read BEFORE the
 	// final release, which frees the slot.
 	pub func future_result_uint64 = (uint64 future, out uint64) {
-		```
-		#arch: c
-		return *(unsigned long long *)(void *)((struct nomen_future *)(void *)future)->result_slot;
-		```
-		```
-		#arch: aarch64
-		// x0 = future; result_slot at #128
-		ldr x0, [x0, #128]
-		ldr x0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return *(unsigned long long *)(void *)((struct nomen_future *)(void *)future)->result_slot;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = future; result_slot at #128
+				ldr x0, [x0, #128]
+				ldr x0, [x0]
+			}
+		}
 	}
 
 	// Set the future's reference count before submitting. The construction
@@ -327,30 +349,34 @@ pub mv struct Task<T> : Awaitable {
 	// running task's completion drops one; the join drops the last (the
 	// future frees its slot, flag, and packed closure at zero).
 	pub func future_set_refs = (uint64 future, int refs) {
-		```
-		#arch: c
-		((struct nomen_future *)(void *)future)->refs = refs;
-		```
-		```
-		#arch: aarch64
-		// x0 = future, x1 = refs (refs is at #116)
-		str w1, [x0, #116]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((struct nomen_future *)(void *)future)->refs = refs;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = future, x1 = refs (refs is at #116)
+				str w1, [x0, #116]
+			}
+		}
 	}
 
 	// Drop one reference to the future. At the last reference the future is
 	// freed along with the result slot, cancel flag, and packed task closure
 	// it owns. After a release the handle's fields are gone: zero them.
 	pub func future_release = (uint64 future) {
-		```
-		#arch: c
-		__nomen_future_release((struct nomen_future *)(void *)future);
-		```
-		```
-		#arch: aarch64
-		// x0 = future
-		bl ___nomen_future_release
-		```
+		#if META.arch == "c" {
+			#raw {
+				__nomen_future_release((struct nomen_future *)(void *)future);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = future
+				bl ___nomen_future_release
+			}
+		}
 	}
 
 	// Release this handle's reference to the future. The future owns the
@@ -361,54 +387,56 @@ pub mv struct Task<T> : Awaitable {
 	// here, before the future releases the cell. The Task instance itself
 	// is freed by the auto-free pass after #destroy returns.
 	pub func #destroy = () {
-		```
-		#arch: c
-		if (self->future) {
-	#if T_NEEDS_STRDUP
-		// T is the fat nomen_string here (the guard is 0 for every other
-		// T, and the preprocessor removes this region before parsing).
-		if (self->result_slot) {
-			T _s = *(T *)self->result_slot;
-			if (_s.ptr) free(_s.ptr);
-			// Zero the cell: the future's last release also frees an
-			// unconsumed fat result, keyed on a non-NULL ptr (see
-			// __nomen_future_release) — this free must be the only one.
-			memset((void *)self->result_slot, 0, sizeof(T));
+		#if META.arch == "c" {
+			#raw {
+					if (self->future) {
+				#if T_NEEDS_STRDUP
+					// T is the fat nomen_string here (the guard is 0 for every other
+					// T, and the preprocessor removes this region before parsing).
+					if (self->result_slot) {
+						T _s = *(T *)self->result_slot;
+						if (_s.ptr) free(_s.ptr);
+						// Zero the cell: the future's last release also frees an
+						// unconsumed fat result, keyed on a non-NULL ptr (see
+						// __nomen_future_release) — this free must be the only one.
+						memset((void *)self->result_slot, 0, sizeof(T));
+					}
+				#endif
+						__nomen_future_release((struct nomen_future *)self->future);
+						self->future = 0;
+						self->result_slot = 0;
+						self->cancel_flag = 0;
+					}
+			}
 		}
-	#endif
-			__nomen_future_release((struct nomen_future *)self->future);
-			self->future = 0;
-			self->result_slot = 0;
-			self->cancel_flag = 0;
+		#if META.arch == "aarch64" {
+			#raw {
+				// if (self->future) { free an unconsumed string result; release; zero fields }
+				ldr x0, [x19, #24]
+				cbz x0, .Ldestroy_done
+				// An unconsumed string result: the cell still holds (ptr, len) —
+				// result() zeroes it when it moves the value out. The T_FAT dispatch
+				// folds to a constant branch after monomorphization.
+				ldr x8, [x19, #8]
+				mov x0, #T_FAT
+				cmp x0, #0
+				b.eq .Ldestroy_nofree
+				cbz x8, .Ldestroy_nofree
+				ldr x0, [x8]
+				cbz x0, .Ldestroy_nofree
+				// Mark consumed BEFORE the free (x8 is caller-saved and dead after
+				// the call): the future's last release also frees an unconsumed
+				// fat result, keyed on a non-NULL cell (see __nomen_future_release).
+				stp xzr, xzr, [x8]
+				bl _free
+				.Ldestroy_nofree:
+				ldr x0, [x19, #24]
+				bl ___nomen_future_release
+				str xzr, [x19, #24]
+				str xzr, [x19, #8]
+				str xzr, [x19, #16]
+				.Ldestroy_done:
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// if (self->future) { free an unconsumed string result; release; zero fields }
-		ldr x0, [x19, #24]
-		cbz x0, .Ldestroy_done
-		// An unconsumed string result: the cell still holds (ptr, len) —
-		// result() zeroes it when it moves the value out. The T_FAT dispatch
-		// folds to a constant branch after monomorphization.
-		ldr x8, [x19, #8]
-		mov x0, #T_FAT
-		cmp x0, #0
-		b.eq .Ldestroy_nofree
-		cbz x8, .Ldestroy_nofree
-		ldr x0, [x8]
-		cbz x0, .Ldestroy_nofree
-		// Mark consumed BEFORE the free (x8 is caller-saved and dead after
-		// the call): the future's last release also frees an unconsumed
-		// fat result, keyed on a non-NULL cell (see __nomen_future_release).
-		stp xzr, xzr, [x8]
-		bl _free
-		.Ldestroy_nofree:
-		ldr x0, [x19, #24]
-		bl ___nomen_future_release
-		str xzr, [x19, #24]
-		str xzr, [x19, #8]
-		str xzr, [x19, #16]
-		.Ldestroy_done:
-		```
 	}
 }

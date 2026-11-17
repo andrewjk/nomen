@@ -78,48 +78,48 @@ mv struct RightClickApp : App {
 	// bottom-left origin, so flip y against the content height). The NEXT
 	// frame's pump stamps the kind, and that frame's drain runs the arm.
 	pub func poke = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		id w = (id)win->handle;
-		id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
-		CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		NSInteger num = ((NSInteger(*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id evt = ((id(*)(id, SEL, unsigned long long, NSPoint, unsigned long long, double, NSInteger, id, NSInteger, NSUInteger, float))objc_msgSend)(
-			(id)objc_getClass("NSEvent"),
-			sel_registerName("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
-			3, // NSEventTypeRightMouseDown — the pump reports it as click kind 2
-			((NSPoint){50.0, f.size.height - 12.0}),
-			0, 0.0, num, (id)0, 0, 1, 0.0);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		id w = (id)win->handle;
-		id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
-		CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		NSInteger num = ((NSInteger(*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id evt = ((id(*)(id, SEL, unsigned long long, NSPoint, unsigned long long, double, NSInteger, id, NSInteger, NSUInteger, float))objc_msgSend)(
-			(id)objc_getClass("NSEvent"),
-			sel_registerName("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
-			3, // NSEventTypeRightMouseDown — the pump reports it as click kind 2
-			((NSPoint){50.0, f.size.height - 12.0}),
-			0, 0.0, num, (id)0, 0, 1, 0.0);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id w = (id)win->handle;
+				id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
+				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				NSInteger num = ((NSInteger(*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				id evt = ((id(*)(id, SEL, unsigned long long, NSPoint, unsigned long long, double, NSInteger, id, NSInteger, NSUInteger, float))objc_msgSend)(
+					(id)objc_getClass("NSEvent"),
+					sel_registerName("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+					3, // NSEventTypeRightMouseDown — the pump reports it as click kind 2
+					((NSPoint){50.0, f.size.height - 12.0}),
+					0, 0.0, num, (id)0, 0, 1, 0.0);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id w = (id)win->handle;
+				id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
+				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				NSInteger num = ((NSInteger(*)(id, SEL))objc_msgSend)(w, sel_registerName("windowNumber"));
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				id evt = ((id(*)(id, SEL, unsigned long long, NSPoint, unsigned long long, double, NSInteger, id, NSInteger, NSUInteger, float))objc_msgSend)(
+					(id)objc_getClass("NSEvent"),
+					sel_registerName("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+					3, // NSEventTypeRightMouseDown — the pump reports it as click kind 2
+					((NSPoint){50.0, f.size.height - 12.0}),
+					0, 0.0, num, (id)0, 0, 1, 0.0);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

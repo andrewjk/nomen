@@ -64,7 +64,7 @@ function compile(source: string, opts: { auto: boolean; calling: boolean }): str
 	set_auto_method_inline_enabled(opts.auto);
 	set_auto_calling_inline_enabled(opts.calling);
 	try {
-		const parsed = parse_raw(source);
+		const parsed = parse_raw(source, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

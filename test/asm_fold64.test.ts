@@ -257,7 +257,7 @@ test("the kill switch returns the text unchanged", () => {
 // --- The Random.next receipt, end to end ------------------------------------
 
 function build_aarch64(source: string): string {
-	const parsed = parse_with_imports(source);
+	const parsed = parse_with_imports(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: false });
 	expect(result.errors ?? []).toEqual([]);

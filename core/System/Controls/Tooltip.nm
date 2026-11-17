@@ -10,67 +10,67 @@
 
 // Attach (or clear, with "") hover text for the view `handle` names.
 pub func set_tooltip = (uint64 handle, string text) {
-	```
-	#arch: c
-	#platform: macos
-	((void(*)(id, SEL, id))objc_msgSend)(
-		(id)handle, sel_registerName("setToolTip:"),
-		((id(*)(id, SEL, const char*))objc_msgSend)(
-			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	((void(*)(id, SEL, id))objc_msgSend)(
-		(id)handle, sel_registerName("setToolTip:"),
-		((id(*)(id, SEL, const char*))objc_msgSend)(
-			(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
-	```
-	```
-	#arch: c
-	#platform: ios
-	/* TODO: iOS — no hover/tooltips (see GUI_PLAN Tier 1 #18). */
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	/* TODO: iOS — no hover/tooltips (see GUI_PLAN Tier 1 #18). */
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			((void(*)(id, SEL, id))objc_msgSend)(
+				(id)handle, sel_registerName("setToolTip:"),
+				((id(*)(id, SEL, const char*))objc_msgSend)(
+					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			((void(*)(id, SEL, id))objc_msgSend)(
+				(id)handle, sel_registerName("setToolTip:"),
+				((id(*)(id, SEL, const char*))objc_msgSend)(
+					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text.ptr));
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			/* TODO: iOS — no hover/tooltips (see GUI_PLAN Tier 1 #18). */
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			/* TODO: iOS — no hover/tooltips (see GUI_PLAN Tier 1 #18). */
+		}
+	}
 }
 
 // The tooltip text currently attached to the view `handle` names ("" when
 // none).
 pub func get_tooltip = (uint64 handle, out string) {
-	```
-	#arch: c
-	#platform: macos
-	id str = ((id(*)(id, SEL))objc_msgSend)(
-		(id)handle, sel_registerName("toolTip"));
-	if (!str) return (nomen_string){ strdup(""), 0 };
-	const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-		str, sel_registerName("UTF8String"));
-	return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	id str = ((id(*)(id, SEL))objc_msgSend)(
-		(id)handle, sel_registerName("toolTip"));
-	if (!str) return (nomen_string){ strdup(""), 0 };
-	const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-		str, sel_registerName("UTF8String"));
-	return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-	```
-	```
-	#arch: c
-	#platform: ios
-	/* TODO: iOS (see set_tooltip) */
-	return (nomen_string){ strdup(""), 0 };
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	/* TODO: iOS (see set_tooltip) */
-	return (nomen_string){ strdup(""), 0 };
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			id str = ((id(*)(id, SEL))objc_msgSend)(
+				(id)handle, sel_registerName("toolTip"));
+			if (!str) return (nomen_string){ strdup(""), 0 };
+			const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+				str, sel_registerName("UTF8String"));
+			return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			id str = ((id(*)(id, SEL))objc_msgSend)(
+				(id)handle, sel_registerName("toolTip"));
+			if (!str) return (nomen_string){ strdup(""), 0 };
+			const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+				str, sel_registerName("UTF8String"));
+			return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			/* TODO: iOS (see set_tooltip) */
+			return (nomen_string){ strdup(""), 0 };
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			/* TODO: iOS (see set_tooltip) */
+			return (nomen_string){ strdup(""), 0 };
+		}
+	}
 }

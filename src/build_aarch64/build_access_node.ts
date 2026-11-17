@@ -3449,8 +3449,7 @@ function build_access_method(
 				? mangled_label(f, mono_struct_name) === access_func.mangled_name
 				: true),
 	);
-	const elide_self_save =
-		raw_needs_self && !!inline_func0 && naked_inline_skips_self(inline_func0, status.platform);
+	const elide_self_save = raw_needs_self && !!inline_func0 && naked_inline_skips_self(inline_func0);
 	const needs_self_save = raw_needs_self && !elide_self_save && !deferred_self_code;
 	if (needs_self_save) {
 		emit_asm(status, `str x0, [sp, #-16]!\n`);

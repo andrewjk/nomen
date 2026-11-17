@@ -43,7 +43,7 @@ pub func main = () {
 	Console.write("\\{e}\\n")
 }
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(result.errors ?? []).toEqual([]);
@@ -61,7 +61,7 @@ var e = 1
 if e < 0 { return }
 Console.write("ok\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(result.errors ?? []).toEqual([]);
@@ -78,7 +78,7 @@ pub func main = () {
 	Console.write("done\\n")
 }
 `;
-	const parsed = parse_program(input);
+	const parsed = parse_program(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(result.errors ?? []).toEqual([]);

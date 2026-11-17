@@ -72,7 +72,7 @@ describe("writer-form interpolation", () => {
 	});
 
 	test("the call site passes numerics raw — no per-argument to_string", () => {
-		const parsed = parse_with_imports(KINDS_PROGRAM);
+		const parsed = parse_with_imports(KINDS_PROGRAM, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const a64 = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		const c = build(parsed.root, { arch: "c", audit: false }).code;
@@ -96,11 +96,14 @@ describe("writer-form interpolation", () => {
 	});
 
 	test("all-string interpolations keep the unsuffixed helper", () => {
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var string a = "x"
 var string b = "y"
 Console.write("\\{a} and \\{b}\\n")
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		expect(code).toContain("_string_interpolate_2:");
@@ -108,12 +111,15 @@ Console.write("\\{a} and \\{b}\\n")
 	});
 
 	test("the writer-form shape carries no intermediate malloc", () => {
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var int i = 7
 var uint64 u = 8
 var float f = 1.25
 Console.write("\\{i} \\{u} \\{f}")
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false, optimize: true }).code;
 		// The call site is conversion-free: no `<T>_to_string` call feeds the

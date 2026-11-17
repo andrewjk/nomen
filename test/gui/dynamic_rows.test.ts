@@ -41,28 +41,28 @@ mv struct MyRow {
 	// Raw-only: the click synthesis must be the whole body (the aarch64
 	// backend replaces it wholesale). Callers hand in the borrowed row.
 	pub func poke = (ref self) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS */
+			}
+		}
 	}
 }
 

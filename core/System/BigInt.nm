@@ -325,41 +325,45 @@ pub mv struct BigInt {
 	// faster. The unsigned compare (b.hs) is required: hi/d can have their
 	// sign bit set.
 	inline func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
-		```
-		#arch: c
-		if (hi >= d) return 18446744073709551615ULL;
-		unsigned __int128 n = ((unsigned __int128)hi << 64) | lo;
-		return (unsigned long long)(n / d);
-		```
-		```
-		#arch: aarch64
-		// x0=self(unused) x1=hi x2=lo x3=d  ->  x0 = quotient
-		// ___udivti3(a=x0:x1, b=x2:x3) -> x0:x1 ; we need a=(hi:lo), b=(d:0)
-		cmp x1, x3
-		b.hs 1f
-		mov x0, x2
-		mov x2, x3
-		mov x3, #0
-		str x30, [sp, #-16]!
-		bl ___udivti3
-		ldr x30, [sp], #16
-		b 2f
-		1:
-		mov x0, #-1
-		2:
-		```
+		#if META.arch == "c" {
+			#raw {
+				if (hi >= d) return 18446744073709551615ULL;
+				unsigned __int128 n = ((unsigned __int128)hi << 64) | lo;
+				return (unsigned long long)(n / d);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0=self(unused) x1=hi x2=lo x3=d  ->  x0 = quotient
+				// ___udivti3(a=x0:x1, b=x2:x3) -> x0:x1 ; we need a=(hi:lo), b=(d:0)
+				cmp x1, x3
+				b.hs 1f
+				mov x0, x2
+				mov x2, x3
+				mov x3, #0
+				str x30, [sp, #-16]!
+				bl ___udivti3
+				ldr x30, [sp], #16
+				b 2f
+				1:
+				mov x0, #-1
+				2:
+			}
+		}
 	}
 
 	inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
-		```
-		#arch: c
-		unsigned __int128 product = (unsigned __int128)(unsigned long long)a * (unsigned long long)b;
-		return (unsigned long long)(product >> 64);
-		```
-		```
-		#arch: aarch64
-		umulh x0, x1, x2
-		```
+		#if META.arch == "c" {
+			#raw {
+				unsigned __int128 product = (unsigned __int128)(unsigned long long)a * (unsigned long long)b;
+				return (unsigned long long)(product >> 64);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				umulh x0, x1, x2
+			}
+		}
 	}
 
 	// Sign-aware compare: the signs decide first (canonical zero sorts

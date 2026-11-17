@@ -15,6 +15,7 @@ import {
 	is_pure_borrow_element_load,
 	struct_needs_auto_destroy,
 } from "../build_common/destroy_analysis.ts";
+import fold_string_const from "../build_common/fold_string_const.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import {
 	c_field_path_spelling,
@@ -220,6 +221,22 @@ export default function build_declaration_node(
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
 	hoist_field_overrides(node.value, build_node, status, ";\n", node.name);
+
+	// Substitute a top-level non-primitive `const` reference (e.g.
+	// `var LayoutParams p = DEFAULT_PARAMS`) with the const's initializer —
+	// the same substitution the aarch64 declaration path performs. Without
+	// it, named-field overrides on the const's literal (`[ grow = 0,
+	// shrink = 1, … ]`) never reach `emit_field_overrides` below, because
+	// `has_field_overrides` sees a bare value node. (Historically masked:
+	// an aarch64 build of the same AST mutated `node.value` first, and the
+	// C build reused the mutated tree. Per-target checks give each backend
+	// a fresh AST, so the C path needs its own substitution.)
+	if (node.value?.node_type === "value") {
+		const inlined = status.top_level_consts?.get((node.value as ValueNode).value);
+		if (inlined?.value) {
+			node.value = fold_string_const(inlined, status.top_level_consts!) ?? inlined.value;
+		}
+	}
 	// TODO: malloc() if it's on the heap
 
 	// Function type declaration (explicit `var func (...) f = ...` or inferred

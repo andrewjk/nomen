@@ -19,249 +19,249 @@ pub mv struct Toggle: Control {
 	#handle = () { }
 
 	pub func #init = (self, Window window, string title) {
-		```
-		#arch: c
-		#platform: macos
-		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(
-			btn, sel_registerName("setButtonType:"), 1); // NSPushOnPushOffButton = 1
-		((void(*)(id, SEL, long))objc_msgSend)(
-			btn, sel_registerName("setState:"), 0);      // NSControlStateValueOff = 0
-		((void(*)(id, SEL, id))objc_msgSend)(
-			btn, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), btn);
-		self.handle = (uint64_t)btn;
-		extern void nomen_control_arm_clicks(unsigned long long);
-		nomen_control_arm_clicks((unsigned long long)btn);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(
-			btn, sel_registerName("setButtonType:"), 1); // NSPushOnPushOffButton = 1
-		((void(*)(id, SEL, long))objc_msgSend)(
-			btn, sel_registerName("setState:"), 0);      // NSControlStateValueOff = 0
-		((void(*)(id, SEL, id))objc_msgSend)(
-			btn, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), btn);
-		self->handle = (uint64_t)btn;
-		extern void nomen_control_arm_clicks(unsigned long long) __asm__("nomen_control_arm_clicks");
-		nomen_control_arm_clicks((unsigned long long)btn);
-		```
-		```
-		#arch: c
-		#platform: ios
-		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
-		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
-			btn, sel_registerName("setTitle:forState:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			0); // UIControlStateNormal = 0
-		((void(*)(id, SEL, BOOL))objc_msgSend)(btn, sel_registerName("setSelected:"), 0);
-		id parentView = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(
-				(id)window->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			parentView, sel_registerName("addSubview:"), btn);
-		self.handle = (uint64_t)btn;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
-		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
-			btn, sel_registerName("setTitle:forState:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			0); // UIControlStateNormal = 0
-		((void(*)(id, SEL, BOOL))objc_msgSend)(btn, sel_registerName("setSelected:"), 0);
-		id parentView = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)(
-				(id)window->handle, sel_registerName("rootViewController")),
-			sel_registerName("view"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			parentView, sel_registerName("addSubview:"), btn);
-		self->handle = (uint64_t)btn;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(
+					btn, sel_registerName("setButtonType:"), 1); // NSPushOnPushOffButton = 1
+				((void(*)(id, SEL, long))objc_msgSend)(
+					btn, sel_registerName("setState:"), 0);      // NSControlStateValueOff = 0
+				((void(*)(id, SEL, id))objc_msgSend)(
+					btn, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), btn);
+				self.handle = (uint64_t)btn;
+				extern void nomen_control_arm_clicks(unsigned long long);
+				nomen_control_arm_clicks((unsigned long long)btn);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSButton"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(
+					btn, sel_registerName("setButtonType:"), 1); // NSPushOnPushOffButton = 1
+				((void(*)(id, SEL, long))objc_msgSend)(
+					btn, sel_registerName("setState:"), 0);      // NSControlStateValueOff = 0
+				((void(*)(id, SEL, id))objc_msgSend)(
+					btn, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), btn);
+				self->handle = (uint64_t)btn;
+				extern void nomen_control_arm_clicks(unsigned long long) __asm__("nomen_control_arm_clicks");
+				nomen_control_arm_clicks((unsigned long long)btn);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+				((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+					btn, sel_registerName("setTitle:forState:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					0); // UIControlStateNormal = 0
+				((void(*)(id, SEL, BOOL))objc_msgSend)(btn, sel_registerName("setSelected:"), 0);
+				id parentView = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(
+						(id)window->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					parentView, sel_registerName("addSubview:"), btn);
+				self.handle = (uint64_t)btn;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				id btn = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("UIButton"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 100, 32));
+				((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+					btn, sel_registerName("setTitle:forState:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					0); // UIControlStateNormal = 0
+				((void(*)(id, SEL, BOOL))objc_msgSend)(btn, sel_registerName("setSelected:"), 0);
+				id parentView = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)(
+						(id)window->handle, sel_registerName("rootViewController")),
+					sel_registerName("view"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					parentView, sel_registerName("addSubview:"), btn);
+				self->handle = (uint64_t)btn;
+			}
+		}
 	}
 
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
 	}
 
 	pub func set_title = (self, string title) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:forState:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			0); // UIControlStateNormal = 0
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setTitle:forState:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			0); // UIControlStateNormal = 0
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:forState:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					0); // UIControlStateNormal = 0
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, unsigned long, id, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setTitle:forState:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					0); // UIControlStateNormal = 0
+			}
+		}
 	}
 
 	pub func set_checked = (self, bool checked) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setState:"),
-			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setState:"),
-			checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setSelected:"), checked ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setSelected:"), checked ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setState:"),
+					checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setState:"),
+					checked ? 1 : 0); // NSControlStateValueOn = 1, Off = 0
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setSelected:"), checked ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setSelected:"), checked ? 1 : 0);
+			}
+		}
 	}
 
 	pub func is_checked = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		long state = ((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("state"));
-		return state == 1; // NSControlStateValueOn = 1
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		long state = ((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("state"));
-		return state == 1; // NSControlStateValueOn = 1
-		```
-		```
-		#arch: c
-		#platform: ios
-		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("isSelected"));
-		return on ? 1 : 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("isSelected"));
-		return on ? 1 : 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				long state = ((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("state"));
+				return state == 1; // NSControlStateValueOn = 1
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				long state = ((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("state"));
+				return state == 1; // NSControlStateValueOn = 1
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("isSelected"));
+				return on ? 1 : 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				BOOL on = ((BOOL(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("isSelected"));
+				return on ? 1 : 0;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -306,41 +306,41 @@ pub mv struct Toggle: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
 	}
 }

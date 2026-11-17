@@ -170,7 +170,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		expect(result.code).toContain("bl Resource_destroy");
@@ -198,7 +198,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).toContain("bl Resource_destroy");
@@ -286,7 +286,7 @@ func get_box = (int x, out Box) {
 var Box result = get_box(42)
 Console.write("\\{result.value}")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(result.code).toContain("bl _nomen_free_wrap");
@@ -430,7 +430,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		const main_code = main_region(result.code);
@@ -461,7 +461,7 @@ while i < 3 {
 }
 Console.write("done")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		const main_code = main_region(result.code);

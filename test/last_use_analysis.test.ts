@@ -178,10 +178,11 @@ test("a function containing a raw body contributes no sites", () => {
 	const sites = scan(`
 import System
 func probe = (string s, out int) {
-	\`\`\`
-	#arch: c
-	return 0;
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			return 0;
+		}
+	}
 }
 pub func main = () {
 	var t = "a".to_string()

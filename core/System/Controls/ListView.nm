@@ -29,436 +29,434 @@ pub mv struct ListView: Control {
 	// File-scope helpers: the row storage (shared — one List per process)
 	// and the delegate class answering the two data-source questions.
 	pub func #init = (self, Window window) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		static char **g_list_rows = 0;
-		static long g_list_count = 0;
-		static long g_list_cap = 0;
-		static id g_list_delegate = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				static char **g_list_rows = 0;
+				static long g_list_count = 0;
+				static long g_list_cap = 0;
+				static id g_list_delegate = 0;
 
-		// Append a NUL-terminated copy of `text`; returns the new count.
-		static long nomen_list_append(const char *text) {
-			if (g_list_count == g_list_cap) {
-				long cap = g_list_cap ? g_list_cap * 2 : 16;
-				char **rows = (char **)realloc(g_list_rows, (size_t)(cap * sizeof(char *)));
-				if (!rows) return g_list_count;
-				g_list_rows = rows;
-				g_list_cap = cap;
-			}
-			g_list_rows[g_list_count] = strdup(text);
-			g_list_count += 1;
-			return g_list_count;
-		}
+				// Append a NUL-terminated copy of `text`; returns the new count.
+				static long nomen_list_append(const char *text) {
+					if (g_list_count == g_list_cap) {
+						long cap = g_list_cap ? g_list_cap * 2 : 16;
+						char **rows = (char **)realloc(g_list_rows, (size_t)(cap * sizeof(char *)));
+						if (!rows) return g_list_count;
+						g_list_rows = rows;
+						g_list_cap = cap;
+					}
+					g_list_rows[g_list_count] = strdup(text);
+					g_list_count += 1;
+					return g_list_count;
+				}
 
-		// Free row `index`, shifting the tail left.
-		static void nomen_list_remove_at(long index) {
-			if (index < 0 || index >= g_list_count) return;
-			free(g_list_rows[index]);
-			for (long i = index; i + 1 < g_list_count; i++) {
-				g_list_rows[i] = g_list_rows[i + 1];
-			}
-			g_list_count -= 1;
-		}
+				// Free row `index`, shifting the tail left.
+				static void nomen_list_remove_at(long index) {
+					if (index < 0 || index >= g_list_count) return;
+					free(g_list_rows[index]);
+					for (long i = index; i + 1 < g_list_count; i++) {
+						g_list_rows[i] = g_list_rows[i + 1];
+					}
+					g_list_count -= 1;
+				}
 
-		static void nomen_list_clear_rows(void) {
-			for (long i = 0; i < g_list_count; i++) free(g_list_rows[i]);
-			g_list_count = 0;
-		}
+				static void nomen_list_clear_rows(void) {
+					for (long i = 0; i < g_list_count; i++) free(g_list_rows[i]);
+					g_list_count = 0;
+				}
 
-		static long nomen_list_number_of_rows(id self, SEL cmd, id tv) {
-			(void)self; (void)cmd; (void)tv;
-			return g_list_count;
-		}
+				static long nomen_list_number_of_rows(id self, SEL cmd, id tv) {
+					(void)self; (void)cmd; (void)tv;
+					return g_list_count;
+				}
 
-		static id nomen_list_object_value(id self, SEL cmd, id tv, id col, long row) {
-			(void)self; (void)cmd; (void)tv; (void)col;
-			const char *text = (row < 0 || row >= g_list_count) ? "" : g_list_rows[row];
-			return ((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
-		}
+				static id nomen_list_object_value(id self, SEL cmd, id tv, id col, long row) {
+					(void)self; (void)cmd; (void)tv; (void)col;
+					const char *text = (row < 0 || row >= g_list_count) ? "" : g_list_rows[row];
+					return ((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
+				}
 
-		// The delegate's selection hook: every selection change — user click
-		// AND programmatic select_row — pushes the table view's handle into
-		// the shared selection record (the on_select feed; the ring lives
-		// in Control.nm next to the click ring).
-		static void nomen_list_selection_did_change(id self, SEL cmd, id note) {
-			(void)self; (void)cmd;
-			id tv = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
-			extern void nomen_select_push(unsigned long long);
-			nomen_select_push((unsigned long long)(void *)tv);
-		}
+				// The delegate's selection hook: every selection change — user click
+				// AND programmatic select_row — pushes the table view's handle into
+				// the shared selection record (the on_select feed; the ring lives
+				// in Control.nm next to the click ring).
+				static void nomen_list_selection_did_change(id self, SEL cmd, id note) {
+					(void)self; (void)cmd;
+					id tv = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
+					extern void nomen_select_push(unsigned long long);
+					nomen_select_push((unsigned long long)(void *)tv);
+				}
 
-		static id nomen_list_delegate_class(void) {
-			Class Dl = objc_getClass("NomenListDelegate");
-			if (!Dl) {
-				Dl = objc_allocateClassPair(objc_getClass("NSObject"), "NomenListDelegate", 0);
-				if (Dl) {
-					class_addMethod(Dl, sel_registerName("numberOfRowsInTableView:"),
-						(IMP)nomen_list_number_of_rows, "l@:@");
-					class_addMethod(Dl, sel_registerName("tableView:objectValueForTableColumn:row:"),
-						(IMP)nomen_list_object_value, "@@:@@@l");
-					class_addMethod(Dl, sel_registerName("tableViewSelectionDidChange:"),
-						(IMP)nomen_list_selection_did_change, "v@:@");
-					objc_registerClassPair(Dl);
+				static id nomen_list_delegate_class(void) {
+					Class Dl = objc_getClass("NomenListDelegate");
+					if (!Dl) {
+						Dl = objc_allocateClassPair(objc_getClass("NSObject"), "NomenListDelegate", 0);
+						if (Dl) {
+							class_addMethod(Dl, sel_registerName("numberOfRowsInTableView:"),
+								(IMP)nomen_list_number_of_rows, "l@:@");
+							class_addMethod(Dl, sel_registerName("tableView:objectValueForTableColumn:row:"),
+								(IMP)nomen_list_object_value, "@@:@@@l");
+							class_addMethod(Dl, sel_registerName("tableViewSelectionDidChange:"),
+								(IMP)nomen_list_selection_did_change, "v@:@");
+							objc_registerClassPair(Dl);
+						}
+					}
+					return Dl;
 				}
 			}
-			return Dl;
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static char **g_list_rows = 0;
-		static long g_list_count = 0;
-		static long g_list_cap = 0;
-		static id g_list_delegate = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static char **g_list_rows = 0;
+				static long g_list_count = 0;
+				static long g_list_cap = 0;
+				static id g_list_delegate = 0;
 
-		// Append a NUL-terminated copy of `text`; returns the new count.
-		static long nomen_list_append(const char *text) {
-			if (g_list_count == g_list_cap) {
-				long cap = g_list_cap ? g_list_cap * 2 : 16;
-				char **rows = (char **)realloc(g_list_rows, (size_t)(cap * sizeof(char *)));
-				if (!rows) return g_list_count;
-				g_list_rows = rows;
-				g_list_cap = cap;
-			}
-			g_list_rows[g_list_count] = strdup(text);
-			g_list_count += 1;
-			return g_list_count;
-		}
+				// Append a NUL-terminated copy of `text`; returns the new count.
+				static long nomen_list_append(const char *text) {
+					if (g_list_count == g_list_cap) {
+						long cap = g_list_cap ? g_list_cap * 2 : 16;
+						char **rows = (char **)realloc(g_list_rows, (size_t)(cap * sizeof(char *)));
+						if (!rows) return g_list_count;
+						g_list_rows = rows;
+						g_list_cap = cap;
+					}
+					g_list_rows[g_list_count] = strdup(text);
+					g_list_count += 1;
+					return g_list_count;
+				}
 
-		// Free row `index`, shifting the tail left.
-		static void nomen_list_remove_at(long index) {
-			if (index < 0 || index >= g_list_count) return;
-			free(g_list_rows[index]);
-			for (long i = index; i + 1 < g_list_count; i++) {
-				g_list_rows[i] = g_list_rows[i + 1];
-			}
-			g_list_count -= 1;
-		}
+				// Free row `index`, shifting the tail left.
+				static void nomen_list_remove_at(long index) {
+					if (index < 0 || index >= g_list_count) return;
+					free(g_list_rows[index]);
+					for (long i = index; i + 1 < g_list_count; i++) {
+						g_list_rows[i] = g_list_rows[i + 1];
+					}
+					g_list_count -= 1;
+				}
 
-		static void nomen_list_clear_rows(void) {
-			for (long i = 0; i < g_list_count; i++) free(g_list_rows[i]);
-			g_list_count = 0;
-		}
+				static void nomen_list_clear_rows(void) {
+					for (long i = 0; i < g_list_count; i++) free(g_list_rows[i]);
+					g_list_count = 0;
+				}
 
-		static long nomen_list_number_of_rows(id self, SEL cmd, id tv) {
-			(void)self; (void)cmd; (void)tv;
-			return g_list_count;
-		}
+				static long nomen_list_number_of_rows(id self, SEL cmd, id tv) {
+					(void)self; (void)cmd; (void)tv;
+					return g_list_count;
+				}
 
-		static id nomen_list_object_value(id self, SEL cmd, id tv, id col, long row) {
-			(void)self; (void)cmd; (void)tv; (void)col;
-			const char *text = (row < 0 || row >= g_list_count) ? "" : g_list_rows[row];
-			return ((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
-		}
+				static id nomen_list_object_value(id self, SEL cmd, id tv, id col, long row) {
+					(void)self; (void)cmd; (void)tv; (void)col;
+					const char *text = (row < 0 || row >= g_list_count) ? "" : g_list_rows[row];
+					return ((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
+				}
 
-		// The delegate's selection hook (see the c twin above).
-		static void nomen_list_selection_did_change(id self, SEL cmd, id note) {
-			(void)self; (void)cmd;
-			id tv = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
-			extern void nomen_select_push(unsigned long long);
-			nomen_select_push((unsigned long long)(void *)tv);
-		}
+				// The delegate's selection hook (see the c twin above).
+				static void nomen_list_selection_did_change(id self, SEL cmd, id note) {
+					(void)self; (void)cmd;
+					id tv = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
+					extern void nomen_select_push(unsigned long long);
+					nomen_select_push((unsigned long long)(void *)tv);
+				}
 
-		static id nomen_list_delegate_class(void) {
-			Class Dl = objc_getClass("NomenListDelegate");
-			if (!Dl) {
-				Dl = objc_allocateClassPair(objc_getClass("NSObject"), "NomenListDelegate", 0);
-				if (Dl) {
-					class_addMethod(Dl, sel_registerName("numberOfRowsInTableView:"),
-						(IMP)nomen_list_number_of_rows, "l@:@");
-					class_addMethod(Dl, sel_registerName("tableView:objectValueForTableColumn:row:"),
-						(IMP)nomen_list_object_value, "@@:@@@l");
-					class_addMethod(Dl, sel_registerName("tableViewSelectionDidChange:"),
-						(IMP)nomen_list_selection_did_change, "v@:@");
-					objc_registerClassPair(Dl);
+				static id nomen_list_delegate_class(void) {
+					Class Dl = objc_getClass("NomenListDelegate");
+					if (!Dl) {
+						Dl = objc_allocateClassPair(objc_getClass("NSObject"), "NomenListDelegate", 0);
+						if (Dl) {
+							class_addMethod(Dl, sel_registerName("numberOfRowsInTableView:"),
+								(IMP)nomen_list_number_of_rows, "l@:@");
+							class_addMethod(Dl, sel_registerName("tableView:objectValueForTableColumn:row:"),
+								(IMP)nomen_list_object_value, "@@:@@@l");
+							class_addMethod(Dl, sel_registerName("tableViewSelectionDidChange:"),
+								(IMP)nomen_list_selection_did_change, "v@:@");
+							objc_registerClassPair(Dl);
+						}
+					}
+					return Dl;
 				}
 			}
-			return Dl;
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
-		id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setUsesAlternatingRowBackgroundColors:"), 0);
-		((void(*)(id, SEL, double))objc_msgSend)(tv, sel_registerName("setRowHeight:"), 22.0);
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setHeaderView:"), (id)0);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setAllowsColumnSelection:"), 0);
-		id col = ((id(*)(id, SEL, id))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
-			sel_registerName("initWithIdentifier:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTableColumn:"), col);
-		((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
-		if (!g_list_delegate) {
-			g_list_delegate = ((id(*)(id, SEL))objc_msgSend)(nomen_list_delegate_class(), sel_registerName("new"));
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
+				id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setUsesAlternatingRowBackgroundColors:"), 0);
+				((void(*)(id, SEL, double))objc_msgSend)(tv, sel_registerName("setRowHeight:"), 22.0);
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setHeaderView:"), (id)0);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setAllowsColumnSelection:"), 0);
+				id col = ((id(*)(id, SEL, id))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
+					sel_registerName("initWithIdentifier:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTableColumn:"), col);
+				((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
+				if (!g_list_delegate) {
+					g_list_delegate = ((id(*)(id, SEL))objc_msgSend)(nomen_list_delegate_class(), sel_registerName("new"));
+				}
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDelegate:"), g_list_delegate);
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDataSource:"), g_list_delegate);
+				((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), tv);
+				((void(*)(id, SEL))objc_msgSend)(tv, sel_registerName("release"));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), sv);
+				self.handle = (uint64_t)sv;
+				self.table = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
+			}
 		}
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDelegate:"), g_list_delegate);
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDataSource:"), g_list_delegate);
-		((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), tv);
-		((void(*)(id, SEL))objc_msgSend)(tv, sel_registerName("release"));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), sv);
-		self.handle = (uint64_t)sv;
-		self.table = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
-		id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setUsesAlternatingRowBackgroundColors:"), 0);
-		((void(*)(id, SEL, double))objc_msgSend)(tv, sel_registerName("setRowHeight:"), 22.0);
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setHeaderView:"), (id)0);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setAllowsColumnSelection:"), 0);
-		id col = ((id(*)(id, SEL, id))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
-			sel_registerName("initWithIdentifier:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTableColumn:"), col);
-		((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
-		if (!g_list_delegate) {
-			g_list_delegate = ((id(*)(id, SEL))objc_msgSend)(nomen_list_delegate_class(), sel_registerName("new"));
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
+				id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setUsesAlternatingRowBackgroundColors:"), 0);
+				((void(*)(id, SEL, double))objc_msgSend)(tv, sel_registerName("setRowHeight:"), 22.0);
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setHeaderView:"), (id)0);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(tv, sel_registerName("setAllowsColumnSelection:"), 0);
+				id col = ((id(*)(id, SEL, id))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
+					sel_registerName("initWithIdentifier:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTableColumn:"), col);
+				((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
+				if (!g_list_delegate) {
+					g_list_delegate = ((id(*)(id, SEL))objc_msgSend)(nomen_list_delegate_class(), sel_registerName("new"));
+				}
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDelegate:"), g_list_delegate);
+				((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDataSource:"), g_list_delegate);
+				((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), tv);
+				((void(*)(id, SEL))objc_msgSend)(tv, sel_registerName("release"));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), sv);
+				self->handle = (uint64_t)sv;
+				self->table = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
+			}
 		}
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDelegate:"), g_list_delegate);
-		((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("setDataSource:"), g_list_delegate);
-		((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), tv);
-		((void(*)(id, SEL))objc_msgSend)(tv, sel_registerName("release"));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), sv);
-		self->handle = (uint64_t)sv;
-		self->table = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — UITableView + UITableViewDataSource/Delegate bridge and
-		 * reusable cells (see GUI_PLAN Tier 2; defer). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — UITableView + UITableViewDataSource/Delegate bridge and
+				 * reusable cells (see GUI_PLAN Tier 2; defer). */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Append a row (a NUL-terminated copy is stored) and reload.
 	pub func add_row = (self, string text) {
-		```
-		#arch: c
-		#platform: macos
-		nomen_list_append(text.ptr);
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_list_append(text.ptr);
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_list_append(text.ptr);
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_list_append(text.ptr);
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Replace row `index`'s text and reload.
 	pub func set_row = (self, int index, string text) {
-		```
-		#arch: c
-		#platform: macos
-		if (index < 0 || (long)index >= g_list_count) return;
-		free(g_list_rows[index]);
-		g_list_rows[index] = strdup(text.ptr);
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (index < 0 || (long)index >= g_list_count) return;
-		free(g_list_rows[index]);
-		g_list_rows[index] = strdup(text.ptr);
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (index < 0 || (long)index >= g_list_count) return;
+				free(g_list_rows[index]);
+				g_list_rows[index] = strdup(text.ptr);
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (index < 0 || (long)index >= g_list_count) return;
+				free(g_list_rows[index]);
+				g_list_rows[index] = strdup(text.ptr);
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Delete row `index` and reload.
 	pub func remove_row = (self, int index) {
-		```
-		#arch: c
-		#platform: macos
-		nomen_list_remove_at((long)index);
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_list_remove_at((long)index);
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_list_remove_at((long)index);
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_list_remove_at((long)index);
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Delete every row and reload.
 	pub func clear = (self) {
-		```
-		#arch: c
-		#platform: macos
-		nomen_list_clear_rows();
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_list_clear_rows();
-		((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_list_clear_rows();
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_list_clear_rows();
+				((void(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func row_count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)g_list_count;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)g_list_count;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)g_list_count;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)g_list_count;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// A fresh copy of row `index`'s text (mv — the caller owns it).
 	pub func row = (self, int index, out string) {
-		```
-		#arch: c
-		#platform: macos
-		const char *text = ((index < 0 || (long)index >= g_list_count) || !g_list_rows[index])
-			? "" : g_list_rows[index];
-		return (nomen_string){ strdup(text), (long)strlen(text) };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		const char *text = ((index < 0 || (long)index >= g_list_count) || !g_list_rows[index])
-			? "" : g_list_rows[index];
-		return (nomen_string){ strdup(text), (long)strlen(text) };
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				const char *text = ((index < 0 || (long)index >= g_list_count) || !g_list_rows[index])
+					? "" : g_list_rows[index];
+				return (nomen_string){ strdup(text), (long)strlen(text) };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				const char *text = ((index < 0 || (long)index >= g_list_count) || !g_list_rows[index])
+					? "" : g_list_rows[index];
+				return (nomen_string){ strdup(text), (long)strlen(text) };
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
 	}
 
 	// The selected row, polled (no change callback in the manual loop);
 	// -1 = no selection.
 	pub func selected_row = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("selectedRow"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("selectedRow"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("selectedRow"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)((id)self->table, sel_registerName("selectedRow"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
 	}
 
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
@@ -468,107 +466,107 @@ pub mv struct ListView: Control {
 	// the row through selected_row(). The record is keyed on the table
 	// view (what the delegate sees), not the scroll wrapper.
 	pub func take_select = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->table);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->table);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->table);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->table);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
 	}
 
 	// Select a row programmatically (deselects the rest).
 	pub func select_row = (self, int index) {
-		```
-		#arch: c
-		#platform: macos
-		id indexes = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-			(id)objc_getClass("NSIndexSet"), sel_registerName("indexSetWithIndex:"),
-			index < 0 ? 0UL : (unsigned long)index);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(
-			(id)self->table, sel_registerName("selectRowIndexes:byExtendingSelection:"),
-			indexes, 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id indexes = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-			(id)objc_getClass("NSIndexSet"), sel_registerName("indexSetWithIndex:"),
-			index < 0 ? 0UL : (unsigned long)index);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(
-			(id)self->table, sel_registerName("selectRowIndexes:byExtendingSelection:"),
-			indexes, 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id indexes = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					(id)objc_getClass("NSIndexSet"), sel_registerName("indexSetWithIndex:"),
+					index < 0 ? 0UL : (unsigned long)index);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(
+					(id)self->table, sel_registerName("selectRowIndexes:byExtendingSelection:"),
+					indexes, 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id indexes = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					(id)objc_getClass("NSIndexSet"), sel_registerName("indexSetWithIndex:"),
+					index < 0 ? 0UL : (unsigned long)index);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(
+					(id)self->table, sel_registerName("selectRowIndexes:byExtendingSelection:"),
+					indexes, 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func intrinsic_size = (self, out Size) {
@@ -597,37 +595,37 @@ pub mv struct ListView: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		nomen_list_clear_rows();
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_list_clear_rows();
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+				self->table = 0;
+			}
 		}
-		self->table = 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_list_clear_rows();
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_list_clear_rows();
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+				self->table = 0;
+			}
 		}
-		self->table = 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

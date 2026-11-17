@@ -9,10 +9,11 @@ test("raw aarch64 statements delegate byte-identically", () => {
 	expect_byte_identical(
 		`
 var int x = 1
-\`\`\`
-#arch: aarch64
-ldr x0, =5
-\`\`\`
+#if META.arch == "aarch64" {
+	#raw {
+		ldr x0, =5
+	}
+}
 Console.write("\\{x}")
 `,
 		false,

@@ -25,431 +25,429 @@ pub mv struct OutlineView: Control {
 	// File-scope helper: the node pool (shared — one OutlineView per process)
 	// and the data-source IMPs answering the item protocol.
 	pub func #init = (self, Window window) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		#define NOMEN_TREE_MAX 256
-		static char *g_tree_text[NOMEN_TREE_MAX];
-		static long g_tree_parent[NOMEN_TREE_MAX]; // -1 = top level
-		static long g_tree_count = 0;
-		static id g_tree_delegate = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				#define NOMEN_TREE_MAX 256
+				static char *g_tree_text[NOMEN_TREE_MAX];
+				static long g_tree_parent[NOMEN_TREE_MAX]; // -1 = top level
+				static long g_tree_count = 0;
+				static id g_tree_delegate = 0;
 
-		// Append a NUL-terminated copy of `text` under `parent` (-1 = top
-		// level); returns the new node's index or -1 when the pool is full.
-		static long nomen_tree_append(const char *text, long parent) {
-			if (g_tree_count >= NOMEN_TREE_MAX) return -1;
-			if (parent < -1 || parent >= g_tree_count) return -1;
-			g_tree_text[g_tree_count] = strdup(text);
-			g_tree_parent[g_tree_count] = parent;
-			g_tree_count += 1;
-			return g_tree_count - 1;
-		}
+				// Append a NUL-terminated copy of `text` under `parent` (-1 = top
+				// level); returns the new node's index or -1 when the pool is full.
+				static long nomen_tree_append(const char *text, long parent) {
+					if (g_tree_count >= NOMEN_TREE_MAX) return -1;
+					if (parent < -1 || parent >= g_tree_count) return -1;
+					g_tree_text[g_tree_count] = strdup(text);
+					g_tree_parent[g_tree_count] = parent;
+					g_tree_count += 1;
+					return g_tree_count - 1;
+				}
 
-		// The index of the `n`-th child of `parent` (-1 = top level), or -1.
-		static long nomen_tree_child(long parent, long n) {
-			long seen = 0;
-			for (long i = 0; i < g_tree_count; i++) {
-				if (g_tree_parent[i] == parent) {
-					if (seen == n) return i;
-					seen += 1;
+				// The index of the `n`-th child of `parent` (-1 = top level), or -1.
+				static long nomen_tree_child(long parent, long n) {
+					long seen = 0;
+					for (long i = 0; i < g_tree_count; i++) {
+						if (g_tree_parent[i] == parent) {
+							if (seen == n) return i;
+							seen += 1;
+						}
+					}
+					return -1;
+				}
+
+				static long nomen_tree_children_of(long parent) {
+					long n = 0;
+					for (long i = 0; i < g_tree_count; i++) {
+						if (g_tree_parent[i] == parent) n += 1;
+					}
+					return n;
+				}
+
+				// NSOutlineView items are opaque objects AppKit may retain, hash, or
+				// message — so the node handle is a REAL NSNumber (autoreleased, like
+				// every NSString this library hands AppKit); a bare integer pointer
+				// would crash on retain.
+				static id nomen_tree_item(long index) {
+					return ((id(*)(id, SEL, long))objc_msgSend)(
+						(id)objc_getClass("NSNumber"), sel_registerName("numberWithLong:"), index);
+				}
+
+				static long nomen_tree_index(id item) {
+					return ((long(*)(id, SEL))objc_msgSend)(item, sel_registerName("longValue"));
+				}
+
+				static long nomen_tree_number_of_children(id self, SEL cmd, id tv, id item) {
+					(void)self; (void)cmd; (void)tv;
+					long parent = item ? nomen_tree_index(item) : -1;
+					if (parent >= g_tree_count) return 0;
+					return nomen_tree_children_of(parent);
+				}
+
+				static BOOL nomen_tree_is_expandable(id self, SEL cmd, id tv, id item) {
+					(void)self; (void)cmd; (void)tv;
+					long parent = item ? nomen_tree_index(item) : -1;
+					if (parent >= g_tree_count) return 0;
+					return nomen_tree_children_of(parent) > 0 ? 1 : 0;
+				}
+
+				static id nomen_tree_child_of_item(id self, SEL cmd, id tv, long index, id item) {
+					(void)self; (void)cmd; (void)tv;
+					long parent = item ? nomen_tree_index(item) : -1;
+					if (parent >= g_tree_count) return (id)0;
+					long child = nomen_tree_child(parent, index);
+					return child < 0 ? (id)0 : nomen_tree_item(child);
+				}
+
+				static id nomen_tree_object_value(id self, SEL cmd, id tv, id col, id item) {
+					(void)self; (void)cmd; (void)tv; (void)col;
+					long idx = item ? nomen_tree_index(item) : -1;
+					const char *text = (idx < 0 || idx >= g_tree_count) ? "" : g_tree_text[idx];
+					return ((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
+				}
+
+				// The delegate's selection hook: every selection change — user click
+				// AND programmatic select_row — pushes the outline view's handle
+				// into the shared selection record (the on_select feed; the ring
+				// lives in Control.nm next to the click ring).
+				static void nomen_tree_selection_did_change(id self, SEL cmd, id note) {
+					(void)self; (void)cmd;
+					id ov = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
+					extern void nomen_select_push(unsigned long long);
+					nomen_select_push((unsigned long long)(void *)ov);
+				}
+
+				static id nomen_tree_delegate_class(void) {
+					Class Od = objc_getClass("NomenOutlineDelegate");
+					if (!Od) {
+						Od = objc_allocateClassPair(objc_getClass("NSObject"), "NomenOutlineDelegate", 0);
+						if (Od) {
+							class_addMethod(Od, sel_registerName("outlineView:numberOfChildrenOfItem:"),
+								(IMP)nomen_tree_number_of_children, "l@:@@");
+							class_addMethod(Od, sel_registerName("outlineView:isItemExpandable:"),
+								(IMP)nomen_tree_is_expandable, "c@:@@");
+							class_addMethod(Od, sel_registerName("outlineView:child:ofItem:"),
+								(IMP)nomen_tree_child_of_item, "@@:@l@");
+							class_addMethod(Od, sel_registerName("outlineView:objectValueForTableColumn:byItem:"),
+								(IMP)nomen_tree_object_value, "@@:@@@");
+							class_addMethod(Od, sel_registerName("tableViewSelectionDidChange:"),
+								(IMP)nomen_tree_selection_did_change, "v@:@");
+							objc_registerClassPair(Od);
+						}
+					}
+					if (!g_tree_delegate) {
+						g_tree_delegate = ((id(*)(id, SEL))objc_msgSend)(Od, sel_registerName("new"));
+					}
+					return g_tree_delegate;
 				}
 			}
-			return -1;
 		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				#define NOMEN_TREE_MAX 256
+				static char *g_tree_text[NOMEN_TREE_MAX];
+				static long g_tree_parent[NOMEN_TREE_MAX]; // -1 = top level
+				static long g_tree_count = 0;
+				static id g_tree_delegate = 0;
 
-		static long nomen_tree_children_of(long parent) {
-			long n = 0;
-			for (long i = 0; i < g_tree_count; i++) {
-				if (g_tree_parent[i] == parent) n += 1;
-			}
-			return n;
-		}
+				// Append a NUL-terminated copy of `text` under `parent` (-1 = top
+				// level); returns the new node's index or -1 when the pool is full.
+				static long nomen_tree_append(const char *text, long parent) {
+					if (g_tree_count >= NOMEN_TREE_MAX) return -1;
+					if (parent < -1 || parent >= g_tree_count) return -1;
+					g_tree_text[g_tree_count] = strdup(text);
+					g_tree_parent[g_tree_count] = parent;
+					g_tree_count += 1;
+					return g_tree_count - 1;
+				}
 
-		// NSOutlineView items are opaque objects AppKit may retain, hash, or
-		// message — so the node handle is a REAL NSNumber (autoreleased, like
-		// every NSString this library hands AppKit); a bare integer pointer
-		// would crash on retain.
-		static id nomen_tree_item(long index) {
-			return ((id(*)(id, SEL, long))objc_msgSend)(
-				(id)objc_getClass("NSNumber"), sel_registerName("numberWithLong:"), index);
-		}
+				// The index of the `n`-th child of `parent` (-1 = top level), or -1.
+				static long nomen_tree_child(long parent, long n) {
+					long seen = 0;
+					for (long i = 0; i < g_tree_count; i++) {
+						if (g_tree_parent[i] == parent) {
+							if (seen == n) return i;
+							seen += 1;
+						}
+					}
+					return -1;
+				}
 
-		static long nomen_tree_index(id item) {
-			return ((long(*)(id, SEL))objc_msgSend)(item, sel_registerName("longValue"));
-		}
+				static long nomen_tree_children_of(long parent) {
+					long n = 0;
+					for (long i = 0; i < g_tree_count; i++) {
+						if (g_tree_parent[i] == parent) n += 1;
+					}
+					return n;
+				}
 
-		static long nomen_tree_number_of_children(id self, SEL cmd, id tv, id item) {
-			(void)self; (void)cmd; (void)tv;
-			long parent = item ? nomen_tree_index(item) : -1;
-			if (parent >= g_tree_count) return 0;
-			return nomen_tree_children_of(parent);
-		}
+				// NSOutlineView items are opaque objects AppKit may retain, hash, or
+				// message — so the node handle is a REAL NSNumber (autoreleased, like
+				// every NSString this library hands AppKit); a bare integer pointer
+				// would crash on retain.
+				static id nomen_tree_item(long index) {
+					return ((id(*)(id, SEL, long))objc_msgSend)(
+						(id)objc_getClass("NSNumber"), sel_registerName("numberWithLong:"), index);
+				}
 
-		static BOOL nomen_tree_is_expandable(id self, SEL cmd, id tv, id item) {
-			(void)self; (void)cmd; (void)tv;
-			long parent = item ? nomen_tree_index(item) : -1;
-			if (parent >= g_tree_count) return 0;
-			return nomen_tree_children_of(parent) > 0 ? 1 : 0;
-		}
+				static long nomen_tree_index(id item) {
+					return ((long(*)(id, SEL))objc_msgSend)(item, sel_registerName("longValue"));
+				}
 
-		static id nomen_tree_child_of_item(id self, SEL cmd, id tv, long index, id item) {
-			(void)self; (void)cmd; (void)tv;
-			long parent = item ? nomen_tree_index(item) : -1;
-			if (parent >= g_tree_count) return (id)0;
-			long child = nomen_tree_child(parent, index);
-			return child < 0 ? (id)0 : nomen_tree_item(child);
-		}
+				static long nomen_tree_number_of_children(id self, SEL cmd, id tv, id item) {
+					(void)self; (void)cmd; (void)tv;
+					long parent = item ? nomen_tree_index(item) : -1;
+					if (parent >= g_tree_count) return 0;
+					return nomen_tree_children_of(parent);
+				}
 
-		static id nomen_tree_object_value(id self, SEL cmd, id tv, id col, id item) {
-			(void)self; (void)cmd; (void)tv; (void)col;
-			long idx = item ? nomen_tree_index(item) : -1;
-			const char *text = (idx < 0 || idx >= g_tree_count) ? "" : g_tree_text[idx];
-			return ((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
-		}
+				static BOOL nomen_tree_is_expandable(id self, SEL cmd, id tv, id item) {
+					(void)self; (void)cmd; (void)tv;
+					long parent = item ? nomen_tree_index(item) : -1;
+					if (parent >= g_tree_count) return 0;
+					return nomen_tree_children_of(parent) > 0 ? 1 : 0;
+				}
 
-		// The delegate's selection hook: every selection change — user click
-		// AND programmatic select_row — pushes the outline view's handle
-		// into the shared selection record (the on_select feed; the ring
-		// lives in Control.nm next to the click ring).
-		static void nomen_tree_selection_did_change(id self, SEL cmd, id note) {
-			(void)self; (void)cmd;
-			id ov = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
-			extern void nomen_select_push(unsigned long long);
-			nomen_select_push((unsigned long long)(void *)ov);
-		}
+				static id nomen_tree_child_of_item(id self, SEL cmd, id tv, long index, id item) {
+					(void)self; (void)cmd; (void)tv;
+					long parent = item ? nomen_tree_index(item) : -1;
+					if (parent >= g_tree_count) return (id)0;
+					long child = nomen_tree_child(parent, index);
+					return child < 0 ? (id)0 : nomen_tree_item(child);
+				}
 
-		static id nomen_tree_delegate_class(void) {
-			Class Od = objc_getClass("NomenOutlineDelegate");
-			if (!Od) {
-				Od = objc_allocateClassPair(objc_getClass("NSObject"), "NomenOutlineDelegate", 0);
-				if (Od) {
-					class_addMethod(Od, sel_registerName("outlineView:numberOfChildrenOfItem:"),
-						(IMP)nomen_tree_number_of_children, "l@:@@");
-					class_addMethod(Od, sel_registerName("outlineView:isItemExpandable:"),
-						(IMP)nomen_tree_is_expandable, "c@:@@");
-					class_addMethod(Od, sel_registerName("outlineView:child:ofItem:"),
-						(IMP)nomen_tree_child_of_item, "@@:@l@");
-					class_addMethod(Od, sel_registerName("outlineView:objectValueForTableColumn:byItem:"),
-						(IMP)nomen_tree_object_value, "@@:@@@");
-					class_addMethod(Od, sel_registerName("tableViewSelectionDidChange:"),
-						(IMP)nomen_tree_selection_did_change, "v@:@");
-					objc_registerClassPair(Od);
+				static id nomen_tree_object_value(id self, SEL cmd, id tv, id col, id item) {
+					(void)self; (void)cmd; (void)tv; (void)col;
+					long idx = item ? nomen_tree_index(item) : -1;
+					const char *text = (idx < 0 || idx >= g_tree_count) ? "" : g_tree_text[idx];
+					return ((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
+				}
+
+				// The delegate's selection hook (see the c twin above).
+				static void nomen_tree_selection_did_change(id self, SEL cmd, id note) {
+					(void)self; (void)cmd;
+					id ov = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
+					extern void nomen_select_push(unsigned long long);
+					nomen_select_push((unsigned long long)(void *)ov);
+				}
+
+				static id nomen_tree_delegate_class(void) {
+					Class Od = objc_getClass("NomenOutlineDelegate");
+					if (!Od) {
+						Od = objc_allocateClassPair(objc_getClass("NSObject"), "NomenOutlineDelegate", 0);
+						if (Od) {
+							class_addMethod(Od, sel_registerName("outlineView:numberOfChildrenOfItem:"),
+								(IMP)nomen_tree_number_of_children, "l@:@@");
+							class_addMethod(Od, sel_registerName("outlineView:isItemExpandable:"),
+								(IMP)nomen_tree_is_expandable, "c@:@@");
+							class_addMethod(Od, sel_registerName("outlineView:child:ofItem:"),
+								(IMP)nomen_tree_child_of_item, "@@:@l@");
+							class_addMethod(Od, sel_registerName("outlineView:objectValueForTableColumn:byItem:"),
+								(IMP)nomen_tree_object_value, "@@:@@@");
+							class_addMethod(Od, sel_registerName("tableViewSelectionDidChange:"),
+								(IMP)nomen_tree_selection_did_change, "v@:@");
+							objc_registerClassPair(Od);
+						}
+					}
+					if (!g_tree_delegate) {
+						g_tree_delegate = ((id(*)(id, SEL))objc_msgSend)(Od, sel_registerName("new"));
+					}
+					return g_tree_delegate;
 				}
 			}
-			if (!g_tree_delegate) {
-				g_tree_delegate = ((id(*)(id, SEL))objc_msgSend)(Od, sel_registerName("new"));
+		}
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
+				id ov = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSOutlineView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, double))objc_msgSend)(ov, sel_registerName("setRowHeight:"), 22.0);
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setHeaderView:"), (id)0);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(ov, sel_registerName("setAllowsColumnSelection:"), 0);
+				id col = ((id(*)(id, SEL, id))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
+					sel_registerName("initWithIdentifier:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("addTableColumn:"), col);
+				((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDelegate:"), nomen_tree_delegate_class());
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDataSource:"), nomen_tree_delegate_class());
+				((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), ov);
+				((void(*)(id, SEL))objc_msgSend)(ov, sel_registerName("release"));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), sv);
+				self.handle = (uint64_t)sv;
+				self.tree = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
 			}
-			return g_tree_delegate;
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		#define NOMEN_TREE_MAX 256
-		static char *g_tree_text[NOMEN_TREE_MAX];
-		static long g_tree_parent[NOMEN_TREE_MAX]; // -1 = top level
-		static long g_tree_count = 0;
-		static id g_tree_delegate = 0;
-
-		// Append a NUL-terminated copy of `text` under `parent` (-1 = top
-		// level); returns the new node's index or -1 when the pool is full.
-		static long nomen_tree_append(const char *text, long parent) {
-			if (g_tree_count >= NOMEN_TREE_MAX) return -1;
-			if (parent < -1 || parent >= g_tree_count) return -1;
-			g_tree_text[g_tree_count] = strdup(text);
-			g_tree_parent[g_tree_count] = parent;
-			g_tree_count += 1;
-			return g_tree_count - 1;
-		}
-
-		// The index of the `n`-th child of `parent` (-1 = top level), or -1.
-		static long nomen_tree_child(long parent, long n) {
-			long seen = 0;
-			for (long i = 0; i < g_tree_count; i++) {
-				if (g_tree_parent[i] == parent) {
-					if (seen == n) return i;
-					seen += 1;
-				}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
+				id ov = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSOutlineView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
+				((void(*)(id, SEL, double))objc_msgSend)(ov, sel_registerName("setRowHeight:"), 22.0);
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setHeaderView:"), (id)0);
+				((void(*)(id, SEL, BOOL))objc_msgSend)(ov, sel_registerName("setAllowsColumnSelection:"), 0);
+				id col = ((id(*)(id, SEL, id))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
+					sel_registerName("initWithIdentifier:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
+				((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("addTableColumn:"), col);
+				((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDelegate:"), nomen_tree_delegate_class());
+				((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDataSource:"), nomen_tree_delegate_class());
+				((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), ov);
+				((void(*)(id, SEL))objc_msgSend)(ov, sel_registerName("release"));
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), sv);
+				self->handle = (uint64_t)sv;
+				self->tree = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
 			}
-			return -1;
 		}
-
-		static long nomen_tree_children_of(long parent) {
-			long n = 0;
-			for (long i = 0; i < g_tree_count; i++) {
-				if (g_tree_parent[i] == parent) n += 1;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — no NSOutlineView counterpart (compose from a
+				 * UITableView data source with depth indentation; see GUI_PLAN
+				 * Tier 2; defer). */
 			}
-			return n;
 		}
-
-		// NSOutlineView items are opaque objects AppKit may retain, hash, or
-		// message — so the node handle is a REAL NSNumber (autoreleased, like
-		// every NSString this library hands AppKit); a bare integer pointer
-		// would crash on retain.
-		static id nomen_tree_item(long index) {
-			return ((id(*)(id, SEL, long))objc_msgSend)(
-				(id)objc_getClass("NSNumber"), sel_registerName("numberWithLong:"), index);
-		}
-
-		static long nomen_tree_index(id item) {
-			return ((long(*)(id, SEL))objc_msgSend)(item, sel_registerName("longValue"));
-		}
-
-		static long nomen_tree_number_of_children(id self, SEL cmd, id tv, id item) {
-			(void)self; (void)cmd; (void)tv;
-			long parent = item ? nomen_tree_index(item) : -1;
-			if (parent >= g_tree_count) return 0;
-			return nomen_tree_children_of(parent);
-		}
-
-		static BOOL nomen_tree_is_expandable(id self, SEL cmd, id tv, id item) {
-			(void)self; (void)cmd; (void)tv;
-			long parent = item ? nomen_tree_index(item) : -1;
-			if (parent >= g_tree_count) return 0;
-			return nomen_tree_children_of(parent) > 0 ? 1 : 0;
-		}
-
-		static id nomen_tree_child_of_item(id self, SEL cmd, id tv, long index, id item) {
-			(void)self; (void)cmd; (void)tv;
-			long parent = item ? nomen_tree_index(item) : -1;
-			if (parent >= g_tree_count) return (id)0;
-			long child = nomen_tree_child(parent, index);
-			return child < 0 ? (id)0 : nomen_tree_item(child);
-		}
-
-		static id nomen_tree_object_value(id self, SEL cmd, id tv, id col, id item) {
-			(void)self; (void)cmd; (void)tv; (void)col;
-			long idx = item ? nomen_tree_index(item) : -1;
-			const char *text = (idx < 0 || idx >= g_tree_count) ? "" : g_tree_text[idx];
-			return ((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), text);
-		}
-
-		// The delegate's selection hook (see the c twin above).
-		static void nomen_tree_selection_did_change(id self, SEL cmd, id note) {
-			(void)self; (void)cmd;
-			id ov = ((id(*)(id, SEL))objc_msgSend)(note, sel_registerName("object"));
-			extern void nomen_select_push(unsigned long long);
-			nomen_select_push((unsigned long long)(void *)ov);
-		}
-
-		static id nomen_tree_delegate_class(void) {
-			Class Od = objc_getClass("NomenOutlineDelegate");
-			if (!Od) {
-				Od = objc_allocateClassPair(objc_getClass("NSObject"), "NomenOutlineDelegate", 0);
-				if (Od) {
-					class_addMethod(Od, sel_registerName("outlineView:numberOfChildrenOfItem:"),
-						(IMP)nomen_tree_number_of_children, "l@:@@");
-					class_addMethod(Od, sel_registerName("outlineView:isItemExpandable:"),
-						(IMP)nomen_tree_is_expandable, "c@:@@");
-					class_addMethod(Od, sel_registerName("outlineView:child:ofItem:"),
-						(IMP)nomen_tree_child_of_item, "@@:@l@");
-					class_addMethod(Od, sel_registerName("outlineView:objectValueForTableColumn:byItem:"),
-						(IMP)nomen_tree_object_value, "@@:@@@");
-					class_addMethod(Od, sel_registerName("tableViewSelectionDidChange:"),
-						(IMP)nomen_tree_selection_did_change, "v@:@");
-					objc_registerClassPair(Od);
-				}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
 			}
-			if (!g_tree_delegate) {
-				g_tree_delegate = ((id(*)(id, SEL))objc_msgSend)(Od, sel_registerName("new"));
-			}
-			return g_tree_delegate;
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
-		id ov = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSOutlineView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, double))objc_msgSend)(ov, sel_registerName("setRowHeight:"), 22.0);
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setHeaderView:"), (id)0);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(ov, sel_registerName("setAllowsColumnSelection:"), 0);
-		id col = ((id(*)(id, SEL, id))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
-			sel_registerName("initWithIdentifier:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("addTableColumn:"), col);
-		((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDelegate:"), nomen_tree_delegate_class());
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDataSource:"), nomen_tree_delegate_class());
-		((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), ov);
-		((void(*)(id, SEL))objc_msgSend)(ov, sel_registerName("release"));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), sv);
-		self.handle = (uint64_t)sv;
-		self.tree = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSScrollView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setDrawsBackground:"), 0);
-		id ov = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSOutlineView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 200, 160));
-		((void(*)(id, SEL, double))objc_msgSend)(ov, sel_registerName("setRowHeight:"), 22.0);
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setHeaderView:"), (id)0);
-		((void(*)(id, SEL, BOOL))objc_msgSend)(ov, sel_registerName("setAllowsColumnSelection:"), 0);
-		id col = ((id(*)(id, SEL, id))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTableColumn"), sel_registerName("alloc")),
-			sel_registerName("initWithIdentifier:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "main"));
-		((void(*)(id, SEL, unsigned long))objc_msgSend)(col, sel_registerName("setResizingMask:"), 2UL);
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("addTableColumn:"), col);
-		((void(*)(id, SEL))objc_msgSend)(col, sel_registerName("release"));
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDelegate:"), nomen_tree_delegate_class());
-		((void(*)(id, SEL, id))objc_msgSend)(ov, sel_registerName("setDataSource:"), nomen_tree_delegate_class());
-		((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("setDocumentView:"), ov);
-		((void(*)(id, SEL))objc_msgSend)(ov, sel_registerName("release"));
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), sv);
-		self->handle = (uint64_t)sv;
-		self->tree = (uint64_t)((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("documentView"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — no NSOutlineView counterpart (compose from a
-		 * UITableView data source with depth indentation; see GUI_PLAN
-		 * Tier 2; defer). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
 	}
 
 	// Append a node under `parent` (its `add_item`-order index, or -1 for a
 	// top-level item) and reload.
 	pub func add_item = (self, string text, int parent) {
-		```
-		#arch: c
-		#platform: macos
-		nomen_tree_append(text.ptr, (long)parent);
-		((void(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("reloadData"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_tree_append(text.ptr, (long)parent);
-		((void(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("reloadData"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_tree_append(text.ptr, (long)parent);
+				((void(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_tree_append(text.ptr, (long)parent);
+				((void(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("reloadData"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Expand or collapse the branch at node `index`.
 	pub func set_expanded = (self, int index, bool expanded) {
-		```
-		#arch: c
-		#platform: macos
-		if (index < 0 || (long)index >= g_tree_count) return;
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(
-			(id)self->tree, sel_registerName("expandItem:expandChildren:"),
-			nomen_tree_item((long)index), expanded ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (index < 0 || (long)index >= g_tree_count) return;
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(
-			(id)self->tree, sel_registerName("expandItem:expandChildren:"),
-			nomen_tree_item((long)index), expanded ? 1 : 0);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (index < 0 || (long)index >= g_tree_count) return;
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(
+					(id)self->tree, sel_registerName("expandItem:expandChildren:"),
+					nomen_tree_item((long)index), expanded ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (index < 0 || (long)index >= g_tree_count) return;
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(
+					(id)self->tree, sel_registerName("expandItem:expandChildren:"),
+					nomen_tree_item((long)index), expanded ? 1 : 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// The total number of nodes in the pool.
 	pub func count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)g_tree_count;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)g_tree_count;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)g_tree_count;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)g_tree_count;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// The selected ROW (a visible row number, not a node index), polled;
 	// -1 = no selection.
 	pub func selected_row = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("selectedRow"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("selectedRow"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("selectedRow"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)((id)self->tree, sel_registerName("selectedRow"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
 	}
 
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
@@ -459,73 +457,73 @@ pub mv struct OutlineView: Control {
 	// the row through selected_row(). The record is keyed on the outline
 	// view (what the delegate sees), not the scroll wrapper.
 	pub func take_select = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->tree);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->tree);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->tree);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->tree);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func intrinsic_size = (self, out Size) {
@@ -554,45 +552,45 @@ pub mv struct OutlineView: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		for (long i = 0; i < g_tree_count; i++) {
-			free(g_tree_text[i]);
-			g_tree_text[i] = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				for (long i = 0; i < g_tree_count; i++) {
+					free(g_tree_text[i]);
+					g_tree_text[i] = 0;
+				}
+				g_tree_count = 0;
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+				self->tree = 0;
+			}
 		}
-		g_tree_count = 0;
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				for (long i = 0; i < g_tree_count; i++) {
+					free(g_tree_text[i]);
+					g_tree_text[i] = 0;
+				}
+				g_tree_count = 0;
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+				self->tree = 0;
+			}
 		}
-		self->tree = 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		for (long i = 0; i < g_tree_count; i++) {
-			free(g_tree_text[i]);
-			g_tree_text[i] = 0;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
 		}
-		g_tree_count = 0;
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
 		}
-		self->tree = 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
 	}
 }

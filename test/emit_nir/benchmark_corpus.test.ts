@@ -42,7 +42,7 @@ const lib = get_library("core");
 function expect_bench_byte_identical(file: string): void {
 	const source = join(`${BENCH_DIR}/${file}`, "core");
 	const compile = (): string => {
-		const parsed = parse(source, lib, undefined, { allow_internal: true });
+		const parsed = parse(source, lib, undefined, { arch: "aarch64", allow_internal: true });
 		expect(parsed.errors, file).toEqual([]);
 		return build(parsed.root, { arch: "aarch64" }).code;
 	};

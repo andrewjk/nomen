@@ -55,7 +55,7 @@ function compile(source: string, hoist_on: boolean): string {
 	const saved = scratch_hoist_enabled();
 	set_scratch_hoist_enabled(hoist_on);
 	try {
-		const parsed = parse_raw(source);
+		const parsed = parse_raw(source, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

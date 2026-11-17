@@ -41,14 +41,14 @@ struct Thing {
 `;
 
 	test("struct defined before use compiles and runs", async () => {
-		const parsed = parse(`import System\n${STRUCT}${MAIN}`, system);
+		const parsed = parse(`import System\n${STRUCT}${MAIN}`, system, undefined, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("forward_ref_before", result, "7\n", { arch: "aarch64", audit: true });
 	});
 
 	test("struct defined after use (forward reference) compiles and runs", async () => {
-		const parsed = parse(`import System\n${MAIN}${STRUCT}`, system);
+		const parsed = parse(`import System\n${MAIN}${STRUCT}`, system, undefined, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output("forward_ref_after", result, "7\n", { arch: "aarch64", audit: true });

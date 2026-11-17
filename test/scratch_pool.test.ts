@@ -28,7 +28,7 @@ function compile(source: string, force_region = false): string {
 	const saved = region_pool_enabled();
 	if (force_region) set_region_pool_enabled(true);
 	try {
-		const parsed = parse_raw(source);
+		const parsed = parse_raw(source, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -140,10 +140,11 @@ import System
 struct Holder {
 	var uint64 v
 	inline func mix = (self, uint64 x, out uint64) {
-		\`\`\`
-		#arch: aarch64
-		eor x0, x5, x1
-		\`\`\`
+		#if META.arch == "aarch64" {
+			#raw {
+				eor x0, x5, x1
+			}
+		}
 	}
 }
 

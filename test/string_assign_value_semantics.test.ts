@@ -13,7 +13,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 /** Parse + check a FULL program and build it for one arch. Returns the code
  *  of main's section only (library code shares the file). */
 function build_main(input: string, arch: "aarch64" | "c"): string {
-	const parsed = parse(input, system);
+	const parsed = parse(input, system, undefined, { arch });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch, audit: false });
 	expect(result.errors ?? []).toEqual([]);
@@ -47,23 +47,28 @@ function build_main(input: string, arch: "aarch64" | "c"): string {
 
 /** Compile + run a full program on BOTH backends and pin its stdout. */
 async function run_program(input: string, name: string, expected: string) {
-	const parsed = parse(input, system);
-	expect(parsed.errors).toEqual([]);
+	// Per-target parses: the `#if META.arch` fold selects raw arms at check
+	// time (stage 5), so each backend's build needs its own checked tree.
+	const parsed_a64 = parse(input, system, undefined, { arch: "aarch64" });
+	expect(parsed_a64.errors).toEqual([]);
+	const parsed_c = parse(input, system, undefined, { arch: "c" });
+	expect(parsed_c.errors).toEqual([]);
 	// A STALE system object (library edit the prebuild worker never rebuilt)
 	// is treated like a MISSING one: single TU — pairing a stale system.o
 	// with a fresh user TU is the struct-layout-crash hazard.
 	const split_available = (arch: "aarch64" | "c") =>
-		!build_needs_objc(parsed.root, default_platform()) && system_lib_fresh(arch, true);
+		!build_needs_objc(parsed_a64.root, default_platform()) && system_lib_fresh(arch, true);
 	for (const arch of ["aarch64", "c"] as const) {
 		const options = { arch, audit: true };
+		const root = arch === "aarch64" ? parsed_a64.root : parsed_c.root;
 		const split = split_available(arch);
 		const result = split
-			? build(parsed.root, {
+			? build(root, {
 					...options,
 					emit_mode: "user",
 					system_struct_names: load_system_struct_names(),
 				})
-			: build(parsed.root, options);
+			: build(root, options);
 		await check_output(name, result, expected, {
 			...options,
 			system_lib: split,

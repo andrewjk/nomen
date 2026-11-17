@@ -17,7 +17,7 @@ import parse_with_imports from "./parse_with_imports";
 // boundary) and at the emitted-code level (the direct view store, no relay).
 
 function build_aarch64(source: string): string {
-	const parsed = parse_with_imports(source);
+	const parsed = parse_with_imports(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	return build(parsed.root, { arch: "aarch64", audit: false }).code;
 }

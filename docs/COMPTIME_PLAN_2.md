@@ -363,6 +363,62 @@ Elevate it from "good long-term target" to the acceptance criterion.
    specializations only.
 5. **Unify `#arch`/`#platform` into `#if META`** (D2), once the raw-block
    shape and `aarch64_use_c` semantics are settled.
+   **SHIPPED** — decisions: (D5-1) the C-vs-assembly dialect is a property
+   of the BLOCK, not the condition — a `#c` first line marks
+   companion-compiled C source, and an UNMARKED block is the target's
+   default dialect (inline assembly on aarch64, C on the C backend); the
+   condition stays purely target-shaped (`META.arch` / `META.platform`).
+   (D5-2) full migration — the in-band `#arch:` / `#platform:` tags are
+   DELETED, and `parse_raw` rejects them with a migration-pointing error.
+   (D5-3) `#scope: file` stays as the block's emission-scope header.
+   Mechanically: `parse_raw_directives` shrank to `parse_raw_block` (peels
+   `#c` / `#scope:` only — target matching is gone, because the `#if` fold
+   at the top of check() already selected the target's arms); the 1,721
+   core blocks were codemodded to `#if`-wrapped fences (adjacent c/aarch64
+   pairs merged into `if/else`; `aarch64_use_c` became
+   `#if META.arch == "aarch64"` + `#c`; the tricky `c, aarch64_use_c`
+   comma list became a bare `#c` block — C dialect on every target). The
+   tag-era "raw blocks for other architectures but no aarch64 block"
+   build error is replaced by a CHECK-time guard: fold_pragma_ifs counts
+   the raw statements removed from each function body
+   (`FunctionNode.folded_away_raws`), and check_function_node rejects a
+   raw-only implementation whose every arm folded away ("no implementation
+   for this target") — callers would otherwise `bl` into nothing. The
+   check-time scanners (mixed companion-C rejection, the string-mutation
+   conservative rules, the `T_SIZE` numeric-vs-sizeof decision) now read
+   the `#c` marker plus `CheckStatus.arch` instead of tag text.
+   `CheckStatus.arch` threads the target (defaulting to "c"); per-target
+   parses are now REQUIRED wherever one AST feeds both backends (the
+   harnesses and ~100 test files were updated — the aarch64-only arms
+   only exist in an aarch64-checked tree). Two latent bugs surfaced by the
+   per-target parses were fixed: the C declaration path never substituted
+   a top-level struct-const reference before applying named-field
+   overrides (masked because an aarch64 build mutated the shared AST
+   first), and `check_missing_return` didn't recognize pragma-wrapped raw
+   bodies. Docs updated: AGENTS.md "Inline code blocks", SPEC
+   ("Unsafe Code" / "Compile-Time Conditionals" wording), GENERICS.md
+   ("Raw code blocks"), MEMORY/AARCH64/ASYNC/CLOSURE/GUI/CORE_RAW
+   references. Known gaps recorded in FOLLOWUP.md.
+   _Syntax follow-up (post-stage-5 review):_ the ``` fence was itself the
+   last un-Nomen-shaped bit, so raw blocks are now `#raw { ... }` — a normal
+   `#` directive with a brace-delimited body (braces inside strings/comments
+   do not close it; one shared scanner in `src/raw_block.ts` serves the
+   tokenizer and the formatter). The block's nature moved from header LINES
+   onto the OPENER: `#raw` (target default dialect), `#raw("c")`
+   (companion-C; the old `#c` line), `#raw(…, "file")` (the old `#scope:
+file`). The node carries it (`RawNode.is_c` / `.scope`), deleting
+   `parse_raw_block` and every leading-line scan. The fence and the header
+   lines are rejected with a migration-pointing parse error; `core/` (1,721
+   blocks) and the test fixtures were codemodded.
+   The stage-5 codemod's `if/else` merge of adjacent raw arms was reverted:
+   a raw arm now names its target explicitly on both arms (`#if META.arch
+== "c" { #raw }` + `#if META.arch == "aarch64" { #raw }`). `else` on
+   `META.arch` includes `"js"`, whose backend ignores raw nodes — the else
+   arm was putting aarch64 assembly into JS-checked trees, and the
+   "no implementation for this target" guard now exempts `arch === "js"`
+   (a raw-only function has no JS arm by design). 155 core pairs and 19
+   test-fixture pairs split; statement-level and platform `else` arms are
+   untouched (a portable fallback is meaningful there).
 6. (Someday) declaration/type generation.
 
 ## See also

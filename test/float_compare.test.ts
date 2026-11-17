@@ -20,7 +20,7 @@ if b >= a { Console.write("ge\\n") }
 if a != b { Console.write("ne\\n") }
 if a == b { Console.write("eq_wrong\\n") }
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -35,7 +35,7 @@ if x == y { Console.write("eq\\n") }
 if x >= y { Console.write("ge\\n") }
 if x <= y { Console.write("le\\n") }
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -53,7 +53,7 @@ const bool d = a < b
 Console.write(d.to_string())
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -71,7 +71,7 @@ while x > 0.5 {
 Console.write(n.to_string())
 Console.write("\\n")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -85,7 +85,7 @@ var float b = 2.5
 if a * 2.0 < b + 1.5 { Console.write("expr_lt\\n") }
 if a + b >= 3.5 { Console.write("expr_ge\\n") }
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -100,7 +100,7 @@ Console.write(y.to_string())
 Console.write("\\n")
 if -x < x { Console.write("neg_lt\\n") }
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

@@ -49,77 +49,87 @@ pub struct Buffer<T> {
 	}
 
 	internal inline func load_u32 = (self, int i: i >= 0 && i < self.cap, out uint32) {
-		```
-		#arch: c
-		return ((unsigned int*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x1, x1, #2
-		add x0, x0, x1
-		ldr w0, [x0]
-		and x0, x0, #0xFFFFFFFF
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((unsigned int*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x1, x1, #2
+				add x0, x0, x1
+				ldr w0, [x0]
+				and x0, x0, #0xFFFFFFFF
+			}
+		}
 	}
 
 	internal inline func store_u32 = (ref self {}, int i: i >= 0 && i < self.cap, uint32 val) {
-		```
-		#arch: c
-		((unsigned int*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #2
-		add x0, x0, x3
-		str w2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((unsigned int*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #2
+				add x0, x0, x3
+				str w2, [x0]
+			}
+		}
 	}
 
 	internal inline func store_or_u32 = (ref self {}, int i: i >= 0 && i < self.cap, uint32 val) {
-		```
-		#arch: c
-		((unsigned int*)(unsigned long long)self->data)[i] |= val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #2
-		add x0, x0, x3
-		ldr w3, [x0]
-		orr w3, w3, w2
-		str w3, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((unsigned int*)(unsigned long long)self->data)[i] |= val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #2
+				add x0, x0, x3
+				ldr w3, [x0]
+				orr w3, w3, w2
+				str w3, [x0]
+			}
+		}
 	}
 
 	// Byte-width primitives (uint8 elements): the width-matched family the
 	// NEON planner's `.16b` descriptor keys on — one 16-byte group carries
 	// 16 lanes. `ldrb`/`strb` zero-extend/clobber exactly one byte.
 	internal inline func load_u8 = (self, int i: i >= 0 && i < self.cap, out uint8) {
-		```
-		#arch: c
-		return ((unsigned char*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		add x0, x0, x1
-		ldrb w0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((unsigned char*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				add x0, x0, x1
+				ldrb w0, [x0]
+			}
+		}
 	}
 
 	internal inline func store_u8 = (ref self {}, int i: i >= 0 && i < self.cap, uint8 val) {
-		```
-		#arch: c
-		((unsigned char*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		add x0, x0, x1
-		strb w2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((unsigned char*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				add x0, x0, x1
+				strb w2, [x0]
+			}
+		}
 	}
 
 	internal func alloc_int = (ref self {}, int size, out int: out >= size) {
@@ -143,31 +153,35 @@ pub struct Buffer<T> {
 	}
 
 	internal inline func load_int = (self, int i: i >= 0 && i < self.cap, out int) {
-		```
-		#arch: c
-		return ((long*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x1, x1, #3
-		add x0, x0, x1
-		ldr x0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((long*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x1, x1, #3
+				add x0, x0, x1
+				ldr x0, [x0]
+			}
+		}
 	}
 
 	internal inline func store_int = (ref self {}, int i: i >= 0 && i < self.cap, int val) {
-		```
-		#arch: c
-		((long*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x0, x0, x3
-		str x2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((long*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x0, x0, x3
+				str x2, [x0]
+			}
+		}
 	}
 
 	// Labeled delegation point for raw-body callers in other containers
@@ -180,63 +194,65 @@ pub struct Buffer<T> {
 	// would pair a counted allocation with a borrow binding that never frees
 	// it (audit LEAK).
 	internal func load_from = (self, int i: i >= 0 && i < self.cap, out T) {
-		```
-		#arch: c
-		return ((T*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i. The return register convention is per type
-		// KIND: `string` returns the fat pair in x0/x1 (T_FAT folds to 1),
-		// composites larger than 8 bytes return through the x8 sret buffer,
-		// scalars are width-matched into x0.
-		mov x14, #T_FAT
-		cmp x14, #1
-		b.eq .Lbuffer_load_from_fat
-		ldr x0, [x19, #8]
-		mov x3, #T_SIZE
-		madd x1, x1, x3, xzr
-		add x0, x0, x1
-		cmp x3, #16
-		b.gt .Lbuffer_load_from_copy
-		cmp x3, #8
-		b.gt .Lbuffer_load_from_pair
-		cmp x3, #1
-		b.eq .Lbuffer_load_from_1
-		cmp x3, #2
-		b.eq .Lbuffer_load_from_2
-		cmp x3, #4
-		b.eq .Lbuffer_load_from_4
-		ldr x0, [x0]
-		b .Lbuffer_load_from_end
-		.Lbuffer_load_from_1:
-		ldrb w0, [x0]
-		b .Lbuffer_load_from_end
-		.Lbuffer_load_from_2:
-		ldrh w0, [x0]
-		b .Lbuffer_load_from_end
-		.Lbuffer_load_from_4:
-		ldr w0, [x0]
-		b .Lbuffer_load_from_end
-		.Lbuffer_load_from_pair:
-		// Word-pair load (T_SIZE <= 16): both words into the sret
-		// buffer, no call.
-		ldp x9, x10, [x0]
-		stp x9, x10, [x8]
-		b .Lbuffer_load_from_end
-		.Lbuffer_load_from_copy:
-		mov x1, x0
-		mov x0, x8
-		mov x2, x3
-		bl _memcpy
-		b .Lbuffer_load_from_end
-		.Lbuffer_load_from_fat:
-		ldr x0, [x19, #8]
-		lsl x2, x1, #4
-		add x0, x0, x2
-		ldp x0, x1, [x0]
-		.Lbuffer_load_from_end:
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((T*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i. The return register convention is per type
+				// KIND: `string` returns the fat pair in x0/x1 (T_FAT folds to 1),
+				// composites larger than 8 bytes return through the x8 sret buffer,
+				// scalars are width-matched into x0.
+				mov x14, #T_FAT
+				cmp x14, #1
+				b.eq .Lbuffer_load_from_fat
+				ldr x0, [x19, #8]
+				mov x3, #T_SIZE
+				madd x1, x1, x3, xzr
+				add x0, x0, x1
+				cmp x3, #16
+				b.gt .Lbuffer_load_from_copy
+				cmp x3, #8
+				b.gt .Lbuffer_load_from_pair
+				cmp x3, #1
+				b.eq .Lbuffer_load_from_1
+				cmp x3, #2
+				b.eq .Lbuffer_load_from_2
+				cmp x3, #4
+				b.eq .Lbuffer_load_from_4
+				ldr x0, [x0]
+				b .Lbuffer_load_from_end
+				.Lbuffer_load_from_1:
+				ldrb w0, [x0]
+				b .Lbuffer_load_from_end
+				.Lbuffer_load_from_2:
+				ldrh w0, [x0]
+				b .Lbuffer_load_from_end
+				.Lbuffer_load_from_4:
+				ldr w0, [x0]
+				b .Lbuffer_load_from_end
+				.Lbuffer_load_from_pair:
+				// Word-pair load (T_SIZE <= 16): both words into the sret
+				// buffer, no call.
+				ldp x9, x10, [x0]
+				stp x9, x10, [x8]
+				b .Lbuffer_load_from_end
+				.Lbuffer_load_from_copy:
+				mov x1, x0
+				mov x0, x8
+				mov x2, x3
+				bl _memcpy
+				b .Lbuffer_load_from_end
+				.Lbuffer_load_from_fat:
+				ldr x0, [x19, #8]
+				lsl x2, x1, #4
+				add x0, x0, x2
+				ldp x0, x1, [x0]
+				.Lbuffer_load_from_end:
+			}
+		}
 	}
 
 	// Initialize this buffer as a VIEW over a foreign slab (INTERNAL — the
@@ -296,38 +312,42 @@ pub struct Buffer<T> {
 	// load_int (a borrow read), it relinquishes the slot so the buffer no
 	// longer owns the value.
 	internal inline func move_int = (ref self {}, int i: i >= 0 && i < self.cap, out int) {
-		```
-		#arch: c
-		long *slots = (long*)(unsigned long long)self->data;
-		long val = slots[i];
-		slots[i] = 0;
-		return val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x3, x0, x3
-		ldr x0, [x3]
-		str xzr, [x3]
-		```
+		#if META.arch == "c" {
+			#raw {
+				long *slots = (long*)(unsigned long long)self->data;
+				long val = slots[i];
+				slots[i] = 0;
+				return val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x3, x0, x3
+				ldr x0, [x3]
+				str xzr, [x3]
+			}
+		}
 	}
 
 	// Store into a slot, freeing the previous value when the buffer holds
 	// owned class pointers (has_class_refs). For non-class buffers this is a
 	// plain store, so it is safe to use anywhere store_int would be.
 	internal inline func replace_int = (ref self {}, int i: i >= 0 && i < self.cap, int val) {
-		```
-		#arch: c
-		((long*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x0, x0, x3
-		str x2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((long*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x0, x0, x3
+				str x2, [x0]
+			}
+		}
 	}
 
 	internal inline func zero_int = (ref self {}, int len) {
@@ -374,54 +394,56 @@ pub struct Buffer<T> {
 	// the hottest path in data-heavy code, and the naked-inline path keeps it
 	// to a handful of instructions with no call overhead.
 	inline func load = (self, int i: i >= 0 && i < self.cap, out T) {
-		```
-		#arch: c
-		return ((T*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x8 = return buf for structs
-		ldr x0, [x19, #8]
-		mov x3, #T_SIZE
-		madd x1, x1, x3, xzr
-		add x0, x0, x1
-		cmp x3, #16
-		b.gt .Lbuffer_load_T_copy
-		cmp x3, #8
-		b.gt .Lbuffer_load_T_pair
-		// Width-matched load (zero-extends) — an 8-byte ldr on a sub-8
-		// element would read past the slab's end and leave garbage in the
-		// upper bits.
-		cmp x3, #1
-		b.eq .Lbuffer_load_T_1
-		cmp x3, #2
-		b.eq .Lbuffer_load_T_2
-		cmp x3, #4
-		b.eq .Lbuffer_load_T_4
-		ldr x0, [x0]
-		b .Lbuffer_load_T_end
-		.Lbuffer_load_T_1:
-		ldrb w0, [x0]
-		b .Lbuffer_load_T_end
-		.Lbuffer_load_T_2:
-		ldrh w0, [x0]
-		b .Lbuffer_load_T_end
-		.Lbuffer_load_T_4:
-		ldr w0, [x0]
-		b .Lbuffer_load_T_end
-		.Lbuffer_load_T_pair:
-		// Word-pair load (T_SIZE <= 16): both words into the sret
-		// buffer, no call.
-		ldp x9, x10, [x0]
-		stp x9, x10, [x8]
-		b .Lbuffer_load_T_end
-		.Lbuffer_load_T_copy:
-		mov x1, x0
-		mov x0, x8
-		mov x2, x3
-		bl _memcpy
-		.Lbuffer_load_T_end:
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((T*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x8 = return buf for structs
+				ldr x0, [x19, #8]
+				mov x3, #T_SIZE
+				madd x1, x1, x3, xzr
+				add x0, x0, x1
+				cmp x3, #16
+				b.gt .Lbuffer_load_T_copy
+				cmp x3, #8
+				b.gt .Lbuffer_load_T_pair
+				// Width-matched load (zero-extends) — an 8-byte ldr on a sub-8
+				// element would read past the slab's end and leave garbage in the
+				// upper bits.
+				cmp x3, #1
+				b.eq .Lbuffer_load_T_1
+				cmp x3, #2
+				b.eq .Lbuffer_load_T_2
+				cmp x3, #4
+				b.eq .Lbuffer_load_T_4
+				ldr x0, [x0]
+				b .Lbuffer_load_T_end
+				.Lbuffer_load_T_1:
+				ldrb w0, [x0]
+				b .Lbuffer_load_T_end
+				.Lbuffer_load_T_2:
+				ldrh w0, [x0]
+				b .Lbuffer_load_T_end
+				.Lbuffer_load_T_4:
+				ldr w0, [x0]
+				b .Lbuffer_load_T_end
+				.Lbuffer_load_T_pair:
+				// Word-pair load (T_SIZE <= 16): both words into the sret
+				// buffer, no call.
+				ldp x9, x10, [x0]
+				stp x9, x10, [x8]
+				b .Lbuffer_load_T_end
+				.Lbuffer_load_T_copy:
+				mov x1, x0
+				mov x0, x8
+				mov x2, x3
+				bl _memcpy
+				.Lbuffer_load_T_end:
+			}
+		}
 	}
 
 	// Store `val` into slot `i`, which MUST be fresh (calloc'd, or zeroed by
@@ -433,52 +455,54 @@ pub struct Buffer<T> {
 	// Internal: assumes a FRESH slot (see the contract comment). The public
 	// write is `replace`, which is correct on fresh and occupied slots alike.
 	internal inline func store = (ref self {}, int i: i >= 0 && i < self.cap, T val) {
-		```
-		#arch: c
-		((T*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x2 = val (value if T_SIZE<=8, address if struct)
-		ldr x0, [x19, #8]
-		mov x3, #T_SIZE
-		madd x1, x1, x3, xzr
-		add x0, x0, x1
-		cmp x3, #16
-		b.gt .Lbuffer_store_T_copy
-		cmp x3, #8
-		b.gt .Lbuffer_store_T_pair
-		// Sub-8 element types must use a width-matched store: an 8-byte str
-		// would clobber the following slots (and run past the slab's end).
-		cmp x3, #1
-		b.eq .Lbuffer_store_T_1
-		cmp x3, #2
-		b.eq .Lbuffer_store_T_2
-		cmp x3, #4
-		b.eq .Lbuffer_store_T_4
-		str x2, [x0]
-		b .Lbuffer_store_T_end
-		.Lbuffer_store_T_1:
-		strb w2, [x0]
-		b .Lbuffer_store_T_end
-		.Lbuffer_store_T_2:
-		strh w2, [x0]
-		b .Lbuffer_store_T_end
-		.Lbuffer_store_T_4:
-		str w2, [x0]
-		b .Lbuffer_store_T_end
-		.Lbuffer_store_T_pair:
-		// Word-pair store (T_SIZE <= 16): the value's address (x2)
-		// feeds both words, no call.
-		ldp x9, x10, [x2]
-		stp x9, x10, [x0]
-		b .Lbuffer_store_T_end
-		.Lbuffer_store_T_copy:
-		mov x1, x2
-		mov x2, x3
-		bl _memcpy
-		.Lbuffer_store_T_end:
-		```
+		#if META.arch == "c" {
+			#raw {
+				((T*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x2 = val (value if T_SIZE<=8, address if struct)
+				ldr x0, [x19, #8]
+				mov x3, #T_SIZE
+				madd x1, x1, x3, xzr
+				add x0, x0, x1
+				cmp x3, #16
+				b.gt .Lbuffer_store_T_copy
+				cmp x3, #8
+				b.gt .Lbuffer_store_T_pair
+				// Sub-8 element types must use a width-matched store: an 8-byte str
+				// would clobber the following slots (and run past the slab's end).
+				cmp x3, #1
+				b.eq .Lbuffer_store_T_1
+				cmp x3, #2
+				b.eq .Lbuffer_store_T_2
+				cmp x3, #4
+				b.eq .Lbuffer_store_T_4
+				str x2, [x0]
+				b .Lbuffer_store_T_end
+				.Lbuffer_store_T_1:
+				strb w2, [x0]
+				b .Lbuffer_store_T_end
+				.Lbuffer_store_T_2:
+				strh w2, [x0]
+				b .Lbuffer_store_T_end
+				.Lbuffer_store_T_4:
+				str w2, [x0]
+				b .Lbuffer_store_T_end
+				.Lbuffer_store_T_pair:
+				// Word-pair store (T_SIZE <= 16): the value's address (x2)
+				// feeds both words, no call.
+				ldp x9, x10, [x2]
+				stp x9, x10, [x0]
+				b .Lbuffer_store_T_end
+				.Lbuffer_store_T_copy:
+				mov x1, x2
+				mov x2, x3
+				bl _memcpy
+				.Lbuffer_store_T_end:
+			}
+		}
 	}
 
 	// TAKE a value into slot `i`. The caller's storage (`val`'s source — on
@@ -493,80 +517,82 @@ pub struct Buffer<T> {
 	// arrives by value, so take-store would zero the callee's copy and leave
 	// the caller's buffer shared).
 	internal inline func store_take = (ref self {}, int i: i >= 0 && i < self.cap, T val) {
-		```
-		#arch: c
-		{
-		T* _st = (T*)(unsigned long long)self->data;
-		#if T_IS_VALUE_STRUCT
-		// A value-struct parameter is a POINTER to the caller's storage.
-		T* _src = &(*val);
-		_st[i] = *_src;
-		memset((void*)_src, 0, T_SIZE);
-		#else
-		// Never called for a non-value-struct instantiation (the container
-		// bodies fold their `T_IS_VALUE_STRUCT` arm); this arm only keeps the
-		// emitted instance compiling.
-		T _tmp = val;
-		T* _src = &_tmp;
-		_st[i] = *_src;
-		(void)_src;
-		#endif
+		#if META.arch == "c" {
+			#raw {
+				{
+				T* _st = (T*)(unsigned long long)self->data;
+				#if T_IS_VALUE_STRUCT
+				// A value-struct parameter is a POINTER to the caller's storage.
+				T* _src = &(*val);
+				_st[i] = *_src;
+				memset((void*)_src, 0, T_SIZE);
+				#else
+				// Never called for a non-value-struct instantiation (the container
+				// bodies fold their `T_IS_VALUE_STRUCT` arm); this arm only keeps the
+				// emitted instance compiling.
+				T _tmp = val;
+				T* _src = &_tmp;
+				_st[i] = *_src;
+				(void)_src;
+				#endif
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x2 = &val (the caller's storage)
-		ldr x0, [x19, #8]
-		mov x3, #T_SIZE
-		madd x1, x1, x3, xzr
-		add x0, x0, x1
-		cmp x3, #16
-		b.gt .Lbuffer_take_T_copy
-		cmp x3, #8
-		b.gt .Lbuffer_take_T_pair
-		cmp x3, #1
-		b.eq .Lbuffer_take_T_1
-		cmp x3, #2
-		b.eq .Lbuffer_take_T_2
-		cmp x3, #4
-		b.eq .Lbuffer_take_T_4
-		ldr x9, [x2]
-		str x9, [x0]
-		str xzr, [x2]
-		b .Lbuffer_take_T_end
-		.Lbuffer_take_T_1:
-		ldrb w9, [x2]
-		strb w9, [x0]
-		strb wzr, [x2]
-		b .Lbuffer_take_T_end
-		.Lbuffer_take_T_2:
-		ldrh w9, [x2]
-		strh w9, [x0]
-		strh wzr, [x2]
-		b .Lbuffer_take_T_end
-		.Lbuffer_take_T_4:
-		ldr w9, [x2]
-		str w9, [x0]
-		str wzr, [x2]
-		b .Lbuffer_take_T_end
-		.Lbuffer_take_T_pair:
-		ldp x9, x10, [x2]
-		stp x9, x10, [x0]
-		stp xzr, xzr, [x2]
-		b .Lbuffer_take_T_end
-		.Lbuffer_take_T_copy:
-		mov x4, x2
-		mov x1, x2
-		mov x2, x3
-		stp x4, x3, [sp, #-16]!
-		bl _memcpy
-		ldp x4, x3, [sp], #16
-		mov x0, x4
-		mov x1, #0
-		mov x2, x3
-		bl _memset
-		.Lbuffer_take_T_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x2 = &val (the caller's storage)
+				ldr x0, [x19, #8]
+				mov x3, #T_SIZE
+				madd x1, x1, x3, xzr
+				add x0, x0, x1
+				cmp x3, #16
+				b.gt .Lbuffer_take_T_copy
+				cmp x3, #8
+				b.gt .Lbuffer_take_T_pair
+				cmp x3, #1
+				b.eq .Lbuffer_take_T_1
+				cmp x3, #2
+				b.eq .Lbuffer_take_T_2
+				cmp x3, #4
+				b.eq .Lbuffer_take_T_4
+				ldr x9, [x2]
+				str x9, [x0]
+				str xzr, [x2]
+				b .Lbuffer_take_T_end
+				.Lbuffer_take_T_1:
+				ldrb w9, [x2]
+				strb w9, [x0]
+				strb wzr, [x2]
+				b .Lbuffer_take_T_end
+				.Lbuffer_take_T_2:
+				ldrh w9, [x2]
+				strh w9, [x0]
+				strh wzr, [x2]
+				b .Lbuffer_take_T_end
+				.Lbuffer_take_T_4:
+				ldr w9, [x2]
+				str w9, [x0]
+				str wzr, [x2]
+				b .Lbuffer_take_T_end
+				.Lbuffer_take_T_pair:
+				ldp x9, x10, [x2]
+				stp x9, x10, [x0]
+				stp xzr, xzr, [x2]
+				b .Lbuffer_take_T_end
+				.Lbuffer_take_T_copy:
+				mov x4, x2
+				mov x1, x2
+				mov x2, x3
+				stp x4, x3, [sp, #-16]!
+				bl _memcpy
+				ldp x4, x3, [sp], #16
+				mov x0, x4
+				mov x1, #0
+				mov x2, x3
+				bl _memset
+				.Lbuffer_take_T_end:
+			}
+		}
 	}
 
 	// Move a value out of a T_SIZE-sized slot: return it and zero the slot so the
@@ -575,69 +601,71 @@ pub struct Buffer<T> {
 	// relinquished, so the caller is the sole remaining owner. The value
 	// counterpart of ClassBuffer.move_int — used by List.pop for any value T.
 	inline func move = (ref self {}, int i: i >= 0 && i < self.cap, mv out T) {
-		```
-		#arch: c
-		T* _slots = (T*)(unsigned long long)self->data;
-		T _tmp = _slots[i];
-		memset((void*)&_slots[i], 0, T_SIZE);
-		return _tmp;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x8 = return buf when T_SIZE > 8
-		ldr x4, [x19, #8]
-		mov x3, #T_SIZE
-		madd x5, x1, x3, xzr
-		add x5, x4, x5
-		cmp x3, #16
-		b.gt .Lbuffer_move_T_copy
-		cmp x3, #8
-		b.gt .Lbuffer_move_T_pair
-		// Width-matched load + zero-clear: an 8-byte access on a sub-8
-		// element would zero the following slots and run past the slab.
-		cmp x3, #1
-		b.eq .Lbuffer_move_T_1
-		cmp x3, #2
-		b.eq .Lbuffer_move_T_2
-		cmp x3, #4
-		b.eq .Lbuffer_move_T_4
-		ldr x0, [x5]
-		str xzr, [x5]
-		b .Lbuffer_move_T_end
-		.Lbuffer_move_T_1:
-		ldrb w0, [x5]
-		strb wzr, [x5]
-		b .Lbuffer_move_T_end
-		.Lbuffer_move_T_2:
-		ldrh w0, [x5]
-		strh wzr, [x5]
-		b .Lbuffer_move_T_end
-		.Lbuffer_move_T_4:
-		ldr w0, [x5]
-		str wzr, [x5]
-		b .Lbuffer_move_T_end
-		.Lbuffer_move_T_pair:
-		// Word-pair move (T_SIZE <= 16): the sret pair takes both
-		// words and the slot zeroes, no calls.
-		ldp x9, x10, [x5]
-		stp x9, x10, [x8]
-		stp xzr, xzr, [x5]
-		mov x0, x8
-		b .Lbuffer_move_T_end
-		.Lbuffer_move_T_copy:
-		mov x0, x8
-		mov x1, x5
-		mov x2, x3
-		stp x5, x3, [sp, #-16]!
-		bl _memcpy
-		ldp x5, x3, [sp], #16
-		mov x0, x5
-		mov x1, #0
-		mov x2, x3
-		bl _memset
-		mov x0, x8
-		.Lbuffer_move_T_end:
-		```
+		#if META.arch == "c" {
+			#raw {
+				T* _slots = (T*)(unsigned long long)self->data;
+				T _tmp = _slots[i];
+				memset((void*)&_slots[i], 0, T_SIZE);
+				return _tmp;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x8 = return buf when T_SIZE > 8
+				ldr x4, [x19, #8]
+				mov x3, #T_SIZE
+				madd x5, x1, x3, xzr
+				add x5, x4, x5
+				cmp x3, #16
+				b.gt .Lbuffer_move_T_copy
+				cmp x3, #8
+				b.gt .Lbuffer_move_T_pair
+				// Width-matched load + zero-clear: an 8-byte access on a sub-8
+				// element would zero the following slots and run past the slab.
+				cmp x3, #1
+				b.eq .Lbuffer_move_T_1
+				cmp x3, #2
+				b.eq .Lbuffer_move_T_2
+				cmp x3, #4
+				b.eq .Lbuffer_move_T_4
+				ldr x0, [x5]
+				str xzr, [x5]
+				b .Lbuffer_move_T_end
+				.Lbuffer_move_T_1:
+				ldrb w0, [x5]
+				strb wzr, [x5]
+				b .Lbuffer_move_T_end
+				.Lbuffer_move_T_2:
+				ldrh w0, [x5]
+				strh wzr, [x5]
+				b .Lbuffer_move_T_end
+				.Lbuffer_move_T_4:
+				ldr w0, [x5]
+				str wzr, [x5]
+				b .Lbuffer_move_T_end
+				.Lbuffer_move_T_pair:
+				// Word-pair move (T_SIZE <= 16): the sret pair takes both
+				// words and the slot zeroes, no calls.
+				ldp x9, x10, [x5]
+				stp x9, x10, [x8]
+				stp xzr, xzr, [x5]
+				mov x0, x8
+				b .Lbuffer_move_T_end
+				.Lbuffer_move_T_copy:
+				mov x0, x8
+				mov x1, x5
+				mov x2, x3
+				stp x5, x3, [sp, #-16]!
+				bl _memcpy
+				ldp x5, x3, [sp], #16
+				mov x0, x5
+				mov x1, #0
+				mov x2, x3
+				bl _memset
+				mov x0, x8
+				.Lbuffer_move_T_end:
+			}
+		}
 	}
 
 	// Apply `f` to slot `i` in place: the safe way to do a load→modify→store
@@ -655,83 +683,85 @@ pub struct Buffer<T> {
 	// `inline`: the body calls through the fn pointer, so splicing the raw
 	// block into a caller would bypass the per-element specializations.
 	func modify = (ref self {}, int i: i >= 0 && i < self.cap, func(T, out T) f) {
-		```
-		#arch: c
-		((T*)(unsigned long long)self->data)[i] = ((T (*)(void *, T))f->code)(f->env, ((T*)(unsigned long long)self->data)[i]);
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x2 = f (a closure descriptor: { code, env,
-		// owned } — the call loads both words and passes env first, shifting
-		// the value argument to x1). Scalar elements round-trip through x1
-		// (width-matched); larger trivially-copyable structs pass the slot
-		// address and an sret pointer (x8) — the fn writes the replacement
-		// straight into the slot from a stack-stage copy of the old value.
-		stp x20, x21, [sp, #-16]!
-		stp x22, x23, [sp, #-16]!
-		stp x24, x25, [sp, #-16]!
-		mov x22, x2
-		ldr x9, [x19, #8]
-		mov x3, #T_SIZE
-		madd x20, x1, x3, xzr
-		add x20, x20, x9
-		ldr x24, [x22]
-		ldr x0, [x22, #8]
-		cmp x3, #8
-		b.gt .Lbuffer_modify_T_big
-		cmp x3, #1
-		b.eq .Lbuffer_modify_T_ld1
-		cmp x3, #2
-		b.eq .Lbuffer_modify_T_ld2
-		cmp x3, #4
-		b.eq .Lbuffer_modify_T_ld4
-		ldr x1, [x20]
-		b .Lbuffer_modify_T_call
-		.Lbuffer_modify_T_ld1:
-		ldrb w1, [x20]
-		b .Lbuffer_modify_T_call
-		.Lbuffer_modify_T_ld2:
-		ldrh w1, [x20]
-		b .Lbuffer_modify_T_call
-		.Lbuffer_modify_T_ld4:
-		ldr w1, [x20]
-		.Lbuffer_modify_T_call:
-		blr x24
-		cmp x3, #1
-		b.eq .Lbuffer_modify_T_st1
-		cmp x3, #2
-		b.eq .Lbuffer_modify_T_st2
-		cmp x3, #4
-		b.eq .Lbuffer_modify_T_st4
-		str x0, [x20]
-		b .Lbuffer_modify_T_end
-		.Lbuffer_modify_T_st1:
-		strb w0, [x20]
-		b .Lbuffer_modify_T_end
-		.Lbuffer_modify_T_st2:
-		strh w0, [x20]
-		b .Lbuffer_modify_T_end
-		.Lbuffer_modify_T_st4:
-		str w0, [x20]
-		b .Lbuffer_modify_T_end
-		.Lbuffer_modify_T_big:
-		add x23, x3, #15
-		bic x23, x23, #15
-		sub sp, sp, x23
-		mov x0, sp
-		mov x1, x20
-		mov x2, x3
-		bl _memcpy
-		ldr x0, [x22, #8]
-		mov x1, sp
-		mov x8, x20
-		blr x24
-		add sp, sp, x23
-		.Lbuffer_modify_T_end:
-		ldp x24, x25, [sp], #16
-		ldp x22, x23, [sp], #16
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "c" {
+			#raw {
+				((T*)(unsigned long long)self->data)[i] = ((T (*)(void *, T))f->code)(f->env, ((T*)(unsigned long long)self->data)[i]);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x2 = f (a closure descriptor: { code, env,
+				// owned } — the call loads both words and passes env first, shifting
+				// the value argument to x1). Scalar elements round-trip through x1
+				// (width-matched); larger trivially-copyable structs pass the slot
+				// address and an sret pointer (x8) — the fn writes the replacement
+				// straight into the slot from a stack-stage copy of the old value.
+				stp x20, x21, [sp, #-16]!
+				stp x22, x23, [sp, #-16]!
+				stp x24, x25, [sp, #-16]!
+				mov x22, x2
+				ldr x9, [x19, #8]
+				mov x3, #T_SIZE
+				madd x20, x1, x3, xzr
+				add x20, x20, x9
+				ldr x24, [x22]
+				ldr x0, [x22, #8]
+				cmp x3, #8
+				b.gt .Lbuffer_modify_T_big
+				cmp x3, #1
+				b.eq .Lbuffer_modify_T_ld1
+				cmp x3, #2
+				b.eq .Lbuffer_modify_T_ld2
+				cmp x3, #4
+				b.eq .Lbuffer_modify_T_ld4
+				ldr x1, [x20]
+				b .Lbuffer_modify_T_call
+				.Lbuffer_modify_T_ld1:
+				ldrb w1, [x20]
+				b .Lbuffer_modify_T_call
+				.Lbuffer_modify_T_ld2:
+				ldrh w1, [x20]
+				b .Lbuffer_modify_T_call
+				.Lbuffer_modify_T_ld4:
+				ldr w1, [x20]
+				.Lbuffer_modify_T_call:
+				blr x24
+				cmp x3, #1
+				b.eq .Lbuffer_modify_T_st1
+				cmp x3, #2
+				b.eq .Lbuffer_modify_T_st2
+				cmp x3, #4
+				b.eq .Lbuffer_modify_T_st4
+				str x0, [x20]
+				b .Lbuffer_modify_T_end
+				.Lbuffer_modify_T_st1:
+				strb w0, [x20]
+				b .Lbuffer_modify_T_end
+				.Lbuffer_modify_T_st2:
+				strh w0, [x20]
+				b .Lbuffer_modify_T_end
+				.Lbuffer_modify_T_st4:
+				str w0, [x20]
+				b .Lbuffer_modify_T_end
+				.Lbuffer_modify_T_big:
+				add x23, x3, #15
+				bic x23, x23, #15
+				sub sp, sp, x23
+				mov x0, sp
+				mov x1, x20
+				mov x2, x3
+				bl _memcpy
+				ldr x0, [x22, #8]
+				mov x1, sp
+				mov x8, x20
+				blr x24
+				add sp, sp, x23
+				.Lbuffer_modify_T_end:
+				ldp x24, x25, [sp], #16
+				ldp x22, x23, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	// Store into a T_SIZE-sized slot, overwriting the previous value. For
@@ -742,52 +772,54 @@ pub struct Buffer<T> {
 	// owning_buffer_specialize.ts (both backends). ClassBuffer.replace
 	// destroys+frees class slots soundly.
 	inline func replace = (ref self {}, int i: i >= 0 && i < self.cap, T val) {
-		```
-		#arch: c
-		((T*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i, x2 = val (value if T_SIZE<=8, address if struct)
-		ldr x0, [x19, #8]
-		mov x3, #T_SIZE
-		madd x1, x1, x3, xzr
-		add x0, x0, x1
-		cmp x3, #16
-		b.gt .Lbuffer_replace_T_copy
-		cmp x3, #8
-		b.gt .Lbuffer_replace_T_pair
-		// Width-matched store: an 8-byte str on a sub-8 element would
-		// clobber the following slots and run past the slab's end.
-		cmp x3, #1
-		b.eq .Lbuffer_replace_T_1
-		cmp x3, #2
-		b.eq .Lbuffer_replace_T_2
-		cmp x3, #4
-		b.eq .Lbuffer_replace_T_4
-		str x2, [x0]
-		b .Lbuffer_replace_T_end
-		.Lbuffer_replace_T_1:
-		strb w2, [x0]
-		b .Lbuffer_replace_T_end
-		.Lbuffer_replace_T_2:
-		strh w2, [x0]
-		b .Lbuffer_replace_T_end
-		.Lbuffer_replace_T_4:
-		str w2, [x0]
-		b .Lbuffer_replace_T_end
-		.Lbuffer_replace_T_pair:
-		// Word-pair store (T_SIZE <= 16): the value's address (x2)
-		// feeds both words, no call.
-		ldp x9, x10, [x2]
-		stp x9, x10, [x0]
-		b .Lbuffer_replace_T_end
-		.Lbuffer_replace_T_copy:
-		mov x1, x2
-		mov x2, x3
-		bl _memcpy
-		.Lbuffer_replace_T_end:
-		```
+		#if META.arch == "c" {
+			#raw {
+				((T*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i, x2 = val (value if T_SIZE<=8, address if struct)
+				ldr x0, [x19, #8]
+				mov x3, #T_SIZE
+				madd x1, x1, x3, xzr
+				add x0, x0, x1
+				cmp x3, #16
+				b.gt .Lbuffer_replace_T_copy
+				cmp x3, #8
+				b.gt .Lbuffer_replace_T_pair
+				// Width-matched store: an 8-byte str on a sub-8 element would
+				// clobber the following slots and run past the slab's end.
+				cmp x3, #1
+				b.eq .Lbuffer_replace_T_1
+				cmp x3, #2
+				b.eq .Lbuffer_replace_T_2
+				cmp x3, #4
+				b.eq .Lbuffer_replace_T_4
+				str x2, [x0]
+				b .Lbuffer_replace_T_end
+				.Lbuffer_replace_T_1:
+				strb w2, [x0]
+				b .Lbuffer_replace_T_end
+				.Lbuffer_replace_T_2:
+				strh w2, [x0]
+				b .Lbuffer_replace_T_end
+				.Lbuffer_replace_T_4:
+				str w2, [x0]
+				b .Lbuffer_replace_T_end
+				.Lbuffer_replace_T_pair:
+				// Word-pair store (T_SIZE <= 16): the value's address (x2)
+				// feeds both words, no call.
+				ldp x9, x10, [x2]
+				stp x9, x10, [x0]
+				b .Lbuffer_replace_T_end
+				.Lbuffer_replace_T_copy:
+				mov x1, x2
+				mov x2, x3
+				bl _memcpy
+				.Lbuffer_replace_T_end:
+			}
+		}
 	}
 
 	// Move-taking write, mirroring `List.set`: the caller's value is
@@ -813,38 +845,40 @@ pub struct Buffer<T> {
 	// (the probe-then-construct primitive) and the in-place `set` splice
 	// are the callers, and both overwrite immediately.
 	internal func destroy_at = (ref self {}, int i: i >= 0 && i < self.cap) {
-		```
-		#arch: c
-		T* _slots = (T*)(unsigned long long)self->data;
-		#if T_NEEDS_STRDUP
-		// A string slot owns its strdup'd bytes — free the buffer before the
-		// zero. Owning value-struct elements never reach this body: their
-		// destroy_at is replaced at the call site by the owning-buffer
-		// specialization (payload reclaim + zero).
-		free(_slots[i].ptr);
-		#endif
-		memset((void*)&_slots[i], 0, T_SIZE);
-		```
-		```
-		#arch: aarch64
-		// Same contract as the C body: string slots free their strdup'd
-		// buffer first (the T_NEEDS_STRDUP dispatch folds away for every
-		// other element kind); owning value-struct elements take the
-		// call-site specialization instead.
-		ldr x4, [x19, #8]
-		mov x3, #T_SIZE
-		madd x5, x1, x3, xzr
-		add x5, x4, x5
-		mov x9, #T_NEEDS_STRDUP
-		cbz x9, .Lbuffer_destroy_at_T_zero
-		ldr x0, [x5]
-		bl _free
-		.Lbuffer_destroy_at_T_zero:
-		mov x0, x5
-		mov x1, #0
-		mov x2, #T_SIZE
-		bl _memset
-		```
+		#if META.arch == "c" {
+			#raw {
+				T* _slots = (T*)(unsigned long long)self->data;
+				#if T_NEEDS_STRDUP
+				// A string slot owns its strdup'd bytes — free the buffer before the
+				// zero. Owning value-struct elements never reach this body: their
+				// destroy_at is replaced at the call site by the owning-buffer
+				// specialization (payload reclaim + zero).
+				free(_slots[i].ptr);
+				#endif
+				memset((void*)&_slots[i], 0, T_SIZE);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Same contract as the C body: string slots free their strdup'd
+				// buffer first (the T_NEEDS_STRDUP dispatch folds away for every
+				// other element kind); owning value-struct elements take the
+				// call-site specialization instead.
+				ldr x4, [x19, #8]
+				mov x3, #T_SIZE
+				madd x5, x1, x3, xzr
+				add x5, x4, x5
+				mov x9, #T_NEEDS_STRDUP
+				cbz x9, .Lbuffer_destroy_at_T_zero
+				ldr x0, [x5]
+				bl _free
+				.Lbuffer_destroy_at_T_zero:
+				mov x0, x5
+				mov x1, #0
+				mov x2, #T_SIZE
+				bl _memset
+			}
+		}
 	}
 
 	// Address of slot `i` (library-only): the ELEMENT BORROW primitive —
@@ -857,18 +891,20 @@ pub struct Buffer<T> {
 	// wrapper, or trusted internals) bounds-checks; the body is raw-only so
 	// the missing-return net does not apply to the raw return.
 	internal func slot_ptr = (ref self {}, int i, out ptr T) {
-		```
-		#arch: c
-		return (T*)(unsigned long long)self->data + i;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i — the slot address (the load primitive's
-		// address-of: data + i * T_SIZE), returned in x0.
-		ldr x8, [x19, #8]
-		mov x9, #T_SIZE
-		madd x0, x1, x9, x8
-		```
+		#if META.arch == "c" {
+			#raw {
+				return (T*)(unsigned long long)self->data + i;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i — the slot address (the load primitive's
+				// address-of: data + i * T_SIZE), returned in x0.
+				ldr x8, [x19, #8]
+				mov x9, #T_SIZE
+				madd x0, x1, x9, x8
+			}
+		}
 	}
 
 	// Move slot src into slot dst: overwrite dst with src's bytes and zero
@@ -886,74 +922,76 @@ pub struct Buffer<T> {
 		int dst: dst >= 0 && dst < self.cap,
 		int src: src >= 0 && src < self.cap
 	) {
-		```
-		#arch: c
-		T* _slots = (T*)(unsigned long long)self->data;
-		if (dst != src) {
-			_slots[dst] = _slots[src];
-			memset((void*)&_slots[src], 0, T_SIZE);
+		#if META.arch == "c" {
+			#raw {
+				T* _slots = (T*)(unsigned long long)self->data;
+				if (dst != src) {
+					_slots[dst] = _slots[src];
+					memset((void*)&_slots[src], 0, T_SIZE);
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = dst, x2 = src
-		ldr x4, [x19, #8]
-		mov x3, #T_SIZE
-		madd x5, x1, x3, x4
-		madd x6, x2, x3, x4
-		cmp x5, x6
-		b.eq .Lbuffer_shift_T_end
-		cmp x3, #16
-		b.gt .Lbuffer_shift_T_copy
-		cmp x3, #8
-		b.gt .Lbuffer_shift_T_pair
-		// Width-matched mv: an 8-byte access on a sub-8 element would
-		// clobber the following slot (and run past the slab's end).
-		cmp x3, #1
-		b.eq .Lbuffer_shift_T_1
-		cmp x3, #2
-		b.eq .Lbuffer_shift_T_2
-		cmp x3, #4
-		b.eq .Lbuffer_shift_T_4
-		ldr x7, [x6]
-		str x7, [x5]
-		str xzr, [x6]
-		b .Lbuffer_shift_T_end
-		.Lbuffer_shift_T_1:
-		ldrb w7, [x6]
-		strb w7, [x5]
-		strb wzr, [x6]
-		b .Lbuffer_shift_T_end
-		.Lbuffer_shift_T_2:
-		ldrh w7, [x6]
-		strh w7, [x5]
-		strh wzr, [x6]
-		b .Lbuffer_shift_T_end
-		.Lbuffer_shift_T_4:
-		ldr w7, [x6]
-		str w7, [x5]
-		str wzr, [x6]
-		b .Lbuffer_shift_T_end
-		.Lbuffer_shift_T_pair:
-		// Word-pair shift (T_SIZE <= 16): both words move wholesale
-		// and the source pair zeroes, no calls.
-		ldp x7, x9, [x6]
-		stp x7, x9, [x5]
-		stp xzr, xzr, [x6]
-		b .Lbuffer_shift_T_end
-		.Lbuffer_shift_T_copy:
-		mov x0, x5
-		mov x1, x6
-		mov x2, x3
-		stp x5, x6, [sp, #-16]!
-		bl _memcpy
-		ldp x5, x6, [sp], #16
-		mov x0, x6
-		mov x1, #0
-		mov x2, x3
-		bl _memset
-		.Lbuffer_shift_T_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = dst, x2 = src
+				ldr x4, [x19, #8]
+				mov x3, #T_SIZE
+				madd x5, x1, x3, x4
+				madd x6, x2, x3, x4
+				cmp x5, x6
+				b.eq .Lbuffer_shift_T_end
+				cmp x3, #16
+				b.gt .Lbuffer_shift_T_copy
+				cmp x3, #8
+				b.gt .Lbuffer_shift_T_pair
+				// Width-matched mv: an 8-byte access on a sub-8 element would
+				// clobber the following slot (and run past the slab's end).
+				cmp x3, #1
+				b.eq .Lbuffer_shift_T_1
+				cmp x3, #2
+				b.eq .Lbuffer_shift_T_2
+				cmp x3, #4
+				b.eq .Lbuffer_shift_T_4
+				ldr x7, [x6]
+				str x7, [x5]
+				str xzr, [x6]
+				b .Lbuffer_shift_T_end
+				.Lbuffer_shift_T_1:
+				ldrb w7, [x6]
+				strb w7, [x5]
+				strb wzr, [x6]
+				b .Lbuffer_shift_T_end
+				.Lbuffer_shift_T_2:
+				ldrh w7, [x6]
+				strh w7, [x5]
+				strh wzr, [x6]
+				b .Lbuffer_shift_T_end
+				.Lbuffer_shift_T_4:
+				ldr w7, [x6]
+				str w7, [x5]
+				str wzr, [x6]
+				b .Lbuffer_shift_T_end
+				.Lbuffer_shift_T_pair:
+				// Word-pair shift (T_SIZE <= 16): both words move wholesale
+				// and the source pair zeroes, no calls.
+				ldp x7, x9, [x6]
+				stp x7, x9, [x5]
+				stp xzr, xzr, [x6]
+				b .Lbuffer_shift_T_end
+				.Lbuffer_shift_T_copy:
+				mov x0, x5
+				mov x1, x6
+				mov x2, x3
+				stp x5, x6, [sp, #-16]!
+				bl _memcpy
+				ldp x5, x6, [sp], #16
+				mov x0, x6
+				mov x1, #0
+				mov x2, x3
+				bl _memset
+				.Lbuffer_shift_T_end:
+			}
+		}
 	}
 
 	// Bulk transfer for backward-shift deletion: move the `count` slots at
@@ -976,45 +1014,47 @@ pub struct Buffer<T> {
 		int src: src >= dst,
 		int count: count >= 0 && src + count <= self.cap
 	) {
-		```
-		#arch: c
-		if (count > 0) {
-			T* _slots = (T*)(unsigned long long)self->data;
-			memmove((void*)&_slots[dst], (void*)&_slots[src],
-				(unsigned long long)count * T_SIZE);
-			// Zero the source slots the destination does not overwrite:
-			// [dst + count, src + count) — one slot for the contiguous
-			// deletion shape, the gap+1 slots for a strided one.
-			memset((void*)&_slots[dst + count], 0,
-				(unsigned long long)(src - dst) * T_SIZE);
+		#if META.arch == "c" {
+			#raw {
+				if (count > 0) {
+					T* _slots = (T*)(unsigned long long)self->data;
+					memmove((void*)&_slots[dst], (void*)&_slots[src],
+						(unsigned long long)count * T_SIZE);
+					// Zero the source slots the destination does not overwrite:
+					// [dst + count, src + count) — one slot for the contiguous
+					// deletion shape, the gap+1 slots for a strided one.
+					memset((void*)&_slots[dst + count], 0,
+						(unsigned long long)(src - dst) * T_SIZE);
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = dst, x2 = src, x3 = count. x0-x18 die across the
-		// bl calls, so the block math parks on the stack around _memmove.
-		cbz x3, .Lbuffer_move_range_T_end
-		ldr x4, [x19, #8]
-		mov x5, #T_SIZE
-		madd x6, x1, x5, x4
-		madd x7, x2, x5, x4
-		madd x9, x3, x5, xzr
-		sub x10, x2, x1
-		madd x10, x10, x5, xzr
-		stp x6, x9, [sp, #-16]!
-		str x10, [sp, #-16]!
-		mov x0, x6
-		mov x1, x7
-		mov x2, x9
-		bl _memmove
-		ldr x10, [sp], #16
-		ldp x6, x9, [sp], #16
-		add x0, x6, x9
-		mov x1, #0
-		mov x2, x10
-		bl _memset
-		.Lbuffer_move_range_T_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = dst, x2 = src, x3 = count. x0-x18 die across the
+				// bl calls, so the block math parks on the stack around _memmove.
+				cbz x3, .Lbuffer_move_range_T_end
+				ldr x4, [x19, #8]
+				mov x5, #T_SIZE
+				madd x6, x1, x5, x4
+				madd x7, x2, x5, x4
+				madd x9, x3, x5, xzr
+				sub x10, x2, x1
+				madd x10, x10, x5, xzr
+				stp x6, x9, [sp, #-16]!
+				str x10, [sp, #-16]!
+				mov x0, x6
+				mov x1, x7
+				mov x2, x9
+				bl _memmove
+				ldr x10, [sp], #16
+				ldp x6, x9, [sp], #16
+				add x0, x6, x9
+				mov x1, #0
+				mov x2, x10
+				bl _memset
+				.Lbuffer_move_range_T_end:
+			}
+		}
 	}
 
 	// A non-mv (ptr, len) slice [start, end) over this buffer's element
@@ -1028,22 +1068,24 @@ pub struct Buffer<T> {
 		int end: end >= start && end <= self.cap,
 		out view T
 	) {
-		```
-		#arch: c
-		nomen_view _r;
-		_r.ptr = (void*)((T*)(unsigned long long)self->data + start);
-		_r.len = (long)(end - start);
-		return _r;
-		```
-		```
-		#arch: aarch64
-		// x19 = self (Buffer struct ptr), x1 = start, x2 = end.
-		// self->data lives at [x19, #8]. Return (ptr, len) in x0/x1.
-		ldr x0, [x19, #8]
-		mov x3, #T_SIZE
-		madd x0, x1, x3, x0
-		sub x1, x2, x1
-		```
+		#if META.arch == "c" {
+			#raw {
+				nomen_view _r;
+				_r.ptr = (void*)((T*)(unsigned long long)self->data + start);
+				_r.len = (long)(end - start);
+				return _r;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (Buffer struct ptr), x1 = start, x2 = end.
+				// self->data lives at [x19, #8]. Return (ptr, len) in x0/x1.
+				ldr x0, [x19, #8]
+				mov x3, #T_SIZE
+				madd x0, x1, x3, x0
+				sub x1, x2, x1
+			}
+		}
 	}
 
 	// Internal: zeroes slots without reclaiming mv elements.
@@ -1079,19 +1121,21 @@ pub struct Buffer<T> {
 	}
 
 	internal inline func store_or_int = (ref self {}, int i: i >= 0 && i < self.cap, int val) {
-		```
-		#arch: c
-		((long*)(unsigned long long)self->data)[i] |= val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x0, x0, x3
-		ldr x3, [x0]
-		orr x3, x3, x2
-		str x3, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((long*)(unsigned long long)self->data)[i] |= val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x0, x0, x3
+				ldr x3, [x0]
+				orr x3, x3, x2
+				str x3, [x0]
+			}
+		}
 	}
 
 	internal func alloc_float = (ref self {}, int size, out int: out >= size) {
@@ -1101,31 +1145,35 @@ pub struct Buffer<T> {
 	}
 
 	internal inline func load_float = (self, int i: i >= 0 && i < self.cap, out float) {
-		```
-		#arch: c
-		return ((double*)(unsigned long long)self->data)[i];
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x1, x1, #3
-		add x0, x0, x1
-		ldr x0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return ((double*)(unsigned long long)self->data)[i];
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x1, x1, #3
+				add x0, x0, x1
+				ldr x0, [x0]
+			}
+		}
 	}
 
 	internal inline func store_float = (ref self {}, int i: i >= 0 && i < self.cap, float val) {
-		```
-		#arch: c
-		((double*)(unsigned long long)self->data)[i] = val;
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		lsl x3, x1, #3
-		add x0, x0, x3
-		str x2, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				((double*)(unsigned long long)self->data)[i] = val;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				lsl x3, x1, #3
+				add x0, x0, x3
+				str x2, [x0]
+			}
+		}
 	}
 
 	func #destroy = () {

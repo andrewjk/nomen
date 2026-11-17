@@ -8,7 +8,7 @@ const opts = { audit: true } as const;
 
 async function run(name: string, input: string, expected: string) {
 	for (const arch of ["c", "aarch64"] as const) {
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch, audit: true });
 		await check_output(name, result, expected, { ...opts, arch });
@@ -84,7 +84,7 @@ var Info a = xs.pop()
 a.markup = "popped"
 Console.write_line(a.markup)
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch });
 			expect(parsed.errors).toEqual([]);
 			const { default: build } = await import("../src/build");
 			const { default: check_output } = await import("./check_output");

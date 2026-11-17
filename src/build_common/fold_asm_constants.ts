@@ -1,6 +1,6 @@
 /**
  * A tiny constant-propagation peephole over monomorphized raw aarch64
- * assembly (`#arch: aarch64` blocks after T → concrete-type substitution).
+ * assembly (`#raw` blocks selected for aarch64, after T → concrete-type substitution).
  *
  * Raw library code is written generically: `mov x3, #T_SIZE` followed by a
  * runtime width dispatch (`cmp x3, #8 / b.gt … / cmp x3, #1 / b.eq …`).
@@ -28,7 +28,7 @@
 const REG = /^[wx][0-9]+$/;
 const COND_OPS = new Set(["eq", "ne", "gt", "ge", "lt", "le", "hi", "hs", "lo", "ls", "al"]);
 // Any label form: symbol labels (`foo:` / `.Lx:`), numeric local labels
-// (`1:`, used by raw `#arch: aarch64` blocks), and label+data lines
+// (`1:`, used by aarch64 raw blocks), and label+data lines
 // (`_str_1: .asciz "..."`). All are join points — tracked constants from a
 // preceding block don't hold for a jump arriving at the label.
 const ANY_LABEL_RE = /^(?:[A-Za-z_.$][\w.$]*|\d+):/;

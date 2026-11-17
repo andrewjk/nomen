@@ -82,7 +82,7 @@ pub const LATE_COMPOSED = LATE_A + "lo"
 pub const FEET = "two"
 `;
 		for (const arch of ["c", "aarch64"] as const) {
-			const parsed = parse(source, system, undefined, { allow_internal: true });
+			const parsed = parse(source, system, undefined, { allow_internal: true, arch });
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch, audit: false });
 			await check_output(`const_below_use_${arch}`, result, "hello\ntwo\n", {

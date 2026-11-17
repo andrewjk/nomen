@@ -1450,11 +1450,11 @@ self_offset` and indexes with `+ self_offset`. Runtime-tested in
   fall through to the last candidate. Avoided by making `span` required.~~ ✅
   **Fixed** (verified: a count-based method overload `g(int)` / `g(int, int)`
   resolves `p.g(p.a, p.b)` to the two-arg variant).
-- **aarch64 inlined `aarch64_use_c` FFI helpers into no-ops** (the bug behind
+- **aarch64 inlined companion-C FFI helpers into no-ops** (the bug behind
   "every control renders at the bottom of the screen"). `scan_inline_candidates`
   marked raw-block free functions like `apply_frame`/`is_visible` as inlineable;
   at the call site `build_inline_function` set up the argument registers then ran
-  the body — but an `aarch64_use_c` body is C source for the companion file, not
+  the body — but a companion-C (`#c`) body is C source for the companion file, not
   inline asm, so it emitted nothing inline and returned `true`, suppressing the
   `bl apply_frame`. `setFrame:` therefore never ran and every native control kept
   its creation frame (`0,0` / `10,10` = bottom-left). **Fixed** in
@@ -1715,7 +1715,7 @@ below ship on the existing handle-based v1 (no object-tree needed).
   both backends without native calls; the native path is verified by build/link
   success (verified on both `c` and `aarch64` in `test/layout_container.test.ts`).
 
-  (The raw `#arch: c, aarch64_use_c` body references the auto-generated tuple
+  (The raw C/companion-C body references the auto-generated tuple
   struct by its unmangled TAG (`struct _Tuple_int_int`): the `c` backend emits
   the bare typedef name while the aarch64 companion mangles it to
   `nm__Tuple_int_int`, so the shared tag is the only spelling that compiles on

@@ -259,6 +259,12 @@ export default function parse_statement(status: ParseStatus) {
 					// deferred while T is an unbound type parameter.
 					const loop = parse_pragma_for(status);
 					add_to_parent(loop, "Compile-time for", status);
+				} else if (next === "raw") {
+					// Raw code block: `#raw { ... }`, `#raw("c") { ... }`,
+					// `#raw("c", "file") { ... }`. Target selection is the
+					// `#if META.arch` fold; the opener names the block's own
+					// dialect/scope (src/parse/parse_raw.ts).
+					parse_raw(status);
 				} else if (next === "init") {
 					consume(status); // consume #
 					consume(status); // consume init
@@ -380,18 +386,23 @@ export default function parse_statement(status: ParseStatus) {
 				break;
 			}
 			case "raw": {
-				// `raw` is a CONTEXTUAL keyword: a fenced ``` #arch ``` block
-				// tokenizes as a `raw` token whose NEXT token (the fence body)
-				// shares its start offset. Any other `raw` is an ordinary
-				// identifier (`var raw = …`, `raw = …`, a field/param named
-				// `raw`). User raw blocks are still rejected by parse_raw's
-				// library-only lockdown.
-				const is_raw_block = status.tokens[status.i + 1]?.i === status.tokens[status.i]?.i;
-				if (is_raw_block) {
-					parse_raw(status);
-				} else {
-					parse_statement_start(status);
-				}
+				// `raw` is a CONTEXTUAL keyword: an ordinary identifier here
+				// (`var raw = …`, a field/param named `raw`). Raw BLOCKS arrive
+				// as `#raw { ... }` (dispatched from the `#` case).
+				parse_statement_start(status);
+				break;
+			}
+			case "raw_legacy": {
+				// The historic ``` fence: the tokenizer still isolates the body
+				// so the stream stays in sync, but blocks are now `#raw { }`.
+				const legacy_start = get_index(status);
+				consume(status); // the marker
+				consume(status); // the body
+				add_error(
+					status,
+					'raw blocks now use \'#raw { ... }\' — the ``` fence is gone (dialect/scope go on the opener: #raw("c", "file"))',
+					legacy_start,
+				);
 				break;
 			}
 			case "async": {

@@ -134,7 +134,7 @@ A `check_output_aarch64.ts` helper was created that:
 
 ### Raw Block Support
 
-The `build_raw_node.ts` supports `#arch: aarch64` blocks, allowing inline assembly to be emitted only for the aarch64 backend. This is used in `System.nm` for the `to_string` methods.
+The `build_raw_node.ts` emits unmarked raw blocks as inline assembly (after the `#if META.arch` fold selected the aarch64 arm, stage 5), used in `System.nm` for the `to_string` methods.
 
 ### Label Counter Reset
 

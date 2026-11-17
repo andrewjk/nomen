@@ -38,7 +38,7 @@ pub func main = () {
 
 describe("asm validator accepts the backend's adrp/@PAGEOFF vtable loads", () => {
 	test("trait-conforming struct builds with no asm errors", () => {
-		const parsed = parse_raw(SRC);
+		const parsed = parse_raw(SRC, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

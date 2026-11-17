@@ -49,28 +49,28 @@ mv struct ClickApp : App {
 	// button's armed target/action (the ring recorder) synchronously — the
 	// NEXT frame's handle_clicks drain runs the arm.
 	pub func poke = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->btn.handle, sel_registerName("performClick:"), (id)0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

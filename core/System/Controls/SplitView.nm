@@ -27,224 +27,222 @@ pub mv struct SplitView: Control {
 	// File-scope helper: the pane view class (answers `-contentView` with
 	// `self`; registered once, like NomenResizeDelegate).
 	pub func #init = (self, Window window, int count: count > 0, bool vertical) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		static id nomen_pane_content_view(id self, SEL cmd) {
-			(void)cmd;
-			return self;
-		}
-		static id nomen_pane_class(void) {
-			Class Pv = objc_getClass("NomenSplitPaneView");
-			if (!Pv) {
-				Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenSplitPaneView", 0);
-				if (Pv) {
-					class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_pane_content_view, "@@:");
-					objc_registerClassPair(Pv);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				static id nomen_pane_content_view(id self, SEL cmd) {
+					(void)cmd;
+					return self;
 				}
-			}
-			return Pv;
-		}
+				static id nomen_pane_class(void) {
+					Class Pv = objc_getClass("NomenSplitPaneView");
+					if (!Pv) {
+						Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenSplitPaneView", 0);
+						if (Pv) {
+							class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_pane_content_view, "@@:");
+							objc_registerClassPair(Pv);
+						}
+					}
+					return Pv;
+				}
 
-		// The delegate's resize-subviews hook: keep every divider at its
-		// CURRENT position — panes 0..n-2 keep their sizes, the LAST pane
-		// absorbs the delta. Without it NSSplitView's default adjustSubviews
-		// re-divides the panes equally on every re-frame (window resizes
-		// included), so a programmatic set_position drifts back; with it the
-		// divider is pinned where the app left it. One shared delegate
-		// serves every split view: the hook derives everything from the
-		// passed view. AXIS NOTE: isVertical YES means the DIVIDER is
-		// vertical, so the panes sit side by side and advance along X
-		// (left|right); a horizontal split stacks along Y. Kept sizes are
-		// clamped to the room left in the bounds, so the frames always
-		// tile exactly (AppKit validates the tiling and warns when a
-		// delegate leaves the panes out of bounds or overlapping).
-		static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
-			(void)self; (void)cmd; (void)oldSize;
-			id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
-			long n = ((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
-			if (n < 1) return;
-			CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
-			BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
-			double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
-			// Panes advance along `extent` and every pane spans `cross`.
-			double extent = vertical ? bounds.size.width : bounds.size.height;
-			double cross = vertical ? bounds.size.height : bounds.size.width;
-			double cursor = 0;
-			for (long i = 0; i < n; i++) {
-				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-					subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
-				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
-				double size;
-				if (i < n - 1) {
-					size = vertical ? f.size.width : f.size.height;
-					// Clamp: later panes keep at least their dividers' room,
-					// so the kept sizes can never overflow the bounds.
-					double room = extent - cursor - (n - 1 - i) * thickness;
-					if (size > room) size = room;
-				} else {
-					size = extent - cursor;
+				// The delegate's resize-subviews hook: keep every divider at its
+				// CURRENT position — panes 0..n-2 keep their sizes, the LAST pane
+				// absorbs the delta. Without it NSSplitView's default adjustSubviews
+				// re-divides the panes equally on every re-frame (window resizes
+				// included), so a programmatic set_position drifts back; with it the
+				// divider is pinned where the app left it. One shared delegate
+				// serves every split view: the hook derives everything from the
+				// passed view. AXIS NOTE: isVertical YES means the DIVIDER is
+				// vertical, so the panes sit side by side and advance along X
+				// (left|right); a horizontal split stacks along Y. Kept sizes are
+				// clamped to the room left in the bounds, so the frames always
+				// tile exactly (AppKit validates the tiling and warns when a
+				// delegate leaves the panes out of bounds or overlapping).
+				static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
+					(void)self; (void)cmd; (void)oldSize;
+					id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
+					long n = ((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
+					if (n < 1) return;
+					CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
+					BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
+					double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
+					// Panes advance along `extent` and every pane spans `cross`.
+					double extent = vertical ? bounds.size.width : bounds.size.height;
+					double cross = vertical ? bounds.size.height : bounds.size.width;
+					double cursor = 0;
+					for (long i = 0; i < n; i++) {
+						id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+							subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
+						CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
+						double size;
+						if (i < n - 1) {
+							size = vertical ? f.size.width : f.size.height;
+							// Clamp: later panes keep at least their dividers' room,
+							// so the kept sizes can never overflow the bounds.
+							double room = extent - cursor - (n - 1 - i) * thickness;
+							if (size > room) size = room;
+						} else {
+							size = extent - cursor;
+						}
+						if (size < 0) size = 0;
+						CGRect nf = vertical
+							? CGRectMake(cursor, 0, size, cross)
+							: CGRectMake(0, cursor, cross, size);
+						((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
+						cursor += size + thickness;
+					}
 				}
-				if (size < 0) size = 0;
-				CGRect nf = vertical
-					? CGRectMake(cursor, 0, size, cross)
-					: CGRectMake(0, cursor, cross, size);
-				((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
-				cursor += size + thickness;
-			}
-		}
-		static id g_split_delegate = 0;
-		static id nomen_split_delegate(void) {
-			Class Sd = objc_getClass("NomenSplitDelegate");
-			if (!Sd) {
-				Sd = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSplitDelegate", 0);
-				if (Sd) {
-					class_addMethod(Sd, sel_registerName("splitView:resizeSubviewsWithOldSize:"),
-						(IMP)nomen_split_resize_panes, "v@:@@{NSSize=dd}");
-					objc_registerClassPair(Sd);
-				}
-			}
-			if (!g_split_delegate) {
-				g_split_delegate = ((id(*)(id, SEL))objc_msgSend)(Sd, sel_registerName("new"));
-			}
-			return g_split_delegate;
-		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static id nomen_pane_content_view(id self, SEL cmd) {
-			(void)cmd;
-			return self;
-		}
-		static id nomen_pane_class(void) {
-			Class Pv = objc_getClass("NomenSplitPaneView");
-			if (!Pv) {
-				Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenSplitPaneView", 0);
-				if (Pv) {
-					class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_pane_content_view, "@@:");
-					objc_registerClassPair(Pv);
+				static id g_split_delegate = 0;
+				static id nomen_split_delegate(void) {
+					Class Sd = objc_getClass("NomenSplitDelegate");
+					if (!Sd) {
+						Sd = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSplitDelegate", 0);
+						if (Sd) {
+							class_addMethod(Sd, sel_registerName("splitView:resizeSubviewsWithOldSize:"),
+								(IMP)nomen_split_resize_panes, "v@:@@{NSSize=dd}");
+							objc_registerClassPair(Sd);
+						}
+					}
+					if (!g_split_delegate) {
+						g_split_delegate = ((id(*)(id, SEL))objc_msgSend)(Sd, sel_registerName("new"));
+					}
+					return g_split_delegate;
 				}
 			}
-			return Pv;
 		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static id nomen_pane_content_view(id self, SEL cmd) {
+					(void)cmd;
+					return self;
+				}
+				static id nomen_pane_class(void) {
+					Class Pv = objc_getClass("NomenSplitPaneView");
+					if (!Pv) {
+						Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenSplitPaneView", 0);
+						if (Pv) {
+							class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_pane_content_view, "@@:");
+							objc_registerClassPair(Pv);
+						}
+					}
+					return Pv;
+				}
 
-		// The delegate's resize-subviews hook (see the c twin above — note
-		// the axis: isVertical YES means panes advance along X).
-		static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
-			(void)self; (void)cmd; (void)oldSize;
-			id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
-			long n = ((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
-			if (n < 1) return;
-			CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
-			BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
-			double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
-			// Panes advance along `extent` and every pane spans `cross`.
-			double extent = vertical ? bounds.size.width : bounds.size.height;
-			double cross = vertical ? bounds.size.height : bounds.size.width;
-			double cursor = 0;
-			for (long i = 0; i < n; i++) {
-				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-					subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
-				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
-				double size;
-				if (i < n - 1) {
-					size = vertical ? f.size.width : f.size.height;
-					// Clamp: later panes keep at least their dividers' room,
-					// so the kept sizes can never overflow the bounds.
-					double room = extent - cursor - (n - 1 - i) * thickness;
-					if (size > room) size = room;
-				} else {
-					size = extent - cursor;
+				// The delegate's resize-subviews hook (see the c twin above — note
+				// the axis: isVertical YES means panes advance along X).
+				static void nomen_split_resize_panes(id self, SEL cmd, id sv, NSSize oldSize) {
+					(void)self; (void)cmd; (void)oldSize;
+					id subviews = ((id(*)(id, SEL))objc_msgSend)(sv, sel_registerName("subviews"));
+					long n = ((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
+					if (n < 1) return;
+					CGRect bounds = ((CGRect(*)(id, SEL))objc_msgSend)(sv, sel_registerName("bounds"));
+					BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)(sv, sel_registerName("isVertical"));
+					double thickness = ((double(*)(id, SEL))objc_msgSend)(sv, sel_registerName("dividerThickness"));
+					// Panes advance along `extent` and every pane spans `cross`.
+					double extent = vertical ? bounds.size.width : bounds.size.height;
+					double cross = vertical ? bounds.size.height : bounds.size.width;
+					double cursor = 0;
+					for (long i = 0; i < n; i++) {
+						id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+							subviews, sel_registerName("objectAtIndex:"), (unsigned long)i);
+						CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(pane, sel_registerName("frame"));
+						double size;
+						if (i < n - 1) {
+							size = vertical ? f.size.width : f.size.height;
+							// Clamp: later panes keep at least their dividers' room,
+							// so the kept sizes can never overflow the bounds.
+							double room = extent - cursor - (n - 1 - i) * thickness;
+							if (size > room) size = room;
+						} else {
+							size = extent - cursor;
+						}
+						if (size < 0) size = 0;
+						CGRect nf = vertical
+							? CGRectMake(cursor, 0, size, cross)
+							: CGRectMake(0, cursor, cross, size);
+						((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
+						cursor += size + thickness;
+					}
 				}
-				if (size < 0) size = 0;
-				CGRect nf = vertical
-					? CGRectMake(cursor, 0, size, cross)
-					: CGRectMake(0, cursor, cross, size);
-				((void(*)(id, SEL, CGRect))objc_msgSend)(pane, sel_registerName("setFrame:"), nf);
-				cursor += size + thickness;
-			}
-		}
-		static id g_split_delegate = 0;
-		static id nomen_split_delegate(void) {
-			Class Sd = objc_getClass("NomenSplitDelegate");
-			if (!Sd) {
-				Sd = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSplitDelegate", 0);
-				if (Sd) {
-					class_addMethod(Sd, sel_registerName("splitView:resizeSubviewsWithOldSize:"),
-						(IMP)nomen_split_resize_panes, "v@:@@{NSSize=dd}");
-					objc_registerClassPair(Sd);
+				static id g_split_delegate = 0;
+				static id nomen_split_delegate(void) {
+					Class Sd = objc_getClass("NomenSplitDelegate");
+					if (!Sd) {
+						Sd = objc_allocateClassPair(objc_getClass("NSObject"), "NomenSplitDelegate", 0);
+						if (Sd) {
+							class_addMethod(Sd, sel_registerName("splitView:resizeSubviewsWithOldSize:"),
+								(IMP)nomen_split_resize_panes, "v@:@@{NSSize=dd}");
+							objc_registerClassPair(Sd);
+						}
+					}
+					if (!g_split_delegate) {
+						g_split_delegate = ((id(*)(id, SEL))objc_msgSend)(Sd, sel_registerName("new"));
+					}
+					return g_split_delegate;
 				}
 			}
-			if (!g_split_delegate) {
-				g_split_delegate = ((id(*)(id, SEL))objc_msgSend)(Sd, sel_registerName("new"));
+		}
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSplitView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setVertical:"), vertical ? 1 : 0);
+				for (long i = 0; i < (long)count; i++) {
+					id pane = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+						((id(*)(id, SEL))objc_msgSend)(nomen_pane_class(), sel_registerName("alloc")),
+						sel_registerName("initWithFrame:"),
+						((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 10, 10));
+					((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("addSubview:"), pane);
+				}
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), sv);
+				// Hold the dividers across re-frames (see the delegate above): the
+				// pane pass (Container.set_pane / Window.relayout) can then rely on
+				// the pane frames AppKit just adjusted, and a set_position pin holds
+				// without the app re-pinning on every resize.
+				((void(*)(id, SEL, id))objc_msgSend)(
+					sv, sel_registerName("setDelegate:"), nomen_split_delegate());
+				self.handle = (uint64_t)sv;
 			}
-			return g_split_delegate;
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSplitView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setVertical:"), vertical ? 1 : 0);
-		for (long i = 0; i < (long)count; i++) {
-			id pane = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-				((id(*)(id, SEL))objc_msgSend)(nomen_pane_class(), sel_registerName("alloc")),
-				sel_registerName("initWithFrame:"),
-				((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 10, 10));
-			((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("addSubview:"), pane);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSplitView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 160));
+				((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setVertical:"), vertical ? 1 : 0);
+				for (long i = 0; i < (long)count; i++) {
+					id pane = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+						((id(*)(id, SEL))objc_msgSend)(nomen_pane_class(), sel_registerName("alloc")),
+						sel_registerName("initWithFrame:"),
+						((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 10, 10));
+					((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("addSubview:"), pane);
+				}
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), sv);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					sv, sel_registerName("setDelegate:"), nomen_split_delegate());
+				self->handle = (uint64_t)sv;
+			}
 		}
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), sv);
-		// Hold the dividers across re-frames (see the delegate above): the
-		// pane pass (Container.set_pane / Window.relayout) can then rely on
-		// the pane frames AppKit just adjusted, and a set_position pin holds
-		// without the app re-pinning on every resize.
-		((void(*)(id, SEL, id))objc_msgSend)(
-			sv, sel_registerName("setDelegate:"), nomen_split_delegate());
-		self.handle = (uint64_t)sv;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id sv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSSplitView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 160));
-		((void(*)(id, SEL, BOOL))objc_msgSend)(sv, sel_registerName("setVertical:"), vertical ? 1 : 0);
-		for (long i = 0; i < (long)count; i++) {
-			id pane = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-				((id(*)(id, SEL))objc_msgSend)(nomen_pane_class(), sel_registerName("alloc")),
-				sel_registerName("initWithFrame:"),
-				((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 10, 10));
-			((void(*)(id, SEL, id))objc_msgSend)(sv, sel_registerName("addSubview:"), pane);
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — UISplitViewController is view-controller-level, not an
+				 * embeddable control (see GUI_PLAN Tier 2; defer). */
+			}
 		}
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), sv);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			sv, sel_registerName("setDelegate:"), nomen_split_delegate());
-		self->handle = (uint64_t)sv;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — UISplitViewController is view-controller-level, not an
-		 * embeddable control (see GUI_PLAN Tier 2; defer). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// A Window-shaped handle to pane `index`'s view: pass it to control
@@ -253,202 +251,202 @@ pub mv struct SplitView: Control {
 	// its OWN reference and the SplitView's stays balanced — keep the
 	// SplitView alive at least as long as the returned value.
 	pub func content_window = (self, int index, out Window) {
-		```
-		#arch: c
-		#platform: macos
-		id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
-		id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-			subviews, sel_registerName("objectAtIndex:"), (unsigned long)index);
-		extern void *_Window_traits[];
-		struct Window w;
-		w._vt = (void *)&_Window_traits;
-		w.handle = (uint64_t)pane;
-		((id(*)(id, SEL))objc_msgSend)(pane, sel_registerName("retain"));
-		return w;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
-		id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-			subviews, sel_registerName("objectAtIndex:"), (unsigned long)index);
-		extern void *Window_traits;
-		struct Window w;
-		w._vt = (void *)&Window_traits;
-		w.handle = (uint64_t)pane;
-		((id(*)(id, SEL))objc_msgSend)(pane, sel_registerName("retain"));
-		return w;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		{
-			extern void *_Window_traits[];
-			struct Window w;
-			w._vt = (void *)&_Window_traits;
-			w.handle = 0;
-			return w;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
+				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					subviews, sel_registerName("objectAtIndex:"), (unsigned long)index);
+				extern void *_Window_traits[];
+				struct Window w;
+				w._vt = (void *)&_Window_traits;
+				w.handle = (uint64_t)pane;
+				((id(*)(id, SEL))objc_msgSend)(pane, sel_registerName("retain"));
+				return w;
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		{
-			extern void *Window_traits;
-			struct Window w;
-			w._vt = (void *)&Window_traits;
-			w.handle = 0;
-			return w;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
+				id pane = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					subviews, sel_registerName("objectAtIndex:"), (unsigned long)index);
+				extern void *Window_traits;
+				struct Window w;
+				w._vt = (void *)&Window_traits;
+				w.handle = (uint64_t)pane;
+				((id(*)(id, SEL))objc_msgSend)(pane, sel_registerName("retain"));
+				return w;
+			}
 		}
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				{
+					extern void *_Window_traits[];
+					struct Window w;
+					w._vt = (void *)&_Window_traits;
+					w.handle = 0;
+					return w;
+				}
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				{
+					extern void *Window_traits;
+					struct Window w;
+					w._vt = (void *)&Window_traits;
+					w.handle = 0;
+					return w;
+				}
+			}
+		}
 	}
 
 	pub func count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
-		return (int)((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
-		return (int)((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
+				return (int)((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
+				return (int)((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// Move divider `index`. For a vertical split the position is the left
 	// edge of the pane after the divider, in points from the left.
 	pub func set_position = (ref self {}, float position, int divider) {
-		```
-		#arch: c
-		#platform: macos
-		// NSSplitView manages its panes only after a layout pass (a window
-		// that has been shown); give it one explicitly so the divider move
-		// has real pane frames to work from, then move the divider.
-		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("adjustSubviews"));
-		((void(*)(id, SEL, double, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setPosition:ofDividerAtIndex:"),
-			position, (long)divider);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		// NSSplitView manages its panes only after a layout pass (a window
-		// that has been shown); give it one explicitly so the divider move
-		// has real pane frames to work from, then move the divider.
-		((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("adjustSubviews"));
-		((void(*)(id, SEL, double, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("setPosition:ofDividerAtIndex:"),
-			position, (long)divider);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				// NSSplitView manages its panes only after a layout pass (a window
+				// that has been shown); give it one explicitly so the divider move
+				// has real pane frames to work from, then move the divider.
+				((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("adjustSubviews"));
+				((void(*)(id, SEL, double, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setPosition:ofDividerAtIndex:"),
+					position, (long)divider);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				// NSSplitView manages its panes only after a layout pass (a window
+				// that has been shown); give it one explicitly so the divider move
+				// has real pane frames to work from, then move the divider.
+				((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("adjustSubviews"));
+				((void(*)(id, SEL, double, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("setPosition:ofDividerAtIndex:"),
+					position, (long)divider);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Divider 0's position: the first pane's width (vertical split) or
 	// height (horizontal split), in points.
 	pub func position = (self, out float) {
-		```
-		#arch: c
-		#platform: macos
-		id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
-		if (((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count")) < 1) return 0.0;
-		BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVertical"));
-		id first = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-			subviews, sel_registerName("objectAtIndex:"), 0UL);
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(first, sel_registerName("frame"));
-		return vertical ? frame.size.width : frame.size.height;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
-		if (((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count")) < 1) return 0.0;
-		BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVertical"));
-		id first = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
-			subviews, sel_registerName("objectAtIndex:"), 0UL);
-		CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(first, sel_registerName("frame"));
-		return vertical ? frame.size.width : frame.size.height;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0.0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0.0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
+				if (((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count")) < 1) return 0.0;
+				BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVertical"));
+				id first = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					subviews, sel_registerName("objectAtIndex:"), 0UL);
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(first, sel_registerName("frame"));
+				return vertical ? frame.size.width : frame.size.height;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id subviews = ((id(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("subviews"));
+				if (((long(*)(id, SEL))objc_msgSend)(subviews, sel_registerName("count")) < 1) return 0.0;
+				BOOL vertical = ((BOOL(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("isVertical"));
+				id first = ((id(*)(id, SEL, unsigned long))objc_msgSend)(
+					subviews, sel_registerName("objectAtIndex:"), 0UL);
+				CGRect frame = ((CGRect(*)(id, SEL))objc_msgSend)(first, sel_registerName("frame"));
+				return vertical ? frame.size.width : frame.size.height;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0.0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0.0;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func intrinsic_size = (self, out Size) {
@@ -477,33 +475,33 @@ pub mv struct SplitView: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

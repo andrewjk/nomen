@@ -42,6 +42,14 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_specialization?: boolean;
 	is_inline?: boolean;
 	/**
+	 * COMPTIME_PLAN_2 stage 5: how many raw statements were folded away from
+	 * this function's body because their `#if` arm did not hold for the
+	 * target (stamped by fold_pragma_ifs). With `has_body` and an empty
+	 * statement list it means the function has no implementation for this
+	 * target — rejected in check_function_node.
+	 */
+	folded_away_raws?: number;
+	/**
 	 * True for an `foreign func` declaration: a body-less function whose body
 	 * is a C-library symbol call. The backends emit a marshalling adapter
 	 * under the function's emission label (free externs are stamped

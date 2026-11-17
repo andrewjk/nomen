@@ -251,10 +251,11 @@ func fill = (ref Pair p) {
 mv struct Handle {
   var uint64 id
   func touch = (ref self) {
-  \`\`\`
-  #arch: c
-  self->id = 3;
-  \`\`\`
+  #if META.arch == "c" {
+  	#raw {
+  	  self->id = 3;
+  	}
+  }
   }
   pub func #init = (ref self) {
     self.touch()
@@ -325,10 +326,11 @@ mv struct Handler {
 mv struct Handle {
   var uint64 id
   pub func #init = (self) {
-  \`\`\`
-  #arch: c
-  self->id = 7;
-  \`\`\`
+  #if META.arch == "c" {
+  	#raw {
+  	  self->id = 7;
+  	}
+  }
   }
 }
 `;

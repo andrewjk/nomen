@@ -70,7 +70,7 @@ pub func main = (Init init) {
 `;
 
 function compile_pair_program(on: boolean): string {
-	const parsed = parse(PAIR_PROGRAM, system_lib);
+	const parsed = parse(PAIR_PROGRAM, system_lib, undefined, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	set_slp_pair_enabled(on);
 	try {
@@ -144,7 +144,7 @@ pub func main = (Init init) {
 	Console.write("\\n")
 }
 `;
-	const parsed = parse(source, system_lib);
+	const parsed = parse(source, system_lib, undefined, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	set_slp_pair_enabled(false);
 	let off: string;
@@ -187,7 +187,7 @@ test("scalar float field RMW skips the spill and x0 protocol", () => {
 	// (`bodies.at(j).vz = bodies.at(j).vz + dz * mass_i * mag`) hits the
 	// fast path — rhs into d0, old into d1, one fadd, one d-store.
 	const nbody_source = read_bench_source("nbody");
-	const parsed = parse(nbody_source, system_lib);
+	const parsed = parse(nbody_source, system_lib, undefined, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	set_slp_pair_enabled(true);
 	const code = build(parsed.root, { arch: "aarch64", optimize: true }).code;

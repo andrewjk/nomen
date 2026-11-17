@@ -12,7 +12,7 @@ describe("Console.write_line", () => {
 Console.write_line("hello")
 Console.write_line("world")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("console_write_line", result, "hello\nworld\n", opts);
@@ -25,7 +25,7 @@ describe("Console.read_char", () => {
 const char c = Console.read_char()
 Console.write("\\{c}")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("console_read_char", result, "q", {
@@ -42,7 +42,7 @@ describe("Console.read_line", () => {
 const string line = Console.read_line()
 Console.write_line(line)
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("console_read_line", result, "typed text\n", {
@@ -58,7 +58,7 @@ describe("Console.platform", () => {
 		const input = `
 Console.write(Console.platform())
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("console_platform_macos", result, "macos", opts);
@@ -68,7 +68,7 @@ Console.write(Console.platform())
 		const input = `
 Console.write(Console.platform())
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64", platform: "linux" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "linux", audit: true });
 		await check_output("console_platform_linux", result, "linux", opts);

@@ -276,10 +276,11 @@ test("raw asm blocks are liveness barriers", () => {
 func barred = (out int) {
     var int x = 1
     if x > 0 {
-        \`\`\`
-        #arch: c
-        x = 2;
-        \`\`\`
+        #if META.arch == "c" {
+        	#raw {
+        	        x = 2;
+        	}
+        }
     } else {
         x = 3
     }

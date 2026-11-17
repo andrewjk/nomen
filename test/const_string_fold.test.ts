@@ -10,7 +10,7 @@ import check_output from "./check_output";
 const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
 function build_code(input: string, arch: "c" | "aarch64") {
-	const parsed = parse(input, system, undefined, { allow_internal: true });
+	const parsed = parse(input, system, undefined, { allow_internal: true, arch });
 	expect(parsed.errors).toEqual([]);
 	return build(parsed.root, { arch, audit: false });
 }
@@ -85,7 +85,7 @@ pub func main = () {
 `,
 				system,
 				undefined,
-				{ allow_internal: true },
+				{ allow_internal: true, arch },
 			);
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch, audit: false });
@@ -114,7 +114,7 @@ pub func main = () {
 `,
 				system,
 				undefined,
-				{ allow_internal: true },
+				{ allow_internal: true, arch },
 			);
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch, audit: false });
@@ -140,7 +140,7 @@ pub func main = () {
 `,
 				system,
 				undefined,
-				{ allow_internal: true },
+				{ allow_internal: true, arch },
 			);
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch, audit: false });

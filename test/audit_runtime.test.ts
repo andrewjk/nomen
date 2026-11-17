@@ -264,7 +264,9 @@ pub func main = () {
 
 	test("a non-audited build of either backend calls no wrapper", () => {
 		for (const arch of ["aarch64", "c"] as const) {
-			const parsed = parse_raw(PROGRAM);
+			// Per-target parse: the `#if META.arch` fold selects raw arms at
+			// check time (stage 5).
+			const parsed = parse_raw(PROGRAM, { arch });
 			expect(parsed.errors).toEqual([]);
 			const plain = build(parsed.root, { arch, audit: false });
 			expect(plain.errors ?? []).toEqual([]);

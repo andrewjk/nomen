@@ -13,7 +13,7 @@ describe("Ansi foreground colors", () => {
 		const input = `
 Console.write(Ansi.red("err"))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_red", result, "\x1b[31merr\x1b[0m", opts);
@@ -23,7 +23,7 @@ Console.write(Ansi.red("err"))
 		const input = `
 Console.write(Ansi.green("ok") + Ansi.blue("info"))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_green_blue", result, "\x1b[32mok\x1b[0m\x1b[34minfo\x1b[0m", opts);
@@ -35,7 +35,7 @@ describe("Ansi background colors", () => {
 		const input = `
 Console.write(Ansi.bg_red("ERROR"))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_bg_red", result, "\x1b[41mERROR\x1b[0m", opts);
@@ -47,7 +47,7 @@ describe("Ansi styles", () => {
 		const input = `
 Console.write(Ansi.bold("title"))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_bold", result, "\x1b[1mtitle\x1b[0m", opts);
@@ -57,7 +57,7 @@ Console.write(Ansi.bold("title"))
 		const input = `
 Console.write(Ansi.underline("link"))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_underline", result, "\x1b[4mlink\x1b[0m", opts);
@@ -69,7 +69,7 @@ describe("Ansi in interpolation", () => {
 		const input = `
 Console.write("\\{Ansi.bg_red("ERROR")}: it didn't work")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_interpolate", result, "\x1b[41mERROR\x1b[0m: it didn't work", opts);
@@ -79,7 +79,7 @@ Console.write("\\{Ansi.bg_red("ERROR")}: it didn't work")
 		const input = `
 Console.write(Ansi.bold(Ansi.green("success")))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: "macos", audit: true });
 		await check_output("ansi_nested", result, "\x1b[1m\x1b[32msuccess\x1b[0m\x1b[0m", opts);

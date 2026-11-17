@@ -119,7 +119,7 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		}
 	}
 
-	// A body mixing `#arch: aarch64_use_c` blocks with regular statements is
+	// A body mixing companion-C ('#c') raw blocks with regular statements is
 	// a backend divergence, not a style question: the aarch64 backend routes
 	// the whole function to the C companion (the concatenation of the raw
 	// blocks) and would silently drop the rest, while the C backend compiles
@@ -130,10 +130,10 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 		add_error(
 			status,
 			mixed_body.dropped === "statement"
-				? `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with Nomen statements — the aarch64 backend replaces the whole body with the raw blocks and would drop the statements`
+				? `Function '${func.name}' mixes companion-C raw blocks with Nomen statements — the aarch64 backend replaces the whole body with the raw blocks and would drop the statements`
 				: mixed_body.dropped === "raw asm"
-					? `Function '${func.name}' mixes '#arch: aarch64_use_c' blocks with inline raw code — the aarch64 backend replaces the whole body with the raw blocks and would drop the assembly`
-					: `Function '${func.name}' has a '#arch: aarch64_use_c' block nested inside control flow — the aarch64 backend emits the body as assembly and silently drops block-scope C; move the block into its own aarch64_use_c function and pass values as parameters`,
+					? `Function '${func.name}' mixes companion-C raw blocks with inline raw code — the aarch64 backend replaces the whole body with the raw blocks and would drop the assembly`
+					: `Function '${func.name}' has a companion-C (#raw("c")) block nested inside control flow — the aarch64 backend emits the body as assembly and silently drops block-scope C; move the block into its own companion-C function and pass values as parameters`,
 			mixed_body.start,
 		);
 	}
@@ -141,6 +141,32 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 	if (is_generic_func(func)) {
 		func.is_generic = true;
 		return;
+	}
+
+	// Stage-5 coverage guard (replaces the tag-era "no aarch64 block found"
+	// backend error): a raw-only implementation whose every `#if` arm folded
+	// away leaves an EMPTY body on this target — callers would `bl` into
+	// nothing. Runs before the generic early-return so specialization
+	// clones re-report it too, matching the mixed-body rejection's
+	// precedent.
+	//
+	// The JS backend is exempt: it consumes neither native dialect (raw
+	// nodes are ignored wholesale — see build_js), so a raw-only function
+	// has no JS arm by design, not by a missing `#if`. Raw arms are
+	// therefore written target-explicitly (`#if META.arch == "aarch64"`, no
+	// `else`), and a `#raw` arm under a non-existent condition is a JS
+	// no-op rather than an error.
+	if (
+		status.arch !== "js" &&
+		func.folded_away_raws &&
+		func.has_body &&
+		func.statements.length === 0
+	) {
+		add_error(
+			status,
+			`Function '${func.name}' has no implementation for this target — every raw block arm was folded away; add an arm for META.arch == "${status.arch ?? "c"}"`,
+			func.start,
+		);
 	}
 
 	let function_status = clone_status(status);

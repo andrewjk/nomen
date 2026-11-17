@@ -475,10 +475,15 @@ pub func main = (Init init) {
 	Console.write("\\{main_body()}")
 }
 `;
-		const parsed = parse_raw(input);
-		expect(parsed.errors).toEqual([]);
+		// Per-target parses: the `#if META.arch` fold selects raw arms at
+		// check time (stage 5), so each backend's build needs its own tree.
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
+		const parsed_c = parse_raw(input, { arch: "c" });
+		expect(parsed_c.errors).toEqual([]);
 		for (const arch of ["aarch64", "c"] as const) {
-			const result = build(parsed.root, { arch, audit: false });
+			const root = arch === "aarch64" ? parsed_a64.root : parsed_c.root;
+			const result = build(root, { arch, audit: false });
 			expect(result.errors ?? []).toEqual([]);
 			let thrown: unknown;
 			try {
@@ -621,10 +626,10 @@ pub func main = (Init init) {
 		// is tag + int (16) where the base local is tag + max payload (24) —
 		// the enum frame shrinks by 16 (local + construction temp) and the
 		// value copy shrinks from three words to two.
-		const base_parsed = parse_raw(body("Res"));
+		const base_parsed = parse_raw(body("Res"), { arch: "aarch64" });
 		expect(base_parsed.errors).toEqual([]);
 		const base_code = build(base_parsed.root, { arch: "aarch64" }).code;
-		const mono_parsed = parse_raw(body("Res.ok"));
+		const mono_parsed = parse_raw(body("Res.ok"), { arch: "aarch64" });
 		expect(mono_parsed.errors).toEqual([]);
 		const mono_code = build(mono_parsed.root, { arch: "aarch64" }).code;
 		expect(base_code).toContain("sub sp, sp, #112\n");
@@ -684,7 +689,7 @@ pub func main = (Init init) {
 	Console.write("ok")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		const errors = [...parsed.errors, ...(result.errors ?? [])];
 		expect(errors.length).toBeGreaterThan(0);
@@ -708,7 +713,7 @@ pub func main = (Init init) {
 	Console.write("ok")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		const errors = [...parsed.errors, ...(result.errors ?? [])];
 		expect(errors.length).toBeGreaterThan(0);
@@ -738,7 +743,7 @@ pub func main = (Init init) {
 	Console.write("ok")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		const errors = [...parsed.errors, ...(result.errors ?? [])];
 		expect(errors.length).toBeGreaterThan(0);
@@ -791,7 +796,7 @@ pub func main = (Init init) {
 	Console.write("ok")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		const errors = [...parsed.errors, ...(result.errors ?? [])];
 		expect(errors.length).toBeGreaterThan(0);

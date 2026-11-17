@@ -786,7 +786,7 @@ pub func main = (Init init) {
 	// (a plain `nomen run`/`nomen build` without --audit) can't be exercised
 	// here — assert the emission instead: a non-audit aarch64 build must not
 	// reference the audit-only wrapper at all.
-	const parsed = parse_raw(input);
+	const parsed = parse_raw(input, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: false });
 	expect(result.errors ?? []).toEqual([]);

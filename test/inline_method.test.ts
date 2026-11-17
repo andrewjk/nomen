@@ -32,7 +32,8 @@ describe("general-path method inlining", () => {
 		// splice is sound now that each splice owns a fresh name→slot map
 		// (the JsonTree receipt), so the call site splices rather than
 		// taking the real call.
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var List<int> list = List<int>()
 list.push(1)
 list.push(2)
@@ -43,7 +44,9 @@ while j < list.length {
 	j = j + 1
 }
 Console.write("\\{sum}\\n")
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		expect(code).not.toContain("bl List_int_at\n");
@@ -53,14 +56,17 @@ Console.write("\\{sum}\\n")
 		// `at` (inlined) and `at_or` (a plain call) share a name prefix —
 		// the mangled rewrite used to turn `b .return_List_int_at_or` into
 		// an undefined `b .inline_ret_N_or`.
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var List<int> xs = List<int>()
 xs.push(1)
 var int j = 0
 if j >= 0 && j < xs.length {
 	Console.write("\\{xs.at(j)}\\{xs.at_or(5, -1)}\\n")
 }
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		expect(code).not.toMatch(/\.inline_ret_\d+_or\b/);
@@ -109,11 +115,14 @@ Console.write("\\{a} \\{b} \\{c}\\n")
 		// per hit (a leak, pinned by the run in accessor_or.test.ts); here
 		// the emitted at_or body must contain exactly two strdups (the
 		// in-bounds borrow return and the fallback return).
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var List<string> xs = List<string>()
 xs.push("real")
 Console.write("\\{xs.at_or(0, "fallback")}\\{xs.at_or(5, "fallback")}")
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		// Slice from the label definition to the LAST occurrence of the
@@ -132,7 +141,8 @@ Console.write("\\{xs.at_or(0, "fallback")}\\{xs.at_or(5, "fallback")}")
 		// live `list` mid-loop (`List_int`'s field destroys emit
 		// `bl Buffer_int_destroy` on `&list.items` — the next `at` in the
 		// loop segfaulted on the freed buffer).
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var List<int> list = List<int>()
 list.push(1)
 list.push(2)
@@ -143,7 +153,9 @@ while j < list.length {
 	j = j + 1
 }
 Console.write("\\{sum}\\n")
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		const main = code.slice(code.indexOf("_main:"));
@@ -159,11 +171,14 @@ Console.write("\\{sum}\\n")
 		// assemble time. Pin: every .L label in the whole program is
 		// defined at most once, and no internal `bl Array_int_at` remains
 		// in the accessor chain.
-		const parsed = parse_with_imports(`
+		const parsed = parse_with_imports(
+			`
 var Array<int> a = Array.with(0, 4)
 a.set(1, 9)
 Console.write("\\{a.at_or(1, 0)}\\{a.at_or_panic(1)}\\n")
-`);
+`,
+			{ arch: "aarch64" },
+		);
 		expect(parsed.errors).toEqual([]);
 		const code = build(parsed.root, { arch: "aarch64", audit: false }).code;
 		expect(code).not.toContain("bl Array_int_at\n");

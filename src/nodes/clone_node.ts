@@ -430,7 +430,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 		}
 		case "raw": {
 			const n = node as RawNode;
-			const c = new RawNode(n.start, n.value);
+			const c = new RawNode(n.start, n.value, n.is_c, n.scope);
 			c.allocations = n.allocations?.map(clone_node);
 			return c;
 		}
@@ -485,6 +485,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 			// bodies at call sites, so a mono clone without the flag would
 			// silently fall back to a plain call.
 			c.is_inline = n.is_inline;
+			// Stage-5 coverage stamp: a mono clone of a raw-only body whose
+			// arms folded away must re-report the empty-implementation guard.
+			c.folded_away_raws = n.folded_away_raws;
 			return c;
 		}
 		case "param": {

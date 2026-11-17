@@ -20,7 +20,7 @@ import parse_with_imports, { parse_raw } from "./parse_with_imports";
 // on BOTH backends with the leak auditor on.
 
 function build_aarch64(source: string): string {
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	return build(parsed.root, { arch: "aarch64", audit: false }).code;
 }

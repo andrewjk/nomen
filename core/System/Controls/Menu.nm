@@ -24,295 +24,293 @@ pub mv struct Menu: Control {
 	// clicked item's tag (shared — one Menu per process, like List's row
 	// storage).
 	pub func #init = (self) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		static long g_menu_last_tag = -1;
-		static id g_menu_target = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				static long g_menu_last_tag = -1;
+				static id g_menu_target = 0;
 
-		static void nomen_menu_item_action(id self, SEL cmd, id sender) {
-			(void)self; (void)cmd;
-			g_menu_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
-		}
+				static void nomen_menu_item_action(id self, SEL cmd, id sender) {
+					(void)self; (void)cmd;
+					g_menu_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
+				}
 
-		static id nomen_menu_target(void) {
-			Class Mt = objc_getClass("NomenMenuTarget");
-			if (!Mt) {
-				Mt = objc_allocateClassPair(objc_getClass("NSObject"), "NomenMenuTarget", 0);
-				if (Mt) {
-					class_addMethod(Mt, sel_registerName("nomenMenuItemAction:"),
-						(IMP)nomen_menu_item_action, "v@:@");
-					objc_registerClassPair(Mt);
+				static id nomen_menu_target(void) {
+					Class Mt = objc_getClass("NomenMenuTarget");
+					if (!Mt) {
+						Mt = objc_allocateClassPair(objc_getClass("NSObject"), "NomenMenuTarget", 0);
+						if (Mt) {
+							class_addMethod(Mt, sel_registerName("nomenMenuItemAction:"),
+								(IMP)nomen_menu_item_action, "v@:@");
+							objc_registerClassPair(Mt);
+						}
+					}
+					if (!g_menu_target) {
+						g_menu_target = ((id(*)(id, SEL))objc_msgSend)(Mt, sel_registerName("new"));
+					}
+					return g_menu_target;
+				}
+
+				// Edge-triggered read: the poll consumes the tag (resets to -1).
+				long nomen_menu_last_tag(void) {
+					long tag = g_menu_last_tag;
+					g_menu_last_tag = -1;
+					return tag;
+				}
+
+				// The on_item_select drain's consume-and-stash: the drain consumes
+				// the selected tag exactly like the poll, and STASHES it for the
+				// handler body to read through Menu.selected_item (the drain runs
+				// first in its pump arm, so the stash is fresh when the handler
+				// body runs).
+				long g_menu_selected_tag = -1;
+				unsigned char nomen_menu_take_select(void) {
+					long tag = nomen_menu_last_tag();
+					if (tag < 0) return 0;
+					g_menu_selected_tag = tag;
+					return 1;
+				}
+				long nomen_menu_selected_tag(void) {
+					return g_menu_selected_tag;
 				}
 			}
-			if (!g_menu_target) {
-				g_menu_target = ((id(*)(id, SEL))objc_msgSend)(Mt, sel_registerName("new"));
-			}
-			return g_menu_target;
 		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static long g_menu_last_tag = -1;
+				static id g_menu_target = 0;
 
-		// Edge-triggered read: the poll consumes the tag (resets to -1).
-		long nomen_menu_last_tag(void) {
-			long tag = g_menu_last_tag;
-			g_menu_last_tag = -1;
-			return tag;
-		}
+				static void nomen_menu_item_action(id self, SEL cmd, id sender) {
+					(void)self; (void)cmd;
+					g_menu_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
+				}
 
-		// The on_item_select drain's consume-and-stash: the drain consumes
-		// the selected tag exactly like the poll, and STASHES it for the
-		// handler body to read through Menu.selected_item (the drain runs
-		// first in its pump arm, so the stash is fresh when the handler
-		// body runs).
-		long g_menu_selected_tag = -1;
-		unsigned char nomen_menu_take_select(void) {
-			long tag = nomen_menu_last_tag();
-			if (tag < 0) return 0;
-			g_menu_selected_tag = tag;
-			return 1;
-		}
-		long nomen_menu_selected_tag(void) {
-			return g_menu_selected_tag;
-		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static long g_menu_last_tag = -1;
-		static id g_menu_target = 0;
+				static id nomen_menu_target(void) {
+					Class Mt = objc_getClass("NomenMenuTarget");
+					if (!Mt) {
+						Mt = objc_allocateClassPair(objc_getClass("NSObject"), "NomenMenuTarget", 0);
+						if (Mt) {
+							class_addMethod(Mt, sel_registerName("nomenMenuItemAction:"),
+								(IMP)nomen_menu_item_action, "v@:@");
+							objc_registerClassPair(Mt);
+						}
+					}
+					if (!g_menu_target) {
+						g_menu_target = ((id(*)(id, SEL))objc_msgSend)(Mt, sel_registerName("new"));
+					}
+					return g_menu_target;
+				}
 
-		static void nomen_menu_item_action(id self, SEL cmd, id sender) {
-			(void)self; (void)cmd;
-			g_menu_last_tag = ((long(*)(id, SEL))objc_msgSend)(sender, sel_registerName("tag"));
-		}
+				// Edge-triggered read: the poll consumes the tag (resets to -1).
+				long nomen_menu_last_tag(void) {
+					long tag = g_menu_last_tag;
+					g_menu_last_tag = -1;
+					return tag;
+				}
 
-		static id nomen_menu_target(void) {
-			Class Mt = objc_getClass("NomenMenuTarget");
-			if (!Mt) {
-				Mt = objc_allocateClassPair(objc_getClass("NSObject"), "NomenMenuTarget", 0);
-				if (Mt) {
-					class_addMethod(Mt, sel_registerName("nomenMenuItemAction:"),
-						(IMP)nomen_menu_item_action, "v@:@");
-					objc_registerClassPair(Mt);
+				// The on_item_select drain's consume-and-stash (see the c twin
+				// above).
+				long g_menu_selected_tag = -1;
+				unsigned char nomen_menu_take_select(void) {
+					long tag = nomen_menu_last_tag();
+					if (tag < 0) return 0;
+					g_menu_selected_tag = tag;
+					return 1;
+				}
+				long nomen_menu_selected_tag(void) {
+					return g_menu_selected_tag;
 				}
 			}
-			if (!g_menu_target) {
-				g_menu_target = ((id(*)(id, SEL))objc_msgSend)(Mt, sel_registerName("new"));
+		}
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id menu = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc")),
+					sel_registerName("init"));
+				self.handle = (uint64_t)menu;
 			}
-			return g_menu_target;
 		}
-
-		// Edge-triggered read: the poll consumes the tag (resets to -1).
-		long nomen_menu_last_tag(void) {
-			long tag = g_menu_last_tag;
-			g_menu_last_tag = -1;
-			return tag;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id menu = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc")),
+					sel_registerName("init"));
+				self->handle = (uint64_t)menu;
+			}
 		}
-
-		// The on_item_select drain's consume-and-stash (see the c twin
-		// above).
-		long g_menu_selected_tag = -1;
-		unsigned char nomen_menu_take_select(void) {
-			long tag = nomen_menu_last_tag();
-			if (tag < 0) return 0;
-			g_menu_selected_tag = tag;
-			return 1;
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — UIContextMenuInteraction needs a scene-attached view
+				 * (see GUI_PLAN Tier 2; defer). */
+			}
 		}
-		long nomen_menu_selected_tag(void) {
-			return g_menu_selected_tag;
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		id menu = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc")),
-			sel_registerName("init"));
-		self.handle = (uint64_t)menu;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id menu = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc")),
-			sel_registerName("init"));
-		self->handle = (uint64_t)menu;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — UIContextMenuInteraction needs a scene-attached view
-		 * (see GUI_PLAN Tier 2; defer). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
 	}
 
 	// Append a clickable item. Its tag (and the `clicked_item` value it
 	// reports) is its ENTRY index in the menu — separators consume an index
 	// too, so `add_item` after `add_separator` reports the entry count.
 	pub func add_item = (self, string title) {
-		```
-		#arch: c
-		#platform: macos
-		id menu = (id)self->handle;
-		long tag = ((long(*)(id, SEL))objc_msgSend)(menu, sel_registerName("numberOfItems"));
-		id item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc")),
-			sel_registerName("initWithTitle:action:keyEquivalent:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			sel_registerName("nomenMenuItemAction:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
-		((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), tag);
-		((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setTarget:"), nomen_menu_target());
-		((void(*)(id, SEL, id))objc_msgSend)(menu, sel_registerName("addItem:"), item);
-		((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id menu = (id)self->handle;
-		long tag = ((long(*)(id, SEL))objc_msgSend)(menu, sel_registerName("numberOfItems"));
-		id item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc")),
-			sel_registerName("initWithTitle:action:keyEquivalent:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
-			sel_registerName("nomenMenuItemAction:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
-		((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), tag);
-		((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setTarget:"), nomen_menu_target());
-		((void(*)(id, SEL, id))objc_msgSend)(menu, sel_registerName("addItem:"), item);
-		((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id menu = (id)self->handle;
+				long tag = ((long(*)(id, SEL))objc_msgSend)(menu, sel_registerName("numberOfItems"));
+				id item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc")),
+					sel_registerName("initWithTitle:action:keyEquivalent:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					sel_registerName("nomenMenuItemAction:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+				((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), tag);
+				((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setTarget:"), nomen_menu_target());
+				((void(*)(id, SEL, id))objc_msgSend)(menu, sel_registerName("addItem:"), item);
+				((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id menu = (id)self->handle;
+				long tag = ((long(*)(id, SEL))objc_msgSend)(menu, sel_registerName("numberOfItems"));
+				id item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc")),
+					sel_registerName("initWithTitle:action:keyEquivalent:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr),
+					sel_registerName("nomenMenuItemAction:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+				((void(*)(id, SEL, long))objc_msgSend)(item, sel_registerName("setTag:"), tag);
+				((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setTarget:"), nomen_menu_target());
+				((void(*)(id, SEL, id))objc_msgSend)(menu, sel_registerName("addItem:"), item);
+				((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Append a separator line.
 	pub func add_separator = (self) {
-		```
-		#arch: c
-		#platform: macos
-		id sep = ((id(*)(id, SEL))objc_msgSend)(
-			(id)objc_getClass("NSMenuItem"), sel_registerName("separatorItem"));
-		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("addItem:"), sep);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id sep = ((id(*)(id, SEL))objc_msgSend)(
-			(id)objc_getClass("NSMenuItem"), sel_registerName("separatorItem"));
-		((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("addItem:"), sep);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id sep = ((id(*)(id, SEL))objc_msgSend)(
+					(id)objc_getClass("NSMenuItem"), sel_registerName("separatorItem"));
+				((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("addItem:"), sep);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id sep = ((id(*)(id, SEL))objc_msgSend)(
+					(id)objc_getClass("NSMenuItem"), sel_registerName("separatorItem"));
+				((void(*)(id, SEL, id))objc_msgSend)((id)self->handle, sel_registerName("addItem:"), sep);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Show this menu on right-click of the control with the given handle.
 	pub func attach = (self, uint64 handle) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("setMenu:"), (id)self->handle);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("setMenu:"), (id)self->handle);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("setMenu:"), (id)self->handle);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)((id)handle, sel_registerName("setMenu:"), (id)self->handle);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// The number of ENTRIES (items + separators).
 	pub func item_count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("numberOfItems"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("numberOfItems"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("numberOfItems"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("numberOfItems"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// The tag of the most recently clicked item since the last read
 	// (edge-triggered; -1 = none). Poll it in the manual loop.
 	pub func clicked_item = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		extern long nomen_menu_last_tag(void);
-		long tag = nomen_menu_last_tag();
-		return (int)tag;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern long nomen_menu_last_tag(void);
-		long tag = nomen_menu_last_tag();
-		return (int)tag;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern long nomen_menu_last_tag(void);
+				long tag = nomen_menu_last_tag();
+				return (int)tag;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern long nomen_menu_last_tag(void);
+				long tag = nomen_menu_last_tag();
+				return (int)tag;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
 	}
 
 	// The on_item_select desugar's drain (docs/HANDLERS.md): the synthesized
@@ -322,30 +320,30 @@ pub mv struct Menu: Control {
 	// body, which reads it through selected_item. The poll and the drain
 	// share one record: a selection consumed by one never reaches the other.
 	pub func take_item_select = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern unsigned char nomen_menu_take_select(void);
-		return nomen_menu_take_select();
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern unsigned char nomen_menu_take_select(void);
-		return nomen_menu_take_select();
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern unsigned char nomen_menu_take_select(void);
+				return nomen_menu_take_select();
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern unsigned char nomen_menu_take_select(void);
+				return nomen_menu_take_select();
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
 	}
 
 	// The tag the last take_item_select consumed (-1 before the first
@@ -354,30 +352,30 @@ pub mv struct Menu: Control {
 	// record is the menu's own, so the payload rides the menu, not the
 	// window.
 	pub func selected_item = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		extern long nomen_menu_selected_tag(void);
-		return (int)nomen_menu_selected_tag();
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern long nomen_menu_selected_tag(void);
-		return (int)nomen_menu_selected_tag();
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return -1;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern long nomen_menu_selected_tag(void);
+				return (int)nomen_menu_selected_tag();
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern long nomen_menu_selected_tag(void);
+				return (int)nomen_menu_selected_tag();
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return -1;
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -398,31 +396,31 @@ pub mv struct Menu: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

@@ -57,44 +57,44 @@ mv struct OpenApp : App {
 	}
 
 	pub func poke_double_click = (ref self, ref Window win {}) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		id w = (id)win->handle;
-		id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
-		CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		CGEventRef cge = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, ((NSPoint){50.0, f.size.height - 12.0}), kCGMouseButtonLeft);
-		CGEventSetIntegerValueField(cge, kCGMouseEventClickState, 2); // double-click
-		id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
-			(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
-		CFRelease(cge);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		id w = (id)win->handle;
-		id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
-		CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		CGEventRef cge = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, ((NSPoint){50.0, f.size.height - 12.0}), kCGMouseButtonLeft);
-		CGEventSetIntegerValueField(cge, kCGMouseEventClickState, 2); // double-click
-		id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
-			(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
-		CFRelease(cge);
-		((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id w = (id)win->handle;
+				id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
+				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				CGEventRef cge = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, ((NSPoint){50.0, f.size.height - 12.0}), kCGMouseButtonLeft);
+				CGEventSetIntegerValueField(cge, kCGMouseEventClickState, 2); // double-click
+				id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
+					(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
+				CFRelease(cge);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id w = (id)win->handle;
+				id cv = ((id(*)(id, SEL))objc_msgSend)(w, sel_registerName("contentView"));
+				CGRect f = ((CGRect(*)(id, SEL))objc_msgSend)(cv, sel_registerName("frame"));
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				CGEventRef cge = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, ((NSPoint){50.0, f.size.height - 12.0}), kCGMouseButtonLeft);
+				CGEventSetIntegerValueField(cge, kCGMouseEventClickState, 2); // double-click
+				id evt = ((id(*)(id, SEL, void *))objc_msgSend)(
+					(id)objc_getClass("NSEvent"), sel_registerName("eventWithCGEvent:"), (void *)cge);
+				CFRelease(cge);
+				((void(*)(id, SEL, id, BOOL))objc_msgSend)(nsapp, sel_registerName("postEvent:atStart:"), evt, 0);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS */
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

@@ -297,10 +297,11 @@ test("raw #arch: c statements delegate byte-identically", () => {
 import System
 
 var int x = 1
-\`\`\`
-#arch: c
-x = 5;
-\`\`\`
+#if META.arch == "c" {
+	#raw {
+		x = 5;
+	}
+}
 Console.write("\\{x}")
 `,
 		true,

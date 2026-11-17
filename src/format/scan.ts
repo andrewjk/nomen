@@ -1,3 +1,4 @@
+import { is_raw_directive_at, scan_raw_body_end } from "../raw_block.ts";
 import { COMPOUND_SYMBOLS, LONG_COMPOUND_SYMBOLS } from "../tokenize.ts";
 
 export type PieceKind = "word" | "number" | "string" | "char" | "comment" | "symbol";
@@ -30,35 +31,28 @@ export interface Line {
 }
 
 interface ScanState {
-	in_raw: boolean;
 	comment_depth: number;
 }
 
 /**
- * Split source into lines of pieces. Raw blocks and block comments span lines,
- * so a small amount of state is carried between them; everything else is
- * scanned a line at a time.
+ * Split source into lines of pieces. Raw blocks span lines and hold assembly
+ * or C, which must not be touched — their lines are marked verbatim in a
+ * pre-pass (`raw_verbatim_lines`). Block comments span lines too, so a small
+ * amount of state is carried between them; everything else is scanned a line
+ * at a time.
  */
 export default function scan(source: string): Line[] {
-	const state: ScanState = { in_raw: false, comment_depth: 0 };
-	return source.split("\n").map((text) => scan_line(text, state));
+	const state: ScanState = { comment_depth: 0 };
+	const raw_lines = raw_verbatim_lines(source);
+	return source
+		.split("\n")
+		.map((text, index) => (raw_lines.has(index) ? verbatim(text) : scan_line(text, state)));
 }
 
 function scan_line(text: string, state: ScanState): Line {
-	// Raw blocks (``` ... ```) hold assembly or C, which we must not touch. A
-	// line that opens or closes one is left alone too, so the fences stay put.
-	if (state.in_raw) {
-		if (text.includes("```")) state.in_raw = false;
-		return verbatim(text);
-	}
 	if (state.comment_depth > 0) {
 		state.comment_depth += count_comment_delimiters(text, 0);
 		return { kind: "comment", pieces: [], text };
-	}
-	if (text.includes("```")) {
-		// An opening fence with no closing fence on the same line.
-		if (text.indexOf("```") === text.lastIndexOf("```")) state.in_raw = true;
-		return verbatim(text);
 	}
 
 	const pieces: Piece[] = [];
@@ -121,6 +115,106 @@ function scan_line(text: string, state: ScanState): Line {
 
 function verbatim(text: string): Line {
 	return { kind: "verbatim", pieces: [], text };
+}
+
+/**
+ * Lines covered by `#raw` constructs — from the directive line through the
+ * line holding the body's closing `}`. Those lines are emitted exactly as
+ * written (the body is C/assembly; the opener's shape is the author's).
+ *
+ * The scan is the same brace-aware walk the tokenizer uses
+ * (`scan_raw_body_end`), so the formatter and the compiler can never disagree
+ * about where a block ends. Strings and comments are stepped over while
+ * looking for the opener — a `#raw` inside a string is just text.
+ */
+function raw_verbatim_lines(source: string): Set<number> {
+	const lines = new Set<number>();
+	let line = 0;
+	let i = 0;
+	const newlines_in = (from: number, to: number): number => {
+		let count = 0;
+		for (let k = from; k < to; k++) if (source[k] === "\n") count++;
+		return count;
+	};
+	while (i < source.length) {
+		const c = source[i];
+		if (c === "\n") {
+			line++;
+			i++;
+			continue;
+		}
+		if (c === '"' || c === "'") {
+			const quote = c;
+			i++;
+			while (i < source.length) {
+				if (source[i] === "\\") {
+					i += 2;
+					continue;
+				}
+				if (source[i] === quote || source[i] === "\n") {
+					if (source[i] === quote) i++;
+					break;
+				}
+				i++;
+			}
+			continue;
+		}
+		if (c === "/" && source[i + 1] === "/") {
+			while (i < source.length && source[i] !== "\n") i++;
+			continue;
+		}
+		if (c === "/" && source[i + 1] === "*") {
+			i += 2;
+			while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) {
+				if (source[i] === "\n") line++;
+				i++;
+			}
+			i += 2;
+			continue;
+		}
+		if (is_raw_directive_at(source, i)) {
+			// Skip to the opening brace: optional `(...)` arguments first.
+			let k = i + 4;
+			const skip_space = () => {
+				while (
+					k < source.length &&
+					(source[k] === " " || source[k] === "\t" || source[k] === "\n")
+				) {
+					if (source[k] === "\n") line++;
+					k++;
+				}
+			};
+			skip_space();
+			if (source[k] === "(") {
+				k++;
+				while (k < source.length && source[k] !== ")") {
+					if (source[k] === '"') {
+						k++;
+						while (k < source.length && source[k] !== '"') {
+							if (source[k] === "\\") k++;
+							k++;
+						}
+					}
+					if (source[k] === "\n") line++;
+					k++;
+				}
+				k++;
+				skip_space();
+			}
+			if (source[k] === "{") {
+				const close = scan_raw_body_end(source, k + 1);
+				const start_line = line;
+				line += newlines_in(k, Math.min(close, source.length));
+				for (let l = start_line; l <= line; l++) lines.add(l);
+				i = close + 1;
+				continue;
+			}
+			i = k;
+			continue;
+		}
+		i++;
+	}
+	return lines;
 }
 
 // The change in block comment nesting across `text` from `from` onwards.

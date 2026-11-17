@@ -67,56 +67,56 @@ mv struct SubmitApp : App {
 	// AppKit makes when the user presses Return in the field. Proves the
 	// arming: without the constructor's target/action the send no-ops.
 	pub func poke = (ref self) {
-		\`\`\`
-		#arch: c
-		#platform: macos
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id f = (id)self->name.handle;
-		((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
-			((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
-			((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
-			f);
-		f = (id)self->secret.handle;
-		((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
-			((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
-			((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
-			f);
-		f = (id)self->search.handle;
-		((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
-			((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
-			((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
-			f);
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: macos
-		id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-		id f = (id)self->name.handle;
-		((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
-			((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
-			((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
-			f);
-		f = (id)self->secret.handle;
-		((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
-			((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
-			((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
-			f);
-		f = (id)self->search.handle;
-		((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
-			((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
-			((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
-			f);
-		\`\`\`
-		\`\`\`
-		#arch: c
-		#platform: ios
-		/* TODO: iOS */
-		\`\`\`
-		\`\`\`
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS */
-		\`\`\`
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				id f = (id)self->name.handle;
+				((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
+					((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
+					((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
+					f);
+				f = (id)self->secret.handle;
+				((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
+					((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
+					((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
+					f);
+				f = (id)self->search.handle;
+				((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
+					((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
+					((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
+					f);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+				id f = (id)self->name.handle;
+				((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
+					((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
+					((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
+					f);
+				f = (id)self->secret.handle;
+				((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
+					((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
+					((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
+					f);
+				f = (id)self->search.handle;
+				((BOOL(*)(id, SEL, SEL, id, id))objc_msgSend)(nsapp, sel_registerName("sendAction:to:from:"),
+					((SEL(*)(id, SEL))objc_msgSend)(f, sel_registerName("action")),
+					((id(*)(id, SEL))objc_msgSend)(f, sel_registerName("target")),
+					f);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS */
+			}
+		}
 	}
 
 	pub func frame = (ref self, ref Window win {}, FrameEvents ev) {

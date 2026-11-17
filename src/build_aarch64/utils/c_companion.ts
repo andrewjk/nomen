@@ -32,7 +32,7 @@ export interface CompanionFunction {
 }
 
 /**
- * The label a `aarch64_use_c` function's C body is emitted under — the same
+ * The label a companion-C (`#c`) function's body is emitted under — the same
  * shape the aarch64 side derives for thunks and call sites.
  */
 export function companion_function_label(
@@ -55,7 +55,7 @@ export function companion_function_label(
  * assembler refuses `bl L…` to an undefined symbol (local labels can't be
  * external), and clang's compiler drops L-prefixed `__asm__` bindings from
  * the object symbol table entirely. A struct named `LevelIndicator` (or any
- * L-leading function) with `aarch64_use_c` methods therefore binds its
+ * L-leading function) with companion-C methods therefore binds its
  * companion symbols under a `_`-prefixed alias — and build.ts rewrites the
  * asm-side references to match.
  */
@@ -65,13 +65,13 @@ export function sanitize_companion_label(label: string): string {
 
 /**
  * Generate the complete C companion file: includes, struct typedefs, and
- * function definitions for every collected `aarch64_use_c` function.
+ * function definitions for every collected companion-C function.
  */
 export function generate_companion(functions: CompanionFunction[], status: BuildStatus): string {
 	let out = "";
 
 	// --- Includes ---
-	// The UI frameworks are only needed by `aarch64_use_c` bodies. Importing
+	// The UI frameworks are only needed by companion-C bodies. Importing
 	// them unconditionally pulls MacTypes.h (`Point`, `Rect`, …) into every
 	// companion, colliding with the generated struct typedefs when a program
 	// has no UI bodies at all (e.g. a companion that only carries the
@@ -129,7 +129,7 @@ export function generate_companion(functions: CompanionFunction[], status: Build
 	// runtime; every companion must therefore define the pool + fiber
 	// symbols, whether or not this program uses concurrency itself.
 	// Deduped against any runtime text already queued in file_scope_c.
-	// System-object builds carry only the library's `aarch64_use_c` bodies:
+	// System-object builds carry only the library's companion-C bodies:
 	// their object is linked next to every program's own companion, which
 	// defines the runtime. Those bodies may CALL runtime entries
 	// (__nomen_io_wait, waitq park/wake, …), so the system companion
@@ -243,7 +243,7 @@ export function generate_companion(functions: CompanionFunction[], status: Build
  * sidesteps it while leaving the struct TAG (`Size`) untouched.
  *
  * Keeping the original tag matters: generated C (spawn/trampoline infra in
- * build_spawn_node / build_nursery_spawn) and `#arch: aarch64_use_c` raw bodies
+ * build_spawn_node / build_nursery_spawn) and companion-C raw bodies
  * reference Nomen types as `struct Foo` (the tag), so an unchanged tag means
  * none of that code needs to know about mangling. Codegen-generated references
  * here (fields, params, returns) use the mangled typedef instead.
@@ -313,7 +313,7 @@ function generate_enum_definition(node: EnumNode, status: BuildStatus): string {
 function generate_struct_definition(struct: StructNode, status: BuildStatus): string {
 	let out = `typedef struct ${struct.name}\n{\n`;
 	out += `void *_vt;\n`;
-	// Members in PACKED layout order — aarch64_use_c raw bodies read these
+	// Members in PACKED layout order — companion-C raw bodies read these
 	// fields through C's naturally-aligned layout of THIS typedef, so the
 	// member order must match the aarch64 offset walk (`layout_fields`).
 	for (const field of packed_own_fields(struct)) {

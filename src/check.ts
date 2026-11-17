@@ -47,6 +47,7 @@ export default function check(
 		type_emission_names: new Set(),
 		allow_internal: options?.allow_internal,
 		library_boundary: options?.library_boundary,
+		arch: options?.arch ?? "c",
 	};
 
 	// Compile-time conditionals first (docs/COMPTIME_PLAN_2.md stage 1):

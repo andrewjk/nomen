@@ -37,7 +37,7 @@ import type Type from "../nodes/Type.ts";
  * status-dependent branch there (struct, class, enum, array lookups) aligns
  * to 8, so only the built-in scalar widths matter. Sub-8-byte scalars
  * (bool, char, int8/16/32) align to their storage width; everything else
- * aligns to 8 — matching C struct rules, because raw `#arch: c` bodies and
+ * aligns to 8 — matching C struct rules, because raw C bodies and
  * companion code read the SAME fields through C's naturally-aligned layout.
  */
 export function packing_alignment(type: Type): number {

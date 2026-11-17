@@ -81,7 +81,7 @@ var JsonTree tree = JsonTree()
 var int n = Json.parse(src, ref tree)
 Console.write(Json.stringify(ref tree, n))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_parse_array", result, '[1,true,"hi",null]', opts);
@@ -94,7 +94,7 @@ var JsonTree tree = JsonTree()
 var int n = Json.parse(src, ref tree)
 Console.write(Json.stringify(ref tree, n))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_parse_object", result, '{"type":"Feature","count":42}', opts);
@@ -107,7 +107,7 @@ var JsonTree tree = JsonTree()
 var int n = Json.parse(src, ref tree)
 Console.write(Json.stringify(ref tree, n))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_parse_nested", result, '{"name":"a","coords":[[1,2],[3,4]]}', opts);
@@ -128,7 +128,7 @@ Console.write("\\{s1}|\\{s2}")
 		// destroy frees every node (texts included), and the fresh pool parses
 		// the next document clean. Audit mode verifies nothing leaks across
 		// the reset.
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_tree_reset_reparse", result, '{"a":1}|[9,"eight"]', opts);
@@ -157,7 +157,7 @@ Console.write("|")
 sb.append_string("more")
 Console.write(sb.to_string())
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_take_text", result, "hello|more", opts);
@@ -180,7 +180,7 @@ Console.write(v.length.to_string())
 Console.write("|")
 Console.write(tree.get_text(n))
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_get_text_view", result, "payload|7|payload", opts);
@@ -206,7 +206,7 @@ var int s = Json.parse("[7]", ref tree)
 tree.set_kind(s, 3)
 Console.write("["+tree.get_text(s)+"]")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("json_null_text_seed", result, "[][0][]", opts);

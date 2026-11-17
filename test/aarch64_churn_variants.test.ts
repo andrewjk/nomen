@@ -27,7 +27,7 @@ while j < 3 {
 }
 Console.write_line("done \\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("aarch64_churn_func", result, "A0\nA1\nA2\ndone 48\n", {
@@ -55,7 +55,7 @@ while j < 3 {
 }
 Console.write_line("\\{s.length}")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("aarch64_churn_audit", result, "B0\nB1\nB2\n64\n", {

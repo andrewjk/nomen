@@ -233,7 +233,7 @@ func crash = (out int) {
 }
 crash()
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		expect(result.code).toContain("something went wrong");
@@ -246,7 +246,7 @@ func incomplete = (out int) {
 }
 incomplete()
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64", audit: true });
 		expect(parsed.errors).toEqual([]);
 		expect(result.code).toContain("not done yet");

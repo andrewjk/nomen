@@ -47,30 +47,32 @@ pub mv struct string: Stringable, Hashable, Equatable {
 	// temp). Copies by tracked length, so embedded NULs survive (an extern
 	// strdup boundary would re-synthesize length via strlen and truncate).
 	pub func to_string = (self, mv out string) {
-		```
-		#arch: c
-		// Fat-string ABI: copy self.len bytes; no strlen anywhere.
-		char* buf = (char*)malloc(self.len + 1);
-		memcpy(buf, self.ptr, self.len);
-		buf[self.len] = 0;
-		return (nomen_string){ buf, self.len };
-		```
-		```
-		#arch: aarch64
-		// x19/x20 = self (ptr, len). malloc + memcpy of known length;
-		// memcpy returns the dst in x0, which becomes the return ptr half.
-		sub sp, sp, #16
-		str x20, [sp, #0]
-		add x0, x20, #1
-		bl _malloc
-		mov x1, x19
-		mov x2, x20
-		bl _memcpy
-		ldr x1, [sp, #0]
-		add x2, x0, x1
-		strb wzr, [x2]            // NUL-terminate for libc consumers
-		add sp, sp, #16
-		```
+		#if META.arch == "c" {
+			#raw {
+				// Fat-string ABI: copy self.len bytes; no strlen anywhere.
+				char* buf = (char*)malloc(self.len + 1);
+				memcpy(buf, self.ptr, self.len);
+				buf[self.len] = 0;
+				return (nomen_string){ buf, self.len };
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19/x20 = self (ptr, len). malloc + memcpy of known length;
+				// memcpy returns the dst in x0, which becomes the return ptr half.
+				sub sp, sp, #16
+				str x20, [sp, #0]
+				add x0, x20, #1
+				bl _malloc
+				mov x1, x19
+				mov x2, x20
+				bl _memcpy
+				ldr x1, [sp, #0]
+				add x2, x0, x1
+				strb wzr, [x2]            // NUL-terminate for libc consumers
+				add sp, sp, #16
+			}
+		}
 	}
 
 	// The indexing primitive everything string code builds on — `unsafe`
@@ -110,22 +112,24 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		int end: end >= start && end <= self.length,
 		out view string
 	) {
-		```
-		#arch: c
-		// Fat-string ABI: slice out of the tracked buffer — no NUL scan.
-		nomen_view _r;
-		_r.ptr = (void*)(self.ptr + start);
-		_r.len = (long)(end - start);
-		return _r;
-		```
-		```
-		#arch: aarch64
-		// view string is (ptr, len), returned in the x0/x1 register pair.
-		// Fat-string ABI: x19 = self ptr, x20 = self len; start in x2,
-		// end in x3 (self's pair occupies slots 0-1).
-		add x0, x19, x2     // ptr = self + start
-		sub x1, x3, x2      // len = end - start
-		```
+		#if META.arch == "c" {
+			#raw {
+				// Fat-string ABI: slice out of the tracked buffer — no NUL scan.
+				nomen_view _r;
+				_r.ptr = (void*)(self.ptr + start);
+				_r.len = (long)(end - start);
+				return _r;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// view string is (ptr, len), returned in the x0/x1 register pair.
+				// Fat-string ABI: x19 = self ptr, x20 = self len; start in x2,
+				// end in x3 (self's pair occupies slots 0-1).
+				add x0, x19, x2     // ptr = self + start
+				sub x1, x3, x2      // len = end - start
+			}
+		}
 	}
 
 	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
@@ -135,121 +139,127 @@ pub mv struct string: Stringable, Hashable, Equatable {
 	}
 
 	pub func #op_eq = (self, string other, out bool) {
-		```
-		#arch: c
-		// Length-aware compare: equal lengths + equal bytes. Embedded
-		// NULs are data, not terminators (strcmp truncated at the first).
-		return self.len == other.len && memcmp(self.ptr, other.ptr, self.len) == 0;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: x19/x20 = self (ptr, len); other = (x2 ptr, x3
-		// len). Equal lengths + equal bytes — no NUL scan.
-		stp x20, x21, [sp, #-16]!
-		cmp x20, x3
-		b.ne .Lstring_eq_len_ne
-		mov x0, x19
-		mov x1, x2
-		mov x2, x20
-		bl _memcmp
-		cmp x0, #0
-		cset x0, eq
-		b .Lstring_eq_done
-		.Lstring_eq_len_ne:
-		mov x0, #0
-		.Lstring_eq_done:
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "c" {
+			#raw {
+				// Length-aware compare: equal lengths + equal bytes. Embedded
+				// NULs are data, not terminators (strcmp truncated at the first).
+				return self.len == other.len && memcmp(self.ptr, other.ptr, self.len) == 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: x19/x20 = self (ptr, len); other = (x2 ptr, x3
+				// len). Equal lengths + equal bytes — no NUL scan.
+				stp x20, x21, [sp, #-16]!
+				cmp x20, x3
+				b.ne .Lstring_eq_len_ne
+				mov x0, x19
+				mov x1, x2
+				mov x2, x20
+				bl _memcmp
+				cmp x0, #0
+				cset x0, eq
+				b .Lstring_eq_done
+				.Lstring_eq_len_ne:
+				mov x0, #0
+				.Lstring_eq_done:
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	pub func #op_add = (self, string other, out string) {
-		```
-		#arch: c
-		// Fat-string ABI: one malloc sized by the tracked lens, two
-		// memcpys, NUL-terminate for libc consumers. No strlen/strcpy.
-		long left_len = self.len;
-		long right_len = other.len;
-		char* result = (char*)malloc(left_len + right_len + 1);
-		memcpy(result, self.ptr, left_len);
-		memcpy(result + left_len, other.ptr, right_len);
-		result[left_len + right_len] = 0;
-		return (nomen_string){ result, left_len + right_len };
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: x19/x20 = self (ptr, len); other = (x2 ptr, x3
-		// len). Two memcpys of known length — no strlen/strcpy/strcat.
-		// Returns the (buf, total) pair.
-		stp x21, x22, [sp, #-16]!
-		stp x2, x3, [sp, #-16]!      // other (ptr, len)
-		add x0, x20, x3
-		add x0, x0, #1
-		bl _malloc
-		mov x21, x0                  // buf (callee-saved across memcpys)
-		mov x0, x21
-		mov x1, x19
-		mov x2, x20
-		bl _memcpy                   // left half
-		ldp x1, x2, [sp]             // other ptr, len
-		add x0, x21, x20
-		bl _memcpy                   // right half
-		ldp x1, x2, [sp], #16        // reload other len; pop
-		add x3, x20, x2              // total bytes
-		add x0, x21, x3
-		strb wzr, [x0]               // NUL-terminate for libc consumers
-		mov x1, x3
-		mov x0, x21
-		ldp x21, x22, [sp], #16
-		```
+		#if META.arch == "c" {
+			#raw {
+				// Fat-string ABI: one malloc sized by the tracked lens, two
+				// memcpys, NUL-terminate for libc consumers. No strlen/strcpy.
+				long left_len = self.len;
+				long right_len = other.len;
+				char* result = (char*)malloc(left_len + right_len + 1);
+				memcpy(result, self.ptr, left_len);
+				memcpy(result + left_len, other.ptr, right_len);
+				result[left_len + right_len] = 0;
+				return (nomen_string){ result, left_len + right_len };
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: x19/x20 = self (ptr, len); other = (x2 ptr, x3
+				// len). Two memcpys of known length — no strlen/strcpy/strcat.
+				// Returns the (buf, total) pair.
+				stp x21, x22, [sp, #-16]!
+				stp x2, x3, [sp, #-16]!      // other (ptr, len)
+				add x0, x20, x3
+				add x0, x0, #1
+				bl _malloc
+				mov x21, x0                  // buf (callee-saved across memcpys)
+				mov x0, x21
+				mov x1, x19
+				mov x2, x20
+				bl _memcpy                   // left half
+				ldp x1, x2, [sp]             // other ptr, len
+				add x0, x21, x20
+				bl _memcpy                   // right half
+				ldp x1, x2, [sp], #16        // reload other len; pop
+				add x3, x20, x2              // total bytes
+				add x0, x21, x3
+				strb wzr, [x0]               // NUL-terminate for libc consumers
+				mov x1, x3
+				mov x0, x21
+				ldp x21, x22, [sp], #16
+			}
+		}
 	}
 
 	pub func #op_mul = (self, int count, out string) {
-		```
-		#arch: c
-		// Fat-string ABI: memcpy loop of the tracked stride. No strlen.
-		size_t str_len = self.len;
-		size_t total = str_len * (size_t)count + 1;
-		char* buf = malloc(total);
-		char* p = buf;
-		for (int i = 0; i < count; i++) {
-			memcpy(p, self.ptr, str_len);
-			p += str_len;
+		#if META.arch == "c" {
+			#raw {
+				// Fat-string ABI: memcpy loop of the tracked stride. No strlen.
+				size_t str_len = self.len;
+				size_t total = str_len * (size_t)count + 1;
+				char* buf = malloc(total);
+				char* p = buf;
+				for (int i = 0; i < count; i++) {
+					memcpy(p, self.ptr, str_len);
+					p += str_len;
+				}
+				*p = 0;
+				return (nomen_string){ buf, total - 1 };
+			}
 		}
-		*p = 0;
-		return (nomen_string){ buf, total - 1 };
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: x19/x20 = self (ptr, len); count in x2. memcpy
-		// loop of known stride; returns the (buf, total) pair.
-		stp x20, x21, [sp, #-16]!
-		stp x22, x23, [sp, #-16]!
-		stp x24, x25, [sp, #-16]!
-		mov x21, x20            // self len (stride)
-		mov x22, x2             // count
-		mul x23, x21, x22       // total bytes
-		add x0, x23, #1
-		bl _malloc
-		mov x24, x0             // buf
-		mov x25, x0             // cursor
-		.Lstring_mul_loop:
-		cbz x22, .Lstring_mul_done
-		mov x0, x25
-		mov x1, x19
-		mov x2, x21
-		bl _memcpy
-		add x25, x25, x21
-		sub x22, x22, #1
-		b .Lstring_mul_loop
-		.Lstring_mul_done:
-		add x0, x24, x23
-		strb wzr, [x0]          // NUL-terminate for libc consumers
-		mov x1, x23
-		mov x0, x24
-		ldp x24, x25, [sp], #16
-		ldp x22, x23, [sp], #16
-		ldp x20, x21, [sp], #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: x19/x20 = self (ptr, len); count in x2. memcpy
+				// loop of known stride; returns the (buf, total) pair.
+				stp x20, x21, [sp, #-16]!
+				stp x22, x23, [sp, #-16]!
+				stp x24, x25, [sp, #-16]!
+				mov x21, x20            // self len (stride)
+				mov x22, x2             // count
+				mul x23, x21, x22       // total bytes
+				add x0, x23, #1
+				bl _malloc
+				mov x24, x0             // buf
+				mov x25, x0             // cursor
+				.Lstring_mul_loop:
+				cbz x22, .Lstring_mul_done
+				mov x0, x25
+				mov x1, x19
+				mov x2, x21
+				bl _memcpy
+				add x25, x25, x21
+				sub x22, x22, #1
+				b .Lstring_mul_loop
+				.Lstring_mul_done:
+				add x0, x24, x23
+				strb wzr, [x0]          // NUL-terminate for libc consumers
+				mov x1, x23
+				mov x0, x24
+				ldp x24, x25, [sp], #16
+				ldp x22, x23, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
 	}
 
 	// Replace the first non-overlapping occurrence of needle with

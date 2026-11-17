@@ -64,37 +64,39 @@ pub struct File {
 	// Open the file at `path` with a C mode string ("r", "w", "a", …).
 	// Stores the handle and records errno (0 on success) in `last_error`.
 	func raw_open = (ref self {}, string path, string mode) {
-		```
-		#arch: c
-		#scope: file
-		#include <errno.h>
-		```
-		```
-		#arch: c
-		// Fat-string ABI: strings pass their ptr half at FFI boundaries.
-		self->handle = (unsigned long long)fopen(path.ptr, mode.ptr);
-		if (self->handle) {
-			self->last_error = 0;
-		} else {
-			self->last_error = errno;
+		#if META.arch == "c" {
+			#raw("file") {
+				#include <errno.h>
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: path = (x1, x2), mode = (x3, x4).
-		mov x0, x1
-		mov x1, x3
-		bl _fopen
-		str x0, [x19, #8]
-		cbnz x0, .Lfile_open_ok
-		bl ___error
-		ldr w0, [x0]
-		str x0, [x19, #24]
-		b .Lfile_open_end
-		.Lfile_open_ok:
-		str xzr, [x19, #24]
-		.Lfile_open_end:
-		```
+		#if META.arch == "c" {
+			#raw {
+				// Fat-string ABI: strings pass their ptr half at FFI boundaries.
+				self->handle = (unsigned long long)fopen(path.ptr, mode.ptr);
+				if (self->handle) {
+					self->last_error = 0;
+				} else {
+					self->last_error = errno;
+				}
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: path = (x1, x2), mode = (x3, x4).
+				mov x0, x1
+				mov x1, x3
+				bl _fopen
+				str x0, [x19, #8]
+				cbnz x0, .Lfile_open_ok
+				bl ___error
+				ldr w0, [x0]
+				str x0, [x19, #24]
+				b .Lfile_open_end
+				.Lfile_open_ok:
+				str xzr, [x19, #24]
+				.Lfile_open_end:
+			}
+		}
 	}
 
 	// Open the file at `path` with a C mode string ("r", "w", "a", …).
@@ -111,37 +113,39 @@ pub struct File {
 	// performed automatically by #destroy; calling close explicitly releases
 	// the resource early.
 	func raw_close = (ref self {}) {
-		```
-		#arch: c
-		if (self->handle) {
-			if (fclose((FILE*)(unsigned long long)self->handle)) {
-				self->last_error = errno;
-			} else {
-				self->handle = 0;
-				self->last_error = 0;
+		#if META.arch == "c" {
+			#raw {
+				if (self->handle) {
+					if (fclose((FILE*)(unsigned long long)self->handle)) {
+						self->last_error = errno;
+					} else {
+						self->handle = 0;
+						self->last_error = 0;
+					}
+				} else {
+					self->last_error = 0;
+				}
 			}
-		} else {
-			self->last_error = 0;
 		}
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbz x0, .Lfile_close_clean
-		bl _fclose
-		cbnz w0, .Lfile_close_err
-		str xzr, [x19, #8]
-		str xzr, [x19, #24]
-		b .Lfile_close_end
-		.Lfile_close_err:
-		bl ___error
-		ldr w0, [x0]
-		str x0, [x19, #24]
-		b .Lfile_close_end
-		.Lfile_close_clean:
-		str xzr, [x19, #24]
-		.Lfile_close_end:
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				cbz x0, .Lfile_close_clean
+				bl _fclose
+				cbnz w0, .Lfile_close_err
+				str xzr, [x19, #8]
+				str xzr, [x19, #24]
+				b .Lfile_close_end
+				.Lfile_close_err:
+				bl ___error
+				ldr w0, [x0]
+				str x0, [x19, #24]
+				b .Lfile_close_end
+				.Lfile_close_clean:
+				str xzr, [x19, #24]
+				.Lfile_close_end:
+			}
+		}
 	}
 
 	// Close the handle. Also performed automatically by #destroy; calling
@@ -159,63 +163,65 @@ pub struct File {
 	// `eof` and `last_error`. Declared `mv out string`: the raw body mallocs a
 	// fresh buffer and hands ownership to the caller.
 	func raw_read_all = (ref self {}, mv out string) {
-		```
-		#arch: c
-		FILE *f = (FILE*)(unsigned long long)self->handle;
-		if (!f) { self->last_error = 9; return (nomen_string){ NULL, 0 }; }
-		fseek(f, 0, SEEK_END);
-		long size = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		char *buf = (char*)malloc(size + 1);
-		fread(buf, 1, size, f);
-		buf[size] = 0;
-		self->eof = 1;
-		self->last_error = 0;
-		// size bytes were read — the count is exact, no strlen.
-		return (nomen_string){ buf, size };
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbnz x0, .Lfile_read_all_go
-		mov x0, #9
-		str x0, [x19, #24]
-		mov x0, #0
-		mov x1, #0
-		b .return_File_raw_read_all
-		.Lfile_read_all_go:
-		sub sp, sp, #16
-		ldr x0, [x19, #8]
-		mov x1, #0
-		mov x2, #2
-		bl _fseek
-		ldr x0, [x19, #8]
-		bl _ftell
-		str x0, [sp, #0]
-		ldr x0, [x19, #8]
-		mov x1, #0
-		mov x2, #0
-		bl _fseek
-		ldr x0, [sp, #0]
-		add x0, x0, #1
-		bl _malloc
-		str x0, [sp, #8]
-		ldr x0, [sp, #8]
-		mov x1, #1
-		ldr x2, [sp, #0]
-		ldr x3, [x19, #8]
-		bl _fread
-		ldr x0, [sp, #8]
-		ldr x1, [sp, #0]
-		strb wzr, [x0, x1]
-		mov w1, #1
-		strb w1, [x19, #16]
-		str xzr, [x19, #24]
-		ldr x0, [sp, #8]
-		ldr x1, [sp, #0]          // fat len half = size read
-		add sp, sp, #16
-		b .return_File_raw_read_all
-		```
+		#if META.arch == "c" {
+			#raw {
+				FILE *f = (FILE*)(unsigned long long)self->handle;
+				if (!f) { self->last_error = 9; return (nomen_string){ NULL, 0 }; }
+				fseek(f, 0, SEEK_END);
+				long size = ftell(f);
+				fseek(f, 0, SEEK_SET);
+				char *buf = (char*)malloc(size + 1);
+				fread(buf, 1, size, f);
+				buf[size] = 0;
+				self->eof = 1;
+				self->last_error = 0;
+				// size bytes were read — the count is exact, no strlen.
+				return (nomen_string){ buf, size };
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				cbnz x0, .Lfile_read_all_go
+				mov x0, #9
+				str x0, [x19, #24]
+				mov x0, #0
+				mov x1, #0
+				b .return_File_raw_read_all
+				.Lfile_read_all_go:
+				sub sp, sp, #16
+				ldr x0, [x19, #8]
+				mov x1, #0
+				mov x2, #2
+				bl _fseek
+				ldr x0, [x19, #8]
+				bl _ftell
+				str x0, [sp, #0]
+				ldr x0, [x19, #8]
+				mov x1, #0
+				mov x2, #0
+				bl _fseek
+				ldr x0, [sp, #0]
+				add x0, x0, #1
+				bl _malloc
+				str x0, [sp, #8]
+				ldr x0, [sp, #8]
+				mov x1, #1
+				ldr x2, [sp, #0]
+				ldr x3, [x19, #8]
+				bl _fread
+				ldr x0, [sp, #8]
+				ldr x1, [sp, #0]
+				strb wzr, [x0, x1]
+				mov w1, #1
+				strb w1, [x19, #16]
+				str xzr, [x19, #24]
+				ldr x0, [sp, #8]
+				ldr x1, [sp, #0]          // fat len half = size read
+				add sp, sp, #16
+				b .return_File_raw_read_all
+			}
+		}
 		return ""
 	}
 
@@ -232,30 +238,32 @@ pub struct File {
 
 	// Write a string at the current position.
 	func raw_write_all = (ref self {}, string data) {
-		```
-		#arch: c
-		FILE *f = (FILE*)(unsigned long long)self->handle;
-		if (!f) { self->last_error = 9; return; }
-		// Byte-exact write of the tracked length (fputs stopped at the
-		// first embedded NUL).
-		fwrite(data.ptr, 1, data.len, f);
-		self->last_error = 0;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: data = (x1 ptr, x2 len).
-		ldr x3, [x19, #8]
-		cbnz x3, .Lfile_write_all_go
-		mov x0, #9
-		str x0, [x19, #24]
-		b .return_File_raw_write_all
-		.Lfile_write_all_go:
-		// fwrite(ptr, 1, len, f) — byte-exact (fputs truncated at NUL)
-		mov x0, x1
-		mov x1, #1
-		bl _fwrite
-		str xzr, [x19, #24]
-		```
+		#if META.arch == "c" {
+			#raw {
+				FILE *f = (FILE*)(unsigned long long)self->handle;
+				if (!f) { self->last_error = 9; return; }
+				// Byte-exact write of the tracked length (fputs stopped at the
+				// first embedded NUL).
+				fwrite(data.ptr, 1, data.len, f);
+				self->last_error = 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: data = (x1 ptr, x2 len).
+				ldr x3, [x19, #8]
+				cbnz x3, .Lfile_write_all_go
+				mov x0, #9
+				str x0, [x19, #24]
+				b .return_File_raw_write_all
+				.Lfile_write_all_go:
+				// fwrite(ptr, 1, len, f) — byte-exact (fputs truncated at NUL)
+				mov x0, x1
+				mov x1, #1
+				bl _fwrite
+				str xzr, [x19, #24]
+			}
+		}
 	}
 
 	// Write a string at the current position. `.ok(true)`, or
@@ -273,92 +281,94 @@ pub struct File {
 	// when the end of the file is reached and `last_error` on failure. The raw
 	// body mallocs a fresh buffer — `mv out string` transfers it.
 	func raw_read_line = (ref self {}, mv out string) {
-		```
-		#arch: c
-		FILE *f = (FILE*)(unsigned long long)self->handle;
-		if (!f) { self->last_error = 9; return (nomen_string){ NULL, 0 }; }
-		int cap = 16;
-		int len = 0;
-		char *buf = (char*)malloc(cap);
-		int c = fgetc(f);
-		while (c != EOF && c != '\n') {
-			if (len + 1 >= cap) {
-				cap *= 2;
-				buf = (char*)realloc(buf, cap);
+		#if META.arch == "c" {
+			#raw {
+				FILE *f = (FILE*)(unsigned long long)self->handle;
+				if (!f) { self->last_error = 9; return (nomen_string){ NULL, 0 }; }
+				int cap = 16;
+				int len = 0;
+				char *buf = (char*)malloc(cap);
+				int c = fgetc(f);
+				while (c != EOF && c != '\n') {
+					if (len + 1 >= cap) {
+						cap *= 2;
+						buf = (char*)realloc(buf, cap);
+					}
+					buf[len++] = (char)c;
+					c = fgetc(f);
+				}
+				buf[len] = 0;
+				if (c == EOF) self->eof = 1;
+				self->last_error = 0;
+				return (nomen_string){ buf, len };
 			}
-			buf[len++] = (char)c;
-			c = fgetc(f);
 		}
-		buf[len] = 0;
-		if (c == EOF) self->eof = 1;
-		self->last_error = 0;
-		return (nomen_string){ buf, len };
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbnz x0, .Lfile_read_line_go
-		mov x0, #9
-		str x0, [x19, #24]
-		mov x0, #0
-		mov x1, #0
-		b .return_File_raw_read_line
-		.Lfile_read_line_go:
-		sub sp, sp, #32
-		mov x0, #16
-		bl _malloc
-		str x0, [sp, #0]
-		mov x1, #16
-		str x1, [sp, #8]
-		str xzr, [sp, #16]
-		ldr x0, [x19, #8]
-		bl _fgetc
-		str w0, [sp, #24]
-		.Lfile_read_line_loop:
-		ldr w0, [sp, #24]
-		cmp w0, #0
-		blt .Lfile_read_line_done
-		cmp w0, #10
-		beq .Lfile_read_line_done
-		ldr x0, [sp, #16]
-		add x0, x0, #1
-		ldr x1, [sp, #8]
-		cmp x0, x1
-		ble .Lfile_read_line_store
-		ldr x1, [sp, #8]
-		lsl x1, x1, #1
-		str x1, [sp, #8]
-		ldr x0, [sp, #0]
-		bl _realloc
-		str x0, [sp, #0]
-		.Lfile_read_line_store:
-		ldr x0, [sp, #0]
-		ldr x1, [sp, #16]
-		ldr w2, [sp, #24]
-		strb w2, [x0, x1]
-		ldr x0, [sp, #16]
-		add x0, x0, #1
-		str x0, [sp, #16]
-		ldr x0, [x19, #8]
-		bl _fgetc
-		str w0, [sp, #24]
-		b .Lfile_read_line_loop
-		.Lfile_read_line_done:
-		ldr x0, [sp, #0]
-		ldr x1, [sp, #16]
-		strb wzr, [x0, x1]
-		ldr w0, [sp, #24]
-		cmp w0, #0
-		bge .Lfile_read_line_ret
-		mov w1, #1
-		strb w1, [x19, #16]
-		.Lfile_read_line_ret:
-		str xzr, [x19, #24]
-		ldr x0, [sp, #0]
-		ldr x1, [sp, #16]         // fat len half
-		add sp, sp, #32
-		b .return_File_raw_read_line
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				cbnz x0, .Lfile_read_line_go
+				mov x0, #9
+				str x0, [x19, #24]
+				mov x0, #0
+				mov x1, #0
+				b .return_File_raw_read_line
+				.Lfile_read_line_go:
+				sub sp, sp, #32
+				mov x0, #16
+				bl _malloc
+				str x0, [sp, #0]
+				mov x1, #16
+				str x1, [sp, #8]
+				str xzr, [sp, #16]
+				ldr x0, [x19, #8]
+				bl _fgetc
+				str w0, [sp, #24]
+				.Lfile_read_line_loop:
+				ldr w0, [sp, #24]
+				cmp w0, #0
+				blt .Lfile_read_line_done
+				cmp w0, #10
+				beq .Lfile_read_line_done
+				ldr x0, [sp, #16]
+				add x0, x0, #1
+				ldr x1, [sp, #8]
+				cmp x0, x1
+				ble .Lfile_read_line_store
+				ldr x1, [sp, #8]
+				lsl x1, x1, #1
+				str x1, [sp, #8]
+				ldr x0, [sp, #0]
+				bl _realloc
+				str x0, [sp, #0]
+				.Lfile_read_line_store:
+				ldr x0, [sp, #0]
+				ldr x1, [sp, #16]
+				ldr w2, [sp, #24]
+				strb w2, [x0, x1]
+				ldr x0, [sp, #16]
+				add x0, x0, #1
+				str x0, [sp, #16]
+				ldr x0, [x19, #8]
+				bl _fgetc
+				str w0, [sp, #24]
+				b .Lfile_read_line_loop
+				.Lfile_read_line_done:
+				ldr x0, [sp, #0]
+				ldr x1, [sp, #16]
+				strb wzr, [x0, x1]
+				ldr w0, [sp, #24]
+				cmp w0, #0
+				bge .Lfile_read_line_ret
+				mov w1, #1
+				strb w1, [x19, #16]
+				.Lfile_read_line_ret:
+				str xzr, [x19, #24]
+				ldr x0, [sp, #0]
+				ldr x1, [sp, #16]         // fat len half
+				add sp, sp, #32
+				b .return_File_raw_read_line
+			}
+		}
 		return ""
 	}
 
@@ -374,34 +384,36 @@ pub struct File {
 
 	// Write a string followed by '\n'.
 	func raw_write_line = (ref self {}, string data) {
-		```
-		#arch: c
-		FILE *f = (FILE*)(unsigned long long)self->handle;
-		if (!f) { self->last_error = 9; return; }
-		// Byte-exact write of the tracked length (fputs stopped at the
-		// first embedded NUL).
-		fwrite(data.ptr, 1, data.len, f);
-		fputc('\n', f);
-		self->last_error = 0;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: data = (x1 ptr, x2 len).
-		ldr x3, [x19, #8]
-		cbnz x3, .Lfile_write_line_go
-		mov x0, #9
-		str x0, [x19, #24]
-		b .return_File_raw_write_line
-		.Lfile_write_line_go:
-		// fwrite(ptr, 1, len, f) — byte-exact (fputs truncated at NUL)
-		mov x0, x1
-		mov x1, #1
-		bl _fwrite
-		mov w0, #10
-		ldr x1, [x19, #8]
-		bl _fputc
-		str xzr, [x19, #24]
-		```
+		#if META.arch == "c" {
+			#raw {
+				FILE *f = (FILE*)(unsigned long long)self->handle;
+				if (!f) { self->last_error = 9; return; }
+				// Byte-exact write of the tracked length (fputs stopped at the
+				// first embedded NUL).
+				fwrite(data.ptr, 1, data.len, f);
+				fputc('\n', f);
+				self->last_error = 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: data = (x1 ptr, x2 len).
+				ldr x3, [x19, #8]
+				cbnz x3, .Lfile_write_line_go
+				mov x0, #9
+				str x0, [x19, #24]
+				b .return_File_raw_write_line
+				.Lfile_write_line_go:
+				// fwrite(ptr, 1, len, f) — byte-exact (fputs truncated at NUL)
+				mov x0, x1
+				mov x1, #1
+				bl _fwrite
+				mov w0, #10
+				ldr x1, [x19, #8]
+				bl _fputc
+				str xzr, [x19, #24]
+			}
+		}
 	}
 
 	// Write a string followed by '\n'. `.ok(true)`, or `.fail(FileError)`.
@@ -417,52 +429,54 @@ pub struct File {
 	// than `size` bytes remain and `last_error` on failure. The raw body mallocs a
 	// fresh buffer — `mv out string` transfers it.
 	func raw_read_chunk = (ref self {}, int size, mv out string) {
-		```
-		#arch: c
-		FILE *f = (FILE*)(unsigned long long)self->handle;
-		if (!f) { self->last_error = 9; return (nomen_string){ NULL, 0 }; }
-		char *buf = (char*)malloc(size + 1);
-		long n = fread(buf, 1, size, f);
-		buf[n] = 0;
-		if (n < size) self->eof = 1;
-		self->last_error = 0;
-		return (nomen_string){ buf, n };
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbnz x0, .Lfile_read_chunk_go
-		mov x0, #9
-		str x0, [x19, #24]
-		mov x0, #0
-		mov x1, #0
-		b .return_File_raw_read_chunk
-		.Lfile_read_chunk_go:
-		sub sp, sp, #16
-		str x1, [sp, #0]
-		ldr x0, [sp, #0]
-		add x0, x0, #1
-		bl _malloc
-		str x0, [sp, #8]
-		ldr x0, [sp, #8]
-		mov x1, #1
-		ldr x2, [sp, #0]
-		ldr x3, [x19, #8]
-		bl _fread
-		ldr x1, [sp, #8]
-		strb wzr, [x1, x0]
-		ldr x2, [sp, #0]
-		cmp x0, x2
-		bge .Lfile_read_chunk_ret
-		mov w3, #1
-		strb w3, [x19, #16]
-		.Lfile_read_chunk_ret:
-		str xzr, [x19, #24]
-		ldr x0, [sp, #8]
-		ldr x1, [sp, #0]          // fat len half = bytes read
-		add sp, sp, #16
-		b .return_File_raw_read_chunk
-		```
+		#if META.arch == "c" {
+			#raw {
+				FILE *f = (FILE*)(unsigned long long)self->handle;
+				if (!f) { self->last_error = 9; return (nomen_string){ NULL, 0 }; }
+				char *buf = (char*)malloc(size + 1);
+				long n = fread(buf, 1, size, f);
+				buf[n] = 0;
+				if (n < size) self->eof = 1;
+				self->last_error = 0;
+				return (nomen_string){ buf, n };
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				cbnz x0, .Lfile_read_chunk_go
+				mov x0, #9
+				str x0, [x19, #24]
+				mov x0, #0
+				mov x1, #0
+				b .return_File_raw_read_chunk
+				.Lfile_read_chunk_go:
+				sub sp, sp, #16
+				str x1, [sp, #0]
+				ldr x0, [sp, #0]
+				add x0, x0, #1
+				bl _malloc
+				str x0, [sp, #8]
+				ldr x0, [sp, #8]
+				mov x1, #1
+				ldr x2, [sp, #0]
+				ldr x3, [x19, #8]
+				bl _fread
+				ldr x1, [sp, #8]
+				strb wzr, [x1, x0]
+				ldr x2, [sp, #0]
+				cmp x0, x2
+				bge .Lfile_read_chunk_ret
+				mov w3, #1
+				strb w3, [x19, #16]
+				.Lfile_read_chunk_ret:
+				str xzr, [x19, #24]
+				ldr x0, [sp, #8]
+				ldr x1, [sp, #0]          // fat len half = bytes read
+				add sp, sp, #16
+				b .return_File_raw_read_chunk
+			}
+		}
 		return ""
 	}
 
@@ -478,29 +492,31 @@ pub struct File {
 
 	// Write the first `size` bytes of `data` at the current position.
 	func raw_write_chunk = (ref self {}, string data, int size) {
-		```
-		#arch: c
-		FILE *f = (FILE*)(unsigned long long)self->handle;
-		if (!f) { self->last_error = 9; return; }
-		fwrite(data.ptr, 1, size, f);
-		self->last_error = 0;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: data = (x1, x2), size in x3.
-		ldr x4, [x19, #8]
-		cbnz x4, .Lfile_write_chunk_go
-		mov x0, #9
-		str x0, [x19, #24]
-		b .return_File_raw_write_chunk
-		.Lfile_write_chunk_go:
-		mov x0, x1
-		mov x2, x3
-		mov x1, #1
-		mov x3, x4
-		bl _fwrite
-		str xzr, [x19, #24]
-		```
+		#if META.arch == "c" {
+			#raw {
+				FILE *f = (FILE*)(unsigned long long)self->handle;
+				if (!f) { self->last_error = 9; return; }
+				fwrite(data.ptr, 1, size, f);
+				self->last_error = 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: data = (x1, x2), size in x3.
+				ldr x4, [x19, #8]
+				cbnz x4, .Lfile_write_chunk_go
+				mov x0, #9
+				str x0, [x19, #24]
+				b .return_File_raw_write_chunk
+				.Lfile_write_chunk_go:
+				mov x0, x1
+				mov x2, x3
+				mov x1, #1
+				mov x3, x4
+				bl _fwrite
+				str xzr, [x19, #24]
+			}
+		}
 	}
 
 	// Write the first `size` bytes of `data` at the current position.
@@ -516,42 +532,46 @@ pub struct File {
 	// (static) Whether a file exists at `path`. A missing file is `false`,
 	// not an error.
 	pub func exists = (string path, out bool) {
-		```
-		#arch: c
-		struct stat st;
-		return stat(path.ptr, &st) == 0 ? 1 : 0;
-		```
-		```
-		#arch: aarch64
-		sub sp, sp, #160
-		mov x1, sp
-		bl _stat
-		cmp x0, #0
-		cset x0, eq
-		add sp, sp, #160
-		b .return_File_exists
-		```
+		#if META.arch == "c" {
+			#raw {
+				struct stat st;
+				return stat(path.ptr, &st) == 0 ? 1 : 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				sub sp, sp, #160
+				mov x1, sp
+				bl _stat
+				cmp x0, #0
+				cset x0, eq
+				add sp, sp, #160
+				b .return_File_exists
+			}
+		}
 		return false
 	}
 
 	// (static) Remove the file at `path`; returns errno (0 on success).
 	func raw_delete = (string path, out int) {
-		```
-		#arch: c
-		if (remove(path.ptr)) return errno;
-		return 0;
-		```
-		```
-		#arch: aarch64
-		bl _remove
-		cbz w0, .Lfile_delete_ok
-		bl ___error
-		ldr w0, [x0]
-		b .return_File_raw_delete
-		.Lfile_delete_ok:
-		mov x0, #0
-		b .return_File_raw_delete
-		```
+		#if META.arch == "c" {
+			#raw {
+				if (remove(path.ptr)) return errno;
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				bl _remove
+				cbz w0, .Lfile_delete_ok
+				bl ___error
+				ldr w0, [x0]
+				b .return_File_raw_delete
+				.Lfile_delete_ok:
+				mov x0, #0
+				b .return_File_raw_delete
+			}
+		}
 		return 0
 	}
 
@@ -617,20 +637,22 @@ pub struct File {
 	// at scope exit, so an unclosed `File` never leaks. Best-effort: failures
 	// are not reported (use `close` to observe them).
 	func #destroy = () {
-		```
-		#arch: c
-		if (self->handle) {
-			fclose((FILE*)(unsigned long long)self->handle);
-			self->handle = 0;
+		#if META.arch == "c" {
+			#raw {
+				if (self->handle) {
+					fclose((FILE*)(unsigned long long)self->handle);
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		ldr x0, [x19, #8]
-		cbz x0, .Lfile_destroy_end
-		bl _fclose
-		.Lfile_destroy_end:
-		str xzr, [x19, #8]
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				ldr x0, [x19, #8]
+				cbz x0, .Lfile_destroy_end
+				bl _fclose
+				.Lfile_destroy_end:
+				str xzr, [x19, #8]
+			}
+		}
 	}
 }

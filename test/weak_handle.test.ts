@@ -76,7 +76,7 @@ pub func main = () {
 	}
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const built = build(parsed.root, { arch: "aarch64", audit: true });
 		await check_output(

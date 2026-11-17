@@ -13,7 +13,7 @@ import { parse_raw } from "./parse_with_imports";
 
 function run(input: string, name: string, expected: string, audit = true) {
 	return async () => {
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", audit });
 		await check_output(name, result, expected, { arch: "aarch64", audit });

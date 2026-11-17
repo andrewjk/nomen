@@ -890,7 +890,7 @@ export default function build(
 
 	let companion: string | undefined;
 	// Generate the companion file when there's anything to put in it:
-	// either aarch64_use_c raw-block functions, or file-scope C (pool
+	// either companion-C raw-block functions, or file-scope C (pool
 	// infrastructure, race-mode helpers) that the asm references via bl.
 	if (
 		(status.c_companion_functions && status.c_companion_functions.length > 0) ||
@@ -979,7 +979,7 @@ export function build_split(
 		// no longer assume the system object carries the definition.
 		system_defines_weak_runtime: !!sys.weak_runtime_defined,
 	});
-	// Companions (aarch64_use_c raw C / pool infra) may originate on either
+	// Companions (companion-C raw C / pool infra) may originate on either
 	// side; concatenate so the linked binary sees both.
 	const companions = [sys.companion, usr.companion].filter(Boolean) as string[];
 	return {

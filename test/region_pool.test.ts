@@ -27,7 +27,7 @@ function compile(source: string, force_region = false): string {
 	const saved = region_pool_enabled();
 	if (force_region) set_region_pool_enabled(true);
 	try {
-		const parsed = parse_raw(source);
+		const parsed = parse_raw(source, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -145,7 +145,7 @@ test("kill-switch restores the pre-tranche shape", () => {
 	// per-iteration derivation the region pin eliminates.
 	set_loop_slot_promotion_enabled(false);
 	try {
-		const parsed = parse_raw(PIN_SHAPE);
+		const parsed = parse_raw(PIN_SHAPE, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
@@ -315,7 +315,7 @@ test("kill-switch keeps region vars off (slot-resident shape restored)", () => {
 	const saved = region_pool_enabled();
 	set_region_pool_enabled(false);
 	try {
-		const parsed = parse_raw(REGION_VAR_SHAPE);
+		const parsed = parse_raw(REGION_VAR_SHAPE, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

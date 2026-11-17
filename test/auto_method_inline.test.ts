@@ -50,7 +50,7 @@ function compile(source: string, on: boolean): string {
 	const saved = auto_method_inline_enabled();
 	set_auto_method_inline_enabled(on);
 	try {
-		const parsed = parse_raw(source);
+		const parsed = parse_raw(source, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

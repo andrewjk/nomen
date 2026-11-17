@@ -21,7 +21,7 @@ import { parse_raw } from "./parse_with_imports";
  */
 
 function compile(source: string): string {
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect(result.errors ?? []).toEqual([]);

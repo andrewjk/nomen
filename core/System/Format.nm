@@ -17,46 +17,48 @@ pub struct Format {
 	// only hands the directive to snprintf (twice: size, then render, so
 	// any width is safe).
 	pub func float_fixed = (float value, string spec, mv out string) {
-		```
-		#arch: c
-		int need = snprintf(NULL, 0, spec.ptr, value);
-		char* str = (char*)malloc((size_t)need + 1);
-		snprintf(str, (size_t)need + 1, spec.ptr, value);
-		str[need] = 0;
-		return (nomen_string){ str, need };
-		```
-		```
-		#arch: aarch64
-		// x0 = value (double bits — GP param), x1/x2 = the spec's (ptr, len)
-		// pair. The spec IS the directive. The variadic double rides the
-		// stack (Darwin AAPCS64 varargs); [sp] is re-armed before each call.
-		stp x19, x20, [sp, #-16]!
-		stp x21, x22, [sp, #-16]!
-		mov x19, x0                // value bits
-		mov x20, x1                // spec ptr
-		sub sp, sp, #16
-		fmov d0, x19
-		str d0, [sp]               // variadic double slot
-		mov x0, #0                 // NULL — sizing pass
-		mov x1, #0
-		mov x2, x20
-		bl _snprintf
-		mov x21, x0                // need
-		add x0, x21, #1
-		bl _malloc
-		mov x22, x0                // str
-		fmov d0, x19
-		str d0, [sp]               // re-arm the slot
-		mov x0, x22
-		add x1, x21, #1
-		mov x2, x20
-		bl _snprintf               // writes need bytes + NUL at str[need]
-		mov x0, x22
-		mov x1, x21
-		add sp, sp, #16
-		ldp x21, x22, [sp], #16
-		ldp x19, x20, [sp], #16
-		```
+		#if META.arch == "c" {
+			#raw {
+				int need = snprintf(NULL, 0, spec.ptr, value);
+				char* str = (char*)malloc((size_t)need + 1);
+				snprintf(str, (size_t)need + 1, spec.ptr, value);
+				str[need] = 0;
+				return (nomen_string){ str, need };
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = value (double bits — GP param), x1/x2 = the spec's (ptr, len)
+				// pair. The spec IS the directive. The variadic double rides the
+				// stack (Darwin AAPCS64 varargs); [sp] is re-armed before each call.
+				stp x19, x20, [sp, #-16]!
+				stp x21, x22, [sp, #-16]!
+				mov x19, x0                // value bits
+				mov x20, x1                // spec ptr
+				sub sp, sp, #16
+				fmov d0, x19
+				str d0, [sp]               // variadic double slot
+				mov x0, #0                 // NULL — sizing pass
+				mov x1, #0
+				mov x2, x20
+				bl _snprintf
+				mov x21, x0                // need
+				add x0, x21, #1
+				bl _malloc
+				mov x22, x0                // str
+				fmov d0, x19
+				str d0, [sp]               // re-arm the slot
+				mov x0, x22
+				add x1, x21, #1
+				mov x2, x20
+				bl _snprintf               // writes need bytes + NUL at str[need]
+				mov x0, x22
+				mov x1, x21
+				add sp, sp, #16
+				ldp x21, x22, [sp], #16
+				ldp x19, x20, [sp], #16
+			}
+		}
 	}
 
 	// Grouped fixed-point rendering — the `\{value:.2n}` / `\{value:n}` spec

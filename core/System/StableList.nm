@@ -94,35 +94,37 @@ pub mv struct StableList<T> {
 	// empty chunks) — push's tail store and the in-place append both rely on
 	// the slab existing before a slot address is taken from it.
 	internal func ensure_chunk = (ref self { chunks, items, stage }, int dir_index) {
-		```
-		#arch: c
-		if (((unsigned long long*)self->chunks.data)[dir_index] == 0) {
-			((unsigned long long*)self->chunks.data)[dir_index] =
-				(unsigned long long)calloc(256, T_SIZE);
+		#if META.arch == "c" {
+			#raw {
+				if (((unsigned long long*)self->chunks.data)[dir_index] == 0) {
+					((unsigned long long*)self->chunks.data)[dir_index] =
+						(unsigned long long)calloc(256, T_SIZE);
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64
-		// x0 = self, x1 = dir_index. Stack-less raw functions get no
-		// `mov x19, x0` prologue, so load self explicitly and keep it in
-		// x19 (the prologue saved the caller's) with dir_index in x20
-		// (saved here — x20 is not covered by the prologue) across the
-		// calloc call.
-		stp x19, x20, [sp, #-16]!
-		mov x19, x0
-		mov x20, x1
-		ldr x9, [x19, #48]
-		ldr x10, [x9, x20, lsl #3]
-		cmp x10, #0
-		b.ne .Lsl_ec_have
-		mov x0, #256
-		mov x1, #T_SIZE
-		bl _calloc
-		ldr x9, [x19, #48]
-		str x0, [x9, x20, lsl #3]
-		.Lsl_ec_have:
-		ldp x19, x20, [sp], #16
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = self, x1 = dir_index. Stack-less raw functions get no
+				// `mov x19, x0` prologue, so load self explicitly and keep it in
+				// x19 (the prologue saved the caller's) with dir_index in x20
+				// (saved here — x20 is not covered by the prologue) across the
+				// calloc call.
+				stp x19, x20, [sp, #-16]!
+				mov x19, x0
+				mov x20, x1
+				ldr x9, [x19, #48]
+				ldr x10, [x9, x20, lsl #3]
+				cmp x10, #0
+				b.ne .Lsl_ec_have
+				mov x0, #256
+				mov x1, #T_SIZE
+				bl _calloc
+				ldr x9, [x19, #48]
+				str x0, [x9, x20, lsl #3]
+				.Lsl_ec_have:
+				ldp x19, x20, [sp], #16
+			}
+		}
 	}
 
 	// Address of the APPEND slot (element `length`) — reserve must have run,
@@ -131,38 +133,40 @@ pub mv struct StableList<T> {
 	// into the slot — the chunk slab is calloc'd on first touch by
 	// `reserve`'s `ensure_chunk` before the slot address is taken).
 	internal func append_slot_ptr = (ref self { chunks, items, stage }, out ptr T) {
-		```
-		#arch: c
-		unsigned long long idx = (unsigned long long)self->length;
-		if (idx < 256) {
-			return (T*)(unsigned long long)self->items.data + idx;
+		#if META.arch == "c" {
+			#raw {
+				unsigned long long idx = (unsigned long long)self->length;
+				if (idx < 256) {
+					return (T*)(unsigned long long)self->items.data + idx;
+				}
+				unsigned long long chunk = ((unsigned long long*)self->chunks.data)[idx / 256 - 1];
+				return (T*)chunk + (idx % 256);
+			}
 		}
-		unsigned long long chunk = ((unsigned long long*)self->chunks.data)[idx / 256 - 1];
-		return (T*)chunk + (idx % 256);
-		```
-		```
-		#arch: aarch64
-		// x0 = self (stack-less raw: x19 is NOT loaded — read the fields
-		// from x0 and return the slot address in x0; the body calls
-		// nothing, so x9-x13 scratch is safe). Field offsets mirror
-		// push's: length @8, items.data @24, chunks.data @48 (the
-		// Buffer mono is {_vt, data, cap} = 24 bytes).
-		ldr x9, [x0, #8]
-		ldr x10, [x0, #24]
-		cmp x9, #256
-		b.lt .Lsl_as_c0
-		and x11, x9, #255
-		lsr x12, x9, #8
-		sub x12, x12, #1
-		ldr x13, [x0, #48]
-		ldr x10, [x13, x12, lsl #3]
-		b .Lsl_as_have
-		.Lsl_as_c0:
-		mov x11, x9
-		.Lsl_as_have:
-		mov x12, #T_SIZE
-		madd x0, x11, x12, x10
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = self (stack-less raw: x19 is NOT loaded — read the fields
+				// from x0 and return the slot address in x0; the body calls
+				// nothing, so x9-x13 scratch is safe). Field offsets mirror
+				// push's: length @8, items.data @24, chunks.data @48 (the
+				// Buffer mono is {_vt, data, cap} = 24 bytes).
+				ldr x9, [x0, #8]
+				ldr x10, [x0, #24]
+				cmp x9, #256
+				b.lt .Lsl_as_c0
+				and x11, x9, #255
+				lsr x12, x9, #8
+				sub x12, x12, #1
+				ldr x13, [x0, #48]
+				ldr x10, [x13, x12, lsl #3]
+				b .Lsl_as_have
+				.Lsl_as_c0:
+				mov x11, x9
+				.Lsl_as_have:
+				mov x12, #T_SIZE
+				madd x0, x11, x12, x10
+			}
+		}
 	}
 
 	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
@@ -178,37 +182,39 @@ pub mv struct StableList<T> {
 	// borrow-accessor family (string_return_analysis.ts) so a two-branch
 	// `at` classifies as a borrow on both branches.
 	internal func load_tail = (self, int i, out T) {
-		```
-		#arch: c
-		long dir_index = i / 256L - 1L;
-		long slot = i % 256L;
-		T_buffer _tmp;
-		_tmp._vt = 0;
-		_tmp.data = ((unsigned long long*)self->chunks.data)[dir_index];
-		_tmp.cap = 256;
-		return T_load_from(&_tmp, slot);
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i. The result forwards: x0 for T_SIZE <= 16, or
-		// the x8 sret slot — which is this function's OWN sret slot, passed
-		// through untouched, so the callee writes the caller's destination
-		// directly.
-		sub sp, sp, #32
-		mov x9, #256
-		sdiv x10, x1, x9
-		msub x1, x10, x9, x1
-		sub x10, x10, #1
-		ldr x11, [x19, #48]
-		ldr x12, [x11, x10, lsl #3]
-		str xzr, [sp]
-		str x12, [sp, #8]
-		mov x13, #256
-		str x13, [sp, #16]
-		mov x0, sp
-		bl T_load_from
-		add sp, sp, #32
-		```
+		#if META.arch == "c" {
+			#raw {
+				long dir_index = i / 256L - 1L;
+				long slot = i % 256L;
+				T_buffer _tmp;
+				_tmp._vt = 0;
+				_tmp.data = ((unsigned long long*)self->chunks.data)[dir_index];
+				_tmp.cap = 256;
+				return T_load_from(&_tmp, slot);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i. The result forwards: x0 for T_SIZE <= 16, or
+				// the x8 sret slot — which is this function's OWN sret slot, passed
+				// through untouched, so the callee writes the caller's destination
+				// directly.
+				sub sp, sp, #32
+				mov x9, #256
+				sdiv x10, x1, x9
+				msub x1, x10, x9, x1
+				sub x10, x10, #1
+				ldr x11, [x19, #48]
+				ldr x12, [x11, x10, lsl #3]
+				str xzr, [sp]
+				str x12, [sp, #8]
+				mov x13, #256
+				str x13, [sp, #16]
+				mov x0, sp
+				bl T_load_from
+				add sp, sp, #32
+			}
+		}
 	}
 
 	pub func at_or = (self, int i, T fallback, out T) {
@@ -246,24 +252,26 @@ pub mv struct StableList<T> {
 	// The slot address in a directory chunk (pure address arithmetic — the
 	// slab never moves, so the pointer stays valid for the list's lifetime).
 	internal func slot_ptr_tail = (self, int i, out ptr T) {
-		```
-		#arch: c
-		long dir_index = i / 256L - 1L;
-		long slot = i % 256L;
-		return (T*)(unsigned long long)((unsigned long long*)self->chunks.data)[dir_index] + slot;
-		```
-		```
-		#arch: aarch64
-		// x19 = self, x1 = i — the slot address, returned in x0.
-		mov x9, #256
-		sdiv x10, x1, x9
-		msub x1, x10, x9, x1
-		sub x10, x10, #1
-		ldr x11, [x19, #48]
-		ldr x12, [x11, x10, lsl #3]
-		mov x13, #T_SIZE
-		madd x0, x1, x13, x12
-		```
+		#if META.arch == "c" {
+			#raw {
+				long dir_index = i / 256L - 1L;
+				long slot = i % 256L;
+				return (T*)(unsigned long long)((unsigned long long*)self->chunks.data)[dir_index] + slot;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self, x1 = i — the slot address, returned in x0.
+				mov x9, #256
+				sdiv x10, x1, x9
+				msub x1, x10, x9, x1
+				sub x10, x10, #1
+				ldr x11, [x19, #48]
+				ldr x12, [x11, x10, lsl #3]
+				mov x13, #T_SIZE
+				madd x0, x1, x13, x12
+			}
+		}
 	}
 
 	// A deep copy: a fresh StableList<T> with an independent copy of every
@@ -315,68 +323,70 @@ pub mv struct StableList<T> {
 	// directory (`data == 0` — already destroyed): the destroy is
 	// idempotent end to end, so the caller-side field walk stays a no-op.
 	internal func destroy_tails = (ref self { chunks, items, stage }) {
-		```
-		#arch: c
-		if (self->chunks.data == 0) {
-			return;
-		}
-		long n_dir = (self->length - 1L) / 256L;
-		for (long c = 0; c < n_dir; c++) {
-			unsigned long long slab = ((unsigned long long*)self->chunks.data)[c];
-			if (slab == 0) {
-				continue;
+		#if META.arch == "c" {
+			#raw {
+				if (self->chunks.data == 0) {
+					return;
+				}
+				long n_dir = (self->length - 1L) / 256L;
+				for (long c = 0; c < n_dir; c++) {
+					unsigned long long slab = ((unsigned long long*)self->chunks.data)[c];
+					if (slab == 0) {
+						continue;
+					}
+					long filled = (c == n_dir - 1L) ? (self->length - n_dir * 256L) : 256L;
+					T_buffer _tmp;
+					_tmp._vt = 0;
+					_tmp.data = slab;
+					_tmp.cap = filled;
+					T_buffer_destroy(&_tmp);
+				}
 			}
-			long filled = (c == n_dir - 1L) ? (self->length - n_dir * 256L) : 256L;
-			T_buffer _tmp;
-			_tmp._vt = 0;
-			_tmp.data = slab;
-			_tmp.cap = filled;
-			T_buffer_destroy(&_tmp);
 		}
-		```
-		```
-		#arch: aarch64
-		// x19 = self. n_dir = (length - 1) / 256; per chunk, a cap=filled
-		// view on the stack and `bl T_buffer_destroy`. Refuses a drained
-		// directory (the destroy is idempotent end to end).
-		sub sp, sp, #48
-		ldr x9, [x19, #48]
-		cbz x9, .Lsl_dt_end
-		ldr x20, [x19, #8]
-		sub x20, x20, #1
-		mov x9, #256
-		sdiv x20, x20, x9
-		str xzr, [sp, #24]
-		.Lsl_dt_loop:
-		ldr x21, [sp, #24]
-		cmp x21, x20
-		b.ge .Lsl_dt_end
-		lsl x22, x21, #3
-		ldr x9, [x19, #48]
-		ldr x10, [x9, x22]
-		cmp x10, #0
-		b.eq .Lsl_dt_next
-		mov x11, #256
-		cmp x21, x20
-		b.ne .Lsl_dt_full
-		ldr x11, [x19, #8]
-		msub x11, x20, x9, x11
-		b .Lsl_dt_have
-		.Lsl_dt_full:
-		mov x11, #256
-		.Lsl_dt_have:
-		str xzr, [sp]
-		str x10, [sp, #8]
-		str x11, [sp, #16]
-		mov x0, sp
-		bl T_buffer_destroy
-		.Lsl_dt_next:
-		ldr x21, [sp, #24]
-		add x21, x21, #1
-		str x21, [sp, #24]
-		b .Lsl_dt_loop
-		.Lsl_dt_end:
-		add sp, sp, #48
-		```
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self. n_dir = (length - 1) / 256; per chunk, a cap=filled
+				// view on the stack and `bl T_buffer_destroy`. Refuses a drained
+				// directory (the destroy is idempotent end to end).
+				sub sp, sp, #48
+				ldr x9, [x19, #48]
+				cbz x9, .Lsl_dt_end
+				ldr x20, [x19, #8]
+				sub x20, x20, #1
+				mov x9, #256
+				sdiv x20, x20, x9
+				str xzr, [sp, #24]
+				.Lsl_dt_loop:
+				ldr x21, [sp, #24]
+				cmp x21, x20
+				b.ge .Lsl_dt_end
+				lsl x22, x21, #3
+				ldr x9, [x19, #48]
+				ldr x10, [x9, x22]
+				cmp x10, #0
+				b.eq .Lsl_dt_next
+				mov x11, #256
+				cmp x21, x20
+				b.ne .Lsl_dt_full
+				ldr x11, [x19, #8]
+				msub x11, x20, x9, x11
+				b .Lsl_dt_have
+				.Lsl_dt_full:
+				mov x11, #256
+				.Lsl_dt_have:
+				str xzr, [sp]
+				str x10, [sp, #8]
+				str x11, [sp, #16]
+				mov x0, sp
+				bl T_buffer_destroy
+				.Lsl_dt_next:
+				ldr x21, [sp, #24]
+				add x21, x21, #1
+				str x21, [sp, #24]
+				b .Lsl_dt_loop
+				.Lsl_dt_end:
+				add sp, sp, #48
+			}
+		}
 	}
 }

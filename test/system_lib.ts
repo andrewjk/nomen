@@ -288,9 +288,13 @@ function hash_of(...parts: string[]): string {
  * backends would also be sound — but a fresh parse per backend keeps each
  * build independent regardless of future codegen changes.
  */
-function parse_canonical(source: string): RootNode {
+function parse_canonical(source: string, arch: string): RootNode {
 	const lib = get_library(path.resolve("core"));
-	const parsed = parse(source, lib);
+	// The check folds `#if META.arch` pragmas — which, since stage 5, carry
+	// every raw block's target selection — so the parse MUST check with the
+	// same target its build will use (the stage-1 contract; the tag era
+	// selected raws at build time and never needed this).
+	const parsed = parse(source, lib, undefined, { arch });
 	if (parsed.errors.length) {
 		throw new Error(
 			`canonical System program failed to parse/check:\n${parsed.errors.map((e) => e.message).join("\n")}`,
@@ -328,7 +332,7 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 	};
 
 	// ---------- C backend ----------
-	const built_c = build(parse_canonical(source), { arch: "c", audit, emit_mode: "system" });
+	const built_c = build(parse_canonical(source, "c"), { arch: "c", audit, emit_mode: "system" });
 	const c_struct_names = new Set<string>(
 		(Array.from((built_c.headers ?? "").matchAll(/^typedef struct (\w+)/gm)) as RegExpMatchArray[])
 			.map((m) => m[1])
@@ -401,7 +405,7 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 
 	// ---------- aarch64 backend ----------
 	// Fresh AST — see parse_canonical (defensive isolation per backend).
-	const built_a64 = build(parse_canonical(source), {
+	const built_a64 = build(parse_canonical(source, "aarch64"), {
 		arch: "aarch64",
 		audit,
 		emit_mode: "system",

@@ -115,22 +115,24 @@ pub mv struct List<T>: Viewable {
 	// run, so the slot exists. Offsets mirror the mono layout: length @8,
 	// items.data @24 (the Buffer mono is {_vt, data, cap} = 24 bytes).
 	internal func append_slot_ptr = (ref self { items }, out ptr T) {
-		```
-		#arch: c
-		// Byte math + void* — the body must compile for EVERY element kind
-		// (values, strings, class/trait handles), so it never names T.
-		// T_SIZE substitutes to the element's real stride.
-		return (void *)((unsigned long long)self->items.data +
-			(unsigned long long)self->length * T_SIZE);
-		```
-		```
-		#arch: aarch64
-		// x0 = self (stack-less raw: read from x0). Returns x0 = slot address.
-		ldr x9, [x0, #8]
-		ldr x10, [x0, #24]
-		mov x11, #T_SIZE
-		madd x0, x9, x11, x10
-		```
+		#if META.arch == "c" {
+			#raw {
+				// Byte math + void* — the body must compile for EVERY element kind
+				// (values, strings, class/trait handles), so it never names T.
+				// T_SIZE substitutes to the element's real stride.
+				return (void *)((unsigned long long)self->items.data +
+					(unsigned long long)self->length * T_SIZE);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x0 = self (stack-less raw: read from x0). Returns x0 = slot address.
+				ldr x9, [x0, #8]
+				ldr x10, [x0, #24]
+				mov x11, #T_SIZE
+				madd x0, x9, x11, x10
+			}
+		}
 	}
 
 	// Address of element `i` (INTERNAL — the ELEMENT BORROW primitive):

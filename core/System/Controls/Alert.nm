@@ -21,164 +21,164 @@ pub mv struct Alert: Control {
 	#handle = () { }
 
 	pub func #init = (self) {
-		```
-		#arch: c
-		#platform: macos
-		id alert = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAlert"), sel_registerName("alloc")),
-			sel_registerName("init"));
-		self.handle = (uint64_t)alert;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id alert = ((id(*)(id, SEL))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAlert"), sel_registerName("alloc")),
-			sel_registerName("init"));
-		self->handle = (uint64_t)alert;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — UIAlertController needs a presenting view controller
-		 * (see GUI_PLAN Tier 1 #19; defer the iOS block). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS — UIAlertController needs a presenting view controller
-		 * (see GUI_PLAN Tier 1 #19; defer the iOS block). */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id alert = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAlert"), sel_registerName("alloc")),
+					sel_registerName("init"));
+				self.handle = (uint64_t)alert;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id alert = ((id(*)(id, SEL))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSAlert"), sel_registerName("alloc")),
+					sel_registerName("init"));
+				self->handle = (uint64_t)alert;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — UIAlertController needs a presenting view controller
+				 * (see GUI_PLAN Tier 1 #19; defer the iOS block). */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS — UIAlertController needs a presenting view controller
+				 * (see GUI_PLAN Tier 1 #19; defer the iOS block). */
+			}
+		}
 	}
 
 	// The alert's headline (bold first line).
 	pub func set_title = (self, string title) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setMessageText:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setMessageText:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setMessageText:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setMessageText:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func title = (self, out string) {
-		```
-		#arch: c
-		#platform: macos
-		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("messageText"));
-		if (!str) return (nomen_string){ strdup(""), 0 };
-		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-			str, sel_registerName("UTF8String"));
-		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("messageText"));
-		if (!str) return (nomen_string){ strdup(""), 0 };
-		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-			str, sel_registerName("UTF8String"));
-		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id str = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("messageText"));
+				if (!str) return (nomen_string){ strdup(""), 0 };
+				const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+					str, sel_registerName("UTF8String"));
+				return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id str = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("messageText"));
+				if (!str) return (nomen_string){ strdup(""), 0 };
+				const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+					str, sel_registerName("UTF8String"));
+				return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
 	}
 
 	// The explanatory second line.
 	pub func set_message = (self, string message) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setInformativeText:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), message.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("setInformativeText:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), message.ptr));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setInformativeText:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), message.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("setInformativeText:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), message.ptr));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func message = (self, out string) {
-		```
-		#arch: c
-		#platform: macos
-		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("informativeText"));
-		if (!str) return (nomen_string){ strdup(""), 0 };
-		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-			str, sel_registerName("UTF8String"));
-		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id str = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("informativeText"));
-		if (!str) return (nomen_string){ strdup(""), 0 };
-		const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
-			str, sel_registerName("UTF8String"));
-		return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return (nomen_string){ strdup(""), 0 };
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id str = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("informativeText"));
+				if (!str) return (nomen_string){ strdup(""), 0 };
+				const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+					str, sel_registerName("UTF8String"));
+				return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id str = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("informativeText"));
+				if (!str) return (nomen_string){ strdup(""), 0 };
+				const char *cstr = ((const char*(*)(id, SEL))objc_msgSend)(
+					str, sel_registerName("UTF8String"));
+				return (nomen_string){ strdup(cstr), (long)strlen(cstr) };
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return (nomen_string){ strdup(""), 0 };
+			}
+		}
 	}
 
 	// Append a button (left to right). The FIRST button is the default
@@ -186,62 +186,62 @@ pub mv struct Alert: Control {
 	// NSAlert carries one default button ("OK") — the first
 	// `add_button` REPLACES it, so the count stays what the app adds.
 	pub func add_button = (self, string title) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("addButtonWithTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("addButtonWithTitle:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("addButtonWithTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("addButtonWithTitle:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// How many buttons the alert carries.
 	pub func button_count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		id buttons = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("buttons"));
-		return (int)((long(*)(id, SEL))objc_msgSend)(buttons, sel_registerName("count"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id buttons = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("buttons"));
-		return (int)((long(*)(id, SEL))objc_msgSend)(buttons, sel_registerName("count"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id buttons = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("buttons"));
+				return (int)((long(*)(id, SEL))objc_msgSend)(buttons, sel_registerName("count"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id buttons = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("buttons"));
+				return (int)((long(*)(id, SEL))objc_msgSend)(buttons, sel_registerName("count"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// Show the alert modally and return the clicked button's index (0 =
@@ -249,32 +249,32 @@ pub mv struct Alert: Control {
 	// call it from the event thread when the manual loop can afford to
 	// pause (NSAlert pumps its own events, so the UI stays live).
 	pub func run = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		long code = ((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("runModal"));
-		return (int)(code - 1000); // NSModalResponseOK = 1000 + button index
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		long code = ((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("runModal"));
-		return (int)(code - 1000); // NSModalResponseOK = 1000 + button index
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				long code = ((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("runModal"));
+				return (int)(code - 1000); // NSModalResponseOK = 1000 + button index
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				long code = ((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("runModal"));
+				return (int)(code - 1000); // NSModalResponseOK = 1000 + button index
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
@@ -296,31 +296,31 @@ pub mv struct Alert: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

@@ -17,7 +17,7 @@ import { parse_raw } from "./parse_with_imports";
  */
 
 function compile(source: string): string {
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect(result.errors ?? []).toEqual([]);
@@ -75,7 +75,8 @@ test("mandelbrot kernel composes: both loops unroll", () => {
 });
 
 test("outer with a non-plannable nested body stays a loop", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func kernel = (int n, out int) {
@@ -92,7 +93,8 @@ func kernel = (int n, out int) {
 	return 1
 }
 pub func main = () {}
-`);
+`,
+	);
 	// The inner's bound is a param → it never plans → the composition gate
 	// keeps the outer a loop too (the clang shape: outer looped).
 	const fn = code.slice(code.indexOf("kernel:"), code.indexOf("main:"));
@@ -100,7 +102,8 @@ pub func main = () {}
 });
 
 test("induction-index reads unroll with constant substitution", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 pub func main = () {
@@ -113,14 +116,16 @@ pub func main = () {
 		}
 	}
 }
-`);
+`,
+	);
 	// Loop machinery gone; the copies store with constant indices.
 	const fn = code.slice(code.indexOf("pub func main"), code.length);
 	expect(fn).not.toContain(".while_");
 });
 
 test("non-literal bound keeps the loop", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = (int n) {
@@ -132,12 +137,14 @@ func f = (int n) {
 	}
 }
 pub func main = () {}
-`);
+`,
+	);
 	expect(code).toContain(".while_");
 });
 
 test("break at this loop level keeps the loop", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = () {
@@ -149,12 +156,14 @@ func f = () {
 	}
 }
 pub func main = () {}
-`);
+`,
+	);
 	expect(code).toContain(".while_");
 });
 
 test("break inside a NESTED loop keeps both loops looping", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = (out int) {
@@ -171,7 +180,8 @@ func f = (out int) {
 	return 7
 }
 pub func main = () {}
-`);
+`,
+	);
 	// Outer contains a nested loop → outer stays; the inner's own break
 	// rejects the inner's unroll → both remain loops (two end labels).
 	const fn = user_fn(code);
@@ -179,7 +189,8 @@ pub func main = () {}
 });
 
 test("non-scalar declaration keeps the loop", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = () {
@@ -189,7 +200,8 @@ func f = () {
 	}
 }
 pub func main = () {}
-`);
+`,
+	);
 	expect(code).toContain(".while_");
 });
 
@@ -242,7 +254,8 @@ pub func main = () {
 });
 
 test("comparison must be `<` — count-down shapes keep their loop", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = (out int) {
@@ -253,7 +266,8 @@ func f = (out int) {
 	return 1
 }
 pub func main = () {}
-`);
+`,
+	);
 	// The trip-count arithmetic is bound - init — a `>` bound would have
 	// miscompiled into 5 copies of a loop that never runs.
 	const fn = user_fn(code);
@@ -261,7 +275,8 @@ pub func main = () {}
 });
 
 test("non-zero literal init unrolls with per-copy constants", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = (out float) {
@@ -273,7 +288,8 @@ func f = (out float) {
 	return acc
 }
 pub func main = () {}
-`);
+`,
+	);
 	const fn = user_fn(code);
 	// Trips 2, 3, 4 — the plan's init is the literal, not just 0.
 	expect(fn).not.toContain(".while_");
@@ -304,7 +320,8 @@ pub func main = () {
 });
 
 test("composition: outer index-constant unroll constant-folds the inner init", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func kernel = (out float) {
@@ -319,7 +336,8 @@ func kernel = (out float) {
 	return acc
 }
 pub func main = () {}
-`);
+`,
+	);
 	const fn = code.slice(code.indexOf("kernel:"), code.indexOf("main:"));
 	// `j = i + 1` resolves per outer copy (k+1) → the inner plans under
 	// every copy → both loops are gone.
@@ -354,7 +372,8 @@ pub func main = () {
 });
 
 test("composition gate: non-constant inner init keeps both loops", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = (int n, out int) {
@@ -368,7 +387,8 @@ func f = (int n, out int) {
 	return 1
 }
 pub func main = () {}
-`);
+`,
+	);
 	// `j = n + 1` never resolves (n is a param) → the inner rejects under
 	// every copy → the outer rejects too. Both stay loops.
 	const fn = user_fn(code);
@@ -376,7 +396,8 @@ pub func main = () {}
 });
 
 test("composition gate: inner break at its own level keeps both loops", () => {
-	const code = compile(`
+	const code = compile(
+		`
 import System
 
 func f = (out int) {
@@ -392,7 +413,8 @@ func f = (out int) {
 	return 1
 }
 pub func main = () {}
-`);
+`,
+	);
 	// The break targets the inner loop; unrolling the inner would delete
 	// its target, and the outer inherits the rejection via the gate.
 	const fn = user_fn(code);
@@ -408,7 +430,8 @@ test("unrolled induction reads fold inside int-op operands (promoted in-place by
 	// with bit=0 in every copy (checksum 1024 instead of 255; mandelbrot's
 	// checksum was wrong the same way).
 	const { default: check_output } = await import("./check_output");
-	const parsed = parse_raw(`
+	const parsed = parse_raw(
+		`
 import System
 
 func mb = (float cr, float ci, out int) {
@@ -438,7 +461,9 @@ pub func main = (Init init) {
 	}
 	Console.write("checksum \\{checksum}\\n")
 }
-`);
+`,
+		{ arch: "aarch64" },
+	);
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", audit: true });
 	expect(result.errors ?? []).toEqual([]);

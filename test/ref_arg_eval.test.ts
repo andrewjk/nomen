@@ -12,7 +12,7 @@ const opts = { arch: "aarch64", audit: false } as const;
 
 function run(source: string, name: string, expected: string) {
 	return async () => {
-		const parsed = parse(source, system, undefined, { allow_internal: true });
+		const parsed = parse(source, system, undefined, { arch: "aarch64", allow_internal: true });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output(name, result, expected, opts);

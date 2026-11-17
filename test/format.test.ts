@@ -192,8 +192,8 @@ test("keeps a generic constructor argument whole when wrapping a call", () => {
 });
 
 test("leaves raw blocks and multiline strings untouched", () => {
-	const source = 'func f = () {\n\t```\nline  one\n  line  two\n```\n\tvar s = "a\n  b"\n}\n';
-	const expected = 'func f = () {\n\t```\nline  one\n  line  two\n```\n\tvar s = "a\n  b"\n}\n';
+	const source = 'func f = () {\n\t#raw {\nline  one\n  line  two\n}\n\tvar s = "a\n  b"\n}\n';
+	const expected = 'func f = () {\n\t#raw {\nline  one\n  line  two\n}\n\tvar s = "a\n  b"\n}\n';
 	expect(format(source)).toBe(expected);
 });
 

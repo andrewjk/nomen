@@ -24,171 +24,169 @@ pub mv struct Tabs: Control {
 	// `self` so Window-expecting constructors add their controls to the page
 	// view (registered once, like NomenResizeDelegate).
 	pub func #init = (self, Window window, int count) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		static id nomen_tab_content_view(id self, SEL cmd) {
-			(void)cmd;
-			return self;
-		}
-		static id nomen_tab_page_class(void) {
-			Class Pv = objc_getClass("NomenTabPageView");
-			if (!Pv) {
-				Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenTabPageView", 0);
-				if (Pv) {
-					class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_tab_content_view, "@@:");
-					objc_registerClassPair(Pv);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				static id nomen_tab_content_view(id self, SEL cmd) {
+					(void)cmd;
+					return self;
 				}
-			}
-			return Pv;
-		}
+				static id nomen_tab_page_class(void) {
+					Class Pv = objc_getClass("NomenTabPageView");
+					if (!Pv) {
+						Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenTabPageView", 0);
+						if (Pv) {
+							class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_tab_content_view, "@@:");
+							objc_registerClassPair(Pv);
+						}
+					}
+					return Pv;
+				}
 
-		// The shared tab-view delegate: reports every tab switch — user
-		// clicks AND programmatic selectTabViewItem — by pushing the tab
-		// view's handle into the shared selection record (the on_select
-		// feed; the ring lives in Control.nm next to the click ring).
-		static void nomen_tab_did_select(id self, SEL cmd, id tv, id item) {
-			(void)self; (void)cmd; (void)item;
-			extern void nomen_select_push(unsigned long long);
-			nomen_select_push((unsigned long long)(void *)tv);
-		}
-		static id g_tab_delegate = 0;
-		static id nomen_tab_delegate(void) {
-			Class Td = objc_getClass("NomenTabsDelegate");
-			if (!Td) {
-				Td = objc_allocateClassPair(objc_getClass("NSObject"), "NomenTabsDelegate", 0);
-				if (Td) {
-					class_addMethod(Td, sel_registerName("tabView:didSelectTabViewItem:"),
-						(IMP)nomen_tab_did_select, "v@:@@");
-					objc_registerClassPair(Td);
+				// The shared tab-view delegate: reports every tab switch — user
+				// clicks AND programmatic selectTabViewItem — by pushing the tab
+				// view's handle into the shared selection record (the on_select
+				// feed; the ring lives in Control.nm next to the click ring).
+				static void nomen_tab_did_select(id self, SEL cmd, id tv, id item) {
+					(void)self; (void)cmd; (void)item;
+					extern void nomen_select_push(unsigned long long);
+					nomen_select_push((unsigned long long)(void *)tv);
+				}
+				static id g_tab_delegate = 0;
+				static id nomen_tab_delegate(void) {
+					Class Td = objc_getClass("NomenTabsDelegate");
+					if (!Td) {
+						Td = objc_allocateClassPair(objc_getClass("NSObject"), "NomenTabsDelegate", 0);
+						if (Td) {
+							class_addMethod(Td, sel_registerName("tabView:didSelectTabViewItem:"),
+								(IMP)nomen_tab_did_select, "v@:@@");
+							objc_registerClassPair(Td);
+						}
+					}
+					if (!g_tab_delegate) {
+						g_tab_delegate = ((id(*)(id, SEL))objc_msgSend)(Td, sel_registerName("new"));
+					}
+					return g_tab_delegate;
 				}
 			}
-			if (!g_tab_delegate) {
-				g_tab_delegate = ((id(*)(id, SEL))objc_msgSend)(Td, sel_registerName("new"));
-			}
-			return g_tab_delegate;
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static id nomen_tab_content_view(id self, SEL cmd) {
-			(void)cmd;
-			return self;
-		}
-		static id nomen_tab_page_class(void) {
-			Class Pv = objc_getClass("NomenTabPageView");
-			if (!Pv) {
-				Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenTabPageView", 0);
-				if (Pv) {
-					class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_tab_content_view, "@@:");
-					objc_registerClassPair(Pv);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static id nomen_tab_content_view(id self, SEL cmd) {
+					(void)cmd;
+					return self;
 				}
-			}
-			return Pv;
-		}
+				static id nomen_tab_page_class(void) {
+					Class Pv = objc_getClass("NomenTabPageView");
+					if (!Pv) {
+						Pv = objc_allocateClassPair(objc_getClass("NSView"), "NomenTabPageView", 0);
+						if (Pv) {
+							class_addMethod(Pv, sel_registerName("contentView"), (IMP)nomen_tab_content_view, "@@:");
+							objc_registerClassPair(Pv);
+						}
+					}
+					return Pv;
+				}
 
-		// The shared tab-view delegate (see the c twin above).
-		static void nomen_tab_did_select(id self, SEL cmd, id tv, id item) {
-			(void)self; (void)cmd; (void)item;
-			extern void nomen_select_push(unsigned long long);
-			nomen_select_push((unsigned long long)(void *)tv);
-		}
-		static id g_tab_delegate = 0;
-		static id nomen_tab_delegate(void) {
-			Class Td = objc_getClass("NomenTabsDelegate");
-			if (!Td) {
-				Td = objc_allocateClassPair(objc_getClass("NSObject"), "NomenTabsDelegate", 0);
-				if (Td) {
-					class_addMethod(Td, sel_registerName("tabView:didSelectTabViewItem:"),
-						(IMP)nomen_tab_did_select, "v@:@@");
-					objc_registerClassPair(Td);
+				// The shared tab-view delegate (see the c twin above).
+				static void nomen_tab_did_select(id self, SEL cmd, id tv, id item) {
+					(void)self; (void)cmd; (void)item;
+					extern void nomen_select_push(unsigned long long);
+					nomen_select_push((unsigned long long)(void *)tv);
+				}
+				static id g_tab_delegate = 0;
+				static id nomen_tab_delegate(void) {
+					Class Td = objc_getClass("NomenTabsDelegate");
+					if (!Td) {
+						Td = objc_allocateClassPair(objc_getClass("NSObject"), "NomenTabsDelegate", 0);
+						if (Td) {
+							class_addMethod(Td, sel_registerName("tabView:didSelectTabViewItem:"),
+								(IMP)nomen_tab_did_select, "v@:@@");
+							objc_registerClassPair(Td);
+						}
+					}
+					if (!g_tab_delegate) {
+						g_tab_delegate = ((id(*)(id, SEL))objc_msgSend)(Td, sel_registerName("new"));
+					}
+					return g_tab_delegate;
 				}
 			}
-			if (!g_tab_delegate) {
-				g_tab_delegate = ((id(*)(id, SEL))objc_msgSend)(Td, sel_registerName("new"));
+		}
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 200));
+				for (long i = 0; i < (long)count; i++) {
+					id item = ((id(*)(id, SEL, id))objc_msgSend)(
+						((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabViewItem"), sel_registerName("alloc")),
+						sel_registerName("initWithIdentifier:"), (id)0);
+					id page = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+						((id(*)(id, SEL))objc_msgSend)(nomen_tab_page_class(), sel_registerName("alloc")),
+						sel_registerName("initWithFrame:"),
+						((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 0, 0));
+					((void(*)(id, SEL, id))objc_msgSend)(
+						item, sel_registerName("setLabel:"),
+						((id(*)(id, SEL, const char*))objc_msgSend)(
+							(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+					((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), page);
+					((void(*)(id, SEL))objc_msgSend)(page, sel_registerName("release"));
+					((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTabViewItem:"), item);
+					((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+				}
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), tv);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					tv, sel_registerName("setDelegate:"), nomen_tab_delegate());
+				self.handle = (uint64_t)tv;
 			}
-			return g_tab_delegate;
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 200));
-		for (long i = 0; i < (long)count; i++) {
-			id item = ((id(*)(id, SEL, id))objc_msgSend)(
-				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabViewItem"), sel_registerName("alloc")),
-				sel_registerName("initWithIdentifier:"), (id)0);
-			id page = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-				((id(*)(id, SEL))objc_msgSend)(nomen_tab_page_class(), sel_registerName("alloc")),
-				sel_registerName("initWithFrame:"),
-				((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 0, 0));
-			((void(*)(id, SEL, id))objc_msgSend)(
-				item, sel_registerName("setLabel:"),
-				((id(*)(id, SEL, const char*))objc_msgSend)(
-					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
-			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), page);
-			((void(*)(id, SEL))objc_msgSend)(page, sel_registerName("release"));
-			((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTabViewItem:"), item);
-			((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+					((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabView"), sel_registerName("alloc")),
+					sel_registerName("initWithFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 200));
+				for (long i = 0; i < (long)count; i++) {
+					id item = ((id(*)(id, SEL, id))objc_msgSend)(
+						((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabViewItem"), sel_registerName("alloc")),
+						sel_registerName("initWithIdentifier:"), (id)0);
+					id page = ((id(*)(id, SEL, CGRect))objc_msgSend)(
+						((id(*)(id, SEL))objc_msgSend)(nomen_tab_page_class(), sel_registerName("alloc")),
+						sel_registerName("initWithFrame:"),
+						((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 0, 0));
+					((void(*)(id, SEL, id))objc_msgSend)(
+						item, sel_registerName("setLabel:"),
+						((id(*)(id, SEL, const char*))objc_msgSend)(
+							(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
+					((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), page);
+					((void(*)(id, SEL))objc_msgSend)(page, sel_registerName("release"));
+					((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTabViewItem:"), item);
+					((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+				}
+				id contentView = ((id(*)(id, SEL))objc_msgSend)(
+					(id)window->handle, sel_registerName("contentView"));
+				((void(*)(id, SEL, id))objc_msgSend)(
+					contentView, sel_registerName("addSubview:"), tv);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					tv, sel_registerName("setDelegate:"), nomen_tab_delegate());
+				self->handle = (uint64_t)tv;
+			}
 		}
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), tv);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			tv, sel_registerName("setDelegate:"), nomen_tab_delegate());
-		self.handle = (uint64_t)tv;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id tv = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-			((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabView"), sel_registerName("alloc")),
-			sel_registerName("initWithFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 300, 200));
-		for (long i = 0; i < (long)count; i++) {
-			id item = ((id(*)(id, SEL, id))objc_msgSend)(
-				((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSTabViewItem"), sel_registerName("alloc")),
-				sel_registerName("initWithIdentifier:"), (id)0);
-			id page = ((id(*)(id, SEL, CGRect))objc_msgSend)(
-				((id(*)(id, SEL))objc_msgSend)(nomen_tab_page_class(), sel_registerName("alloc")),
-				sel_registerName("initWithFrame:"),
-				((CGRect(*)(double, double, double, double))CGRectMake)(0, 0, 0, 0));
-			((void(*)(id, SEL, id))objc_msgSend)(
-				item, sel_registerName("setLabel:"),
-				((id(*)(id, SEL, const char*))objc_msgSend)(
-					(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), ""));
-			((void(*)(id, SEL, id))objc_msgSend)(item, sel_registerName("setView:"), page);
-			((void(*)(id, SEL))objc_msgSend)(page, sel_registerName("release"));
-			((void(*)(id, SEL, id))objc_msgSend)(tv, sel_registerName("addTabViewItem:"), item);
-			((void(*)(id, SEL))objc_msgSend)(item, sel_registerName("release"));
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS — no NSTabView counterpart (UITabBarController is
+				 * app-level chrome, not an embeddable control; see GUI_PLAN Tier 2;
+				 * defer). */
+			}
 		}
-		id contentView = ((id(*)(id, SEL))objc_msgSend)(
-			(id)window->handle, sel_registerName("contentView"));
-		((void(*)(id, SEL, id))objc_msgSend)(
-			contentView, sel_registerName("addSubview:"), tv);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			tv, sel_registerName("setDelegate:"), nomen_tab_delegate());
-		self->handle = (uint64_t)tv;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS — no NSTabView counterpart (UITabBarController is
-		 * app-level chrome, not an embeddable control; see GUI_PLAN Tier 2;
-		 * defer). */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// A Window-shaped handle to page `index`'s view: pass it to control
@@ -197,147 +195,147 @@ pub mv struct Tabs: Control {
 	// its OWN reference and the Tabs' stays balanced — keep the Tabs alive at
 	// least as long as the returned value.
 	pub func content_window = (self, int index, out Window) {
-		```
-		#arch: c
-		#platform: macos
-		id item = ((id(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
-		id page = ((id(*)(id, SEL))objc_msgSend)(item, sel_registerName("view"));
-		extern void *_Window_traits[];
-		struct Window w;
-		w._vt = (void *)&_Window_traits;
-		w.handle = (uint64_t)page;
-		((id(*)(id, SEL))objc_msgSend)(page, sel_registerName("retain"));
-		return w;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id item = ((id(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
-		id page = ((id(*)(id, SEL))objc_msgSend)(item, sel_registerName("view"));
-		extern void *Window_traits;
-		struct Window w;
-		w._vt = (void *)&Window_traits;
-		w.handle = (uint64_t)page;
-		((id(*)(id, SEL))objc_msgSend)(page, sel_registerName("retain"));
-		return w;
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		{
-			extern void *_Window_traits[];
-			struct Window w;
-			w._vt = (void *)&_Window_traits;
-			w.handle = 0;
-			return w;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id item = ((id(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
+				id page = ((id(*)(id, SEL))objc_msgSend)(item, sel_registerName("view"));
+				extern void *_Window_traits[];
+				struct Window w;
+				w._vt = (void *)&_Window_traits;
+				w.handle = (uint64_t)page;
+				((id(*)(id, SEL))objc_msgSend)(page, sel_registerName("retain"));
+				return w;
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		{
-			extern void *Window_traits;
-			struct Window w;
-			w._vt = (void *)&Window_traits;
-			w.handle = 0;
-			return w;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id item = ((id(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
+				id page = ((id(*)(id, SEL))objc_msgSend)(item, sel_registerName("view"));
+				extern void *Window_traits;
+				struct Window w;
+				w._vt = (void *)&Window_traits;
+				w.handle = (uint64_t)page;
+				((id(*)(id, SEL))objc_msgSend)(page, sel_registerName("retain"));
+				return w;
+			}
 		}
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				{
+					extern void *_Window_traits[];
+					struct Window w;
+					w._vt = (void *)&_Window_traits;
+					w.handle = 0;
+					return w;
+				}
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				{
+					extern void *Window_traits;
+					struct Window w;
+					w._vt = (void *)&Window_traits;
+					w.handle = 0;
+					return w;
+				}
+			}
+		}
 	}
 
 	pub func set_label = (self, int index, string title) {
-		```
-		#arch: c
-		#platform: macos
-		id item = ((id(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			item, sel_registerName("setLabel:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id item = ((id(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
-		((void(*)(id, SEL, id))objc_msgSend)(
-			item, sel_registerName("setLabel:"),
-			((id(*)(id, SEL, const char*))objc_msgSend)(
-				(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id item = ((id(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					item, sel_registerName("setLabel:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id item = ((id(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("tabViewItemAtIndex:"), (long)index);
+				((void(*)(id, SEL, id))objc_msgSend)(
+					item, sel_registerName("setLabel:"),
+					((id(*)(id, SEL, const char*))objc_msgSend)(
+						(id)objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), title.ptr));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func set_selected = (self, int index) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectTabViewItemAtIndex:"), (long)index);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, long))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectTabViewItemAtIndex:"), (long)index);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectTabViewItemAtIndex:"), (long)index);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, long))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectTabViewItemAtIndex:"), (long)index);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func selected_index = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		id item = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectedTabViewItem"));
-		if (!item) return 0;
-		return (int)((long(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("indexOfTabViewItem:"), item);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		id item = ((id(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("selectedTabViewItem"));
-		if (!item) return 0;
-		return (int)((long(*)(id, SEL, id))objc_msgSend)(
-			(id)self->handle, sel_registerName("indexOfTabViewItem:"), item);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				id item = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectedTabViewItem"));
+				if (!item) return 0;
+				return (int)((long(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("indexOfTabViewItem:"), item);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				id item = ((id(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("selectedTabViewItem"));
+				if (!item) return 0;
+				return (int)((long(*)(id, SEL, id))objc_msgSend)(
+					(id)self->handle, sel_registerName("indexOfTabViewItem:"), item);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
@@ -346,100 +344,100 @@ pub mv struct Tabs: Control {
 	// pre-selection in #init therefore fires on the first frame). The
 	// handler body reads the page through selected_index().
 	pub func take_select = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->handle);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern long nomen_select_take(unsigned long long);
-		return (long)nomen_select_take((unsigned long long)self->handle);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return false;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->handle);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern long nomen_select_take(unsigned long long);
+				return (long)nomen_select_take((unsigned long long)self->handle);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return false;
+			}
+		}
 	}
 
 	pub func count = (self, out int) {
-		```
-		#arch: c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("numberOfTabViewItems"));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		return (int)((long(*)(id, SEL))objc_msgSend)(
-			(id)self->handle, sel_registerName("numberOfTabViewItems"));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("numberOfTabViewItems"));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				return (int)((long(*)(id, SEL))objc_msgSend)(
+					(id)self->handle, sel_registerName("numberOfTabViewItems"));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+				return 0;
+			}
+		}
 	}
 
 	pub func set_hidden = (self, bool hidden) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, BOOL))objc_msgSend)(
-			(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, BOOL))objc_msgSend)(
+					(id)self->handle, sel_registerName("setHidden:"), hidden ? 1 : 0);
+			}
+		}
 	}
 
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
-		```
-		#arch: c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		((void(*)(id, SEL, CGRect))objc_msgSend)(
-			(id)self->handle, sel_registerName("setFrame:"),
-			((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				((void(*)(id, SEL, CGRect))objc_msgSend)(
+					(id)self->handle, sel_registerName("setFrame:"),
+					((CGRect(*)(double, double, double, double))CGRectMake)((double)x, (double)y, (double)width, (double)height));
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	pub func intrinsic_size = (self, out Size) {
@@ -468,33 +466,33 @@ pub mv struct Tabs: Control {
 	}
 
 	func #destroy = () {
-		```
-		#arch: c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		if (self->handle) {
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
-			((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
-			self->handle = 0;
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				if (self->handle) {
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("removeFromSuperview"));
+					((void(*)(id, SEL))objc_msgSend)((id)self->handle, sel_registerName("release"));
+					self->handle = 0;
+				}
+			}
 		}
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 }

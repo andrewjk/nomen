@@ -729,14 +729,16 @@ mv struct Pair {
 pub func main = (Init init) {
 	var p1 = Pair()
 	p1.name = "x"
-	\`\`\`
-	#arch: c
-	(void)0;
-	\`\`\`
-	\`\`\`
-	#arch: aarch64
-	mov x0, x1
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			(void)0;
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			mov x0, x1
+		}
+	}
 	var p2 = p1.copy()
 	Console.write("\\{p2.name}")
 }
@@ -772,7 +774,7 @@ describe("struct move-on-last-use: lowering shape", () => {
 	});
 
 	test("aarch64 backend lowers the last-use copy as the word-copy transfer", () => {
-		const parsed = parse_program(LOOP_DONOR);
+		const parsed = parse_program(LOOP_DONOR, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);

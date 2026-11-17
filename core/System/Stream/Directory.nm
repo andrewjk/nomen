@@ -35,28 +35,30 @@ pub struct Directory {
 
 	// (static) Create a directory at `path`; returns errno (0 on success).
 	func raw_create = (string path, out int) {
-		```
-		#arch: c
-		#scope: file
-		#include <errno.h>
-		```
-		```
-		#arch: c
-		if (mkdir(path.ptr, 0777)) return errno;
-		return 0;
-		```
-		```
-		#arch: aarch64
-		mov x1, #0x1FF
-		bl _mkdir
-		cbz w0, .Ldir_create_ok
-		bl ___error
-		ldr w0, [x0]
-		b .return_Directory_raw_create
-		.Ldir_create_ok:
-		mov x0, #0
-		b .return_Directory_raw_create
-		```
+		#if META.arch == "c" {
+			#raw("file") {
+				#include <errno.h>
+			}
+		}
+		#if META.arch == "c" {
+			#raw {
+				if (mkdir(path.ptr, 0777)) return errno;
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				mov x1, #0x1FF
+				bl _mkdir
+				cbz w0, .Ldir_create_ok
+				bl ___error
+				ldr w0, [x0]
+				b .return_Directory_raw_create
+				.Ldir_create_ok:
+				mov x0, #0
+				b .return_Directory_raw_create
+			}
+		}
 		return 0
 	}
 
@@ -73,22 +75,24 @@ pub struct Directory {
 	// (static) Remove the (empty) directory at `path`; returns errno (0 on
 	// success).
 	func raw_remove = (string path, out int) {
-		```
-		#arch: c
-		if (rmdir(path.ptr)) return errno;
-		return 0;
-		```
-		```
-		#arch: aarch64
-		bl _rmdir
-		cbz w0, .Ldir_remove_ok
-		bl ___error
-		ldr w0, [x0]
-		b .return_Directory_raw_remove
-		.Ldir_remove_ok:
-		mov x0, #0
-		b .return_Directory_raw_remove
-		```
+		#if META.arch == "c" {
+			#raw {
+				if (rmdir(path.ptr)) return errno;
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				bl _rmdir
+				cbz w0, .Ldir_remove_ok
+				bl ___error
+				ldr w0, [x0]
+				b .return_Directory_raw_remove
+				.Ldir_remove_ok:
+				mov x0, #0
+				b .return_Directory_raw_remove
+			}
+		}
 		return 0
 	}
 
@@ -105,21 +109,23 @@ pub struct Directory {
 	// (static) Whether a directory exists at `path`. A missing directory is
 	// `false`, not an error.
 	pub func exists = (string path, out bool) {
-		```
-		#arch: c
-		struct stat st;
-		return stat(path.ptr, &st) == 0 ? 1 : 0;
-		```
-		```
-		#arch: aarch64
-		sub sp, sp, #160
-		mov x1, sp
-		bl _stat
-		cmp x0, #0
-		cset x0, eq
-		add sp, sp, #160
-		b .return_Directory_exists
-		```
+		#if META.arch == "c" {
+			#raw {
+				struct stat st;
+				return stat(path.ptr, &st) == 0 ? 1 : 0;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				sub sp, sp, #160
+				mov x1, sp
+				bl _stat
+				cmp x0, #0
+				cset x0, eq
+				add sp, sp, #160
+				b .return_Directory_exists
+			}
+		}
 		return false
 	}
 
@@ -137,165 +143,167 @@ pub struct Directory {
 	// On macOS/iOS the entry length is read from `dirent.d_namlen`, so the
 	// aarch64 body is currently macOS-specific (the C backend is portable).
 	pub func list = (string path, out Result<string, DirectoryError>) {
-		```
-		#arch: c
-		#scope: file
-		#include <errno.h>
-		#include <dirent.h>
-		```
-		```
-		#arch: c
-		Result_string_DirectoryError r;
-		DIR *d = opendir(path.ptr);
-		if (!d) {
-			int e = errno;
-			long de = 4;
-			if (e == ENOENT) de = 0;
-			else if (e == EACCES) de = 1;
-			r.tag = 1;
-			r._data._fail.err = (DirectoryError)de;
-			return r;
-		}
-		int cap = 4096;
-		int len = 0;
-		char *buf = (char*)malloc(cap);
-		struct dirent *ent;
-		while ((ent = readdir(d)) != NULL) {
-			if (ent->d_name[0] == '.' && ent->d_name[1] == 0) continue;
-			if (ent->d_name[0] == '.' && ent->d_name[1] == '.' && ent->d_name[2] == 0) continue;
-			int nl = (int)strlen(ent->d_name);
-			if (len + nl + 2 > cap) {
-				while (len + nl + 2 > cap) cap *= 2;
-				buf = (char*)realloc(buf, cap);
+		#if META.arch == "c" {
+			#raw("file") {
+				#include <errno.h>
+				#include <dirent.h>
 			}
-			memcpy(buf + len, ent->d_name, nl);
-			len += nl;
-			buf[len++] = '\n';
 		}
-		buf[len] = 0;
-		closedir(d);
-		r.tag = 0;
-		r._data._ok.value.ptr = buf;
-		r._data._ok.value.len = len;
-		// len bytes were appended — the count is exact, no strlen.
-		return r;
-		```
-		```
-		#arch: aarch64
-		// Fat-string ABI: path = (x0, x1). Enum-with-data returns use the
-		// sret convention: x8 holds the caller-provided destination buffer
-		// on entry (the prologue spills it; this body re-saves it across the
-		// calls below). The final blob (tag+payload, 24 bytes) is copied
-		// through x8 and the buffer address returned in x0.
-		//
-		// Frame (sp-relative): #0 DIR*, #8 blob.tag, #16 blob.ptr,
-		// #24 blob.len, #32 readdir ent, #40 namlen, #48 cap, #56 buf,
-		// #64 saved sret pointer (x8).
-		sub sp, sp, #80
-		str x8, [sp, #64]
-		bl _opendir
-		str x0, [sp, #0]
-		cbnz x0, .Ldir_list_opened
-		bl ___error
-		ldr w0, [x0]
-		// Map errno -> DirectoryError ordinal (see header comment).
-		mov x9, #4
-		cmp w0, #2
-		b.ne .Ldir_list_nf_skip
-		mov x9, #0
-		b .Ldir_list_emap
-		.Ldir_list_nf_skip:
-		cmp w0, #13
-		b.ne .Ldir_list_emap
-		mov x9, #1
-		.Ldir_list_emap:
-		mov x10, #1
-		str x10, [sp, #8]      // tag = fail
-		str x9, [sp, #16]      // payload = DirectoryError ordinal
-		b .Ldir_list_ret
-		.Ldir_list_opened:
-		mov x0, #4096
-		bl _malloc
-		str x0, [sp, #56]      // buf
-		mov x1, #0
-		str x1, [sp, #24]      // len
-		mov x1, #4096
-		str x1, [sp, #48]      // cap
-		.Ldir_list_loop:
-		ldr x0, [sp, #0]
-		bl _readdir
-		str x0, [sp, #32]
-		cbz x0, .Ldir_list_done
-		ldrb w1, [x0, #21]
-		cmp w1, #46
-		bne .Ldir_list_keep
-		ldrb w1, [x0, #22]
-		cbz w1, .Ldir_list_loop
-		cmp w1, #46
-		bne .Ldir_list_keep
-		ldrb w1, [x0, #23]
-		cbz w1, .Ldir_list_loop
-		.Ldir_list_keep:
-		ldrh w2, [x0, #18]     // d_namlen (macOS dirent)
-		str x2, [sp, #40]
-		.Ldir_list_grow:
-		ldr x1, [sp, #24]
-		ldr x2, [sp, #40]
-		add x1, x1, x2
-		add x1, x1, #2
-		ldr x2, [sp, #48]
-		cmp x1, x2
-		ble .Ldir_list_grow_ok
-		lsl x2, x2, #1
-		str x2, [sp, #48]
-		ldr x0, [sp, #56]
-		bl _realloc
-		str x0, [sp, #56]
-		b .Ldir_list_grow
-		.Ldir_list_grow_ok:
-		ldr x0, [sp, #56]
-		ldr x1, [sp, #24]
-		add x0, x0, x1         // dst = buf + len
-		ldr x1, [sp, #32]
-		add x1, x1, #21        // src = ent->d_name
-		ldr x2, [sp, #40]      // nl
-		bl _memcpy
-		ldr x1, [sp, #24]
-		ldr x2, [sp, #40]
-		add x1, x1, x2
-		str x1, [sp, #24]      // len += nl
-		ldr x0, [sp, #56]
-		ldr x1, [sp, #24]
-		mov w2, #10
-		strb w2, [x0, x1]      // buf[len++] = '\n'
-		add x1, x1, #1
-		str x1, [sp, #24]
-		b .Ldir_list_loop
-		.Ldir_list_done:
-		ldr x0, [sp, #56]
-		ldr x1, [sp, #24]
-		strb wzr, [x0, x1]
-		ldr x0, [sp, #0]
-		bl _closedir
-		// ok: tag = 0, payload = (buf, len)
-		str xzr, [sp, #8]
-		ldr x0, [sp, #56]
-		ldr x1, [sp, #24]
-		stp x0, x1, [sp, #16]
-		.Ldir_list_ret:
-		// Copy the blob into the caller's sret buffer (x8), then hand the
-		// buffer address back in x0.
-		ldr x8, [sp, #64]
-		ldr x0, [sp, #8]
-		str x0, [x8]
-		ldr x0, [sp, #16]
-		str x0, [x8, #8]
-		ldr x0, [sp, #24]
-		str x0, [x8, #16]
-		mov x0, x8
-		add sp, sp, #80
-		b .return_Directory_list
-		```
+		#if META.arch == "c" {
+			#raw {
+				Result_string_DirectoryError r;
+				DIR *d = opendir(path.ptr);
+				if (!d) {
+					int e = errno;
+					long de = 4;
+					if (e == ENOENT) de = 0;
+					else if (e == EACCES) de = 1;
+					r.tag = 1;
+					r._data._fail.err = (DirectoryError)de;
+					return r;
+				}
+				int cap = 4096;
+				int len = 0;
+				char *buf = (char*)malloc(cap);
+				struct dirent *ent;
+				while ((ent = readdir(d)) != NULL) {
+					if (ent->d_name[0] == '.' && ent->d_name[1] == 0) continue;
+					if (ent->d_name[0] == '.' && ent->d_name[1] == '.' && ent->d_name[2] == 0) continue;
+					int nl = (int)strlen(ent->d_name);
+					if (len + nl + 2 > cap) {
+						while (len + nl + 2 > cap) cap *= 2;
+						buf = (char*)realloc(buf, cap);
+					}
+					memcpy(buf + len, ent->d_name, nl);
+					len += nl;
+					buf[len++] = '\n';
+				}
+				buf[len] = 0;
+				closedir(d);
+				r.tag = 0;
+				r._data._ok.value.ptr = buf;
+				r._data._ok.value.len = len;
+				// len bytes were appended — the count is exact, no strlen.
+				return r;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Fat-string ABI: path = (x0, x1). Enum-with-data returns use the
+				// sret convention: x8 holds the caller-provided destination buffer
+				// on entry (the prologue spills it; this body re-saves it across the
+				// calls below). The final blob (tag+payload, 24 bytes) is copied
+				// through x8 and the buffer address returned in x0.
+				//
+				// Frame (sp-relative): #0 DIR*, #8 blob.tag, #16 blob.ptr,
+				// #24 blob.len, #32 readdir ent, #40 namlen, #48 cap, #56 buf,
+				// #64 saved sret pointer (x8).
+				sub sp, sp, #80
+				str x8, [sp, #64]
+				bl _opendir
+				str x0, [sp, #0]
+				cbnz x0, .Ldir_list_opened
+				bl ___error
+				ldr w0, [x0]
+				// Map errno -> DirectoryError ordinal (see header comment).
+				mov x9, #4
+				cmp w0, #2
+				b.ne .Ldir_list_nf_skip
+				mov x9, #0
+				b .Ldir_list_emap
+				.Ldir_list_nf_skip:
+				cmp w0, #13
+				b.ne .Ldir_list_emap
+				mov x9, #1
+				.Ldir_list_emap:
+				mov x10, #1
+				str x10, [sp, #8]      // tag = fail
+				str x9, [sp, #16]      // payload = DirectoryError ordinal
+				b .Ldir_list_ret
+				.Ldir_list_opened:
+				mov x0, #4096
+				bl _malloc
+				str x0, [sp, #56]      // buf
+				mov x1, #0
+				str x1, [sp, #24]      // len
+				mov x1, #4096
+				str x1, [sp, #48]      // cap
+				.Ldir_list_loop:
+				ldr x0, [sp, #0]
+				bl _readdir
+				str x0, [sp, #32]
+				cbz x0, .Ldir_list_done
+				ldrb w1, [x0, #21]
+				cmp w1, #46
+				bne .Ldir_list_keep
+				ldrb w1, [x0, #22]
+				cbz w1, .Ldir_list_loop
+				cmp w1, #46
+				bne .Ldir_list_keep
+				ldrb w1, [x0, #23]
+				cbz w1, .Ldir_list_loop
+				.Ldir_list_keep:
+				ldrh w2, [x0, #18]     // d_namlen (macOS dirent)
+				str x2, [sp, #40]
+				.Ldir_list_grow:
+				ldr x1, [sp, #24]
+				ldr x2, [sp, #40]
+				add x1, x1, x2
+				add x1, x1, #2
+				ldr x2, [sp, #48]
+				cmp x1, x2
+				ble .Ldir_list_grow_ok
+				lsl x2, x2, #1
+				str x2, [sp, #48]
+				ldr x0, [sp, #56]
+				bl _realloc
+				str x0, [sp, #56]
+				b .Ldir_list_grow
+				.Ldir_list_grow_ok:
+				ldr x0, [sp, #56]
+				ldr x1, [sp, #24]
+				add x0, x0, x1         // dst = buf + len
+				ldr x1, [sp, #32]
+				add x1, x1, #21        // src = ent->d_name
+				ldr x2, [sp, #40]      // nl
+				bl _memcpy
+				ldr x1, [sp, #24]
+				ldr x2, [sp, #40]
+				add x1, x1, x2
+				str x1, [sp, #24]      // len += nl
+				ldr x0, [sp, #56]
+				ldr x1, [sp, #24]
+				mov w2, #10
+				strb w2, [x0, x1]      // buf[len++] = '\n'
+				add x1, x1, #1
+				str x1, [sp, #24]
+				b .Ldir_list_loop
+				.Ldir_list_done:
+				ldr x0, [sp, #56]
+				ldr x1, [sp, #24]
+				strb wzr, [x0, x1]
+				ldr x0, [sp, #0]
+				bl _closedir
+				// ok: tag = 0, payload = (buf, len)
+				str xzr, [sp, #8]
+				ldr x0, [sp, #56]
+				ldr x1, [sp, #24]
+				stp x0, x1, [sp, #16]
+				.Ldir_list_ret:
+				// Copy the blob into the caller's sret buffer (x8), then hand the
+				// buffer address back in x0.
+				ldr x8, [sp, #64]
+				ldr x0, [sp, #8]
+				str x0, [x8]
+				ldr x0, [sp, #16]
+				str x0, [x8, #8]
+				ldr x0, [sp, #24]
+				str x0, [x8, #16]
+				mov x0, x8
+				add sp, sp, #80
+				b .return_Directory_list
+			}
+		}
 		return Result.fail(DirectoryError.other)
 	}
 }

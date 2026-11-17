@@ -22,7 +22,9 @@ const OUT = path.resolve("test", "out", "bench_matrix");
 
 async function build_bench(name: string, arch: "c" | "aarch64"): Promise<string> {
 	const src = fs.readFileSync(path.resolve("bench", "nomen", `${name}.nm`), "utf8");
-	const parsed = parse(src, system, undefined, { allow_internal: true });
+	// Per-target parse: the `#if META.arch` fold selects raw arms at check
+	// time (stage 5).
+	const parsed = parse(src, system, undefined, { allow_internal: true, arch });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch, optimize: true, audit: false });
 	// Pre-existing validator gap (see FOLLOWUP.md): div128's raw block uses

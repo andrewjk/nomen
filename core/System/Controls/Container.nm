@@ -97,32 +97,32 @@ func is_visible = (uint64 handle, out bool) {
 	// The handle-0 guard lives INSIDE every arch block: a Nomen statement
 	// around `aarch64_use_c` blocks is rejected (the aarch64 backend replaces
 	// the whole body with the raw blocks and would silently drop it).
-	```
-	#arch: c
-	#platform: macos
-	if (handle == 0) return true;
-	BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
-	return !hidden;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	if (handle == 0) return true;
-	BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
-	return !hidden;
-	```
-	```
-	#arch: c
-	#platform: ios
-	if (handle == 0) return true;
-	return true;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	if (handle == 0) return true;
-	return true;
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			if (handle == 0) return true;
+			BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
+			return !hidden;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			if (handle == 0) return true;
+			BOOL hidden = ((BOOL(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("isHidden"));
+			return !hidden;
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			if (handle == 0) return true;
+			return true;
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			if (handle == 0) return true;
+			return true;
+		}
+	}
 }
 
 func apply_frame = (
@@ -135,76 +135,76 @@ func apply_frame = (
 	int content_h,
 	int flex
 ) {
-	```
-	#arch: c
-	#platform: macos
-	// AppKit runs its own blocking tracking loop during a live window resize,
-	// so the manual event loop can't re-layout mid-drag. Give the control an
-	// autoresizing mask so AppKit repositions it live: pin to the nearest
-	// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
-	// respect the top-left-origin layout instead of AppKit's default
-	// bottom-left pin, and let wide controls grow with the content width
-	// (NSViewWidthSizable 2). A GROW-driven leaf is the exception: it is the
-	// layout's flexible region, so it gets the matching sizable bit (see the
-	// `flex` argument) and resizes live with the window; every other control's
-	// height comes from the layout pass, not the window. AppKit's result
-	// matches what layout() computes, so the post-drag relayout only fixes up
-	// cells AppKit can't (column reflow for sub-full-width children).
-	unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
-	if (w * 10 >= content_w * 8) mask |= 2UL;
-	// flex: 1 = width-flexible (HStack grow), 2 = height-flexible (VStack
-	// grow) — the region AppKit resizes live during a window drag.
-	if (flex == 1) mask |= 2UL;
-	if (flex == 2) mask |= 16UL;
-	((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
-	((void(*)(id, SEL, CGRect))objc_msgSend)(
-		(id)handle, sel_registerName("setFrame:"),
-		((CGRect(*)(double, double, double, double))CGRectMake)(
-			(double)x, (double)(content_h - y - h), (double)w, (double)h));
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	// AppKit runs its own blocking tracking loop during a live window resize,
-	// so the manual event loop can't re-layout mid-drag. Give the control an
-	// autoresizing mask so AppKit repositions it live: pin to the nearest
-	// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
-	// respect the top-left-origin layout instead of AppKit's default
-	// bottom-left pin, and let wide controls grow with the content width
-	// (NSViewWidthSizable 2). A GROW-driven leaf is the exception: it is the
-	// layout's flexible region, so it gets the matching sizable bit (see the
-	// `flex` argument) and resizes live with the window; every other control's
-	// height comes from the layout pass, not the window. AppKit's result
-	// matches what layout() computes, so the post-drag relayout only fixes up
-	// cells AppKit can't (column reflow for sub-full-width children).
-	unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
-	if (w * 10 >= content_w * 8) mask |= 2UL;
-	// flex: 1 = width-flexible (HStack grow), 2 = height-flexible (VStack
-	// grow) — the region AppKit resizes live during a window drag.
-	if (flex == 1) mask |= 2UL;
-	if (flex == 2) mask |= 16UL;
-	((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
-	((void(*)(id, SEL, CGRect))objc_msgSend)(
-		(id)handle, sel_registerName("setFrame:"),
-		((CGRect(*)(double, double, double, double))CGRectMake)(
-			(double)x, (double)(content_h - y - h), (double)w, (double)h));
-	```
-	```
-	#arch: c
-	#platform: ios
-	((void(*)(id, SEL, CGRect))objc_msgSend)(
-		(id)handle, sel_registerName("setFrame:"),
-		((CGRect(*)(double, double, double, double))CGRectMake)(
-			(double)x, (double)y, (double)w, (double)h));
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	((void(*)(id, SEL, CGRect))objc_msgSend)(
-		(id)handle, sel_registerName("setFrame:"),
-		((CGRect(*)(double, double, double, double))CGRectMake)(
-			(double)x, (double)y, (double)w, (double)h));
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			// AppKit runs its own blocking tracking loop during a live window resize,
+			// so the manual event loop can't re-layout mid-drag. Give the control an
+			// autoresizing mask so AppKit repositions it live: pin to the nearest
+			// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
+			// respect the top-left-origin layout instead of AppKit's default
+			// bottom-left pin, and let wide controls grow with the content width
+			// (NSViewWidthSizable 2). A GROW-driven leaf is the exception: it is the
+			// layout's flexible region, so it gets the matching sizable bit (see the
+			// `flex` argument) and resizes live with the window; every other control's
+			// height comes from the layout pass, not the window. AppKit's result
+			// matches what layout() computes, so the post-drag relayout only fixes up
+			// cells AppKit can't (column reflow for sub-full-width children).
+			unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
+			if (w * 10 >= content_w * 8) mask |= 2UL;
+			// flex: 1 = width-flexible (HStack grow), 2 = height-flexible (VStack
+			// grow) — the region AppKit resizes live during a window drag.
+			if (flex == 1) mask |= 2UL;
+			if (flex == 2) mask |= 16UL;
+			((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
+			((void(*)(id, SEL, CGRect))objc_msgSend)(
+				(id)handle, sel_registerName("setFrame:"),
+				((CGRect(*)(double, double, double, double))CGRectMake)(
+					(double)x, (double)(content_h - y - h), (double)w, (double)h));
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			// AppKit runs its own blocking tracking loop during a live window resize,
+			// so the manual event loop can't re-layout mid-drag. Give the control an
+			// autoresizing mask so AppKit repositions it live: pin to the nearest
+			// vertical edge (top=NSViewMinYMargin 8 / bottom=NSViewMaxYMargin 32) to
+			// respect the top-left-origin layout instead of AppKit's default
+			// bottom-left pin, and let wide controls grow with the content width
+			// (NSViewWidthSizable 2). A GROW-driven leaf is the exception: it is the
+			// layout's flexible region, so it gets the matching sizable bit (see the
+			// `flex` argument) and resizes live with the window; every other control's
+			// height comes from the layout pass, not the window. AppKit's result
+			// matches what layout() computes, so the post-drag relayout only fixes up
+			// cells AppKit can't (column reflow for sub-full-width children).
+			unsigned long mask = (y * 2 < content_h) ? 8UL : 32UL;
+			if (w * 10 >= content_w * 8) mask |= 2UL;
+			// flex: 1 = width-flexible (HStack grow), 2 = height-flexible (VStack
+			// grow) — the region AppKit resizes live during a window drag.
+			if (flex == 1) mask |= 2UL;
+			if (flex == 2) mask |= 16UL;
+			((void(*)(id, SEL, unsigned long))objc_msgSend)((id)handle, sel_registerName("setAutoresizingMask:"), mask);
+			((void(*)(id, SEL, CGRect))objc_msgSend)(
+				(id)handle, sel_registerName("setFrame:"),
+				((CGRect(*)(double, double, double, double))CGRectMake)(
+					(double)x, (double)(content_h - y - h), (double)w, (double)h));
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			((void(*)(id, SEL, CGRect))objc_msgSend)(
+				(id)handle, sel_registerName("setFrame:"),
+				((CGRect(*)(double, double, double, double))CGRectMake)(
+					(double)x, (double)y, (double)w, (double)h));
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			((void(*)(id, SEL, CGRect))objc_msgSend)(
+				(id)handle, sel_registerName("setFrame:"),
+				((CGRect(*)(double, double, double, double))CGRectMake)(
+					(double)x, (double)y, (double)w, (double)h));
+		}
+	}
 }
 
 // Query a native control's intrinsic content size, returning the full
@@ -221,74 +221,74 @@ pub func native_intrinsic = (uint64 handle, out [int, int]) {
 	// The handle-0 guard lives INSIDE every arch block: a Nomen statement
 	// around `aarch64_use_c` blocks is rejected (the aarch64 backend replaces
 	// the whole body with the raw blocks and would silently drop it).
-	```
-	#arch: c
-	#platform: macos
-	if (handle == 0) {
-		struct _Tuple_int_int r;
-		r._0 = 0;
-		r._1 = 0;
-		return r;
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			if (handle == 0) {
+				struct _Tuple_int_int r;
+				r._0 = 0;
+				r._1 = 0;
+				return r;
+			}
+			CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+			int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+			int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+			struct _Tuple_int_int r;
+			r._0 = w;
+			r._1 = h;
+			return r;
+		}
 	}
-	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
-	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
-	int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
-	struct _Tuple_int_int r;
-	r._0 = w;
-	r._1 = h;
-	return r;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	if (handle == 0) {
-		struct _Tuple_int_int r;
-		r._0 = 0;
-		r._1 = 0;
-		return r;
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			if (handle == 0) {
+				struct _Tuple_int_int r;
+				r._0 = 0;
+				r._1 = 0;
+				return r;
+			}
+			CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+			int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+			int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+			struct _Tuple_int_int r;
+			r._0 = w;
+			r._1 = h;
+			return r;
+		}
 	}
-	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
-	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
-	int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
-	struct _Tuple_int_int r;
-	r._0 = w;
-	r._1 = h;
-	return r;
-	```
-	```
-	#arch: c
-	#platform: ios
-	if (handle == 0) {
-		struct _Tuple_int_int r;
-		r._0 = 0;
-		r._1 = 0;
-		return r;
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			if (handle == 0) {
+				struct _Tuple_int_int r;
+				r._0 = 0;
+				r._1 = 0;
+				return r;
+			}
+			CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+			int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+			int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+			struct _Tuple_int_int r;
+			r._0 = w;
+			r._1 = h;
+			return r;
+		}
 	}
-	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
-	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
-	int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
-	struct _Tuple_int_int r;
-	r._0 = w;
-	r._1 = h;
-	return r;
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	if (handle == 0) {
-		struct _Tuple_int_int r;
-		r._0 = 0;
-		r._1 = 0;
-		return r;
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			if (handle == 0) {
+				struct _Tuple_int_int r;
+				r._0 = 0;
+				r._1 = 0;
+				return r;
+			}
+			CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
+			int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
+			int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
+			struct _Tuple_int_int r;
+			r._0 = w;
+			r._1 = h;
+			return r;
+		}
 	}
-	CGSize sz = ((CGSize(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("intrinsicContentSize"));
-	int w = (sz.width < 0 || sz.width > 100000) ? 0 : (int)sz.width;
-	int h = (sz.height < 0 || sz.height > 100000) ? 0 : (int)sz.height;
-	struct _Tuple_int_int r;
-	r._0 = w;
-	r._1 = h;
-	return r;
-	```
 }
 
 // The NATIVE frame of a control handle as "x,y,w,h" (AppKit's answer, not the
@@ -299,50 +299,50 @@ pub func native_frame = (uint64 handle, out string) {
 	// around `aarch64_use_c` blocks is rejected (the aarch64 backend replaces
 	// the whole body with the raw blocks and would silently drop it). The
 	// string RETURN builds the fat pair itself — the literal's length is 7.
-	```
-	#arch: c
-	#platform: macos
-	if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
-	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
-	char buf[96];
-	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
-		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
-	char *dup = strdup(buf);
-	return (nomen_string){ dup, (long)strlen(dup) };
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
-	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
-	char buf[96];
-	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
-		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
-	char *dup = strdup(buf);
-	return (nomen_string){ dup, (long)strlen(dup) };
-	```
-	```
-	#arch: c
-	#platform: ios
-	if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
-	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
-	char buf[96];
-	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
-		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
-	char *dup = strdup(buf);
-	return (nomen_string){ dup, (long)strlen(dup) };
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
-	CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
-	char buf[96];
-	snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
-		(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
-	char *dup = strdup(buf);
-	return (nomen_string){ dup, (long)strlen(dup) };
-	```
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
+			CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+			char buf[96];
+			snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+				(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+			char *dup = strdup(buf);
+			return (nomen_string){ dup, (long)strlen(dup) };
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
+			CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+			char buf[96];
+			snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+				(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+			char *dup = strdup(buf);
+			return (nomen_string){ dup, (long)strlen(dup) };
+		}
+	}
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
+			CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+			char buf[96];
+			snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+				(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+			char *dup = strdup(buf);
+			return (nomen_string){ dup, (long)strlen(dup) };
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			if (handle == 0) return (nomen_string){ (char*)"0,0,0,0", 7 };
+			CGRect r = ((CGRect(*)(id, SEL))objc_msgSend)((id)handle, sel_registerName("frame"));
+			char buf[96];
+			snprintf(buf, sizeof(buf), "%ld,%ld,%ld,%ld",
+				(long)r.origin.x, (long)r.origin.y, (long)r.size.width, (long)r.size.height);
+			char *dup = strdup(buf);
+			return (nomen_string){ dup, (long)strlen(dup) };
+		}
+	}
 }
 
 /**
@@ -1679,250 +1679,248 @@ pub mv struct Container: Control {
 	// layout method directly: free functions are exported for C linkage on
 	// both backends, methods are not.
 	pub func set_resize_callback = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, Window win) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		struct Container;
-		struct Window;
-		// nomen_layout_thunk is a free function (defined in Nomen below) that
-		// forwards to Container.layout — exported for C linkage on both
-		// backends, unlike the layout method itself. It takes the Container by
-		// `ref` (mutable reference): as a mv struct, `ref Container` lowers
-		// to `struct Container *` (the address of the value), so the callback
-		// passes the stored instance address directly. The address must stay
-		// valid for as long as the delegate is installed — an app-lifetime
-		// Container binding (or a Box<Container>).
-		extern void nomen_layout_thunk(struct Container*, struct Window*);
-		static void *g_resize_grid = 0;
-		static void *g_resize_win = 0;
-		void nomen_set_resize_target(void *grid, void *win) {
-			g_resize_grid = grid;
-			g_resize_win = win;
-		}
-		// Close interception (Window.run consults the app's
-		// close_requested): the delegate REFUSES the native close and sets
-		// the pending flag; the Nomen loop consumes it next frame — the app
-		// declines (flag cleared, window stays) or accepts (close() forces
-		// past this via nomen_close_forced). External linkage: Window's
-		// close() and close_pending() extern both flags.
-		int nomen_close_pending = 0;
-		int nomen_close_forced = 0;
-		// App-lifetime quit: set by Window.quit() — the keep-alive pump
-		// (Window.keep_alive) returns when it is set. On macOS the process
-		// stays alive after the last window closes (the platform
-		// convention); quitting is explicit.
-		int nomen_app_quit = 0;
-		// Set by the Dock-click reopen handler; Window.run resumes the
-		// frame loop when it is set.
-		int nomen_app_reopen = 0;
-		// The app menu's Quit item (⌘Q): sets the same flag Window.quit()
-		// sets, so main unwinds normally instead of hard-exiting.
-		void nomen_quit_clicked_imp(id self, SEL cmd, id sender) {
-			(void)self; (void)cmd; (void)sender;
-			nomen_app_quit = 1;
-		}
-		// Dock click while every window is closed: re-show the window and
-		// tell the Nomen loop to resume its frame loop.
-		BOOL nomen_app_should_reopen_imp(id self, SEL cmd, id notification, BOOL flag) {
-			(void)self; (void)cmd; (void)notification; (void)flag;
-			nomen_app_reopen = 1;
-			return NO; // handled — the Nomen loop re-shows the window
-		}
-		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
-			(void)self; (void)cmd; (void)notification;
-			if (nomen_close_forced) return YES;
-			nomen_close_pending = 1;
-			return NO;
-		}
-		// The one NSApp/window delegate class (resize, close interception,
-		// menu Quit, Dock reopen). Created lazily, registered once.
-		void nomen_window_did_resize(id self, SEL cmd, id notification);
-		Class nomen_delegate_class(void) {
-			Class Dc = objc_getClass("NomenResizeDelegate");
-			if (!Dc) {
-				Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
-				if (Dc) {
-					class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
-					// Close interception: refuse the native close, set the
-					// pending flag, let Window.run consult the app.
-					class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
-					class_addMethod(Dc, sel_registerName("quitClicked:"), (IMP)nomen_quit_clicked_imp, "v@:@");
-					class_addMethod(Dc, sel_registerName("applicationShouldHandleReopen:hasVisibleWindows:"), (IMP)nomen_app_should_reopen_imp, "c@:@c");
-					objc_registerClassPair(Dc);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				struct Container;
+				struct Window;
+				// nomen_layout_thunk is a free function (defined in Nomen below) that
+				// forwards to Container.layout — exported for C linkage on both
+				// backends, unlike the layout method itself. It takes the Container by
+				// `ref` (mutable reference): as a mv struct, `ref Container` lowers
+				// to `struct Container *` (the address of the value), so the callback
+				// passes the stored instance address directly. The address must stay
+				// valid for as long as the delegate is installed — an app-lifetime
+				// Container binding (or a Box<Container>).
+				extern void nomen_layout_thunk(struct Container*, struct Window*);
+				static void *g_resize_grid = 0;
+				static void *g_resize_win = 0;
+				void nomen_set_resize_target(void *grid, void *win) {
+					g_resize_grid = grid;
+					g_resize_win = win;
+				}
+				// Close interception (Window.run consults the app's
+				// close_requested): the delegate REFUSES the native close and sets
+				// the pending flag; the Nomen loop consumes it next frame — the app
+				// declines (flag cleared, window stays) or accepts (close() forces
+				// past this via nomen_close_forced). External linkage: Window's
+				// close() and close_pending() extern both flags.
+				int nomen_close_pending = 0;
+				int nomen_close_forced = 0;
+				// App-lifetime quit: set by Window.quit() — the keep-alive pump
+				// (Window.keep_alive) returns when it is set. On macOS the process
+				// stays alive after the last window closes (the platform
+				// convention); quitting is explicit.
+				int nomen_app_quit = 0;
+				// Set by the Dock-click reopen handler; Window.run resumes the
+				// frame loop when it is set.
+				int nomen_app_reopen = 0;
+				// The app menu's Quit item (⌘Q): sets the same flag Window.quit()
+				// sets, so main unwinds normally instead of hard-exiting.
+				void nomen_quit_clicked_imp(id self, SEL cmd, id sender) {
+					(void)self; (void)cmd; (void)sender;
+					nomen_app_quit = 1;
+				}
+				// Dock click while every window is closed: re-show the window and
+				// tell the Nomen loop to resume its frame loop.
+				BOOL nomen_app_should_reopen_imp(id self, SEL cmd, id notification, BOOL flag) {
+					(void)self; (void)cmd; (void)notification; (void)flag;
+					nomen_app_reopen = 1;
+					return NO; // handled — the Nomen loop re-shows the window
+				}
+				BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
+					(void)self; (void)cmd; (void)notification;
+					if (nomen_close_forced) return YES;
+					nomen_close_pending = 1;
+					return NO;
+				}
+				// The one NSApp/window delegate class (resize, close interception,
+				// menu Quit, Dock reopen). Created lazily, registered once.
+				void nomen_window_did_resize(id self, SEL cmd, id notification);
+				Class nomen_delegate_class(void) {
+					Class Dc = objc_getClass("NomenResizeDelegate");
+					if (!Dc) {
+						Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+						if (Dc) {
+							class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+							// Close interception: refuse the native close, set the
+							// pending flag, let Window.run consult the app.
+							class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
+							class_addMethod(Dc, sel_registerName("quitClicked:"), (IMP)nomen_quit_clicked_imp, "v@:@");
+							class_addMethod(Dc, sel_registerName("applicationShouldHandleReopen:hasVisibleWindows:"), (IMP)nomen_app_should_reopen_imp, "c@:@c");
+							objc_registerClassPair(Dc);
+						}
+					}
+					return Dc;
+				}
+				// The standard app menu: an app submenu with Quit (⌘Q). Quit sets
+				// the app-quit flag on the delegate so main unwinds normally
+				// (terminate: would hard-exit past Nomen's cleanup).
+				void nomen_install_app_menu(id delegate) {
+					static BOOL installed = 0;
+					if (installed) return;
+					installed = 1;
+					id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+					((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setDelegate:"), delegate);
+					id nsstr = (id)objc_getClass("NSString");
+					SEL utf8 = sel_registerName("stringWithUTF8String:");
+					id menubar = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+					menubar = ((id(*)(id, SEL))objc_msgSend)(menubar, sel_registerName("init"));
+					id app_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+					app_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(app_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"), (SEL)0, ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, ""));
+					id submenu = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+					submenu = ((id(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("initWithTitle:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"));
+					id quit_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+					quit_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(quit_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Quit"), sel_registerName("quitClicked:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "q"));
+					((void(*)(id, SEL, unsigned long))objc_msgSend)(quit_item, sel_registerName("setKeyEquivalentModifierMask:"), 1UL << 20);
+					((void(*)(id, SEL, id))objc_msgSend)(quit_item, sel_registerName("setTarget:"), delegate);
+					((void(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("addItem:"), quit_item);
+					((void(*)(id, SEL, id))objc_msgSend)(app_item, sel_registerName("setSubmenu:"), submenu);
+					((void(*)(id, SEL, id))objc_msgSend)(menubar, sel_registerName("addItem:"), app_item);
+					((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setMainMenu:"), menubar);
+				}
+				void nomen_window_did_resize(id self, SEL cmd, id notification) {
+					(void)self; (void)cmd; (void)notification;
+					if (g_resize_grid && g_resize_win) {
+						nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+					}
 				}
 			}
-			return Dc;
 		}
-		// The standard app menu: an app submenu with Quit (⌘Q). Quit sets
-		// the app-quit flag on the delegate so main unwinds normally
-		// (terminate: would hard-exit past Nomen's cleanup).
-		void nomen_install_app_menu(id delegate) {
-			static BOOL installed = 0;
-			if (installed) return;
-			installed = 1;
-			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setDelegate:"), delegate);
-			id nsstr = (id)objc_getClass("NSString");
-			SEL utf8 = sel_registerName("stringWithUTF8String:");
-			id menubar = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
-			menubar = ((id(*)(id, SEL))objc_msgSend)(menubar, sel_registerName("init"));
-			id app_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
-			app_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(app_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"), (SEL)0, ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, ""));
-			id submenu = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
-			submenu = ((id(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("initWithTitle:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"));
-			id quit_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
-			quit_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(quit_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Quit"), sel_registerName("quitClicked:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "q"));
-			((void(*)(id, SEL, unsigned long))objc_msgSend)(quit_item, sel_registerName("setKeyEquivalentModifierMask:"), 1UL << 20);
-			((void(*)(id, SEL, id))objc_msgSend)(quit_item, sel_registerName("setTarget:"), delegate);
-			((void(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("addItem:"), quit_item);
-			((void(*)(id, SEL, id))objc_msgSend)(app_item, sel_registerName("setSubmenu:"), submenu);
-			((void(*)(id, SEL, id))objc_msgSend)(menubar, sel_registerName("addItem:"), app_item);
-			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setMainMenu:"), menubar);
-		}
-		void nomen_window_did_resize(id self, SEL cmd, id notification) {
-			(void)self; (void)cmd; (void)notification;
-			if (g_resize_grid && g_resize_win) {
-				nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
-			}
-		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		struct Container;
-		struct Window;
-		// nomen_layout_thunk is a free function (defined in Nomen below) that
-		// forwards to Container.layout — exported for C linkage on both
-		// backends, unlike the layout method itself. It takes the Container by
-		// `ref` (mutable reference): as a mv struct, `ref Container` lowers
-		// to `struct Container *` (the address of the value), so the callback
-		// passes the stored instance address directly. The address must stay
-		// valid for as long as the delegate is installed — an app-lifetime
-		// Container binding (or a Box<Container>).
-		extern void nomen_layout_thunk(struct Container*, struct Window*);
-		static void *g_resize_grid = 0;
-		static void *g_resize_win = 0;
-		void nomen_set_resize_target(void *grid, void *win) {
-			g_resize_grid = grid;
-			g_resize_win = win;
-		}
-		// Close interception (Window.run consults the app's
-		// close_requested): the delegate REFUSES the native close and sets
-		// the pending flag; the Nomen loop consumes it next frame — the app
-		// declines (flag cleared, window stays) or accepts (close() forces
-		// past this via nomen_close_forced). External linkage: Window's
-		// close() and close_pending() extern both flags.
-		int nomen_close_pending = 0;
-		int nomen_close_forced = 0;
-		// App-lifetime quit: set by Window.quit() — the keep-alive pump
-		// (Window.keep_alive) returns when it is set. On macOS the process
-		// stays alive after the last window closes (the platform
-		// convention); quitting is explicit.
-		int nomen_app_quit = 0;
-		// Set by the Dock-click reopen handler; Window.run resumes the
-		// frame loop when it is set.
-		int nomen_app_reopen = 0;
-		// The app menu's Quit item (⌘Q): sets the same flag Window.quit()
-		// sets, so main unwinds normally instead of hard-exiting.
-		void nomen_quit_clicked_imp(id self, SEL cmd, id sender) {
-			(void)self; (void)cmd; (void)sender;
-			nomen_app_quit = 1;
-		}
-		// Dock click while every window is closed: re-show the window and
-		// tell the Nomen loop to resume its frame loop.
-		BOOL nomen_app_should_reopen_imp(id self, SEL cmd, id notification, BOOL flag) {
-			(void)self; (void)cmd; (void)notification; (void)flag;
-			nomen_app_reopen = 1;
-			return NO; // handled — the Nomen loop re-shows the window
-		}
-		BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
-			(void)self; (void)cmd; (void)notification;
-			if (nomen_close_forced) return YES;
-			nomen_close_pending = 1;
-			return NO;
-		}
-		// The one NSApp/window delegate class (resize, close interception,
-		// menu Quit, Dock reopen). Created lazily, registered once.
-		void nomen_window_did_resize(id self, SEL cmd, id notification);
-		Class nomen_delegate_class(void) {
-			Class Dc = objc_getClass("NomenResizeDelegate");
-			if (!Dc) {
-				Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
-				if (Dc) {
-					class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
-					// Close interception: refuse the native close, set the
-					// pending flag, let Window.run consult the app.
-					class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
-					class_addMethod(Dc, sel_registerName("quitClicked:"), (IMP)nomen_quit_clicked_imp, "v@:@");
-					class_addMethod(Dc, sel_registerName("applicationShouldHandleReopen:hasVisibleWindows:"), (IMP)nomen_app_should_reopen_imp, "c@:@c");
-					objc_registerClassPair(Dc);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				struct Container;
+				struct Window;
+				// nomen_layout_thunk is a free function (defined in Nomen below) that
+				// forwards to Container.layout — exported for C linkage on both
+				// backends, unlike the layout method itself. It takes the Container by
+				// `ref` (mutable reference): as a mv struct, `ref Container` lowers
+				// to `struct Container *` (the address of the value), so the callback
+				// passes the stored instance address directly. The address must stay
+				// valid for as long as the delegate is installed — an app-lifetime
+				// Container binding (or a Box<Container>).
+				extern void nomen_layout_thunk(struct Container*, struct Window*);
+				static void *g_resize_grid = 0;
+				static void *g_resize_win = 0;
+				void nomen_set_resize_target(void *grid, void *win) {
+					g_resize_grid = grid;
+					g_resize_win = win;
+				}
+				// Close interception (Window.run consults the app's
+				// close_requested): the delegate REFUSES the native close and sets
+				// the pending flag; the Nomen loop consumes it next frame — the app
+				// declines (flag cleared, window stays) or accepts (close() forces
+				// past this via nomen_close_forced). External linkage: Window's
+				// close() and close_pending() extern both flags.
+				int nomen_close_pending = 0;
+				int nomen_close_forced = 0;
+				// App-lifetime quit: set by Window.quit() — the keep-alive pump
+				// (Window.keep_alive) returns when it is set. On macOS the process
+				// stays alive after the last window closes (the platform
+				// convention); quitting is explicit.
+				int nomen_app_quit = 0;
+				// Set by the Dock-click reopen handler; Window.run resumes the
+				// frame loop when it is set.
+				int nomen_app_reopen = 0;
+				// The app menu's Quit item (⌘Q): sets the same flag Window.quit()
+				// sets, so main unwinds normally instead of hard-exiting.
+				void nomen_quit_clicked_imp(id self, SEL cmd, id sender) {
+					(void)self; (void)cmd; (void)sender;
+					nomen_app_quit = 1;
+				}
+				// Dock click while every window is closed: re-show the window and
+				// tell the Nomen loop to resume its frame loop.
+				BOOL nomen_app_should_reopen_imp(id self, SEL cmd, id notification, BOOL flag) {
+					(void)self; (void)cmd; (void)notification; (void)flag;
+					nomen_app_reopen = 1;
+					return NO; // handled — the Nomen loop re-shows the window
+				}
+				BOOL nomen_window_should_close_imp(id self, SEL cmd, id notification) {
+					(void)self; (void)cmd; (void)notification;
+					if (nomen_close_forced) return YES;
+					nomen_close_pending = 1;
+					return NO;
+				}
+				// The one NSApp/window delegate class (resize, close interception,
+				// menu Quit, Dock reopen). Created lazily, registered once.
+				void nomen_window_did_resize(id self, SEL cmd, id notification);
+				Class nomen_delegate_class(void) {
+					Class Dc = objc_getClass("NomenResizeDelegate");
+					if (!Dc) {
+						Dc = objc_allocateClassPair(objc_getClass("NSObject"), "NomenResizeDelegate", 0);
+						if (Dc) {
+							class_addMethod(Dc, sel_registerName("windowDidResize:"), (IMP)nomen_window_did_resize, "v@:@");
+							// Close interception: refuse the native close, set the
+							// pending flag, let Window.run consult the app.
+							class_addMethod(Dc, sel_registerName("windowShouldClose:"), (IMP)nomen_window_should_close_imp, "c@:@");
+							class_addMethod(Dc, sel_registerName("quitClicked:"), (IMP)nomen_quit_clicked_imp, "v@:@");
+							class_addMethod(Dc, sel_registerName("applicationShouldHandleReopen:hasVisibleWindows:"), (IMP)nomen_app_should_reopen_imp, "c@:@c");
+							objc_registerClassPair(Dc);
+						}
+					}
+					return Dc;
+				}
+				// The standard app menu: an app submenu with Quit (⌘Q). Quit sets
+				// the app-quit flag on the delegate so main unwinds normally
+				// (terminate: would hard-exit past Nomen's cleanup).
+				void nomen_install_app_menu(id delegate) {
+					static BOOL installed = 0;
+					if (installed) return;
+					installed = 1;
+					id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+					((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setDelegate:"), delegate);
+					id nsstr = (id)objc_getClass("NSString");
+					SEL utf8 = sel_registerName("stringWithUTF8String:");
+					id menubar = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+					menubar = ((id(*)(id, SEL))objc_msgSend)(menubar, sel_registerName("init"));
+					id app_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+					app_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(app_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"), (SEL)0, ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, ""));
+					id submenu = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
+					submenu = ((id(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("initWithTitle:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"));
+					id quit_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
+					quit_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(quit_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Quit"), sel_registerName("quitClicked:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "q"));
+					((void(*)(id, SEL, unsigned long))objc_msgSend)(quit_item, sel_registerName("setKeyEquivalentModifierMask:"), 1UL << 20);
+					((void(*)(id, SEL, id))objc_msgSend)(quit_item, sel_registerName("setTarget:"), delegate);
+					((void(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("addItem:"), quit_item);
+					((void(*)(id, SEL, id))objc_msgSend)(app_item, sel_registerName("setSubmenu:"), submenu);
+					((void(*)(id, SEL, id))objc_msgSend)(menubar, sel_registerName("addItem:"), app_item);
+					((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setMainMenu:"), menubar);
+				}
+				void nomen_window_did_resize(id self, SEL cmd, id notification) {
+					(void)self; (void)cmd; (void)notification;
+					if (g_resize_grid && g_resize_win) {
+						nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+					}
 				}
 			}
-			return Dc;
 		}
-		// The standard app menu: an app submenu with Quit (⌘Q). Quit sets
-		// the app-quit flag on the delegate so main unwinds normally
-		// (terminate: would hard-exit past Nomen's cleanup).
-		void nomen_install_app_menu(id delegate) {
-			static BOOL installed = 0;
-			if (installed) return;
-			installed = 1;
-			id nsapp = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
-			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setDelegate:"), delegate);
-			id nsstr = (id)objc_getClass("NSString");
-			SEL utf8 = sel_registerName("stringWithUTF8String:");
-			id menubar = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
-			menubar = ((id(*)(id, SEL))objc_msgSend)(menubar, sel_registerName("init"));
-			id app_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
-			app_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(app_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"), (SEL)0, ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, ""));
-			id submenu = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenu"), sel_registerName("alloc"));
-			submenu = ((id(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("initWithTitle:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Nomen"));
-			id quit_item = ((id(*)(id, SEL))objc_msgSend)((id)objc_getClass("NSMenuItem"), sel_registerName("alloc"));
-			quit_item = ((id(*)(id, SEL, id, SEL, id))objc_msgSend)(quit_item, sel_registerName("initWithTitle:action:keyEquivalent:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "Quit"), sel_registerName("quitClicked:"), ((id(*)(id, SEL, const char*))objc_msgSend)(nsstr, utf8, "q"));
-			((void(*)(id, SEL, unsigned long))objc_msgSend)(quit_item, sel_registerName("setKeyEquivalentModifierMask:"), 1UL << 20);
-			((void(*)(id, SEL, id))objc_msgSend)(quit_item, sel_registerName("setTarget:"), delegate);
-			((void(*)(id, SEL, id))objc_msgSend)(submenu, sel_registerName("addItem:"), quit_item);
-			((void(*)(id, SEL, id))objc_msgSend)(app_item, sel_registerName("setSubmenu:"), submenu);
-			((void(*)(id, SEL, id))objc_msgSend)(menubar, sel_registerName("addItem:"), app_item);
-			((void(*)(id, SEL, id))objc_msgSend)(nsapp, sel_registerName("setMainMenu:"), menubar);
-		}
-		void nomen_window_did_resize(id self, SEL cmd, id notification) {
-			(void)self; (void)cmd; (void)notification;
-			if (g_resize_grid && g_resize_win) {
-				nomen_layout_thunk((struct Container*)g_resize_grid, (struct Window*)g_resize_win);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_set_resize_target(self, win);
+				Class Dc = nomen_delegate_class();
+				if (Dc) {
+					id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+					delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+					((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+					// Also the NSApp delegate (Dock reopen), and the app menu with
+					// its Quit ⌘Q item — installed once per process.
+					nomen_install_app_menu(delegate);
+				}
 			}
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		nomen_set_resize_target(self, win);
-		Class Dc = nomen_delegate_class();
-		if (Dc) {
-			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
-			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
-			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
-			// Also the NSApp delegate (Dock reopen), and the app menu with
-			// its Quit ⌘Q item — installed once per process.
-			nomen_install_app_menu(delegate);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_set_resize_target(self, win);
+				Class Dc = nomen_delegate_class();
+				if (Dc) {
+					id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+					delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+					((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+					// Also the NSApp delegate (Dock reopen), and the app menu with
+					// its Quit ⌘Q item — installed once per process.
+					nomen_install_app_menu(delegate);
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_set_resize_target(self, win);
-		Class Dc = nomen_delegate_class();
-		if (Dc) {
-			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
-			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
-			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
-			// Also the NSApp delegate (Dock reopen), and the app menu with
-			// its Quit ⌘Q item — installed once per process.
-			nomen_install_app_menu(delegate);
-		}
-		```
 	}
 
 	// Install the windowDidResize: delegate WITHOUT setting the target pair
@@ -1931,32 +1929,32 @@ pub mv struct Container: Control {
 	// live during AppKit's blocking resize drag; set_resize_callback is the
 	// combined form for manual-loop apps.
 	pub func arm_resize_delegate = (Window win) {
-		```
-		#arch: c
-		#platform: macos
-		Class Dc = nomen_delegate_class();
-		if (Dc) {
-			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
-			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
-			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
-			// Also the NSApp delegate (Dock reopen), and the app menu with
-			// its Quit ⌘Q item — installed once per process.
-			nomen_install_app_menu(delegate);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				Class Dc = nomen_delegate_class();
+				if (Dc) {
+					id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+					delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+					((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+					// Also the NSApp delegate (Dock reopen), and the app menu with
+					// its Quit ⌘Q item — installed once per process.
+					nomen_install_app_menu(delegate);
+				}
+			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		Class Dc = nomen_delegate_class();
-		if (Dc) {
-			id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
-			delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
-			((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
-			// Also the NSApp delegate (Dock reopen), and the app menu with
-			// its Quit ⌘Q item — installed once per process.
-			nomen_install_app_menu(delegate);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				Class Dc = nomen_delegate_class();
+				if (Dc) {
+					id delegate = ((id(*)(id, SEL))objc_msgSend)((id)Dc, sel_registerName("alloc"));
+					delegate = ((id(*)(id, SEL))objc_msgSend)(delegate, sel_registerName("init"));
+					((void(*)(id, SEL, id))objc_msgSend)((id)win->handle, sel_registerName("setDelegate:"), delegate);
+					// Also the NSApp delegate (Dock reopen), and the app menu with
+					// its Quit ⌘Q item — installed once per process.
+					nomen_install_app_menu(delegate);
+				}
+			}
 		}
-		```
 	}
 
 	// Register this grid as the document of a Scrollable, for Window.run's
@@ -1975,88 +1973,86 @@ pub mv struct Container: Control {
 	// putting them in Scrollable.nm broke aarch64 split links (undefined
 	// symbols).
 	pub func set_document = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, uint64 sv, uint64 doc) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		// The registered (scroll view, document, content grid) triples —
-		// walked by nomen_scroll_relayout_all on every window resize. Raw
-		// addresses: the grid and the scroll live in the app struct, whose
-		// storage is stable for the whole run (the app is moved into
-		// Window.run once).
-		static unsigned long long nomen_scroll_reg_sv[8];
-		static unsigned long long nomen_scroll_reg_doc[8];
-		static void *nomen_scroll_reg_grid[8];
-		static int nomen_scroll_reg_n = 0;
-		void nomen_scroll_register(unsigned long long sv, unsigned long long doc, void *grid) {
-			if (nomen_scroll_reg_n >= 8) return;
-			nomen_scroll_reg_sv[nomen_scroll_reg_n] = sv;
-			nomen_scroll_reg_doc[nomen_scroll_reg_n] = doc;
-			nomen_scroll_reg_grid[nomen_scroll_reg_n] = grid;
-			nomen_scroll_reg_n++;
-		}
-		// The dance trampoline — a free function defined at the bottom of
-		// this file; prototyped so the walker can call it regardless of
-		// emission order (file-scope blocks hoist above function bodies).
-		extern void nomen_scroll_thunk(struct Container *, unsigned long long, unsigned long long, struct Window *, long);
-		void nomen_scroll_relayout_all(void *win, long first) {
-			for (int i = 0; i < nomen_scroll_reg_n; i++) {
-				nomen_scroll_thunk(
-					(struct Container *)nomen_scroll_reg_grid[i],
-					nomen_scroll_reg_sv[i], nomen_scroll_reg_doc[i],
-					(struct Window *)win, first);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				// The registered (scroll view, document, content grid) triples —
+				// walked by nomen_scroll_relayout_all on every window resize. Raw
+				// addresses: the grid and the scroll live in the app struct, whose
+				// storage is stable for the whole run (the app is moved into
+				// Window.run once).
+				static unsigned long long nomen_scroll_reg_sv[8];
+				static unsigned long long nomen_scroll_reg_doc[8];
+				static void *nomen_scroll_reg_grid[8];
+				static int nomen_scroll_reg_n = 0;
+				void nomen_scroll_register(unsigned long long sv, unsigned long long doc, void *grid) {
+					if (nomen_scroll_reg_n >= 8) return;
+					nomen_scroll_reg_sv[nomen_scroll_reg_n] = sv;
+					nomen_scroll_reg_doc[nomen_scroll_reg_n] = doc;
+					nomen_scroll_reg_grid[nomen_scroll_reg_n] = grid;
+					nomen_scroll_reg_n++;
+				}
+				// The dance trampoline — a free function defined at the bottom of
+				// this file; prototyped so the walker can call it regardless of
+				// emission order (file-scope blocks hoist above function bodies).
+				extern void nomen_scroll_thunk(struct Container *, unsigned long long, unsigned long long, struct Window *, long);
+				void nomen_scroll_relayout_all(void *win, long first) {
+					for (int i = 0; i < nomen_scroll_reg_n; i++) {
+						nomen_scroll_thunk(
+							(struct Container *)nomen_scroll_reg_grid[i],
+							nomen_scroll_reg_sv[i], nomen_scroll_reg_doc[i],
+							(struct Window *)win, first);
+					}
+				}
 			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static unsigned long long nomen_scroll_reg_sv[8];
-		static unsigned long long nomen_scroll_reg_doc[8];
-		static void *nomen_scroll_reg_grid[8];
-		static int nomen_scroll_reg_n = 0;
-		void nomen_scroll_register(unsigned long long sv, unsigned long long doc, void *grid) {
-			if (nomen_scroll_reg_n >= 8) return;
-			nomen_scroll_reg_sv[nomen_scroll_reg_n] = sv;
-			nomen_scroll_reg_doc[nomen_scroll_reg_n] = doc;
-			nomen_scroll_reg_grid[nomen_scroll_reg_n] = grid;
-			nomen_scroll_reg_n++;
-		}
-		// The companion-emitted thunk (a free function, defined at the
-		// bottom of this file) carries the asm label that maps its symbol
-		// for the asm side; the label goes on this FIRST declaration too —
-		// clang rejects an asm label applied after first use.
-		extern void nomen_scroll_thunk(nm_Container *, unsigned long long, unsigned long long, nm_Window *, long) __asm__("nomen_scroll_thunk");
-		void nomen_scroll_relayout_all(void *win, long first) {
-			for (int i = 0; i < nomen_scroll_reg_n; i++) {
-				nomen_scroll_thunk(
-					(nm_Container *)nomen_scroll_reg_grid[i],
-					nomen_scroll_reg_sv[i], nomen_scroll_reg_doc[i],
-					(nm_Window *)win, first);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static unsigned long long nomen_scroll_reg_sv[8];
+				static unsigned long long nomen_scroll_reg_doc[8];
+				static void *nomen_scroll_reg_grid[8];
+				static int nomen_scroll_reg_n = 0;
+				void nomen_scroll_register(unsigned long long sv, unsigned long long doc, void *grid) {
+					if (nomen_scroll_reg_n >= 8) return;
+					nomen_scroll_reg_sv[nomen_scroll_reg_n] = sv;
+					nomen_scroll_reg_doc[nomen_scroll_reg_n] = doc;
+					nomen_scroll_reg_grid[nomen_scroll_reg_n] = grid;
+					nomen_scroll_reg_n++;
+				}
+				// The companion-emitted thunk (a free function, defined at the
+				// bottom of this file) carries the asm label that maps its symbol
+				// for the asm side; the label goes on this FIRST declaration too —
+				// clang rejects an asm label applied after first use.
+				extern void nomen_scroll_thunk(nm_Container *, unsigned long long, unsigned long long, nm_Window *, long) __asm__("nomen_scroll_thunk");
+				void nomen_scroll_relayout_all(void *win, long first) {
+					for (int i = 0; i < nomen_scroll_reg_n; i++) {
+						nomen_scroll_thunk(
+							(nm_Container *)nomen_scroll_reg_grid[i],
+							nomen_scroll_reg_sv[i], nomen_scroll_reg_doc[i],
+							(nm_Window *)win, first);
+					}
+				}
 			}
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		nomen_scroll_register(sv, doc, (void *)self);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_scroll_register(sv, doc, (void *)self);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_scroll_register(sv, doc, (void *)self);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_scroll_register(sv, doc, (void *)self);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// Register this grid as a PANE root: after every framework relayout pass
@@ -2073,81 +2069,79 @@ pub mv struct Container: Control {
 	// registry lives HERE (same file as the layout thunk the walker calls),
 	// for the same split-link reason set_document records.
 	pub func set_pane = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, uint64 pane_handle) {
-		```
-		#arch: c
-		#platform: macos
-		#scope: file
-		// The registered (pane grid, pane window handle) pairs — walked by
-		// nomen_pane_relayout_all after every relayout pass. Raw grid
-		// addresses: the grid lives in the app struct, whose storage is
-		// stable for the whole run. The window is stored as its handle and
-		// re-wrapped per walk (the same stack Window the scroll thunk builds
-		// over the doc handle) — a by-value Window param would point at
-		// set_pane's own frame once the call returns.
-		static void *nomen_pane_reg_grid[8];
-		static unsigned long long nomen_pane_reg_win[8];
-		static int nomen_pane_reg_n = 0;
-		void nomen_pane_register(void *grid, unsigned long long handle) {
-			if (nomen_pane_reg_n >= 8) return;
-			nomen_pane_reg_grid[nomen_pane_reg_n] = grid;
-			nomen_pane_reg_win[nomen_pane_reg_n] = handle;
-			nomen_pane_reg_n++;
-		}
-		void nomen_pane_relayout_all(void) {
-			for (int i = 0; i < nomen_pane_reg_n; i++) {
-				extern void *_Window_traits[];
-				extern void nomen_layout_thunk(struct Container *, struct Window *);
-				struct Window pane_win;
-				pane_win._vt = (void *)&_Window_traits;
-				pane_win.handle = nomen_pane_reg_win[i];
-				nomen_layout_thunk((struct Container *)nomen_pane_reg_grid[i], &pane_win);
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw("file") {
+				// The registered (pane grid, pane window handle) pairs — walked by
+				// nomen_pane_relayout_all after every relayout pass. Raw grid
+				// addresses: the grid lives in the app struct, whose storage is
+				// stable for the whole run. The window is stored as its handle and
+				// re-wrapped per walk (the same stack Window the scroll thunk builds
+				// over the doc handle) — a by-value Window param would point at
+				// set_pane's own frame once the call returns.
+				static void *nomen_pane_reg_grid[8];
+				static unsigned long long nomen_pane_reg_win[8];
+				static int nomen_pane_reg_n = 0;
+				void nomen_pane_register(void *grid, unsigned long long handle) {
+					if (nomen_pane_reg_n >= 8) return;
+					nomen_pane_reg_grid[nomen_pane_reg_n] = grid;
+					nomen_pane_reg_win[nomen_pane_reg_n] = handle;
+					nomen_pane_reg_n++;
+				}
+				void nomen_pane_relayout_all(void) {
+					for (int i = 0; i < nomen_pane_reg_n; i++) {
+						extern void *_Window_traits[];
+						extern void nomen_layout_thunk(struct Container *, struct Window *);
+						struct Window pane_win;
+						pane_win._vt = (void *)&_Window_traits;
+						pane_win.handle = nomen_pane_reg_win[i];
+						nomen_layout_thunk((struct Container *)nomen_pane_reg_grid[i], &pane_win);
+					}
+				}
 			}
 		}
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		#scope: file
-		static void *nomen_pane_reg_grid[8];
-		static unsigned long long nomen_pane_reg_win[8];
-		static int nomen_pane_reg_n = 0;
-		void nomen_pane_register(void *grid, unsigned long long handle) {
-			if (nomen_pane_reg_n >= 8) return;
-			nomen_pane_reg_grid[nomen_pane_reg_n] = grid;
-			nomen_pane_reg_win[nomen_pane_reg_n] = handle;
-			nomen_pane_reg_n++;
-		}
-		void nomen_pane_relayout_all(void) {
-			for (int i = 0; i < nomen_pane_reg_n; i++) {
-				extern void *Window_traits;
-				extern void nomen_layout_thunk(struct Container *, struct Window *);
-				nm_Window pane_win;
-				pane_win._vt = (void *)&Window_traits;
-				pane_win.handle = nomen_pane_reg_win[i];
-				nomen_layout_thunk((struct Container *)nomen_pane_reg_grid[i], (struct Window *)&pane_win);
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c", "file") {
+				static void *nomen_pane_reg_grid[8];
+				static unsigned long long nomen_pane_reg_win[8];
+				static int nomen_pane_reg_n = 0;
+				void nomen_pane_register(void *grid, unsigned long long handle) {
+					if (nomen_pane_reg_n >= 8) return;
+					nomen_pane_reg_grid[nomen_pane_reg_n] = grid;
+					nomen_pane_reg_win[nomen_pane_reg_n] = handle;
+					nomen_pane_reg_n++;
+				}
+				void nomen_pane_relayout_all(void) {
+					for (int i = 0; i < nomen_pane_reg_n; i++) {
+						extern void *Window_traits;
+						extern void nomen_layout_thunk(struct Container *, struct Window *);
+						nm_Window pane_win;
+						pane_win._vt = (void *)&Window_traits;
+						pane_win.handle = nomen_pane_reg_win[i];
+						nomen_layout_thunk((struct Container *)nomen_pane_reg_grid[i], (struct Window *)&pane_win);
+					}
+				}
 			}
 		}
-		```
-		```
-		#arch: c
-		#platform: macos
-		nomen_pane_register((void *)self, pane_handle);
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		nomen_pane_register((void *)self, pane_handle);
-		```
-		```
-		#arch: c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		/* TODO: iOS (see #init) */
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				nomen_pane_register((void *)self, pane_handle);
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				nomen_pane_register((void *)self, pane_handle);
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				/* TODO: iOS (see #init) */
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				/* TODO: iOS (see #init) */
+			}
+		}
 	}
 
 	// The on_right_click desugar's drain (docs/HANDLERS.md): the synthesized
@@ -2161,28 +2155,28 @@ pub mv struct Container: Control {
 	// (content_click), hit-test children (contains). `self` is the routing
 	// receiver only — the event is not container-scoped.
 	pub func take_right_click = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern unsigned char nomen_window_had_right_click(void);
-		return nomen_window_had_right_click();
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern unsigned char nomen_window_had_right_click(void) __asm__("nomen_window_had_right_click");
-		return nomen_window_had_right_click();
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern unsigned char nomen_window_had_right_click(void);
+				return nomen_window_had_right_click();
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern unsigned char nomen_window_had_right_click(void) __asm__("nomen_window_had_right_click");
+				return nomen_window_had_right_click();
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The on_mouse_down desugar's drain (docs/HANDLERS.md): the synthesized
@@ -2196,28 +2190,28 @@ pub mv struct Container: Control {
 	// `click_x()`/`click_y()` for the position. `on_right_click` is the
 	// sugar for button 2.
 	pub func take_mouse_down = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_click_button;
-		return nomen_last_click_button != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_click_button;
-		return nomen_last_click_button != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_click_button;
+				return nomen_last_click_button != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_click_button;
+				return nomen_last_click_button != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The on_double_click desugar's drain (docs/HANDLERS.md tier 2): the
@@ -2229,30 +2223,30 @@ pub mv struct Container: Control {
 	// table family's native doubleAction). `on_mouse_down` remains the raw
 	// tier (it sees the same double-click with the full record).
 	pub func take_double_click = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_click_button;
-		extern int nomen_last_click_count;
-		return nomen_last_click_button == 1 && nomen_last_click_count == 2;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_click_button;
-		extern int nomen_last_click_count;
-		return nomen_last_click_button == 1 && nomen_last_click_count == 2;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_click_button;
+				extern int nomen_last_click_count;
+				return nomen_last_click_button == 1 && nomen_last_click_count == 2;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_click_button;
+				extern int nomen_last_click_count;
+				return nomen_last_click_button == 1 && nomen_last_click_count == 2;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The on_key_down / on_key_up desugars' drains (docs/HANDLERS.md): the
@@ -2267,53 +2261,53 @@ pub mv struct Container: Control {
 	// entry does not flow here — a TextBox's typing arrives through
 	// `on_input` (the field editor), which is the right event for editors.
 	pub func take_key_down = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_key_code;
-		return nomen_last_key_code != -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_key_code;
-		return nomen_last_key_code != -1;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_key_code;
+				return nomen_last_key_code != -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_key_code;
+				return nomen_last_key_code != -1;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	pub func take_key_up = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_key_up_code;
-		return nomen_last_key_up_code != -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_key_up_code;
-		return nomen_last_key_up_code != -1;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_key_up_code;
+				return nomen_last_key_up_code != -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_key_up_code;
+				return nomen_last_key_up_code != -1;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The on_mouse_move desugar's drain (docs/HANDLERS.md): the synthesized
@@ -2324,28 +2318,28 @@ pub mv struct Container: Control {
 	// cursors, and tooltips hit-test this against contains(); per-control
 	// entered/exited is sugar over the same record.
 	pub func take_mouse_move = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_mouse_move_x;
-		return nomen_last_mouse_move_x != -1;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_mouse_move_x;
-		return nomen_last_mouse_move_x != -1;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_mouse_move_x;
+				return nomen_last_mouse_move_x != -1;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_mouse_move_x;
+				return nomen_last_mouse_move_x != -1;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// The on_resize desugar's drain (docs/HANDLERS.md): fires on the frame
@@ -2357,28 +2351,28 @@ pub mv struct Container: Control {
 	// stamped by Window.run's resize detection (same edge the frame form
 	// reports) — window-level, broadcast like the rest of the family.
 	pub func take_resize = (self, out bool) {
-		```
-		#arch: c
-		#platform: macos
-		extern int nomen_last_resized;
-		return nomen_last_resized != 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: macos
-		extern int nomen_last_resized;
-		return nomen_last_resized != 0;
-		```
-		```
-		#arch: c
-		#platform: ios
-		return 0;
-		```
-		```
-		#arch: aarch64_use_c
-		#platform: ios
-		return 0;
-		```
+		#if META.arch == "c" && META.platform == "macos" {
+			#raw {
+				extern int nomen_last_resized;
+				return nomen_last_resized != 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "macos" {
+			#raw("c") {
+				extern int nomen_last_resized;
+				return nomen_last_resized != 0;
+			}
+		}
+		#if META.arch == "c" && META.platform == "ios" {
+			#raw {
+				return 0;
+			}
+		}
+		#if META.arch == "aarch64" && META.platform == "ios" {
+			#raw("c") {
+				return 0;
+			}
+		}
 	}
 
 	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/
@@ -2505,75 +2499,75 @@ pub func nomen_scroll_thunk = (
 	ref Window win {},
 	int first
 ) {
-	```
-	#arch: c
-	#platform: macos
-	extern struct _Tuple_int_int nomen_scroll_measure(struct Container *, long);
-	id ssv = (id)sv;
-	id sdoc = (id)doc;
-	id win_cv = ((id(*)(id, SEL))objc_msgSend)((id)win->handle, sel_registerName("contentView"));
-	CGRect win_frame = ((CGRect(*)(id, SEL))objc_msgSend)(win_cv, sel_registerName("frame"));
-	struct _Tuple_int_int cs = nomen_scroll_measure(grid, (long)win_frame.size.width - grid->padding * 2);
-	id clip = ((id(*)(id, SEL))objc_msgSend)(ssv, sel_registerName("contentView"));
-	CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
-	double frame_h = (double)cs._1;
-	if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
-	((void(*)(id, SEL, CGSize))objc_msgSend)(sdoc, sel_registerName("setFrameSize:"),
-		((CGSize(*)(double, double))CGSizeMake)((double)cs._0, frame_h));
-	if (first == 1) {
-		// The document view is unflipped and starts showing its bottom-left
-		// corner — the one-time scroll_to_top (the clip's bounds origin sits
-		// `doc_h - clip_h` up from the bottom).
-		CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(0, frame_h - clip_bounds.size.height);
-		((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
-		((void(*)(id, SEL, id))objc_msgSend)(ssv, sel_registerName("reflectScrolledClipView:"), clip);
+	#if META.arch == "c" && META.platform == "macos" {
+		#raw {
+			extern struct _Tuple_int_int nomen_scroll_measure(struct Container *, long);
+			id ssv = (id)sv;
+			id sdoc = (id)doc;
+			id win_cv = ((id(*)(id, SEL))objc_msgSend)((id)win->handle, sel_registerName("contentView"));
+			CGRect win_frame = ((CGRect(*)(id, SEL))objc_msgSend)(win_cv, sel_registerName("frame"));
+			struct _Tuple_int_int cs = nomen_scroll_measure(grid, (long)win_frame.size.width - grid->padding * 2);
+			id clip = ((id(*)(id, SEL))objc_msgSend)(ssv, sel_registerName("contentView"));
+			CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+			double frame_h = (double)cs._1;
+			if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
+			((void(*)(id, SEL, CGSize))objc_msgSend)(sdoc, sel_registerName("setFrameSize:"),
+				((CGSize(*)(double, double))CGSizeMake)((double)cs._0, frame_h));
+			if (first == 1) {
+				// The document view is unflipped and starts showing its bottom-left
+				// corner — the one-time scroll_to_top (the clip's bounds origin sits
+				// `doc_h - clip_h` up from the bottom).
+				CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(0, frame_h - clip_bounds.size.height);
+				((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
+				((void(*)(id, SEL, id))objc_msgSend)(ssv, sel_registerName("reflectScrolledClipView:"), clip);
+			}
+			// Lay the grid out into the document view: a stack Window value over the
+			// doc handle (layout only reads it — no retain needed).
+			extern void *_Window_traits[];
+			extern void nomen_layout_thunk(struct Container *, struct Window *);
+			struct Window doc_win;
+			doc_win._vt = (void *)&_Window_traits;
+			doc_win.handle = doc;
+			nomen_layout_thunk((struct Container *)grid, &doc_win);
+		}
 	}
-	// Lay the grid out into the document view: a stack Window value over the
-	// doc handle (layout only reads it — no retain needed).
-	extern void *_Window_traits[];
-	extern void nomen_layout_thunk(struct Container *, struct Window *);
-	struct Window doc_win;
-	doc_win._vt = (void *)&_Window_traits;
-	doc_win.handle = doc;
-	nomen_layout_thunk((struct Container *)grid, &doc_win);
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: macos
-	extern nm__Tuple_int_int nomen_scroll_measure(struct Container *, long);
-	id ssv = (id)sv;
-	id sdoc = (id)doc;
-	id win_cv = ((id(*)(id, SEL))objc_msgSend)((id)win->handle, sel_registerName("contentView"));
-	CGRect win_frame = ((CGRect(*)(id, SEL))objc_msgSend)(win_cv, sel_registerName("frame"));
-	nm__Tuple_int_int cs = nomen_scroll_measure(grid, (long)win_frame.size.width - grid->padding * 2);
-	id clip = ((id(*)(id, SEL))objc_msgSend)(ssv, sel_registerName("contentView"));
-	CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
-	double frame_h = (double)cs._1;
-	if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
-	((void(*)(id, SEL, CGSize))objc_msgSend)(sdoc, sel_registerName("setFrameSize:"),
-		((CGSize(*)(double, double))CGSizeMake)((double)cs._0, frame_h));
-	if (first == 1) {
-		CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(0, frame_h - clip_bounds.size.height);
-		((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
-		((void(*)(id, SEL, id))objc_msgSend)(ssv, sel_registerName("reflectScrolledClipView:"), clip);
+	#if META.arch == "aarch64" && META.platform == "macos" {
+		#raw("c") {
+			extern nm__Tuple_int_int nomen_scroll_measure(struct Container *, long);
+			id ssv = (id)sv;
+			id sdoc = (id)doc;
+			id win_cv = ((id(*)(id, SEL))objc_msgSend)((id)win->handle, sel_registerName("contentView"));
+			CGRect win_frame = ((CGRect(*)(id, SEL))objc_msgSend)(win_cv, sel_registerName("frame"));
+			nm__Tuple_int_int cs = nomen_scroll_measure(grid, (long)win_frame.size.width - grid->padding * 2);
+			id clip = ((id(*)(id, SEL))objc_msgSend)(ssv, sel_registerName("contentView"));
+			CGRect clip_bounds = ((CGRect(*)(id, SEL))objc_msgSend)(clip, sel_registerName("bounds"));
+			double frame_h = (double)cs._1;
+			if (frame_h < clip_bounds.size.height) frame_h = clip_bounds.size.height;
+			((void(*)(id, SEL, CGSize))objc_msgSend)(sdoc, sel_registerName("setFrameSize:"),
+				((CGSize(*)(double, double))CGSizeMake)((double)cs._0, frame_h));
+			if (first == 1) {
+				CGPoint origin = ((CGPoint(*)(double, double))CGPointMake)(0, frame_h - clip_bounds.size.height);
+				((void(*)(id, SEL, CGPoint))objc_msgSend)(clip, sel_registerName("setBoundsOrigin:"), origin);
+				((void(*)(id, SEL, id))objc_msgSend)(ssv, sel_registerName("reflectScrolledClipView:"), clip);
+			}
+			extern void *Window_traits;
+			extern void nomen_layout_thunk(struct Container *, struct Window *);
+			nm_Window doc_win;
+			doc_win._vt = (void *)&Window_traits;
+			doc_win.handle = doc;
+			nomen_layout_thunk((struct Container *)grid, (struct Window *)&doc_win);
+		}
 	}
-	extern void *Window_traits;
-	extern void nomen_layout_thunk(struct Container *, struct Window *);
-	nm_Window doc_win;
-	doc_win._vt = (void *)&Window_traits;
-	doc_win.handle = doc;
-	nomen_layout_thunk((struct Container *)grid, (struct Window *)&doc_win);
-	```
-	```
-	#arch: c
-	#platform: ios
-	/* TODO: iOS (see #init) */
-	```
-	```
-	#arch: aarch64_use_c
-	#platform: ios
-	/* TODO: iOS (see #init) */
-	```
+	#if META.arch == "c" && META.platform == "ios" {
+		#raw {
+			/* TODO: iOS (see #init) */
+		}
+	}
+	#if META.arch == "aarch64" && META.platform == "ios" {
+		#raw("c") {
+			/* TODO: iOS (see #init) */
+		}
+	}
 }
 
 /**

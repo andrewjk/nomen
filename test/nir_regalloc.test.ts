@@ -439,7 +439,7 @@ pub func main = () {
 }
 `;
 	set_nir_regalloc_enabled(false);
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const first = build(parsed.root, { arch: "aarch64" });
 	const second = build(parsed.root, { arch: "aarch64" });

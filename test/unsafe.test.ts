@@ -101,10 +101,11 @@ inline unsafe func sneaky = () {
 			`
 import System
 pub func main = () {
-	\`\`\`
-	#arch: c
-	{ long* p = (long*)0x41414141; *p = 42; }
-	\`\`\`
+	#if META.arch == "c" {
+		#raw {
+			{ long* p = (long*)0x41414141; *p = 42; }
+		}
+	}
 }
 `,
 			core,
@@ -117,10 +118,11 @@ pub func main = () {
 			`
 import System
 pub func main = () {
-	\`\`\`
-	#arch: aarch64
-	mov x0, #42
-	\`\`\`
+	#if META.arch == "aarch64" {
+		#raw {
+			mov x0, #42
+		}
+	}
 }
 `,
 			core,

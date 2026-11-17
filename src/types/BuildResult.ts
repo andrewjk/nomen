@@ -15,7 +15,7 @@ export default interface BuildResult {
 	 */
 	system_headers?: string;
 	/**
-	 * C companion code for `aarch64_use_c` functions. When non-empty, the CLI
+	 * C companion code for companion-C (`#c`) functions. When non-empty, the CLI
 	 * writes it to a separate `.m`/`.c` file and compiles + links it alongside
 	 * the main assembly output.
 	 */

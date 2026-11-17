@@ -35,7 +35,7 @@ if true {
 }
 a.push(3)
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch: "aarch64" });
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch: "aarch64", audit: true });
 			const main_asm = extract_main(result.code);
@@ -96,7 +96,7 @@ var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(42))))
 ref Box<Holder> h2 = h1
 Console.write("\\{h1.content.value}")
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch: "aarch64" });
 			expect(parsed.errors).toEqual([]);
 		});
 
@@ -112,7 +112,7 @@ var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(42))))
 var Box<Holder> h2 = h1
 Console.write("\\{h1.content.value}")
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch: "aarch64" });
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(
 				expect.stringContaining("'h1' is aliased"),
 			);
@@ -130,7 +130,7 @@ var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))
 h1.content = h2.content
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch: "aarch64" });
 			expect(parsed.errors.length).toBeGreaterThan(0);
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("cannot"));
 		});
@@ -146,7 +146,7 @@ mv struct Holder {
 var Holder h1 = Holder(mv Box(42))
 var Holder h2 = Holder(mv h1.content)
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch: "aarch64" });
 			expect(parsed.errors.length).toBeGreaterThan(0);
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(expect.stringContaining("cannot"));
 		});
@@ -176,7 +176,7 @@ mv struct Holder {
 var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(1))))
 var Box<Holder> h2 = h1
 `;
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch: "aarch64" });
 			expect(parsed.errors.length).toBeGreaterThan(0);
 			expect(parsed.errors.map((e) => e.message)).toContainEqual(
 				expect.stringContaining("'h1' is aliased"),
@@ -211,7 +211,7 @@ describe("mv vs copyable #destroy", () => {
 var Buffer<int> a = Buffer<int>()
 var Buffer<int> b = a
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy 'Buffer'"),
 		);
@@ -224,7 +224,7 @@ var Buffer<int> b = a
 var List<int> a = List<int>()
 var List<int> b = a
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy 'List'"),
 		);
@@ -244,7 +244,7 @@ struct Token {
 var Token a = Token(1)
 var Token b = a
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 	});
 
@@ -259,10 +259,11 @@ struct Filey {
 	func #destroy = (ref self) {
 		switch {
 			case self.handle != 0 {
-				\`\`\`
-				#arch: c
-				free((void*)self.handle);
-				\`\`\`
+				#if META.arch == "c" {
+					#raw {
+						free((void*)self.handle);
+					}
+				}
 			}
 		}
 	}
@@ -270,7 +271,11 @@ struct Filey {
 var Filey a = Filey(1)
 var Filey b = a
 `;
-		const parsed = parse_with_imports(input, { allow_user_raw: true });
+		// The free lives in a C raw block — it exists (and the destroy is a
+		// real release) only on the C target, so this asserts the c-arch
+		// program: the ownership detector's AST walk must see through the
+		// case list to find it, or a byte-copy of Filey would double-free.
+		const parsed = parse_with_imports(input, { allow_user_raw: true, arch: "c" });
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy 'Filey'"),
 		);
@@ -330,7 +335,7 @@ var List<int> a = List<int>()
 var List<int> b = List<int>()
 b = a
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy 'List'"),
 		);

@@ -15,16 +15,18 @@ pub struct Math {
 	// the single-fsqrt splice keeps `advance`'s inner loop call-free so it
 	// holds the SLP vector shapes; a real call scalarizes the loop.
 	inline func sqrt = (float x, out float) {
-		```
-		#arch: c
-		return sqrt(x);
-		```
-		```
-		#arch: aarch64
-		fmov d0, x0
-		fsqrt d0, d0
-		fmov x0, d0
-		```
+		#if META.arch == "c" {
+			#raw {
+				return sqrt(x);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				fmov d0, x0
+				fsqrt d0, d0
+				fmov x0, d0
+			}
+		}
 	}
 
 	// libm natural logarithm — extern.

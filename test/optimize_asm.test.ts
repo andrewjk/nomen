@@ -174,7 +174,7 @@ while i < 10 {
 }
 Console.write(total.to_string())
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", optimize: true });
 		expect(result.errors ?? []).toEqual([]);

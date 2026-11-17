@@ -16,7 +16,7 @@ import { parse_raw } from "./parse_with_imports";
  */
 
 function compile_aarch64(source: string): string {
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect(result.errors ?? []).toEqual([]);
@@ -32,7 +32,7 @@ function compiles_without_vector(source: string): string {
 /** For shapes the checker itself rejects (unprovable bounds), the vectorizer
  *  must still never fire: compile leniently and assert no vector loop. */
 function compiles_lenient_without_vector(source: string): void {
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect((result.code as string).includes(".Lneon_")).toBe(false);
 }
@@ -612,7 +612,7 @@ pub func main = () {}
 `;
 
 function compile_aarch64_fast(source: string, fast_math: boolean): string {
-	const parsed = parse_raw(source);
+	const parsed = parse_raw(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", fast_math });
 	expect(result.errors ?? []).toEqual([]);
@@ -1380,7 +1380,7 @@ pub func main = () {}
 });
 
 test("fast_math plans keep the counted loop (no peel under contraction)", () => {
-	const parsed = parse_raw(PEEL_KERNEL);
+	const parsed = parse_raw(PEEL_KERNEL, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	const result = build(parsed.root, { arch: "aarch64", fast_math: true });
 	expect(result.errors ?? []).toEqual([]);

@@ -29,53 +29,61 @@ pub struct Atomic<T> {
 	var uint64 word = 0
 
 	pub func load = (self, out T) {
-		```
-		#arch: c
-		return __atomic_load_n(&self->word, __ATOMIC_SEQ_CST);
-		```
-		```
-		#arch: aarch64
-		// Load-acquire takes no offset — compute the word's address first.
-		add x0, x0, #8
-		ldar x0, [x0]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return __atomic_load_n(&self->word, __ATOMIC_SEQ_CST);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// Load-acquire takes no offset — compute the word's address first.
+				add x0, x0, #8
+				ldar x0, [x0]
+			}
+		}
 	}
 
 	pub func store = (ref self {}, T v) {
-	```
-		#arch: c
-		__atomic_store_n(&self->word, v, __ATOMIC_SEQ_CST);
-		```
-		```
-		#arch: aarch64
-		add x8, x0, #8
-		stlr x1, [x8]
-		```
+	#if META.arch == "c" {
+		#raw {
+			__atomic_store_n(&self->word, v, __ATOMIC_SEQ_CST);
+		}
+	}
+		#if META.arch == "aarch64" {
+			#raw {
+				add x8, x0, #8
+				stlr x1, [x8]
+			}
+		}
 	}
 
 	// Adds v and returns the PREVIOUS value (fetch-and-add).
 	pub func fetch_add = (ref self {}, T v, out T) {
-		```
-		#arch: c
-		return __atomic_fetch_add(&self->word, v, __ATOMIC_SEQ_CST);
-		```
-		```
-		#arch: aarch64
-		add x8, x0, #8
-		ldaddal x1, x0, [x8]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return __atomic_fetch_add(&self->word, v, __ATOMIC_SEQ_CST);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				add x8, x0, #8
+				ldaddal x1, x0, [x8]
+			}
+		}
 	}
 
 	// Replaces the value and returns the PREVIOUS one.
 	pub func swap = (ref self {}, T v, out T) {
-		```
-		#arch: c
-		return __atomic_exchange_n(&self->word, v, __ATOMIC_SEQ_CST);
-		```
-		```
-		#arch: aarch64
-		add x8, x0, #8
-		swpal x1, x0, [x8]
-		```
+		#if META.arch == "c" {
+			#raw {
+				return __atomic_exchange_n(&self->word, v, __ATOMIC_SEQ_CST);
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				add x8, x0, #8
+				swpal x1, x0, [x8]
+			}
+		}
 	}
 }

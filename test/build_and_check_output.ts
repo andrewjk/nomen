@@ -62,7 +62,10 @@ export default async function build_and_check_output(
 	// `js` is a harness override, not a native build option.
 	const { js, ...build_extra } = extra_options;
 	for (let arch of architectures) {
-		const parsed = raw ? parse_raw(input) : parse_with_imports(input);
+		// The parse MUST check with the arch being built: stage 5 moved raw
+		// block target selection into `#if META.arch` pragmas, which fold at
+		// check time (the stage-1 contract).
+		const parsed = raw ? parse_raw(input, { arch }) : parse_with_imports(input, { arch });
 		expect(parsed.errors).toEqual([]);
 
 		const options = { arch, audit: true, ...build_extra };

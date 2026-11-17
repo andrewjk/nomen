@@ -33,7 +33,7 @@ export default interface ParseStatus {
 	/**
 	 * Source offset at which the appended System library source begins
 	 * (i.e. the end of the user's own source). `unsafe` declarations and
-	 * blocks — and `raw` `#arch:` blocks — are only accepted in tokens at or
+	 * blocks — and `#raw` blocks — are only accepted in tokens at or
 	 * beyond this offset: the lockdown that keeps raw pointer manipulation
 	 * library-only. Undefined when no library is linked: they are then
 	 * illegal everywhere.

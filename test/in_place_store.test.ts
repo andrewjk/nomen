@@ -416,7 +416,7 @@ pub func main = (Init init) {
 	Console.write(items.at_or(0, "?"))
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: default_platform() });
 		expect(result.errors ?? []).toEqual([]);
@@ -448,7 +448,7 @@ pub func main = (Init init) {
 	Console.write(m.get_or("k", "?"))
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64", platform: default_platform() });
 		expect(result.errors ?? []).toEqual([]);

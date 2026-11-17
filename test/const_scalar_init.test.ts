@@ -17,7 +17,7 @@ const system = get_library(path.resolve(import.meta.dirname, "../core"));
 // was already correct (it emits the expression and clang folds it).
 
 function build_const(source: string, arch: "c" | "aarch64", audit = false) {
-	const parsed = parse(source, system, undefined, { allow_internal: true });
+	const parsed = parse(source, system, undefined, { allow_internal: true, arch });
 	expect(parsed.errors).toEqual([]);
 	return build(parsed.root, { arch, audit });
 }

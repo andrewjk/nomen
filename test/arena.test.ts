@@ -167,11 +167,13 @@ pub func main = (Init init) {
 	Console.write("\\{a.get(r)}\\n")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "c" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "c" });
 		expect(result.code).toContain("arena: get of a stale handle");
-		const result_a64 = build(parsed.root, { arch: "aarch64" });
+		const parsed_a64 = parse_raw(input, { arch: "aarch64" });
+		expect(parsed_a64.errors).toEqual([]);
+		const result_a64 = build(parsed_a64.root, { arch: "aarch64" });
 		expect(result_a64.code).toContain("arena: get of a stale handle");
 	});
 });

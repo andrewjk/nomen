@@ -2,7 +2,6 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import RawNode from "../nodes/RawNode.ts";
 import StructNode from "../nodes/StructNode.ts";
-import { parse_raw_directives } from "../raw_directives.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import { extract_nomen_naked_asm } from "./naked_inline.ts";
 import { asm_code_len, emit_asm } from "./utils/code_buffer.ts";
@@ -48,14 +47,13 @@ function is_raw_only(func: FunctionNode): boolean {
 	return func.statements.every((s) => s.node_type === "raw");
 }
 
-function extract_aarch64_asm(func: FunctionNode, platform: string): string {
+function extract_aarch64_asm(func: FunctionNode): string {
 	let asm = "";
 	for (const stmt of func.statements) {
 		const raw = stmt as RawNode;
-		const { should_emit, code } = parse_raw_directives(raw.value, "aarch64", platform);
-		if (should_emit && code) {
+		if (raw.value) {
 			if (asm) asm += "\n";
-			asm += code;
+			asm += raw.value;
 		}
 	}
 	return asm;
@@ -83,9 +81,9 @@ function count_x19_reads(asm: string): number {
  * mentioning x0 anywhere besides a single leading destination operand
  * counts as a read.
  */
-export function naked_inline_skips_self(func: FunctionNode, platform: string): boolean {
+export function naked_inline_skips_self(func: FunctionNode): boolean {
 	if (!is_raw_only(func)) return false;
-	const asm = extract_aarch64_asm(func, platform);
+	const asm = extract_aarch64_asm(func);
 	if (/\bx19\b/.test(asm)) return false;
 	for (const rawLine of asm.split("\n")) {
 		const line = rawLine.replace(/\/\/.*$/, "").trim();
@@ -102,7 +100,7 @@ export function naked_inline_skips_self(func: FunctionNode, platform: string): b
 }
 
 function build_naked_inline(struct_node: StructNode, func: FunctionNode, status: BuildStatus) {
-	let asm = extract_aarch64_asm(func, status.platform);
+	let asm = extract_aarch64_asm(func);
 	const standalone_return_label = `.return_${struct_node.name}_${func.name.replace(/#/g, "")}`;
 	asm = asm.replaceAll(`b ${standalone_return_label}`, "");
 	build_naked_inline_from_asm(struct_node, func, status, asm);

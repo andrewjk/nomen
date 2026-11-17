@@ -181,7 +181,7 @@ pub func main = () {
 	Console.write_line(x.to_string())
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const options = { arch: "aarch64", audit: true } as const;
 		const result = build(parsed.root, options);
@@ -235,7 +235,7 @@ pub func main = (Init init) {
 	Console.write_line(b.label)
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const options = { arch: "aarch64", audit: true } as const;
 		const result = build(parsed.root, options);

@@ -51,7 +51,7 @@ match Directory.list("dir_list_test") {
 }
 `;
 		for (const arch of ARCHITECTURES) {
-			const parsed = parse_with_imports(input);
+			const parsed = parse_with_imports(input, { arch });
 			expect(parsed.errors).toEqual([]);
 			const options = { arch, audit: true };
 			const result = build(parsed.root, options);

@@ -11,7 +11,7 @@ import parse_with_imports from "./parse_with_imports";
 //  - `Map`/`Set` bucket indexing uses a power-of-two mask, not sdiv/msub.
 
 function build_aarch64(source: string): string {
-	const parsed = parse_with_imports(source);
+	const parsed = parse_with_imports(source, { arch: "aarch64" });
 	expect(parsed.errors).toEqual([]);
 	return build(parsed.root, { arch: "aarch64", audit: false }).code;
 }

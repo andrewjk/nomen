@@ -29,58 +29,66 @@ pub mv struct Mutex {
 		// C lowering — methods take the pointer form, the ctor does not), so the
 		// C body uses the `.` accessor; the aarch64 body writes through x19 =
 		// &instance as always.
-	```
-	#arch: c
-	self.handle = (unsigned long long)__nomen_mutex_create();
-	```
-	```
-	#arch: aarch64
-	bl ___nomen_mutex_create
-	str x0, [x19, #8]
-	```
+	#if META.arch == "c" {
+		#raw {
+			self.handle = (unsigned long long)__nomen_mutex_create();
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			bl ___nomen_mutex_create
+			str x0, [x19, #8]
+		}
+	}
 	}
 
 	pub func lock = (self) {
-	```
-	#arch: c
-	// Fibers park instead of blocking the worker (both models); other
-	// contexts take the pthread lock directly.
-	__nomen_mutex_lock((void *)self->handle);
-	```
-	```
-	#arch: aarch64
-	ldr x0, [x19, #8]
-	bl ___nomen_mutex_lock
-	```
+	#if META.arch == "c" {
+		#raw {
+			// Fibers park instead of blocking the worker (both models); other
+			// contexts take the pthread lock directly.
+			__nomen_mutex_lock((void *)self->handle);
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			ldr x0, [x19, #8]
+			bl ___nomen_mutex_lock
+		}
+	}
 	}
 
 	pub func unlock = (self) {
-	```
-	#arch: c
-	__nomen_mutex_unlock_wake((void *)self->handle);
-	```
-	```
-	#arch: aarch64
-	ldr x0, [x19, #8]
-	bl ___nomen_mutex_unlock_wake
-	```
+	#if META.arch == "c" {
+		#raw {
+			__nomen_mutex_unlock_wake((void *)self->handle);
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			ldr x0, [x19, #8]
+			bl ___nomen_mutex_unlock_wake
+		}
+	}
 	}
 
 	pub func #destroy = () {
-	```
-	#arch: c
-	if (self->handle) {
-		__nomen_mutex_dispose((void *)self->handle);
-		self->handle = 0;
+	#if META.arch == "c" {
+		#raw {
+			if (self->handle) {
+				__nomen_mutex_dispose((void *)self->handle);
+				self->handle = 0;
+			}
+		}
 	}
-	```
-	```
-	#arch: aarch64
-	ldr x0, [x19, #8]
-	cbz x0, .Lmutex_destroy_end
-	bl ___nomen_mutex_dispose
-	str xzr, [x19, #8]
-	.Lmutex_destroy_end:
-	```
+	#if META.arch == "aarch64" {
+		#raw {
+			ldr x0, [x19, #8]
+			cbz x0, .Lmutex_destroy_end
+			bl ___nomen_mutex_dispose
+			str xzr, [x19, #8]
+			.Lmutex_destroy_end:
+		}
+	}
 	}
 }

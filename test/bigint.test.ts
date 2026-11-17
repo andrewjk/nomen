@@ -673,7 +673,7 @@ Console.write(" a.len=")
 Console.write(a.len.to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");
@@ -690,7 +690,7 @@ Console.write(" a.len=")
 Console.write(a.len.to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");
@@ -709,7 +709,7 @@ Console.write(" l1=")
 Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");
@@ -728,7 +728,7 @@ Console.write(" l1=")
 Console.write((a.get(1) as int).to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");
@@ -745,7 +745,7 @@ Console.write(" a.len=")
 Console.write(a.len.to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");
@@ -762,7 +762,7 @@ Console.write(" a.len=")
 Console.write(a.len.to_string())
 Console.write("\\n")
 `;
-	const parsed = parse_with_imports(input);
+	const parsed = parse_with_imports(input, { arch: "aarch64" });
 	build(parsed.root, { arch: "aarch64", audit: true });
 	expect(parsed.errors.length).toBeGreaterThan(0);
 	expect(parsed.errors[0].message).toContain("Aliasing");

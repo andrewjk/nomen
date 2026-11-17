@@ -39,18 +39,21 @@ f:
 });
 
 test("missing pop is reported with the sp offset at ret", () => {
-	const msgs = balance(`
+	const msgs = balance(
+		`
 f:
 	stp x29, x30, [sp, #-16]!
 	str x19, [sp, #-16]!
 	ldp x29, x30, [sp], #16
 	ret
-`);
+`,
+	);
 	expect(offset_of(msgs)).toBe(-16);
 });
 
 test("unbalanced early ret is reported", () => {
-	const msgs = balance(`
+	const msgs = balance(
+		`
 f:
 	stp x29, x30, [sp, #-16]!
 	cbz x0, .slow
@@ -59,7 +62,8 @@ f:
 .slow:
 	ldp x29, x30, [sp], #16
 	ret
-`);
+`,
+	);
 	expect(offset_of(msgs)).toBe(-32);
 });
 
@@ -122,7 +126,8 @@ f:
 test("numeric local label balance: an imbalanced taken path fails loudly", () => {
 	// The `1:` path double-pops — resolution of `1f` must FEED the dataflow
 	// (an unresolved target would leave the block unreached and silent).
-	const messages = balance(`
+	const messages = balance(
+		`
 f:
 	stp x29, x30, [sp, #-16]!
 	cmp x0, #1
@@ -133,7 +138,8 @@ f:
 	ldr x19, [sp], #16
 	ldp x29, x30, [sp], #16
 	ret
-`);
+`,
+	);
 	expect(messages.length).toBe(1);
 	expect(messages[0]).toContain("unbalanced stack: sp offset 16 at ret");
 });
@@ -214,7 +220,8 @@ test("the re-rooted real entry is still checked when it is imbalanced", () => {
 	// Re-rooting must not blind the check: the stub's delta is gone, but the
 	// second entry's own imbalance (a missing pop here) still reports — at
 	// ITS offset, not the stub's.
-	const messages = balance(`
+	const messages = balance(
+		`
 .p2align 2
 .globl _main
 _main:
@@ -225,7 +232,8 @@ _main:
 _main:
 	stp x29, x30, [sp, #-16]!
 	ret
-`);
+`,
+	);
 	expect(messages.length).toBe(1);
 	expect(messages[0]).toContain("unbalanced stack: sp offset -16 at ret");
 });
@@ -234,7 +242,8 @@ test("a globl'd entry after another function's ret is checked as its own root", 
 	// Only bl-target / marker-preceded labels cut the lift, so `g` shares
 	// f's lifted body — unreachable through f's ret, so without re-rooting
 	// its imbalance would sit in the silent null zone forever.
-	const messages = balance(`
+	const messages = balance(
+		`
 f:
 	stp x29, x30, [sp, #-16]!
 	ldp x29, x30, [sp], #16
@@ -244,7 +253,8 @@ f:
 g:
 	stp x29, x30, [sp, #-16]!
 	ret
-`);
+`,
+	);
 	expect(messages.length).toBe(1);
 	expect(messages[0]).toContain("unbalanced stack: sp offset -16 at ret");
 });
@@ -270,7 +280,8 @@ end_1:
 test("real emitted programs pass the balance check", () => {
 	// Integration: a real build's assembly (System library + user code, the
 	// same text the phase-1 validator sees) must be balance-clean.
-	const parsed = parse_raw(`
+	const parsed = parse_raw(
+		`
 import System
 
 func mix = (ref Buffer<float> a, ref Buffer<float> b, int n) {
@@ -282,7 +293,9 @@ func mix = (ref Buffer<float> a, ref Buffer<float> b, int n) {
 	}
 }
 pub func main = () {}
-`);
+`,
+		{ arch: "aarch64" },
+	);
 	const result = build(parsed.root, { arch: "aarch64" });
 	expect(result.errors ?? []).toEqual([]);
 	expect(balance(result.code as string)).toEqual([]);
@@ -296,12 +309,15 @@ test("two mains in a split user TU stay balance-clean", () => {
 	// wrapper stub opens the TU (block 0), so the balance check used to
 	// seed it at 0 and hand its `stp …, [sp, #-16]!` delta to the real
 	// entry: `asm: unbalanced stack: sp offset -16 at ret — ret`.
-	const parsed = parse_with_imports(`
+	const parsed = parse_with_imports(
+		`
 func main = () {
 	var x = 42
 	Console.write("\\{x}\\n")
 }
-`);
+`,
+		{ arch: "aarch64" },
+	);
 	const result = build(parsed.root, { arch: "aarch64", audit: true, emit_mode: "user" });
 	expect(result.errors ?? []).toEqual([]);
 	expect(balance(result.code as string)).toEqual([]);

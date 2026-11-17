@@ -351,7 +351,7 @@ pub func main = (Init init) {
 	Console.write("\\{items.pop()}")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";
@@ -396,7 +396,7 @@ pub func main = (Init init) {
 	Console.write("\\{items.pop()}")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";
@@ -649,7 +649,7 @@ pub func main = (Init init) {
 	Console.write("\\{recs.pop().name}")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";
@@ -1164,7 +1164,7 @@ pub func main = (Init init) {
 	Console.write("\\{a.engine.events.at_or_panic(0)}")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";
@@ -1288,7 +1288,7 @@ pub func main = (Init init) {
 	Console.write("\\{i}")
 }
 `;
-		const parsed = parse_raw(input);
+		const parsed = parse_raw(input, { arch: "aarch64" });
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
 		const code = result.code ?? "";

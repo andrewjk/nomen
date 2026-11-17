@@ -19,7 +19,7 @@ Console.write("\\{Regex.count("[\\\\r]", "a\\rb")}\\n")
 Console.write("\\{Regex.test_ci("car\\\\r", "car\\r")}\\n")
 Console.write("\\{Regex.count("\\\\rz", "arz")}\\n")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("regex_escape_control", result, "true\n1\n1\ntrue\n0\n", opts);
@@ -32,7 +32,7 @@ Console.write("\\{Regex.count("\\\\rz", "arz")}\\n")
 Console.write("\\{Regex.count("(\\\\r)?\\\\n", "a\\rb\\nc\\nd")}\\n")
 Console.write("\\{Regex.count("\\\\t+", "x\\t\\ty")}\\n")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("regex_escape_prefilter", result, "2\n1\n", opts);
@@ -42,7 +42,7 @@ Console.write("\\{Regex.count("\\\\t+", "x\\t\\ty")}\\n")
 		const input = `
 Console.write("\\{Regex.test("val\\\\z", "valz")}\\n")
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		await check_output("regex_escape_literal_letter", result, "true\n", opts);
@@ -82,7 +82,7 @@ if Regex.test("\\r?\\n\\\\d", "line1\\n2") {
 	Console.write("ok")
 }
 `;
-		const parsed = parse_with_imports(input);
+		const parsed = parse_with_imports(input, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		expect(parsed.warnings ?? []).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });

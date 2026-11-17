@@ -7,9 +7,10 @@ import parse_with_imports from "./parse_with_imports";
 const ARCHS = ["aarch64", "c"] as const;
 
 async function run(name: string, input: string, expected: string) {
-	const parsed = parse_with_imports(input);
-	expect(parsed.errors).toEqual([]);
 	for (const arch of ARCHS) {
+		// Per-target parse (stage 5: raw arms fold at check time).
+		const parsed = parse_with_imports(input, { arch });
+		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch, platform: "macos" });
 		await check_output(`${name}_${arch}`, result, expected, { arch, audit: false });
 	}

@@ -17,8 +17,8 @@ export function read_bench(name: string): string {
 	);
 }
 
-export function parse_bench(name: string) {
-	return parse(read_bench(name), lib, undefined, { allow_internal: true });
+export function parse_bench(name: string, arch?: string) {
+	return parse(read_bench(name), lib, undefined, { allow_internal: true, arch });
 }
 
 /**
@@ -48,9 +48,11 @@ async function bench_options(
 
 export async function build_and_check_bench(name: string, expected: string) {
 	const source = read_bench(name);
-	const parsed = parse(source, lib, undefined, { allow_internal: true });
-	expect(parsed.errors).toEqual([]);
 	for (const arch of ["aarch64", "c"] as const) {
+		// Per-target parse: the `#if META.arch` fold selects raw arms at
+		// check time (stage 5), so each backend's build needs its own tree.
+		const parsed = parse(source, lib, undefined, { allow_internal: true, arch });
+		expect(parsed.errors).toEqual([]);
 		const { result, check_opts } = await bench_options(parsed, arch);
 		await check_output(`${name}_${arch}`, result, expected, check_opts);
 	}
@@ -69,10 +71,11 @@ export async function build_and_check_bench_with_files(
 	variant?: string,
 ) {
 	const source = read_bench(name);
-	const parsed = parse(source, lib, undefined, { allow_internal: true });
-	expect(parsed.errors).toEqual([]);
 	const check_name = `${name}${variant ? `_${variant}` : ""}`;
 	for (const arch of ["aarch64", "c"] as const) {
+		// Per-target parse (stage 5: raw arms fold at check time).
+		const parsed = parse(source, lib, undefined, { allow_internal: true, arch });
+		expect(parsed.errors).toEqual([]);
 		const folder = path.resolve(".", "test", "out", arch, `${check_name}_${arch}`);
 		for (const [src, target] of Object.entries(files)) {
 			const dest = path.join(folder, target);

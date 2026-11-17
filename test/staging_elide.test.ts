@@ -211,7 +211,7 @@ pub func main = (Init init) {
 }
 `;
 	const compile = (): string => {
-		const parsed = parse_raw(src);
+		const parsed = parse_raw(src, { arch: "aarch64" });
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, { arch: "aarch64" });
 		expect(result.errors ?? []).toEqual([]);
