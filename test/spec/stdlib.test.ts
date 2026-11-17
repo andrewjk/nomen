@@ -45,7 +45,7 @@ mv struct Account {
 func round_trip = (string text, out string) {
 	var a = Account()
 	json_decode_into(text, ref a)
-	return json_encode(a)
+	return json_encode(ref a)
 }
 `;
 		expect(compile_module(input)).toEqual([]);

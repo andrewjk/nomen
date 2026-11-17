@@ -720,6 +720,8 @@
 	"StableList_JsonNode_load_tail",
 	"StableList_JsonNode_at_or",
 	"StableList_JsonNode_at_or_panic",
+	"StableList_JsonNode_set",
+	"StableList_JsonNode_truncate",
 	"StableList_JsonNode_slot_ptr",
 	"StableList_JsonNode_slot_ptr_tail",
 	"StableList_JsonNode_copy",

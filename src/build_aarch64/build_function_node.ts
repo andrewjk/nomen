@@ -453,8 +453,12 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 			// (`int? x`) arrives as a (value, flag) pair — also two slots.
 			// Neither is a by-address struct param (excluded from the
 			// callee-saved pool; spilled to a 16-byte stack slot in the
-			// second pass below).
-			if (param.type.is_view || param.type.name === "string") {
+			// second pass below). (`ref string` params are excluded — they
+			// arrive as ONE slot holding &caller-storage, matching the
+			// second pass's is_ref exclusion; without it the trailing
+			// params' ABI slots shift by one and every callee reads them
+			// one register too high.)
+			if (param.type.is_view || (param.type.name === "string" && !param.type.is_ref)) {
 				first_pass_slot += 2;
 				continue;
 			}

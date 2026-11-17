@@ -81,7 +81,7 @@ h.items.push(mv inner)
 h.items.push(StableList<Leaf>())
 Console.write_line(h.items.at_or_panic(0).at_or_panic(0).value.to_string())
 Console.write_line(h.items.length.to_string())
-Console.write_line(json_encode(h))
+Console.write_line(json_encode(ref h))
 `;
 	await build_and_check_output(
 		input,
@@ -106,7 +106,7 @@ leaf.inner.push(7)
 h.items.push(mv leaf)
 Console.write_line(h.items.at_or_panic(0).inner.at_or_panic(0).to_string())
 Console.write_line(h.items.length.to_string())
-Console.write_line(json_encode(h))
+Console.write_line(json_encode(ref h))
 `;
 	// The json_encode line is the comptime-json crash shape (2026-11-16): the
 	// generic-mono element pushed with `mv`, then encoded — the element's

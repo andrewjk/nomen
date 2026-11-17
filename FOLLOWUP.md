@@ -448,6 +448,15 @@ constraint (`out List<T>: out.length > 0`). That is the spelled fact
   setters. Closing that means a mutation-precision pass
   (refine-vs-invalidate per callee effect) — worth doing only with concrete
   blocked shapes.
+- **`StableList` is outside the length model**: its `at`/`set`/`truncate`
+  contracts (`i < self.length`, `n <= self.length`) discharge only from
+  guard/range facts — a literal after N pushes ("push a, push b,
+  truncate(1)") cannot be proven, because `is_list_type_name` /
+  `apply_list_length_effect` cover `List` and the count containers, not
+  `StableList` (fresh = 0, push = +1, truncate(n) = exactly n would be the
+  mirror). Callers guard today (`if xs.length > 1 { xs.truncate(1) }`);
+  extend the model with the first concrete churn complaint, as with the
+  scalar-`set` exemption above.
 
 ## Mutable-in-Immutable residuals (the syntax-gated remainder)
 
@@ -644,45 +653,29 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## Library serde performance: allocation-bound vs the DOM bench
+## C backend: a ref-string call in VALUE position emits a malformed statement expression
 
-The stdlib `json_decode_into`/`json_encode` bench (json-serde-typed) is
-~4.5x slower than the JsonTree DOM bench on sample.json (0.89s vs 0.20s
-user at 25k iterations, aarch64 `-O2`, same-context A/B). Landed 2026-11-17:
-`json_append_quoted` appends keys and string values in place (no per-field
-temp StringBuilder + `to_string` copy — the comptime-escaped-key idea, done
-as a scan-then-raw-append since keys are plain identifiers), and the decode
-cursor is a plain `ref int` (no `Buffer<int>` malloc per decode, no
-`load_int`/`store_int` calls per position update). Both are strictly less
-work but bench-neutral — the cost is elsewhere. The harness now runs both
-variants as separate rows (`json-serde` = untyped/DOM, `json-serde-typed` =
-typed, each with all four languages). Two harness bugs surfaced while
-wiring the typed row in, both fixed 2026-11-17: the Go benches appended
-".json" to the path argument, so benchmark.sh's full filename silently read
-nothing and hashed empty structs (the Go json-serde numbers were constant);
-and bench/compile_nomen.ts parsed without the target, so the aarch64 column
-built C-checked trees through the aarch64 backend (stage 5's per-target
-parse contract) — any bench whose core path crosses a target-selected raw
-arm emitted C text into the .s and failed to assemble. The cost is
-still elsewhere. Landed 2026-11-18: the ENCODE lever — `json_encode_list`
-binds each element as an ELEMENT BORROW (`ref elem = list.at(i)`; strings
-keep the owning load — string slot borrows are rejected), so the
-per-element deep copy + scope-exit destroy disappear. Measured 0.92s →
-0.22s at 25k iterations on aarch64 (same-shell A/B), now at parity with
-the DOM bench (~1.1x). The borrow needed five compiler fixes (element
-borrows through SPECIALIZED generic clones: `clone_node` dropped
-`is_ref_binding`; the loop-promotion/NIR-site allocators promoted alias
-slots like values; `ptr float` returns were bit-cast through d0 by the
-float-return marshals at three sites, and the checker's rewrite didn't
-restamp the rewritten call's type; the float-operand loader read the alias
-slot as a value) — pinned by test/element_borrow_reads.test.ts. Remaining:
+Recorded 2026-11-18 (found while pinning the by-ref `json_encode` walk; the
+aarch64 backend is fine). A call whose callee takes a `ref string` param must
+capture the slot's old pair around the call (the displaced-pair reclaim from
+test/ref_param_string_assign.test.ts). The C backend wraps such a call in a
+GNU statement expression — `({ nomen_string _ref_old = r; long _t = f(&r);
+if (...) free(...); _t })` — but omits the SCRIPT after the final expression,
+so clang rejects it ("expected ';' after expression") whenever the call's
+value is used (`var x = f(ref s, ...)`, an interpolation argument, …). A
+statement-position call (result discarded) is emitted as a plain call and is
+unaffected; struct-typed ref args (`ref T p`, `ref StringBuilder sb`) also
+avoid it (only owned-string slots need the capture). Repro:
 
-- **Decode (~0.15s) — fresh chunk-0 slabs per element container** (`T()` +
-  a fresh `StableList` per nested array; the DOM reuses its pool). Each
-  `StableList<float>()` costs a 2 KB exact-256 calloc that lives as the
-  result's storage — necessary under the stable-address design; a
-  pool-backed container decode path (the JsonTree approach) is the
-  structural fix.
+```
+func f = (ref string r, int n, out int) { return r.length + n }
+var s = "abcd"
+Console.write_line(f(ref s, 3).to_string())   // C backend: clang error
+```
+
+Not fixed inline (out of scope for the serde work); the test pin
+(test/ref_param_string_assign.test.ts) uses statement-position calls until
+this lands.
 
 ## Scalar element borrows misread in operation position (compiler)
 

@@ -399,17 +399,24 @@ func json_ser_value = (ref JsonTree tree { nodes }, int n, ref StringBuilder sb 
 // ===========================================================================
 
 // Decode `text` (a JSON object) into `target`, overwriting the fields it
-// names. Missing keys keep their defaults; unknown keys are skipped.
+// names: repeated decodes into the same value REPLACE list content (the
+// array is truncated to the new length, its storage retained — the pool
+// reuse that makes a decode cycle allocation-free) and re-fill struct
+// fields in place. Missing keys keep their defaults; unknown keys are
+// skipped.
 pub func json_decode_into<T> = (string text, ref T target) {
 	var int pos = 0
 	json_decode_object_into(text, ref pos, text.length, ref target)
 }
 
 // Encode `value` to a JSON object string. Field keys are the field name or
-// its `@rename` value; `@skip` fields are omitted.
-pub func json_encode<T> = (T value, out string) {
+// its `@rename` value; `@skip` fields are omitted. `value` is BORROWED
+// (`ref`): the walk reads fields and element slots in place, so encoding a
+// reused value (a decode-refill loop) moves no container — the mirror of
+// `stringify`'s `ref JsonTree`.
+pub func json_encode<T> = (ref T value, out string) {
 	var sb = StringBuilder()
-	json_encode_element(value, ref sb)
+	json_encode_element(ref value, ref sb)
 	return sb.to_string()
 }
 
@@ -489,10 +496,17 @@ func json_decode_object_into<T> = (string s, ref int pos, int len, ref T target)
 	}
 }
 
-// Decode a JSON array into `list`, one element at a time. Elements decode
-// into a LOCAL (assigning an owned value through a `ref` parameter leaks,
-// so the element dispatch assigns the local; struct/container elements
-// recurse by `ref`).
+// Decode a JSON array into `list`, one element at a time — as a REFILL:
+// the list is truncated to the decoded length (StableList.truncate keeps
+// the slabs), existing element slots are reused — scalars re-stored via
+// `set`, containers/structs decoded IN PLACE through an element borrow
+// (`ref elem = list.at(idx)`, which recursively resets/refills the slot's
+// own storage) — and elements beyond the current length decode into a
+// fresh local and push. This is the typed form of the JsonTree pool: a
+// repeated decode into the same value (the bench's per-iteration cycle)
+// refills the container storage instead of re-allocating a fresh chunk-0
+// slab per nested array. Assigning an owned value through a `ref`
+// parameter leaks, so fresh elements still decode into a LOCAL.
 func json_decode_list_into<E> = (string s, ref int pos, int len, ref StableList<E> list) {
 	json_skip_ws(s, ref pos, len)
 	var int open = pos
@@ -503,58 +517,87 @@ func json_decode_list_into<E> = (string s, ref int pos, int len, ref StableList<
 		return
 	}
 	pos = open + 1
+	var int idx = 0
 	while true {
 		json_skip_ws(s, ref pos, len)
 		var int i = pos
 		if i >= len {
+			list.truncate(idx)
 			return
 		}
 		var int c = s.at(i) as int
 		if c == 93 {
 			pos = i + 1
+			list.truncate(idx)
 			return
 		}
 		if c == 44 {
 			pos = i + 1
 			continue
 		}
-		var item = E()
-		if META.name(E) == "string" {
-			item = json_read_string_value(s, ref pos, len)
+		if idx < list.length {
+			// REFILL the slot at idx — the comptime dispatch folds to one
+			// arm per specialization, exactly like the fresh arms below.
+			if META.name(E) == "string" {
+				list.set(idx, json_read_string_value(s, ref pos, len))
+			}
+			if META.name(E) == "int" {
+				list.set(idx, json_read_int(s, ref pos, len))
+			}
+			if META.name(E) == "float" {
+				list.set(idx, json_read_float(s, ref pos, len))
+			}
+			if META.name(E) == "bool" {
+				list.set(idx, json_read_bool(s, ref pos, len))
+			}
+			if META.is_container(E) {
+				ref elem = list.at(idx)
+				json_decode_list_into(s, ref pos, len, ref elem)
+			}
+			if META.is_struct(E) {
+				ref elem = list.at(idx)
+				json_decode_object_into(s, ref pos, len, ref elem)
+			}
+		} else {
+			var item = E()
+			if META.name(E) == "string" {
+				item = json_read_string_value(s, ref pos, len)
+			}
+			if META.name(E) == "int" {
+				item = json_read_int(s, ref pos, len)
+			}
+			if META.name(E) == "float" {
+				item = json_read_float(s, ref pos, len)
+			}
+			if META.name(E) == "bool" {
+				item = json_read_bool(s, ref pos, len)
+			}
+			if META.is_container(E) {
+				json_decode_list_into(s, ref pos, len, ref item)
+			}
+			if META.is_struct(E) {
+				json_decode_object_into(s, ref pos, len, ref item)
+			}
+			if META.is_struct(E) {
+				list.push(mv item)
+			}
+			if META.is_container(E) {
+				list.push(mv item)
+			}
+			if META.name(E) == "string" {
+				list.push(mv item)
+			}
+			if META.name(E) == "int" {
+				list.push(item)
+			}
+			if META.name(E) == "float" {
+				list.push(item)
+			}
+			if META.name(E) == "bool" {
+				list.push(item)
+			}
 		}
-		if META.name(E) == "int" {
-			item = json_read_int(s, ref pos, len)
-		}
-		if META.name(E) == "float" {
-			item = json_read_float(s, ref pos, len)
-		}
-		if META.name(E) == "bool" {
-			item = json_read_bool(s, ref pos, len)
-		}
-		if META.is_container(E) {
-			json_decode_list_into(s, ref pos, len, ref item)
-		}
-		if META.is_struct(E) {
-			json_decode_object_into(s, ref pos, len, ref item)
-		}
-		if META.is_struct(E) {
-			list.push(mv item)
-		}
-		if META.is_container(E) {
-			list.push(mv item)
-		}
-		if META.name(E) == "string" {
-			list.push(mv item)
-		}
-		if META.name(E) == "int" {
-			list.push(item)
-		}
-		if META.name(E) == "float" {
-			list.push(item)
-		}
-		if META.name(E) == "bool" {
-			list.push(item)
-		}
+		idx += 1
 	}
 }
 
@@ -829,8 +872,10 @@ func json_skip_value = (string s, ref int pos, int len) {
 
 // -- encode -----------------------------------------------------------------
 
-// Encode one value of type T — the mirror of json_decode_value_into.
-func json_encode_element<T> = (T value, ref StringBuilder sb {}) {
+// Encode one value of type T — the mirror of json_decode_value_into. The
+// value is borrowed (`ref`) end to end: fields and element slots are read
+// where they live.
+func json_encode_element<T> = (ref T value, ref StringBuilder sb {}) {
 	if META.name(T) == "string" {
 		json_append_quoted(ref sb, value)
 		return
@@ -852,11 +897,11 @@ func json_encode_element<T> = (T value, ref StringBuilder sb {}) {
 		return
 	}
 	if META.is_container(T) {
-		json_encode_list(value, ref sb)
+		json_encode_list(ref value, ref sb)
 		return
 	}
 	if META.is_struct(T) {
-		json_encode_into(value, ref sb)
+		json_encode_into(ref value, ref sb)
 	}
 }
 
@@ -895,7 +940,7 @@ func json_append_float = (ref StringBuilder sb {}, float v) {
 	sb.append_int(frac)
 }
 
-func json_encode_list<E> = (StableList<E> list, ref StringBuilder sb {}) {
+func json_encode_list<E> = (ref StableList<E> list, ref StringBuilder sb {}) {
 	sb.append_char('[')
 	var int i = 0
 	while i < list.length; i += 1 {
@@ -919,13 +964,13 @@ func json_encode_list<E> = (StableList<E> list, ref StringBuilder sb {}) {
 			// — encode never mutates the source list — so the aliasing is
 			// sound and the walk is zero-copy.
 			ref elem = list.at(i)
-			json_encode_element(elem, ref sb)
+			json_encode_element(ref elem, ref sb)
 		}
 	}
 	sb.append_char(']')
 }
 
-func json_encode_into<T> = (T value, ref StringBuilder sb {}) {
+func json_encode_into<T> = (ref T value, ref StringBuilder sb {}) {
 	sb.append_char('{')
 	var bool first = true
 	#for field of META.info(T).fields {
@@ -951,7 +996,7 @@ func json_encode_into<T> = (T value, ref StringBuilder sb {}) {
 			// encoded object.
 			json_append_quoted(ref sb, key)
 			sb.append_char(':')
-			json_encode_element(field.get(value), ref sb)
+			json_encode_element(ref field.get(value), ref sb)
 		}
 	}
 	sb.append_char('}')

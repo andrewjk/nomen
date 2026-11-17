@@ -53,15 +53,21 @@ pub func main = (Init init) {
 					var _ = f.close()
 					var first_geo = GeoData()
 					json_decode_into(text, ref first_geo)
-					var first = json_encode(first_geo)
+					var first = json_encode(ref first_geo)
 					Console.write_line(first.length.to_string())
 
+					// One value, decoded n times: json_decode_into REFILLS g in
+					// place (the typed counterpart of the DOM bench's pool reset
+					// above — the first decode allocates the container slabs,
+					// every later iteration truncates + refills them), and
+					// json_encode borrows g. Steady state: no per-iteration
+					// container allocation, like the DOM row.
+					var g = GeoData()
 					var total = 0
 					var i = 0
 					while i < n; i += 1 {
-						var g = GeoData()
 						json_decode_into(text, ref g)
-						total = total + json_encode(g).length
+						total = total + json_encode(ref g).length
 					}
 					Console.write_line(total.to_string())
 				}

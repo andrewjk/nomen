@@ -2083,10 +2083,15 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// register pair — two AAPCS64 slots, not a by-address struct
 			// param. (`ref self` on the string struct is excluded: the
 			// caller passes &receiver as ONE slot — parse stamps is_ref on
-			// the param, not the type.)
+			// the param, not the type. An ordinary `ref string` param is
+			// excluded too — type.is_ref — it also arrives as one &slot;
+			// counting it as a pair shifts every trailing param's ABI
+			// slot, mirroring the second pass's ref handling.)
 			if (
 				param.type.is_view ||
-				(param.type.name === "string" && !(param.is_self_param && param.is_ref))
+				(param.type.name === "string" &&
+					!param.type.is_ref &&
+					!(param.is_self_param && param.is_ref))
 			) {
 				slot_idx += 2;
 				continue;
@@ -2215,8 +2220,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// into a 16-byte local (two register slots — matching the call
 			// site's pair passing), then skip the generic single-slot spill.
 			// (`ref self` on the string struct is excluded — it arrives as
-			// ONE &receiver slot and is spilled by the ref path below.)
-			if (param.type.name === "string" && !(param.is_self_param && param.is_ref)) {
+			// ONE &receiver slot and is spilled by the ref path below; an
+			// ordinary `ref string` param likewise arrives as one &slot —
+			// the type.is_ref exclusion — and takes the generic ref path.)
+			if (
+				param.type.name === "string" &&
+				!param.type.is_ref &&
+				!(param.is_self_param && param.is_ref)
+			) {
 				const offset = allocate_stack_space(status, 16, 16);
 				status.stack_offsets!.set(param.name, offset);
 				// Each half comes from its own register slot, or from the

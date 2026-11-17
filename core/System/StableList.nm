@@ -9,8 +9,12 @@
  * slab ADDRESSES, which survive the move. That is what lets `slot_ptr`
  * exist: `ref T x = sl.at(i)` binds the slot itself, the checker's `push`
  * exemption keeps the alias alive across pushes, and writes through it land
- * in the list. The list is still append-only — no `pop`/`set`/`remove_at` —
- * because displacing an element would invalidate its borrows.
+ * in the list. The list only ever appends (`push`) — no `pop`/`remove_at` —
+ * because displacing an element wholesale would invalidate its borrows. The
+ * two refill writes are the exceptions: `set(i, v)` overwrites an EXISTING
+ * slot in place (no address moves; the displaced value is reclaimed), and
+ * `truncate(n)` destroys the tail while RETAINING the slabs (the pool-reuse
+ * primitive — a decode that truncates then refills re-allocates nothing).
  *
  * The tail pieces (store/load/destroy for directory chunks) delegate to
  * Buffer's mono'd methods through a stack `Buffer_T` view — `load_from` is a
@@ -232,6 +236,55 @@ pub mv struct StableList<T> {
 			return self.at(i)
 		}
 		panic("index out of range")
+	}
+
+	// Overwrite an EXISTING element in place (i must be < length — the
+	// refill contract): the displaced element is reclaimed, `value` is
+	// installed, and no slot moves — element addresses are untouched, so
+	// borrows into other slots stay valid (a `ref self` call, so borrows
+	// INTO this list's element i die, like any mutator). Chunk 0 and tail
+	// slots go through Buffer/ClassBuffer `replace` (the displaced-reclaim
+	// write; `set` cannot: ClassBuffer — the class-element mono of
+	// `items`/`stage` — has no `set`, only `replace`), tail slots through
+	// the `stage` view over the chunk slab, cleared before return so the
+	// field destroy reclaims nothing. This is the write counterpart of `at`
+	// for refill-style callers (json_decode_into's storage reuse); the
+	// append path is `push`, which owns the fresh slot.
+	pub func set = (ref self { chunks, items, stage }, int i: i >= 0 && i < self.length, mv T value) {
+		if i < self.items.cap {
+			self.items.replace(i, value)
+		} else {
+			var int dir_index = i / 256 - 1
+			self.stage.init_view(self.chunks.load(dir_index), 256)
+			self.stage.replace(i % 256, value)
+			self.stage.clear_view()
+		}
+	}
+
+	// Destroy elements [n, length) and drop length to n, RETAINING the
+	// allocated storage: chunk 0, the directory, and every tail slab stay
+	// allocated, and each destroyed slot is zeroed (Buffer.destroy_at
+	// reclaims the element, then zeroes) so the next fill's fresh-slot
+	// stores are safe. This is the pool-reuse primitive — the typed
+	// counterpart of JsonTree's reset-per-parse pool: a caller that
+	// truncates to the new length and refills existing slots (scalars via
+	// `set`, containers/structs by decoding into the slot) reuses the slabs
+	// instead of re-allocating them. Beyond `length` the tail slots are
+	// zero, so a later push's fresh-slot store contract holds.
+	pub func truncate = (ref self { chunks, items, stage }, int n: n >= 0 && n <= self.length) {
+		var int i = n
+		while i < self.length {
+			if i < self.items.cap {
+				self.items.destroy_at(i)
+			} else {
+				var int dir_index = i / 256 - 1
+				self.stage.init_view(self.chunks.load(dir_index), 256)
+				self.stage.destroy_at(i % 256)
+				self.stage.clear_view()
+			}
+			i += 1
+		}
+		self.length = n
 	}
 
 	// Address of element `i` (INTERNAL — the ELEMENT BORROW primitive):

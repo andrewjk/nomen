@@ -151,3 +151,35 @@ Console.write_line(p.name + " " + local)
 `;
 	expect(parse_with_imports(input).errors).toEqual([]);
 });
+
+test("ref param -- ref string takes ONE ABI slot (trailing params read their own)", async () => {
+	// `ref string` arrives as one &slot pointer, not a fat (ptr, len) pair.
+	// The callee's param walk used to count it as a pair, so every trailing
+	// param read one register too high (garbage) — the shape the by-ref
+	// json_encode walk exposed (its `ref T value` first param, `ref
+	// StringBuilder sb` second). Both trailing shapes are pinned: scalars
+	// and a callee-saved struct param. (Statement calls only: a ref-string
+	// call in VALUE position is a separate, pre-existing C-backend
+	// statement-expression bug — see FOLLOWUP.)
+	const input = `
+func add_into = (ref string r, int n, int m, ref int got) {
+	got = r.length + n * m
+}
+
+func stitch = (ref string r, ref StringBuilder sb {}, ref string dst) {
+	sb.append_string(r)
+	sb.append_string("!")
+	dst = sb.to_string()
+}
+
+var r = "abcd"
+var int got = 0
+add_into(ref r, 3, 5, ref got)
+Console.write_line(got.to_string())
+var sb = StringBuilder()
+var result = ""
+stitch(ref r, ref sb, ref result)
+Console.write_line(result)
+`;
+	await build_and_check_output(input, "ref_string_trailing_params", "19\nabcd!\n");
+});

@@ -14,11 +14,13 @@ function errors(src: string) {
 
 /**
  * `StableList<T>` — the grow-only list whose element borrows SURVIVE `push`
- * (the stable-address contract). The list is append-only (no
- * `pop`/`set`/`remove_at`/`slot_ptr`), so growth reallocs the slot array but
- * displaces no element resources: a borrow from `.at` holds the slot's bytes
- * (value tier) or an instance pointer (class tier), and the checker exempts
- * `push` from borrow invalidation for this type only.
+ * (the stable-address contract). The list appends (`push`) and, for refill
+ * callers, overwrites existing slots in place (`set`) or shrinks while
+ * retaining its slabs (`truncate`) — no `pop`/`remove_at`/`slot_ptr` — so
+ * growth reallocs the slot directory but displaces no element resources: a
+ * borrow from `.at` holds the slot's bytes (value tier) or an instance
+ * pointer (class tier), and the checker exempts `push` from borrow
+ * invalidation for this type only.
  */
 
 describe("StableList basics", () => {
@@ -321,6 +323,60 @@ pub func main = () {
 }`);
 		expect(errs.some((m) => m.includes("'ref' iteration is not supported for StableList<T>"))).toBe(
 			true,
+		);
+	});
+});
+
+describe("StableList refill: set + truncate (retained slabs)", () => {
+	test("truncate destroys the tail and push reuses the zeroed slot", async () => {
+		const input = `
+var StableList<string> xs = StableList<string>()
+xs.push("a")
+xs.push("b")
+xs.push("c")
+if xs.length > 1 {
+	xs.truncate(1)
+}
+Console.write("len=\\{xs.length} first=\\{xs.at_or_panic(0)}")
+xs.push("z")
+Console.write(" len=\\{xs.length} tail=\\{xs.at_or_panic(1)}")
+if xs.length > 0 {
+	xs.set(0, "q")
+}
+Console.write(" first=\\{xs.at_or_panic(0)}")
+`;
+		await build_and_check_output(
+			input,
+			"stable_list_truncate_set",
+			"len=1 first=a len=2 tail=z first=q",
+		);
+	});
+
+	test("truncate and set cross the chunk boundary (tail slab retained)", async () => {
+		// 300 elements = chunk 0 (256 slots) + one tail slab. Truncating to
+		// 260 destroys the 40 tail slots but keeps the slab, the next push
+		// lands in the retained slab's slot 4 (fresh-slot store over the
+		// zeroed slot), and set(260, …) is the tail replace path.
+		const input = `
+var StableList<int> ys = StableList<int>()
+var int i = 0
+while i < 300; i += 1 {
+	ys.push(i)
+}
+if ys.length > 260 {
+	ys.truncate(260)
+}
+Console.write("len=\\{ys.length} at259=\\{ys.at_or_panic(259)}")
+ys.push(999)
+if ys.length > 260 {
+	ys.set(260, 777)
+}
+Console.write(" at260=\\{ys.at_or_panic(260)} at259=\\{ys.at_or_panic(259)}")
+`;
+		await build_and_check_output(
+			input,
+			"stable_list_truncate_tail",
+			"len=260 at259=259 at260=777 at259=259",
 		);
 	});
 });
