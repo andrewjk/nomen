@@ -679,11 +679,6 @@ work but bench-neutral — the cost is elsewhere:
 
 ## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
 
-- **The string-mutation scan is target-precise.** A raw consumer whose
-  aarch64 arm is read-only no longer inherits the conservative rule from
-  its C arm's pointer indexing — the argument elides on aarch64
-  (`borrow_to_string_elision`'s pinned count went 3 → 2). Sound: the
-  surviving aarch64 body performs no stores.
 - **`nomen format` and `#raw` body indentation.** Raw bodies are emitted
   verbatim (one shared body scanner with the tokenizer), so the formatter
   never re-indents them; a one-off pass normalized `core/` and the test
