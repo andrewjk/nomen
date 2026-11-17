@@ -302,6 +302,17 @@ export default interface CheckStatus {
 	library_boundary?: number;
 
 	/**
+	 * COMPTIME_PLAN_2 stage 4: `type` parameter bindings visible while
+	 * re-checking a free-function specialization clone (parameter name ->
+	 * bound type name, e.g. T -> "Point"). A call inside the clone may pass
+	 * the parameter on to another generic's `type` parameter (`decode(T, s)`
+	 * inside `outer<T>` specialized over Point); the callee's specialization
+	 * resolves the forwarded name here. Set only on the re-check status
+	 * built by `specialize_function`.
+	 */
+	comptime_type_bindings?: Map<string, string>;
+
+	/**
 	 * True while re-checking a MONOMORPHIZED generic body (the clone pass in
 	 * check_function_call_node, where substituted concrete types replace the
 	 * type params and `type_params` is empty). Memory-model gates that rely

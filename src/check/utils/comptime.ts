@@ -630,8 +630,10 @@ function rewrite_binding_access(
 			return comptime_string(node.start, meta.values[0].text);
 		}
 		if (call.name === "get" && args.length === 1) {
-			// field.get(obj) -> obj.<field> — an ordinary field access.
-			const arg = clone_node(unwrap_grouped(args[0]));
+			// field.get(obj) -> obj.<field> — an ordinary field access. The
+			// argument is re-walked: it may itself use the binding
+			// (`field.get(field.get(inner))`) or fold comptime strings.
+			const arg = rewrite(clone_node(unwrap_grouped(args[0])), false, binding, field, status);
 			return new AccessNode(node.start, arg, new AccessFieldNode(access.access.start, field.name));
 		}
 		if (call.name === "set" && args.length === 2) {
@@ -644,9 +646,12 @@ function rewrite_binding_access(
 				return node;
 			}
 			// field.set(obj, v) -> obj.<field> = v — an ordinary assignment,
-			// so no lvalue plumbing is needed (R5).
+			// so no lvalue plumbing is needed (R5). The value expression is
+			// re-walked: a binding use inside it (`field.set(c, field.get(d))`
+			// or a comptime concat) must rewrite too, not just the statement's
+			// top level.
 			const target = clone_node(unwrap_grouped(args[0]));
-			const value = clone_node(unwrap_grouped(args[1]));
+			const value = rewrite(clone_node(unwrap_grouped(args[1])), false, binding, field, status);
 			return new AssignmentNode(
 				node.start,
 				new AccessNode(node.start, target, new AccessFieldNode(access.access.start, field.name)),

@@ -676,3 +676,25 @@ work but bench-neutral — the cost is elsewhere:
   result's storage — necessary under the stable-address design; a
   pool-backed container decode path (the JsonTree approach) is the
   structural fix.
+
+## `type` parameter residuals (COMPTIME_PLAN_2 stage 4)
+
+- **Generic instantiations cannot be spelled as `type` arguments.**
+  `zero(List<int>)` does not parse — expression-context `<` resolves as
+  comparison (`try_parse_generic_args` requires a `(`/`.` follow), so the
+  argument never forms. A mono IS reachable by its mangled name
+  (`zero(List_int)`). Lifting this means either a type-argument position in
+  the call grammar or widening the speculative-parse follow set.
+- **Forwarding threads through free-function specializations only.**
+  `CheckStatus.comptime_type_bindings` is set on the re-check status built
+  by `specialize_function`; a `type` argument forwarded from a
+  monomorphized STRUCT body (clones stamped checked without a re-check —
+  custom `#init` re-checks, mono-method hooks) does not resolve. The
+  substitute_raw_in_node path would need the bindings threaded too.
+- **`T()` needs a default-constructible binding.** `substitute_generic_constructs`
+  maps `T()` to the constructor call verbatim — a struct whose fields lack
+  defaults errors "Parameters missing" at the specialization (the same
+  behavior bare-`T` generics always had). A reflection-driven
+  default-construction (build the value field-by-field from META defaults)
+  would lift it.
+

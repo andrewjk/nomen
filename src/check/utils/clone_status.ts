@@ -135,6 +135,11 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// the same flow context (mono re-check / variadic-arg seeding) and
 		// the shared destructure-temp provenance set.
 		is_mono_body_recheck: status.is_mono_body_recheck,
+		// COMPTIME_PLAN_2 stage 4: `type` parameter bindings of the
+		// specialization being re-checked, shared by reference — a call in
+		// any nested block must still forward a bound parameter to another
+		// generic's `type` parameter.
+		comptime_type_bindings: status.comptime_type_bindings,
 		checking_variadic_arg: status.checking_variadic_arg,
 		tuple_dst_from_array: status.tuple_dst_from_array,
 		// Nursery context: block clones (if/else/while inside `async { }`)

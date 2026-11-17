@@ -12,6 +12,7 @@ import clone_node from "../nodes/clone_node.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import GroupedNode from "../nodes/GroupedNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import RawNode from "../nodes/RawNode.ts";
@@ -3054,10 +3055,69 @@ function specialize_function(
 ): FunctionNode | null {
 	const substitution = new Map<string, string>();
 	const suffix_parts: string[] = [];
+	// COMPTIME_PLAN_2 stage 4 (R4): call-argument indexes aligned with
+	// `type` parameters — consumed at check time, spliced out of the call
+	// below so the specialized call carries only runtime arguments.
+	const type_arg_indices: number[] = [];
 
 	for (let i = 0; i < generic_func.params.length; i++) {
 		const param = generic_func.params[i];
 		const arg = call_node.params[i];
+		// A `type T` parameter's argument IS a type — a comptime value with
+		// no runtime representation. Bind the parameter NAME to the
+		// argument's type name (forwarding a still-generic parameter through
+		// this specialization's own bindings), and remember the index.
+		if (param.is_comptime_type) {
+			let arg_node = arg as BaseNode | undefined;
+			while (arg_node?.node_type === "grouped") {
+				arg_node = (arg_node as GroupedNode).value;
+			}
+			if (
+				!arg_node ||
+				arg_node.node_type !== "value" ||
+				(arg_node as ValueNode).value.startsWith('"')
+			) {
+				add_error(
+					status,
+					`a 'type' parameter takes a bare type name — ${generic_func.name}(${param.name}: type)`,
+					arg?.start ?? call_node.start,
+				);
+				return null;
+			}
+			let type_name = (arg_node as ValueNode).value;
+			const forwarded = status.comptime_type_bindings?.get(type_name);
+			if (forwarded) type_name = forwarded;
+			const declared = resolve_declared_struct(type_name, status) as StructNode | undefined;
+			if (!declared && !get_built_in_type(type_name)) {
+				const kind = status.enums.some((e) => e.name === type_name)
+					? "an enum"
+					: status.traits.some((t) => t.name === type_name)
+						? "a trait"
+						: status.bitsets.some((b) => b.name === type_name)
+							? "a bitset"
+							: undefined;
+				add_error(
+					status,
+					kind
+						? `a 'type' parameter takes a struct or builtin type — '${type_name}' is ${kind}`
+						: `unknown type '${type_name}' — a 'type' parameter takes a struct or builtin type name`,
+					(arg_node as ValueNode).start,
+				);
+				return null;
+			}
+			if (declared && (declared.type_params.length > 0 || declared.is_generic)) {
+				add_error(
+					status,
+					`'${type_name}' is generic — pass a concrete instantiation (its monomorphized name, e.g. Holder_int)`,
+					(arg_node as ValueNode).start,
+				);
+				return null;
+			}
+			substitution.set(param.name, type_name);
+			suffix_parts.push(type_name);
+			type_arg_indices.push(i);
+			continue;
+		}
 		const generic_struct = status.structs.findLast((s) => s.name === param.type.name);
 		if (!generic_struct?.is_generic) {
 			// Bare type parameter (`func f<T> = (T value, ...)`) — the
@@ -3168,6 +3228,14 @@ function specialize_function(
 		return null;
 	}
 
+	// R4: the comptime type arguments were consumed above — splice them out
+	// of the call so the remaining arguments align with the specialization's
+	// param-erased signature (arity, per-arg checks, constraint collection,
+	// and emission all see only runtime arguments).
+	for (let k = type_arg_indices.length - 1; k >= 0; k--) {
+		call_node.params.splice(type_arg_indices[k], 1);
+	}
+
 	for (let i = 0; i < generic_func.params.length; i++) {
 		const param = generic_func.params[i];
 		const generic_struct = status.structs.findLast((s) => s.name === param.type.name);
@@ -3203,6 +3271,13 @@ function specialize_function(
 	// the checker's library trust still covers the body.
 	cloned.is_specialization = true;
 
+	// R4 erasure: `type` parameters have no runtime representation — the
+	// specialization's signature drops them, so every downstream consumer
+	// (param checks, backends) sees only ordinary runtime parameters.
+	if (generic_func.params.some((p) => p.is_comptime_type)) {
+		cloned.params = cloned.params.filter((p) => !p.is_comptime_type);
+	}
+
 	for (const param of cloned.params) {
 		param.type = substitute_type(param.type, substitution);
 		substitute_param_signature(param, substitution);
@@ -3232,6 +3307,18 @@ function specialize_function(
 	const root = status.stack[0] as RootNode;
 	root.statements.push(cloned);
 
+	// Stage 4 composition: forward this specialization's `type` bindings so
+	// a call in the clone's body can pass the parameter on to another
+	// generic's `type` parameter (`decode(T, s)` inside `outer<T>`
+	// specialized over Point). Only PARAMETER bindings forward — the
+	// substitution map's other entries are generic-STRUCT rewrites
+	// (`Box` -> `Box_int`), not type-argument spellings.
+	const function_type_bindings = new Map<string, string>();
+	for (const tp of generic_func.type_params) {
+		const bound = substitution.get(tp);
+		if (bound) function_type_bindings.set(tp, bound);
+	}
+
 	const root_status: CheckStatus = {
 		stack: [root],
 		scope_depth: status.scope_depth,
@@ -3253,6 +3340,7 @@ function specialize_function(
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
 		is_mono_body_recheck: true,
+		comptime_type_bindings: function_type_bindings,
 	};
 
 	check_function_node(cloned, root_status);

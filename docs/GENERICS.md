@@ -203,6 +203,53 @@ The specialized function is memoized by name, so calling `unwrap` on two
 `Box<int>` values reuses one specialization, while `Box<string>` produces a
 second (`unwrap_Box_string`).
 
+## `type` parameters
+
+A free function can take a **type** as a parameter — `type T` (the ordinary
+`Type name` order) or the plan's `T: type` spelling; both parse to the same
+AST (COMPTIME_PLAN_2 stage 4, docs/COMPTIME_PLAN_2.md R3/R4):
+
+```nomen
+func zero = (type T, out T) {
+    var T x = T()
+    return x
+}
+
+const int z = zero(int)   // argument is the bare type name
+```
+
+The parameter **names a type instead of holding a runtime value** — the
+comptime-only category R4 calls for. Concretely:
+
+- **Parse** (`src/parse/parse_function.ts`): the parameter is stamped
+  `is_comptime_type`, its type annotation is the keyword `type`, and its
+  NAME is registered in `func.type_params` — which routes the function
+  through the entire existing generic-function machinery (deferred body,
+  backend skip, specialization plumbing) with no new paths. Methods are
+  rejected at parse (no generic methods), as are declaration keywords,
+  constraints, and default values on a `type` parameter.
+- **Specialization** (`specialize_function`): a comptime branch runs before
+  the generic-struct inference. The argument must be a bare type name —
+  grouped parens are unwrapped; a forwarded parameter name resolves through
+  `status.comptime_type_bindings`. The name is validated against declared
+  structs and builtins (enums/traits/bitsets/generic spellings are rejected
+  with targeted messages), bound into the substitution map under the
+  parameter NAME (`T` -> `Point`), and the argument is **spliced out of the
+  call** while the parameter is **filtered out of the clone's signature** —
+  R4 erasure: no runtime slot, so arity checks, per-argument checking,
+  constraint collection, and both backends see only ordinary parameters.
+- **Body composition**: everything downstream is the existing substitution
+  machinery keyed by the parameter name — `substitute_body_types` rewrites
+  `var T x` / `out T`, `substitute_generic_constructs` turns `T()` into the
+  constructor call or the builtin's zero literal, `substitute_pragma_iterables`
+  - `rewrite_meta_name_chains` bind `META.info(T)` and the `#for` iterables,
+    and the comptime predicates (`META.is_struct(T)`) fold so dead arms are
+    dropped before the re-check.
+- **Forwarding**: the re-check status carries `comptime_type_bindings`
+  (parameter name -> bound name, threaded through `clone_status`), so a call
+  inside the clone can pass the parameter on to another generic's `type`
+  parameter (`inner(T)` inside `outer<T>` specialized over `int`).
+
 ## Generic traits
 
 A generic trait `trait Viewable<T>` carries `type_params` like a struct; its
@@ -280,10 +327,21 @@ clone:
   traits — not on struct/class methods. A method can use its enclosing
   struct's type parameters, but cannot declare its own `<T>`. This blocks a
   few ownership patterns (see [GUI.md](GUI.md) for the motivating case).
+  Methods cannot declare `type` parameters either (rejected at parse).
 - **No bounds on trait or function type params.** Only struct type params
   accept `: Bound`. `trait Foo<T: Bar>` and `func f<T: Bar>` are not supported.
+  (A `type` parameter takes no constraint — gate on the bound type with the
+  comptime META predicates instead.)
 - **No explicit type arguments at generic-function call sites.** `T` is
   always inferred from the call arguments; you cannot write `unwrap<int>(b)`.
+- **`type` arguments are bare names.** A generic instantiation cannot be
+  spelled at the call site (`zero(List<int>)` does not parse — expression
+  context resolves `<` as comparison); a mono is reachable by its mangled
+  name (`zero(List_int)`). Enums, traits and bitsets are rejected as `type`
+  arguments.
+- **Forwarding threads through free-function specializations only.** A
+  `type` argument forwarded from a monomorphized STRUCT body (whose clones
+  are stamped checked without a re-check) does not resolve.
 - **No monomorphization-level layout specialization.** Every `T` slot is
   8 bytes regardless of the concrete type. This is a deliberate consequence
   of the storage model (see [MEMORY.md](MEMORY.md)), not a bug, but it means
@@ -295,7 +353,7 @@ clone:
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `src/parse/parse_struct.ts`                   | Struct `<T: Bound>` and conformance `: Trait<Args>` parsing                                                        |
 | `src/parse/parse_trait.ts`                    | Trait `<T>` parsing                                                                                                |
-| `src/parse/parse_function.ts`                 | Function `<T>` parsing                                                                                             |
+| `src/parse/parse_function.ts`                 | Function `<T>` parsing; `type T` / `T: type` comptime type parameters                                              |
 | `src/parse/parse_type.ts`                     | Type-argument syntax at use sites; `Array<T>` rewrite                                                              |
 | `src/parse/parse_expression.ts`               | Speculative generic-args parsing in expression context (`try_parse_generic_args`)                                  |
 | `src/parse/utils/expect_close_angle.ts`       | Peels `>` off `>>` / `>>>` tokens at generic-close positions                                                       |
@@ -314,5 +372,6 @@ clone:
 | `src/build_aarch64/build_access_node.ts`      | Method-call name resolution on generic receivers; Buffer inline-access fast path                                   |
 | `src/build_aarch64/utils/c_companion.ts`      | Lowers generic struct names to `void *` in the C companion file                                                    |
 | `test/generics.test.ts`                       | Generic structs and free functions (parsing, checking, build, errors)                                              |
+| `test/comptime_type.test.ts`                  | `type` parameters (both spellings, erasure, reflection composition, forwarding, errors)                            |
 | `test/trait_bounds.test.ts`                   | Trait bounds on struct type params                                                                                 |
 | `test/trait_generic.test.ts`                  | Generic trait conformance, default-method synthesis, nested type args (the `>>` case)                              |

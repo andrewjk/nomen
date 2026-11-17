@@ -502,6 +502,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.default_value_start = n.default_value_start;
 			c.is_variadic = n.is_variadic;
 			c.is_ref = n.is_ref;
+			c.is_comptime_type = n.is_comptime_type;
 			c.field_set = n.field_set?.slice();
 			c.field_set_span = n.field_set_span ? { ...n.field_set_span } : undefined;
 			c.is_variadic_tuple = n.is_variadic_tuple;

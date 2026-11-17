@@ -61,6 +61,26 @@ const int v = unwrap(b)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("type parameter: the argument is a bare type name, reflection composes", () => {
+		const input = `
+struct Point {
+    var x = 0
+    var y = 0
+}
+
+func field_names = (type T, out string) {
+    var s = META.info(T).name + ": "
+    #for field of META.info(T).fields {
+        s = s + field.name + " "
+    }
+    return s
+}
+
+Console.write_line(field_names(Point))
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("readme: constraints", () => {

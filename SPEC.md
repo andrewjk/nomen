@@ -3313,6 +3313,75 @@ Stage-2 limits: `#for` is body-scope only (whole-declaration generation is
 a later stage), reflection exposes field names/types but not offsets, and
 raw `#arch` blocks inside arms are not specialized per field.
 
+### Type Parameters (`type T`)
+
+A free function can take a **type** as a parameter. Spell it `type T` (the
+ordinary `Type name` order) or `T: type`; the argument at the call site is
+the bare type name. The parameter exists only at compile time — it has no
+runtime slot, and each specialization's signature omits it entirely:
+
+```
+struct Point {
+    var x = 0
+    var y = 0
+}
+
+func zero = (type T, out T) {
+    var x = T()
+    return x
+}
+
+const int z = zero(int)
+const p = zero(Point)
+```
+
+Inside the body, `T` is usable wherever a type goes — declarations (`var x
+= T()`, or an initializer-less `var T x`), construction (`T()` — the
+struct constructor or the builtin's zero value; the type must be
+default-constructible), and return types. Because
+`T` is a type, the whole reflection surface composes: `META.info(T)`,
+the comptime predicates, and `#for` all work against it, so one function
+serves every struct:
+
+```
+mv struct Sample {
+    var count = 0
+    var label = ""
+}
+
+func describe = (type T, out string) {
+    var s = META.info(T).name + "("
+    #for field of META.info(T).fields {
+        s = s + field.name + " "
+    }
+    return s + ")"
+}
+
+const names = describe(Sample)
+```
+
+Comptime predicates over the bound type (`META.is_struct(T)`,
+`META.is_container(T)`) fold per specialization, so dispatch inside the
+function eliminates its dead arms before they are ever checked. A generic
+function may forward its own parameter as a `type` argument (`inner(T)`),
+binding at the outer specialization.
+
+A `type` argument must be a bare name denoting a concrete struct or
+builtin type — enums, traits, bitsets, and generic spellings are rejected,
+as is anything that is not a type name at all:
+
+```
+func f = (type T, out int) {
+    return 0
+}
+const int bad = f("Point")
+// Error: a 'type' parameter takes a bare type name — f(T: type)
+```
+
+`type` parameters are free-function only (methods cannot declare them —
+there are no generic methods), and take no declaration keyword, constraint,
+or default value.
+
 ### Attributes
 
 Attributes attach compile-time metadata to structs and fields — the input

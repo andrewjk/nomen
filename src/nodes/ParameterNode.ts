@@ -13,6 +13,15 @@ export default class ParameterNode extends BaseNode {
 	is_self_param?: boolean;
 	// `is_moved` is inherited from BaseNode (a mv parameter / mv expression).
 	is_ref?: boolean;
+	/**
+	 * COMPTIME_PLAN_2 stage 4 (R4): a comptime type parameter — `type T` (or
+	 * the plan's `T: type` spelling). The parameter NAMES a type instead of
+	 * holding a runtime value: the call site passes the type as a bare name,
+	 * the body references it wherever a type (or `META.info(T)` argument)
+	 * goes, and the specialization erases it from the signature — it has no
+	 * runtime representation and is never sized, laid out, or emitted.
+	 */
+	is_comptime_type?: boolean;
 	is_variadic?: boolean;
 	/**
 	 * Declared field set (FIELD_EFFECTS.md): the fields of this `ref`

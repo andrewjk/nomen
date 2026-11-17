@@ -502,6 +502,27 @@ on aarch64, so `T` exists only for compile-time checking. The compiler emits
 one specialized copy per concrete instantiation (`Box<int>` → `Box_int`). See
 [GENERICS.md](docs/GENERICS.md) for the full design.
 
+A free function can also take a type itself as a parameter — spelled `type T`.
+The argument is the bare type name, the parameter has no runtime slot, and the
+whole reflection surface (`META.info(T)`, `#for`) composes with it:
+
+```nomen
+struct Point {
+    var x = 0
+    var y = 0
+}
+
+func field_names = (type T, out string) {
+    var s = META.info(T).name + ": "
+    #for field of META.info(T).fields {
+        s = s + field.name + " "
+    }
+    return s
+}
+
+Console.write_line(field_names(Point))   // "Point: x y "
+```
+
 ### Constraints
 
 Constraints are compile-time assertions on parameters, fields, and variables.

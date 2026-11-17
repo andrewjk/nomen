@@ -28,6 +28,9 @@ import {
 import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
 
+/** An identifier-shaped token value — the cheap gate for `type T` / `T: type`. */
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 export default function parse_function(
 	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
@@ -386,6 +389,76 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
 		return;
 	} else {
+		// COMPTIME_PLAN_2 stage 4 (R4): a comptime type parameter — spelled
+		// `type T` (canonical, the ordinary `Type name` order) or `T: type`
+		// (the plan's spelling). The parameter NAMES a type instead of
+		// holding a runtime value: the call site passes the type as a bare
+		// name, the body uses it wherever a type (or a `META.info(T)`
+		// argument) goes, and the specialization erases it from the
+		// signature. Registering the name in `type_params` routes the
+		// function through the existing generic-function machinery —
+		// deferred body, substitution plumbing on the clone — unchanged.
+		const at_type_param =
+			status.tokens[status.i]?.value === "type" &&
+			IDENTIFIER.test(status.tokens[status.i + 1]?.value ?? "");
+		const at_type_param_colon =
+			IDENTIFIER.test(status.tokens[status.i]?.value ?? "") &&
+			status.tokens[status.i + 1]?.value === ":" &&
+			status.tokens[status.i + 2]?.value === "type";
+		if (at_type_param || at_type_param_colon) {
+			if (param.declaration !== "const") {
+				add_error(
+					status,
+					`a 'type' parameter takes no declaration keyword — it names a type, not a runtime value`,
+					param.start,
+				);
+			}
+			if (
+				parent.node_type === "struct" ||
+				parent.node_type === "trait" ||
+				parent.node_type === "extend"
+			) {
+				add_error(
+					status,
+					`'type' parameters are not allowed on methods — declare the function at file scope`,
+					param.start,
+				);
+			}
+			if (at_type_param_colon) {
+				param.name_start = get_index(status);
+				param.name = consume_name(status);
+				accept(":", status);
+				param.type_start = get_index(status);
+				consume(status);
+			} else {
+				param.type_start = get_index(status);
+				consume(status);
+				param.name_start = get_index(status);
+				param.name = consume_name(status);
+			}
+			param.type = new Type("type");
+			param.is_comptime_type = true;
+			if (!func.type_params.includes(param.name)) {
+				func.type_params.push(param.name);
+			}
+			if (accept(":", status)) {
+				add_error(
+					status,
+					`a 'type' parameter takes no constraint — gate on the bound type with the comptime META predicates instead`,
+					get_index(status),
+				);
+				param.constraint = parse_expression(status);
+			}
+			if (accept("=", status)) {
+				add_error(status, `a 'type' parameter takes no default value`, get_index(status));
+				param.default_value_start = get_index(status);
+				param.default_value = parse_expression(status);
+			}
+			if (accept(",", status) && peek_current(status) !== ")") {
+				parse_function_parameter(parent, func, status);
+			}
+			return;
+		}
 		if (accept("...", status)) {
 			param.is_variadic = true;
 		}

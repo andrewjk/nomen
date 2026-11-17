@@ -328,6 +328,39 @@ Elevate it from "good long-term target" to the acceptance criterion.
    participating in the library type-link scan (the scan skips
    attribute-name tokens).
 4. **Generic `T: type` parameters composing with reflection** (R3, R4).
+   **SHIPPED** — the canonical spelling is `type T` (the ordinary
+   `Type name` order — the annotation is the keyword `type`); the plan's
+   `T: type` order parses to the same AST via a three-token intercept in
+   `parse_function_parameter`. The parameter is stamped
+   `ParameterNode.is_comptime_type` and its NAME is pushed into
+   `func.type_params` at parse, which routes the function through the
+   entire existing generic-function machinery unchanged (deferred body,
+   backend skip, clone substitution plumbing). R4 erasure: the argument
+   must be a bare type name (validated against structs + builtins —
+   enums/traits/bitsets/generic spellings are rejected with targeted
+   messages), it is bound under the parameter NAME in the substitution
+   map, spliced out of the call, and filtered out of the clone's
+   signature — no runtime slot exists, so no backend ever sees one.
+   `META.info(T)` / `#for` / `T()` / comptime predicates all resolve
+   through the stage-2 machinery keyed by that name; `META.is_struct(T)`
+   folds at clone time so dead arms are dropped before the re-check.
+   Forwarding (a generic parameter passed on as a `type` argument,
+   `inner(T)` inside `outer<T>`) rides `CheckStatus.comptime_type_bindings`,
+   set on the specialization re-check status and threaded through
+   `clone_status`. One latent stage-2 gap surfaced and was fixed: the
+   `.set(obj, value)` rewrite cloned the value expression verbatim — a
+   binding use inside it (`field.set(c, field.get(d))`) never rewrote;
+   both `.get`/`.set` arguments are now re-walked. Free-function only
+   (methods rejected at parse); no constraint/declaration keyword/default
+   value on a `type` parameter. Acceptance: `test/comptime_type.test.ts`
+   (JS runtime incl. forwarding + memoization, C build) and
+   `test/spec/comptime_type_params.test.ts`; SPEC.md gained a "Type
+   Parameters (`type T`)" section and README's Generics section an example.
+   Known gaps (recorded in GENERICS.md + FOLLOWUP.md): generic
+   instantiations cannot be spelled as `type` arguments (parser limit —
+   expression context resolves `<` as comparison; monos are reachable by
+   mangled name); forwarding threads through free-function
+   specializations only.
 5. **Unify `#arch`/`#platform` into `#if META`** (D2), once the raw-block
    shape and `aarch64_use_c` semantics are settled.
 6. (Someday) declaration/type generation.
