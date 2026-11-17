@@ -63,13 +63,72 @@ while i < 5; i += 1 {
 }
 Console.write_line(s)
 `;
-	// audit: false — an aarch64 literal-initialized slot holds RODATA until
-	// re-owned, so the displaced pair cannot be freed statically inside a
-	// loop (the first iteration's pair is rodata; the record can't see
-	// iterations). A runtime owns-flag would close it — recorded as a
-	// residual in FOLLOWUP. The output asserted here is correct on both
-	// backends, and the single-call ref-assign shapes above are audited.
-	await build_and_check_output(input, "ref_param_loop_assign", "x\n", false, {
+	// Audit on: the literal-initialized slot holds RODATA on iteration 1
+	// (its displaced pair must not be freed) and the callee's stored heap
+	// pair from iteration 2 on (must be freed). A static record can't see
+	// iterations, so the slot carries a runtime owns-flag (set by the first
+	// definite store through the ref param); every displaced free and the
+	// scope-exit free guard on it — the loop-displaced-rodata leak.
+	await build_and_check_output(input, "ref_param_loop_assign", "x\n");
+});
+
+test("ref param -- concat read through a ref param keeps both halves", async () => {
+	const input = `
+func bump<T> = (ref T target) {
+	target = target + "x"
+}
+
+var s = "seed"
+bump(ref s)
+bump(ref s)
+Console.write_line(s)
+`;
+	// `target = target + "x"`: the left operand is a `ref string` deref.
+	// aarch64 loaded only the ptr half, leaving the len register holding the
+	// right operand's length — "seed" became "s", so every bump produced
+	// "sx" instead of appending to the full value.
+	await build_and_check_output(input, "ref_param_concat", "seedxx\n");
+});
+
+test("ref param -- a may-store callee that never stores leaves the slot intact", async () => {
+	const input = `
+func maybe_set<T> = (ref T target, bool doit) {
+	if doit {
+		target = "w".copy()
+	}
+}
+
+var s = "seed"
+maybe_set(ref s, false)
+Console.write_line(s)
+`;
+	// The conditional store is a MAY-write: the callee may leave the slot's
+	// original pair in place. The call-site capture must not treat the slot
+	// as heap-owned afterwards (aarch64's adopts-record / C's re-registered
+	// scope-exit free used to reclaim the still-live value — audit
+	// stale-free). Only a definite wholesale store vouches ownership.
+	await build_and_check_output(input, "ref_param_may_store", "seed\n");
+});
+
+test("ref param -- a may-store callee that stores leaks the new value (bounded)", async () => {
+	const input = `
+func maybe_set<T> = (ref T target, bool doit) {
+	if doit {
+		target = "w".copy()
+	}
+}
+
+var s = "seed"
+maybe_set(ref s, true)
+Console.write_line(s)
+`;
+	// The store path of the pair above. The slot cannot be vouched heap-owned
+	// (the store is conditional), so the callee's stored copy has no owner to
+	// reclaim it: one allocation per such call leaks. That is the deliberate
+	// posture — the alternative (vouching the slot heap) frees the rodata
+	// pair when the store is skipped, i.e. an invalid free. Audit off for the
+	// documented bounded leak; the output is correct on both backends.
+	await build_and_check_output(input, "ref_param_may_store_yes", "w\n", false, {
 		audit: false,
 	});
 });

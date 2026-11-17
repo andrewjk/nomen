@@ -354,6 +354,47 @@ export function mark_heap_string(status: BuildStatus, name: string) {
 	}
 }
 
+/**
+ * The runtime "owns heap" flag for a `string` local whose slot starts
+ * NON-heap — a rodata literal init or a borrowed pair init. Allocates the
+ * 8-byte frame word, zero-initializes it (AT THE DECLARATION — the zero must
+ * dominate every read, so a loop body that re-reads it per iteration keeps
+ * iteration 1's store), and records it.
+ *
+ * The flag flips to 1 at the first store that establishes heap ownership:
+ * a direct assignment that records heap_strings (and the match/if/switch
+ * join store), or a definite wholesale `target = …` through a `ref` param at
+ * a call site (the capture site sets it after the call — the store strdup's
+ * non-heap RHS, so the slot owns heap from then on). The READER is the
+ * ref-call displaced-pair free: a literal-initialized slot passed as a
+ * `ref string` arg in a LOOP displaces rodata on iteration 1 (flag 0 — must
+ * not free) and the callee's heap pair from iteration 2 on (flag 1 — must
+ * free); a static record cannot see iterations, the flag can. (A callee whose
+ * store is only conditional is NOT vouched — no heap record, no flag flip —
+ * so a skipped store can never make the caller free the still-live pair; a
+ * store that does happen there leaks, the deliberate sound posture.)
+ */
+export function alloc_string_owns_flag(status: BuildStatus, name: string) {
+	if (status.string_owns_flags?.has(name)) return;
+	const flag_offset = allocate_stack_space(status, 8, 8);
+	emit_asm(status, `str xzr, [x29, #${flag_offset}]\n`);
+	if (!status.string_owns_flags) status.string_owns_flags = new Map();
+	status.string_owns_flags.set(name, flag_offset);
+}
+
+/** Set the string owns-flag to 1 (the slot now owns heap). No-op when the
+ *  local has no flag (heap-at-birth slots need none — their record already
+ *  vouches unconditionally). x9 is parked across the set: it may be live at
+ *  assignment-store sites (the same hazard mark_local_moved_flag guards). */
+export function mark_string_owns_flag(status: BuildStatus, name: string) {
+	const flag = status.string_owns_flags?.get(name);
+	if (flag === undefined) return;
+	emit_asm(status, `str x9, [sp, #-16]!\n`);
+	emit_asm(status, `mov x9, #1\n`);
+	emit_asm(status, `str x9, [x29, #${flag}]\n`);
+	emit_asm(status, `ldr x9, [sp], #16\n`);
+}
+
 export function anchor_heap_pointer(
 	status: BuildStatus,
 	var_name?: string,

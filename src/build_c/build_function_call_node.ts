@@ -8,6 +8,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { ref_string_slot_plan } from "../build_common/ref_string_slot.ts";
+import { scan_ref_string_param_writes } from "../build_common/scan_ref_string_writes.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
 import { is_box_type } from "../check/utils/box.ts";
@@ -294,11 +295,23 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 					lvalue: slot_plan.kind === "owned_local" ? slot_plan.name : slot_plan.access,
 				});
 			} else if (slot_plan?.kind === "adopting_local") {
-				// The slot held borrowed bytes — nothing to free. The callee's
+				// The slot held borrowed bytes — nothing to free. A callee
 				// assignment makes the variable a full owner: clear the borrow
 				// record and re-register the declaration so the scope-exit
 				// auto_free releases the NEW value.
-				if (status.string_borrow_vars?.delete(slot_plan.name)) {
+				//
+				// Only a DEFINITE wholesale store qualifies
+				// (scan_ref_string_param_writes): a may-store callee that
+				// skips its store leaves the borrowed pair in the slot, and
+				// the re-registered scope-exit free would then reclaim foreign
+				// bytes (the audit run's stale-free). A may-store keeps the
+				// status quo — if it does store, the new value leaks (bounded,
+				// never an invalid free).
+				const callee = (node as unknown as { resolved_function?: FunctionNode }).resolved_function;
+				const callee_param = callee?.params?.filter((p) => !p.is_self_param)[ri];
+				const definite_store =
+					!!callee && !!callee_param && scan_ref_string_param_writes(callee).has(callee_param.name);
+				if (definite_store && status.string_borrow_vars?.delete(slot_plan.name)) {
 					if (
 						!find_decl_in_c_scopes(status, slot_plan.name) &&
 						!status.function_ref_params?.has(slot_plan.name)
@@ -909,11 +922,15 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 
 	// The ref-string reclaim wrapper: the displaced pairs are borrowed-dead
 	// after the call — free them inside the wrapper and forward the call's
-	// value (when it has one) out of it.
+	// value (when it has one) out of it. The free is guarded on the slot no
+	// longer holding the captured pair: a MAY-store callee that skipped its
+	// store leaves the very pair the caller captured in the slot, and the
+	// scope-exit auto_free (or the container's own reclaim) still owns it —
+	// freeing here would double-free it (the audit run's stale-free).
 	if (ref_string_reclaims.length > 0) {
 		status.code += `; `;
 		for (const r of ref_string_reclaims) {
-			status.code += `free(${r.temp}.ptr); `;
+			status.code += `if (${r.lvalue}.ptr != ${r.temp}.ptr) { free(${r.temp}.ptr); } `;
 		}
 		if (ref_string_reclaim_ret) status.code += ref_string_reclaim_ret;
 		status.code += `})`;

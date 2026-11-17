@@ -73,6 +73,7 @@ import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
 	anchor_heap_pointer,
+	alloc_string_owns_flag,
 	clear_heap_string_fields,
 	consolidate_temp_anchors,
 	emit_owning_field_strdups_at,
@@ -3696,6 +3697,11 @@ export default function build_declaration_node(
 						emit_pair_store_x29(status, offset);
 						if (force_heap_init) {
 							mark_heap_string(status, node.name);
+						} else {
+							// The raw alias store: the slot holds bytes nobody
+							// owns (a borrow) — same runtime owns-flag as the
+							// literal arm above.
+							alloc_string_owns_flag(status, node.name);
 						}
 					} else {
 						// Whole-function-promoted scalars live in a
@@ -3727,6 +3733,13 @@ export default function build_declaration_node(
 						emit_asm(status, `adr x0, ${label}\n`);
 						emit_asm(status, `mov x1, #${lit_len}\n`);
 						emit_pair_store_x29(status, offset);
+						// The slot holds the RODATA pair (nothing owns it) until
+						// a store re-owns it — give the runtime owns-flag its
+						// zero so a ref-call capture can tell the first
+						// iteration's displaced pair (rodata — don't free) from
+						// later iterations' heap pairs (the loop-displaced
+						// rodata leak).
+						alloc_string_owns_flag(status, node.name);
 					}
 				} else {
 					emit_int_immediate(status, raw);

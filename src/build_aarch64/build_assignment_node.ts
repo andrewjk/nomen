@@ -80,6 +80,7 @@ import {
 	find_anchor_slot,
 	mark_anchor_destroy,
 	mark_local_moved_flag,
+	mark_string_owns_flag,
 	mark_moved_if_struct,
 	record_heap_string_field,
 	resolve_struct_name,
@@ -1353,6 +1354,11 @@ export default function build_assignment_node(
 			if (join.kind === "string") {
 				if (!status.heap_strings) status.heap_strings = new Set();
 				status.heap_strings.add(name);
+				// A join normalizes its arms to owned values (the owner free
+				// below/reclaim would abort on rodata), so the destination now
+				// owns heap — mirror it into the local's runtime string
+				// owns-flag for a later ref-call capture's displaced free.
+				mark_string_owns_flag(status, name);
 			}
 			return;
 		}
@@ -2860,6 +2866,16 @@ export default function build_assignment_node(
 			}
 			emit_asm(status, `\n`);
 			emit_var_store(status, "x0", name, size);
+			if (size === 16 && status.heap_strings?.has(name)) {
+				// Mirror the ownership this store established into the local's
+				// runtime string owns-flag (the ref-call capture's displaced
+				// free reads it). After the classification chain,
+				// `heap_strings.has(name)` is exactly "the slot now owns its
+				// pair" — and a heap-marked target STAYS heap-marked through
+				// every store (the catch-all strdups), so the flag never
+				// travels 1 → 0 here.
+				mark_string_owns_flag(status, name);
+			}
 			if (ref_item_flag_offset !== undefined) {
 				// Mirror the ownership this store established into the runtime
 				// owns-flag the writeback reads. After the classification

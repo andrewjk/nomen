@@ -75,6 +75,30 @@ function deref_load_instr(reg: string, type_name: string): string {
 	return `ldr x0, [${reg}]\n`;
 }
 
+/** Whether a `ref`/`var` pointee of `node`'s type is the fat (ptr, len)
+ *  string pair — the pair a deref must load BOTH halves of (a plain-width
+ *  deref leaves x1 holding whatever the previous expression built, so a
+ *  concat's left operand read as a 1-byte prefix of the target).
+ *  `ref string target` + `target + "x"` was the shape. */
+function is_string_pointee(node: ValueNode): boolean {
+	const t = node.type;
+	return !!t && t.name === "string" && !t.is_view && !t.is_array && !t.is_pointer;
+}
+
+/** Dereference the fat string pair at `base` (a register holding
+ *  `nomen_string*`) into (x0, x1). The len load comes FIRST when the base is
+ *  x0 itself — reloading the ptr half overwrites the only copy of the
+ *  pointer. */
+function emit_string_pair_deref(base: string, status: BuildStatus) {
+	if (base === "x0") {
+		emit_asm(status, `ldr x1, [x0, #8]\n`);
+		emit_asm(status, `ldr x0, [x0]\n`);
+	} else {
+		emit_asm(status, `ldr x0, [${base}]\n`);
+		emit_asm(status, `ldr x1, [${base}, #8]\n`);
+	}
+}
+
 export default function build_value_node(node: ValueNode, status: BuildStatus) {
 	const original_value = node.value;
 	// The checker-synthesized zeroed-struct swap value (`is_struct_zero`):
@@ -217,6 +241,11 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				if (paramReg !== "x0") {
 					emit_asm(status, `mov x0, ${paramReg}\n`);
 				}
+			} else if (is_string_pointee(node)) {
+				// `ref string` param in a register: the pointee is the fat
+				// (ptr, len) pair — load BOTH halves (a plain-width deref
+				// leaves x1 holding whatever the previous operand built).
+				emit_string_pair_deref(paramReg, status);
 			} else {
 				emit_asm(status, deref_load_instr(paramReg, param_type_name));
 			}
@@ -324,7 +353,13 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 				!!status.class_vars?.has(value) ||
 				!!status.class_vars?.has(original_value);
 			if (!is_class) {
-				emit_asm(status, deref_load_instr("x0", param_type_name));
+				if (is_string_pointee(node)) {
+					// The pointee is the fat (ptr, len) pair — load both
+					// halves (see the paramReg branch above).
+					emit_string_pair_deref("x0", status);
+				} else {
+					emit_asm(status, deref_load_instr("x0", param_type_name));
+				}
 			}
 		} else {
 			if (alloc_reg !== "x0") {
@@ -396,7 +431,16 @@ export default function build_value_node(node: ValueNode, status: BuildStatus) {
 			// the pointer, then dereference with the pointed-to value's width
 			// (e.g. `ldrb` for `ref bool`) — NOT the 8-byte `ldr` used before.
 			emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
-			emit_asm(status, deref_load_instr("x0", type_name));
+			if (is_string_pointee(node)) {
+				// The pointee is the fat (ptr, len) pair — load both halves
+				// (a plain-width deref leaves x1 holding the previous
+				// expression's value: a concat's left operand read as a
+				// 1-byte prefix of the target — `target = target + "x"` in a
+				// `ref T target` body produced "sx" for "seed").
+				emit_string_pair_deref("x0", status);
+			} else {
+				emit_asm(status, deref_load_instr("x0", type_name));
+			}
 		} else {
 			const size = aarch64_size(type_name);
 			const signed = is_signed_type(type_name);

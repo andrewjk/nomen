@@ -10,6 +10,7 @@ import mark_tuple_literal_move_owners from "../build_common/mark_tuple_literal_m
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
 import { ref_string_slot_plan } from "../build_common/ref_string_slot.ts";
+import { scan_ref_string_param_writes } from "../build_common/scan_ref_string_writes.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
 import { transfer_ref_param_field_records } from "../build_common/transfer_ref_param_records.ts";
@@ -605,6 +606,17 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// Frame offsets of captured `ref string` old pairs (see the ref-arg
 		// marshalling below) — freed right after the call returns.
 		const ref_string_reclaim_offsets: number[] = [];
+		// Captured `ref string` old pairs whose ownership only the runtime
+		// string owns-flag knows: a literal-initialized slot displaces RODATA
+		// on the first pass through a loop (flag 0 — no free) and the callee's
+		// stored heap pair from the second pass on (flag 1 — free). `set_on_call`
+		// says the callee DEFINITELY stores wholesale through the param, so the
+		// flag flips to 1 after the call.
+		const ref_string_flag_reclaims: {
+			offset: number;
+			flag: number;
+			set_on_call: boolean;
+		}[] = [];
 		// Collect `ref` class PARAMS forwarded to another `ref` param. The
 		// callee may have reassigned the caller's slot, so the param's
 		// callee-saved register (which still holds the pre-call instance) must
@@ -1159,21 +1171,66 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 							!callee_param_type.is_array &&
 							!callee_param_type.is_nullable
 						) {
-							const slot_plan = ref_string_slot_plan(arg, status, false);
-							if (slot_plan?.kind === "owned_local" || slot_plan?.kind === "owned_field") {
+							// A literal/borrow-initialized local carries the
+							// runtime string owns-flag: its displaced pair is
+							// rodata on the first pass (flag 0 — must not free)
+							// and heap after a store established ownership
+							// (flag 1 — must free). The flag path governs EVERY
+							// call over such a slot, even one the static record
+							// now vouches heap (a mark from an earlier definite
+							// call) — the record can't see iterations, the flag
+							// can.
+							const arg_value_name =
+								arg.node_type === "value" ? (arg as ValueNode).value : undefined;
+							const own_flag =
+								arg_value_name !== undefined
+									? status.string_owns_flags?.get(arg_value_name)
+									: undefined;
+							const callee_writes =
+								arg_value_name !== undefined && node.resolved_function
+									? scan_ref_string_param_writes(node.resolved_function)
+									: undefined;
+							const definitely_stored =
+								callee_writes !== undefined &&
+								callee_params?.[i] !== undefined &&
+								callee_writes.has(callee_params[i].name);
+							if (arg_value_name !== undefined && own_flag !== undefined) {
 								const capture_offset = allocate_stack_space(status, 16);
 								emit_address_of(arg, status);
 								emit_asm(status, `ldr x9, [x0]\n`);
 								emit_asm(status, `ldr x10, [x0, #8]\n`);
 								emit_asm(status, `str x9, [x29, #${capture_offset}]\n`);
 								emit_asm(status, `str x10, [x29, #${capture_offset + 8}]\n`);
-								ref_string_reclaim_offsets.push(capture_offset);
-							} else if (slot_plan?.kind === "adopting_local" && slot_plan.mark_heap) {
-								// The slot held rodata/borrowed bytes — nothing to
-								// free. The callee's assignment leaves an OWNED
-								// pair in the slot: record the heap ownership so
-								// the scope-exit free releases it.
-								mark_heap_string(status, slot_plan.name);
+								ref_string_flag_reclaims.push({
+									offset: capture_offset,
+									flag: own_flag,
+									set_on_call: definitely_stored,
+								});
+								// Only a DEFINITE store vouches the slot ends up
+								// heap-owned: a may-store callee may skip it and
+								// leave the rodata/borrowed pair in place, and a
+								// heap record behind it would make the scope-exit
+								// free reclaim that pair (invalid free).
+								if (definitely_stored) mark_heap_string(status, arg_value_name);
+							} else {
+								const slot_plan = ref_string_slot_plan(arg, status, false);
+								if (slot_plan?.kind === "owned_local" || slot_plan?.kind === "owned_field") {
+									const capture_offset = allocate_stack_space(status, 16);
+									emit_address_of(arg, status);
+									emit_asm(status, `ldr x9, [x0]\n`);
+									emit_asm(status, `ldr x10, [x0, #8]\n`);
+									emit_asm(status, `str x9, [x29, #${capture_offset}]\n`);
+									emit_asm(status, `str x10, [x29, #${capture_offset + 8}]\n`);
+									ref_string_reclaim_offsets.push(capture_offset);
+								} else if (slot_plan?.kind === "adopting_local" && slot_plan.mark_heap) {
+									// The slot held rodata/borrowed bytes — nothing
+									// to free. A DEFINITE store leaves an OWNED pair
+									// in the slot: record the heap ownership so the
+									// scope-exit free releases it. A may-store keeps
+									// the record clear (a skipped store would leave
+									// the rodata/borrowed pair for that free).
+									if (definitely_stored) mark_heap_string(status, slot_plan.name);
+								}
 							}
 						}
 						emit_address_of(arg, status);
@@ -1658,12 +1715,29 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// the caller frees the pair it vouched for owning. x0/x1 hold the
 		// call's return value — preserve both across the free (a string
 		// return is the (ptr, len) pair).
-		if (ref_string_reclaim_offsets.length > 0) {
+		if (ref_string_reclaim_offsets.length > 0 || ref_string_flag_reclaims.length > 0) {
 			emit_asm(status, `str x0, [sp, #-16]!\n`);
 			emit_asm(status, `str x1, [sp, #-16]!\n`);
 			for (const offset of ref_string_reclaim_offsets) {
 				emit_asm(status, `ldr x0, [x29, #${offset}]\n`);
 				emit_free(status);
+			}
+			for (const reclaim of ref_string_flag_reclaims) {
+				// Free the displaced pair only when the runtime owns-flag says
+				// the slot owned heap (iteration 1 of a loop displaces rodata).
+				const skip = `.Lskip_refown_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				emit_asm(status, `ldr x9, [x29, #${reclaim.flag}]\n`);
+				emit_asm(status, `cbz x9, ${skip}\n`);
+				emit_asm(status, `ldr x0, [x29, #${reclaim.offset}]\n`);
+				emit_free(status);
+				emit_asm(status, `${skip}:\n`);
+				if (reclaim.set_on_call) {
+					// A definite wholesale store through the param leaves the
+					// slot heap-owned (the store strdup's non-heap RHS) — the
+					// NEXT capture over this slot must free its displaced pair.
+					emit_asm(status, `mov x9, #1\n`);
+					emit_asm(status, `str x9, [x29, #${reclaim.flag}]\n`);
+				}
 			}
 			emit_asm(status, `ldr x1, [sp], #16\n`);
 			emit_asm(status, `ldr x0, [sp], #16\n`);

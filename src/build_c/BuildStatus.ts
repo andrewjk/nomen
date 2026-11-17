@@ -892,6 +892,22 @@ export default interface BuildStatus {
 	 */
 	c_mv_owns_flags?: Map<string, string>;
 	/**
+	 * aarch64 stack offset of a runtime "owns heap" flag for a `string` local
+	 * whose slot starts NON-heap (a rodata literal init, a borrowed pair init)
+	 * (name → offset). The flag is 0 while the slot holds bytes nobody owns
+	 * and 1 once a store established heap ownership — a callee's DEFINITE
+	 * wholesale `target = …` through a `ref` param (the store strdup's
+	 * non-heap RHS), a direct assignment that recorded heap_strings, or a
+	 * match/if/switch join store. The ref-call displaced free guards on it: a
+	 * literal-initialized slot passed as a `ref string` arg in a LOOP
+	 * displaces rodata on iteration 1 (must not free) and the callee's heap
+	 * pair from iteration 2 on (must free) — a static record cannot see
+	 * iterations (the FOLLOWUP "loop-displaced rodata slots" leak). A
+	 * may-store callee is never vouched (no heap record, no flag flip), so
+	 * its skipped store cannot make the caller free the still-live pair.
+	 */
+	string_owns_flags?: Map<string, number>;
+	/**
 	 * Value-struct locals initialized from a BORROW accessor (`var b =
 	 * list.at_or_panic(i)` — an access_func whose result is not `mv out`):
 	 * the struct's bytes are shared with the container slot, so a func-typed

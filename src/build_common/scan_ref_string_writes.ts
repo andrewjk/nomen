@@ -265,8 +265,102 @@ function nested_statement_lists(stmt: BaseNode): BaseNode[][] {
 }
 
 /**
- * The forwarded-call shape of a top-level statement: a resolved free-function
- * call or method call, with its argument list (the receiver is NOT included).
+ * The `ref` parameters `func` DEFINITELY assigns wholesale — a top-level
+ * (definitely-executed) statement whose left side is the bare parameter
+ * (`target = …`, the whole-slot store), plus one hop of forwarding: a
+ * top-level call that passes the parameter on as its own `ref` argument
+ * whose callee is itself a definite wholesale writer. Memoized on the
+ * function node; forwarding cycles are cut by the pre-set memo.
+ *
+ * This is the CALL SITE's soundness fact for the aarch64 displaced-pair
+ * capture's runtime owns-flag: the store through a `ref string` param
+ * strdup's every non-heap RHS into an owned copy (both backends' ref-param
+ * string store paths), so a DEFINITE store leaves the caller's slot
+ * heap-owned. A store nested in a branch (a may-write) is deliberately
+ * excluded — the flag must only report ownership that is certain, or a
+ * not-taken store would vouch for a still-rodata slot.
+ */
+export function scan_ref_string_param_writes(func: FunctionNode): Set<string> {
+	const stamp = func as unknown as { _ref_string_param_writes?: Set<string> };
+	if (stamp._ref_string_param_writes) return stamp._ref_string_param_writes;
+	const result = new Set<string>();
+	// Pre-set the memo before walking: a forwarding cycle re-enters this
+	// (partial) set and terminates — the cycle member contributes nothing.
+	stamp._ref_string_param_writes = result;
+	const tracked = new Set<string>();
+	for (const param of func.params ?? []) {
+		if (param.is_self_param) continue;
+		if (!(param.is_ref || param.type.is_ref)) continue;
+		if (param.type.is_array || param.type.is_view) continue;
+		tracked.add(param.name);
+	}
+	if (!tracked.size) return result;
+	scan_param_writes_top_level(func.statements ?? [], tracked, result);
+	return result;
+}
+
+/** The top-level walk of scan_ref_string_param_writes: direct wholesale
+ *  stores and definite forwarded writers. Certainty is maintained across the
+ *  list: after an unconditional `return` — or any control-flow statement
+ *  whose nested body can return — the remaining statements may not execute,
+ *  so a store behind such a statement is a MAY-store (a record behind it
+ *  would vouch for a store the runtime can skip, and the caller's scope-exit
+ *  free would then reclaim a still-rodata/borrowed pair). */
+function scan_param_writes_top_level(
+	statements: BaseNode[],
+	tracked: Set<string>,
+	result: Set<string>,
+): void {
+	let certain = true;
+	for (const stmt of statements) {
+		if (stmt.node_type === "return") {
+			certain = false;
+			continue;
+		}
+		if (certain) {
+			if (stmt.node_type === "assign") {
+				// A bare-name left side IS the wholesale store (`target = …`); a
+				// field path (`target.field = …`) is a FIELD store — tracked by
+				// the field scans, not here.
+				const lhs = (stmt as unknown as { left_value?: BaseNode }).left_value;
+				if (lhs?.node_type === "value") {
+					const name = (lhs as { value?: string }).value;
+					if (typeof name === "string" && tracked.has(name)) result.add(name);
+				}
+			} else {
+				const call = ref_forward_call(stmt);
+				if (call) {
+					const [callee, args] = call;
+					const non_self_params = (callee.params ?? []).filter((p) => !p.is_self_param);
+					const callee_writes = scan_ref_string_param_writes(callee);
+					args.forEach((arg, i) => {
+						if (arg?.node_type !== "value") return;
+						const arg_name = (arg as { value?: string }).value ?? "";
+						if (!tracked.has(arg_name)) return;
+						const callee_param = non_self_params[i];
+						if (!callee_param || !(callee_param.is_ref || callee_param.type.is_ref)) return;
+						if (callee_writes.has(callee_param.name)) result.add(arg_name);
+					});
+				}
+			}
+		}
+		// A control-flow statement that can return makes everything after it
+		// conditional.
+		if (certain && nested_statement_lists(stmt).some((nested) => nested.some(contains_return))) {
+			certain = false;
+		}
+	}
+}
+
+/** Whether any statement list nested inside `stmt` (branch/loop bodies)
+ *  contains a `return` — the certainty cut for scan_param_writes_top_level. */
+function contains_return(stmt: BaseNode): boolean {
+	if (stmt.node_type === "return") return true;
+	return nested_statement_lists(stmt).some((nested) => nested.some(contains_return));
+}
+
+/** The forwarded-call shape of a top-level statement: a resolved free-function
+ *  call or method call, with its argument list (the receiver is NOT included).
  */
 function ref_forward_call(stmt: BaseNode): [FunctionNode, BaseNode[]] | undefined {
 	if (stmt.node_type === "func_call") {
