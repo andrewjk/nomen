@@ -679,15 +679,6 @@ work but bench-neutral — the cost is elsewhere:
 
 ## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
 
-- **A function mixing Nomen statements with raw arms for OTHER targets no
-  longer errors.** The tag era rejected any function whose raw blocks all
-  targeted a different arch (`has_other_arch && !has_match`), even when the
-  body had ordinary statements. Under the `#if` fold those arms simply
-  disappear (the documented `#if` contract: code for other targets vanishes
-  without a trace). The dangerous shape — a raw-ONLY implementation whose
-  every arm folded away, leaving callers to `bl` into nothing — is still an
-  error, raised at check time via `FunctionNode.folded_away_raws` +
-  `check_function_node` ("no implementation for this target").
 - **Ownership classification is per-target.** A `#destroy` whose only
   release sits in one target's raw arm makes the struct copyable on the
   target where the arm folded away (the tree really has no destroy there).

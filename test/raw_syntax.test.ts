@@ -154,6 +154,62 @@ func answer = (out int) {
 		expect(parsed.errors).toEqual([]);
 	});
 
+	test("a raw-only function whose every arm folded away has no implementation", () => {
+		// The stage-5 coverage guard: the arms target aarch64 only, so on the
+		// C target the body folds to nothing and callers would call into
+		// nothing — a check-time error pointing at the missing arm.
+		const parsed = parse_raw(
+			`
+import System
+
+func answer = (out int) {
+	#if META.arch == "aarch64" {
+		#raw {
+			mov x0, #2
+			ret
+		}
+	}
+}
+`,
+			{ arch: "c" },
+		);
+		expect(
+			parsed.errors.some((e) => e.message.includes("has no implementation for this target")),
+		).toBe(true);
+		// The error points at the CURRENT target's missing arm spelling.
+		expect(parsed.errors.some((e) => e.message.includes('META.arch == "c"'))).toBe(true);
+	});
+
+	test("mixed statements with an other-target raw arm check clean", () => {
+		// The tag era rejected any function whose raw blocks all targeted a
+		// different arch, even when the body had ordinary statements. Under
+		// the `#if` fold the arm vanishes (code for other targets disappears
+		// without a trace) and the Nomen statements check normally — the
+		// "no implementation" guard only covers the raw-ONLY shape, where
+		// nothing else is left.
+		const parsed = parse_raw(
+			`
+import System
+
+func tagged = (out int) {
+	var base = 40
+	#if META.arch == "c" {
+		#raw {
+			printf("only on C\\n");
+		}
+	}
+	return base + 2
+}
+
+pub func main = () {
+	Console.write_line(tagged().to_string())
+}
+`,
+			{ arch: "aarch64" },
+		);
+		expect(parsed.errors).toEqual([]);
+	});
+
 	test("an unsupported argument is rejected", () => {
 		const parsed = parse_raw(`
 import System
