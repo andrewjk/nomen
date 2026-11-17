@@ -902,8 +902,25 @@ func json_encode_list<E> = (StableList<E> list, ref StringBuilder sb {}) {
 		if i > 0 {
 			sb.append_char(',')
 		}
-		var elem = list.at(i)
-		json_encode_element(elem, ref sb)
+		// String elements keep the owning load — element borrows of strings
+		// are rejected (the slot has no safe store convention). The comptime
+		// dispatch folds per specialization, so the borrow arm is never
+		// checked for a StableList<string>.
+		if META.name(E) == "string" {
+			var s_elem = list.at(i)
+			json_append_quoted(ref sb, s_elem)
+		} else {
+			// The element BORROW (`ref` binds the slot — no per-element deep
+			// copy, no scope-exit destroy). The owning load (`var elem =
+			// list.at(i)`) deep-copied every element and freed the copy at
+			// the loop-body scope: for container elements that copy
+			// materialized a full 256-slot chunk per element (Buffer has no
+			// length, so `copy` clones `cap` slots). The borrow is read-only
+			// — encode never mutates the source list — so the aliasing is
+			// sound and the walk is zero-copy.
+			ref elem = list.at(i)
+			json_encode_element(elem, ref sb)
+		}
 	}
 	sb.append_char(']')
 }

@@ -664,28 +664,41 @@ and bench/compile_nomen.ts parsed without the target, so the aarch64 column
 built C-checked trees through the aarch64 backend (stage 5's per-target
 parse contract) — any bench whose core path crosses a target-selected raw
 arm emitted C text into the .s and failed to assemble. The cost is
-still elsewhere:
+still elsewhere. Landed 2026-11-18: the ENCODE lever — `json_encode_list`
+binds each element as an ELEMENT BORROW (`ref elem = list.at(i)`; strings
+keep the owning load — string slot borrows are rejected), so the
+per-element deep copy + scope-exit destroy disappear. Measured 0.92s →
+0.22s at 25k iterations on aarch64 (same-shell A/B), now at parity with
+the DOM bench (~1.1x). The borrow needed five compiler fixes (element
+borrows through SPECIALIZED generic clones: `clone_node` dropped
+`is_ref_binding`; the loop-promotion/NIR-site allocators promoted alias
+slots like values; `ptr float` returns were bit-cast through d0 by the
+float-return marshals at three sites, and the checker's rewrite didn't
+restamp the rewritten call's type; the float-operand loader read the alias
+slot as a value) — pinned by test/element_borrow_reads.test.ts. Remaining:
 
-- **Encode (~0.74s of the 0.89s) — the per-element load copy.**
-  `json_encode_list`'s `var elem = list.at(i)` deep-copies every nested
-  container element (the ownership-safe load: the binding is
-  destroy-tracked and frees the copy — before the destroy-tracked fix the
-  copies leaked per element instead). The sampler puts `Buffer_float_set`
-  (the copy's per-slot walk) at the top: a 2-float point list's copy
-  materializes its whole 256-slot chunk, because `Buffer<T>` has no length
-  — `copy` clones `cap` slots, and StableList's chunk-0 is an exact 256
-  allocation. A copy-free read needs either a read-only element borrow —
-  `ref E elem = list.at(i)` rewrites to `slot_ptr` but the aarch64
-  slot-borrow destroy is not suppressed, so the aliased slot's interior
-  pointer gets freed (malloc abort; the same un-designed family as "for
-  ref x of list") — or a length on `Buffer` so copies take the live
-  prefix.
 - **Decode (~0.15s) — fresh chunk-0 slabs per element container** (`T()` +
   a fresh `StableList` per nested array; the DOM reuses its pool). Each
   `StableList<float>()` costs a 2 KB exact-256 calloc that lives as the
   result's storage — necessary under the stable-address design; a
   pool-backed container decode path (the JsonTree approach) is the
   structural fix.
+
+## Scalar element borrows misread in operation position (compiler)
+
+`ref f = list.at(i)` where the element is a SCALAR, read inside an
+OPERATION (`total = total + f`) — the library's encode walk doesn't hit
+this (the borrowed element feeds a call argument), but user code will:
+under the aarch64 induction promotion the loop's increment is duplicated
+(once hoisted into the body ahead of the alias store, once in the update),
+so the borrow advances two slots per iteration and reads every other
+element (a two-element `StableList<float>` sums 1.5 instead of 3.75).
+Repro: the op-position shape described above, aarch64 (split/audit test
+builds; the single-TU runner build is unaffected — the promotion fires in
+the test harness's emission). The struct-element and call-argument shapes
+are correct and pinned by test/element_borrow_reads.test.ts. The fix is in
+the promotion's increment rewriting for loops whose body stores an alias
+slot — not yet localized (all existing asm-pass kill switches leave it).
 
 ## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
 
