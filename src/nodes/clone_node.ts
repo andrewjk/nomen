@@ -229,6 +229,15 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_view_keyword = n.is_view_keyword;
 			c.keyword_start = n.keyword_start;
 			c.keyword_text = n.keyword_text;
+			// The element/instance ALIAS stamp (parse_declaration: `ref row =
+			// rows.at(i)`). The specialization's re-check normalizes the
+			// keyword to `var` (check_declaration_node) — the alias semantics
+			// ride THIS flag, which both backends' declaration builders read
+			// to emit the slot-pointer binding and skip the scope-exit
+			// destroy. Dropping it turned every cloned `ref` binding into an
+			// owning copy of the aliased slot (a value init from the slot_ptr
+			// call on C; a double-free at scope exit on aarch64).
+			c.is_ref_binding = n.is_ref_binding;
 			return c;
 		}
 		case "assign": {

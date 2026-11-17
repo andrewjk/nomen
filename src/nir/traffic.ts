@@ -40,6 +40,14 @@ export interface DeclEntry {
 	name: string;
 	type_name: string;
 	modifiers: { is_array?: boolean; is_view?: boolean; is_ref?: boolean; is_nullable?: boolean };
+	/**
+	 * The declaration is an element/instance BORROW (`ref row = rows.at(i)`
+	 * — the AST's `is_ref_binding`): the lowered slot holds a POINTER to the
+	 * aliased slot, so the name must never be register-promoted (a promoted
+	 * "value" is the entry-time pointer, and the use-side deref chain reads
+	 * the slot, not the register).
+	 */
+	ref_binding?: boolean;
 }
 
 export interface TrafficReport {
@@ -108,6 +116,10 @@ class TrafficWalker {
 					name: s.decl.name,
 					type_name: s.decl.type?.name ?? "",
 					modifiers: s.decl.modifiers,
+					ref_binding:
+						(s.decl.node as unknown as { is_ref_binding?: boolean })?.is_ref_binding === true
+							? true
+							: undefined,
 				});
 				if (s.decl.init) this.expr(s.decl.init, depth, false);
 				// `s.decl.swap` deliberately uncounted — same parity rule as the

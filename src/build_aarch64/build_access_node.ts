@@ -3955,7 +3955,11 @@ function build_access_method(
 		}
 		// A float-returning trait method hands its result back in d0 (the d0
 		// return convention) — bit-cast to x0 for the generic consumers.
-		if (is_float_type(access_func.type.name)) {
+		// A `ptr T` result over a float pointee (the element-borrow
+		// `slot_ptr` primitive — the type NAME is the pointee's) returns the
+		// ADDRESS in x0; the pointer flag gates this marshal or the address
+		// is destroyed before the alias store reads it.
+		if (is_float_type(access_func.type.name) && !access_func.type.is_pointer) {
 			emit_asm(status, `fmov x0, d0\n`);
 		}
 		// STRUCT_PLAN_3 B1 cutover: a dispatched method's plain-string return
@@ -4013,7 +4017,11 @@ function build_access_method(
 		emit_asm(status, `bl ${method_name}\n`);
 		// A float-returning method hands its result back in d0 (the d0
 		// return convention) — bit-cast to x0 for the generic consumers.
-		if (is_float_type(access_func.type.name)) {
+		// A `ptr T` result over a float pointee (the element-borrow
+		// `slot_ptr` primitive) returns the ADDRESS in x0 — the pointer
+		// flag gates this marshal or the address is destroyed before the
+		// alias store reads it.
+		if (is_float_type(access_func.type.name) && !access_func.type.is_pointer) {
 			emit_asm(status, `fmov x0, d0\n`);
 		}
 		// STRUCT_PLAN_3 B1 cutover: a method's plain-string return is

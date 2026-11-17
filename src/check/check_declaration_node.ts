@@ -673,6 +673,17 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				slot_load.name = slot_load_primitive(slot_load);
 				slot_load.params = [slot_load.params[0]];
 				(slot_load as unknown as { is_element_slot_load?: boolean }).is_element_slot_load = true;
+				// Restamp the call's type: the primitive returns the slot
+				// ADDRESS (`ptr T`), not the loaded value (`out T` the `at`
+				// read carried). Without the pointer flag, a FLOAT pointee
+				// hits both backends' float-return marshal (`fmov x0, d0`)
+				// and the returned address is destroyed before the alias
+				// store — `ref f = list.at(i)` over floats segfaulted.
+				const pointee = new Type(
+					decl.type.name || (slot_load as AccessFunctionCallNode).type?.name,
+				);
+				pointee.is_pointer = true;
+				(slot_load as AccessFunctionCallNode).type = pointee;
 			} else {
 				if (decl.type.name && !is_class_type(decl.type.name, status)) {
 					add_error(

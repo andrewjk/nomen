@@ -116,14 +116,19 @@ function current_return_is_string(status: BuildStatus): boolean {
  * AArch64 FP result register), not as raw bits in x0. Mirrors
  * current_return_is_string's resolution — `function_return_type` is unset
  * for primitive-returning struct methods, so fall back to the declared
- * return type on `current_struct`'s matching function.
+ * return type on `current_struct`'s matching function. A `ptr T` return
+ * over a float pointee (the element-borrow `slot_ptr` primitives — the
+ * type NAME is the pointee's) is an ADDRESS in x0, never the d0
+ * convention: the pointer flag must gate this or the slot address is
+ * bit-cast through d0 (and parked/restored across the return join) and
+ * arrives as stale bits.
  */
 function current_return_is_float(status: BuildStatus): boolean {
 	const rt = status.function_return_type;
-	if (rt) return is_float_type(rt.name);
+	if (rt) return is_float_type(rt.name) && !rt.is_pointer;
 	if (status.current_struct && status.current_function_name) {
 		const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
-		return !!fn?.return_type && is_float_type(fn.return_type.name);
+		return !!fn?.return_type && is_float_type(fn.return_type.name) && !fn.return_type.is_pointer;
 	}
 	return false;
 }

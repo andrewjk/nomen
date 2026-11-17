@@ -1955,6 +1955,12 @@ function derive_annotations_for_access_func(
 	if (!fc.type?.name && func.return_type?.name) {
 		const rt = new Type(func.return_type.name, func.return_type.is_static);
 		rt.is_array = func.return_type.is_array;
+		// Preserve the POINTER flag: the element-borrow primitives return
+		// `out ptr T` — for a float pointee the rebuilt type's NAME is
+		// "float", and dropping the flag sent every float-return marshal
+		// (`fmov x0, d0`) after the call, bit-casting the returned slot
+		// address through d0 (the typed-JSON encode crash).
+		rt.is_pointer = func.return_type.is_pointer;
 		fc.type = rt;
 	}
 

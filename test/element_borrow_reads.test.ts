@@ -349,3 +349,91 @@ for x of rs {
 		expect(parsed.errors.some((e) => e.message.includes("Assignment to const"))).toBe(true);
 	});
 });
+
+describe("element borrows through generic specialization (runtime, both backends)", () => {
+	// The regression family behind the typed-JSON zero-copy encode: a `ref
+	// elem = list.at(i)` inside a GENERIC function used to lose its alias
+	// semantics in the specialized clone — clone_node dropped
+	// `is_ref_binding` (the C build value-initialized from the slot_ptr
+	// call; aarch64 kept a scope-exit destroy on the aliased slot), the
+	// loop-promotion/NIR-site allocators promoted the alias slot like a
+	// value (stale-register reads), and a `ptr float` return was bit-cast
+	// through d0 by the float-return marshals. Every shape here ran as
+	// owning copies (or crashed) before those fixes; each must now produce
+	// byte-identical output on both backends with the leak auditor on.
+	test("a borrow passed on to a generic element fn reads through the slot", async () => {
+		await build_and_check_output(
+			`
+import System
+func get_len<E> = (E elem, out int) {
+	var int n = 0
+	#for field of META.info(E).fields {
+		if field.name == "length" {
+			n = field.get(elem)
+		}
+	}
+	return n
+}
+func sum_rows<E> = (StableList<E> rows, out int) {
+	var int total = 0
+	var int i = 0
+	while i < rows.length; i += 1 {
+		ref row = rows.at(i)
+		total = total + get_len(row)
+		i += 1
+	}
+	return total
+}
+pub func main = (Init init) {
+	var rows = StableList<StableList<float>>()
+	var r0 = StableList<float>()
+	r0.push(1.5)
+	r0.push(2.5)
+	rows.push(mv r0)
+	var r1 = StableList<float>()
+	r1.push(3.5)
+	rows.push(mv r1)
+	Console.write_line(sum_rows(rows).to_string())
+}
+`,
+			"generic_element_borrow",
+			"2",
+			true,
+		);
+	});
+
+	test("float element borrows keep the slot address through the dispatcher", async () => {
+		// The ptr-float return path: StableList.slot_ptr dispatches through
+		// Buffer.slot_ptr, both `out ptr T` over a float pointee — the
+		// float-return marshals used to bit-cast the slot address through
+		// d0 at three sites (the call builders, the return join). The read
+		// here is the library's shape: the borrowed element feeds a CALL
+		// argument (json_encode_element(elem, …) in Json.nm's encode walk).
+		// (A borrowed scalar read inside an OPERATION — `total = total + f`
+		// — still misreads under the induction promotion; recorded in
+		// FOLLOWUP.md with a repro.)
+		await build_and_check_output(
+			`
+import System
+func take = (float f, out float) {
+	return f
+}
+pub func main = (Init init) {
+	var xs = StableList<float>()
+	xs.push(1.5)
+	xs.push(2.25)
+	var float all = 0.0
+	var int i = 0
+	while i < xs.length; i += 1 {
+		ref f = xs.at(i)
+		all = all + take(f)
+	}
+	Console.write_line(all.to_string())
+}
+`,
+			"generic_float_element_borrow",
+			"3.750000",
+			true,
+		);
+	});
+});

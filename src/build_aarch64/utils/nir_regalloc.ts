@@ -984,6 +984,10 @@ export function plan_nir_registers(
 	const candidates: Candidate[] = [];
 	for (const decl of traffic.decls) {
 		if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
+		// An element/instance BORROW's slot holds a pointer to the aliased
+		// slot — a promoted "value" is the entry-time pointer and every use
+		// must go through the slot + deref chain (see DeclEntry.ref_binding).
+		if (decl.ref_binding) continue;
 		const key = decl.name;
 		const site = sites.get(key);
 		const source = site?.source ?? key;
@@ -1585,6 +1589,7 @@ export function plan_nir_registers(
 					if (traffic.ref_arg_names.has(key)) continue;
 					if (address_taken.has(key)) continue;
 					if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
+					if (decl.ref_binding) continue;
 					if (ALL_FLOAT_TYPES.includes(decl.type_name)) continue;
 					if (!loop_writes.has(key)) continue;
 					if (!live_in?.has(key)) continue;
@@ -1942,6 +1947,7 @@ export function plan_nir_registers(
 					if (traffic.ref_arg_names.has(key)) continue;
 					if (address_taken.has(key)) continue;
 					if (!is_clean_scalar_type({ name: decl.type_name, ...decl.modifiers })) continue;
+					if (decl.ref_binding) continue;
 					if (ALL_FLOAT_TYPES.includes(decl.type_name)) continue;
 					const members = analysis.block_members.get(key);
 					if (!members || members.size === 0) continue;

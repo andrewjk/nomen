@@ -250,10 +250,27 @@ export function promote_loop_locals(
 			if (!node || typeof node !== "object") return;
 			const n = node as unknown as Record<string, unknown>;
 			if (n.node_type === "declare") {
-				const dn = n as unknown as { name?: string; type?: { name?: string } };
+				const dn = n as unknown as {
+					name?: string;
+					type?: { name?: string };
+					is_ref_binding?: boolean;
+				};
 				if (dn.name) {
 					body_decl_count.set(dn.name, (body_decl_count.get(dn.name) ?? 0) + 1);
 					if (!body_decl_type.has(dn.name)) body_decl_type.set(dn.name, dn.type?.name ?? "");
+					// An ELEMENT/instance BORROW declared inside the loop (`ref
+					// row = rows.at(i)`) registers its alias BEFORE promotion
+					// scans eligibility: the slot holds a pointer to the
+					// aliased slot, not a value, so promoting it (the
+					// float-pool path reads the slot's 8 bytes as the value)
+					// fed every use a stale d-register. function_ref_params is
+					// both the promotion exclusion and the use-side deref
+					// signal; the declare build adds the same name later (a
+					// Set — idempotent).
+					if (dn.is_ref_binding === true) {
+						if (!status.function_ref_params) status.function_ref_params = new Set();
+						status.function_ref_params.add(dn.name);
+					}
 				}
 			}
 			for (const key of Object.keys(n)) {

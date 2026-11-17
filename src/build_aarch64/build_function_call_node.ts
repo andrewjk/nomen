@@ -1762,8 +1762,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 		// A float-returning callee hands its result back in d0 (the d0
 		// return convention). Bit-cast to x0 so every existing consumer
 		// (build_float_operand's fallback, declarations, assignments) keeps
-		// seeing the raw pattern in x0.
-		if (is_float_type(node.type.name)) {
+		// seeing the raw pattern in x0. A `ptr T` result over a float
+		// pointee (the element-borrow `slot_ptr` primitive) returns the
+		// ADDRESS in x0 — its type NAME is the pointee's, so the pointer
+		// flag gates this marshal or the returned address is destroyed.
+		if (is_float_type(node.type.name) && !node.type.is_pointer) {
 			emit_asm(status, `fmov x0, d0\n`);
 		}
 

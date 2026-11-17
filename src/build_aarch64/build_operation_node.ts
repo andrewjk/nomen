@@ -1127,6 +1127,15 @@ export function build_float_operand(node: BaseNode, target_reg: string, status: 
 		}
 		const offset = status.stack_offsets?.get(value);
 		if (offset !== undefined) {
+			// A `ref`-bound local's slot holds a POINTER to the aliased slot
+			// (the element borrow) — load the pointer, then the value through
+			// it. The plain slot load would read the pointer's bits as the
+			// float.
+			if (status.function_ref_params?.has(value)) {
+				emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
+				emit_asm(status, `ldr ${target_reg}, [x9]\n`);
+				return;
+			}
 			emit_asm(status, `ldr ${target_reg}, [x29, #${offset}]\n`);
 			return;
 		}
