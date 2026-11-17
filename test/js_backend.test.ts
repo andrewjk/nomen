@@ -1,11 +1,18 @@
+import path from "node:path";
 import vm from "node:vm";
 
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
+import { get_library } from "../src/lib";
+import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
+
+/** The System library for programs that need a real `import` (the wrapped
+ *  `parse_with_imports` helper injects `import System` itself). */
+const system = get_library(path.resolve(import.meta.dirname, "../core"));
 
 /**
  * The JS backend (src/build_js) walks the checked AST and emits a
@@ -1386,6 +1393,31 @@ Console.write("\\n")
 		const context = { __nomen_write: (text: string) => out.push(String(text)) };
 		expect(() => vm.runInNewContext(result.code, context)).toThrow("__nomen_exit:2");
 		expect(out.join("")).toBe("beforepanic: boom\n");
+	});
+
+	test("linking Controls does not crash at module load (library enum defaults)", async () => {
+		// `LayoutParams`'s library const DEFAULT_PARAMS lowers a ctor call
+		// whose default arguments reference library enum cases
+		// (`LayoutLength_auto`, `Alignment_stretch`). The JS backend used to
+		// keep LIBRARY enums out of its type table, so those names lowered to
+		// undefined identifiers and every program linking Controls threw
+		// `ReferenceError` at module load, before main ran. Library enums are
+		// collected now, so a case reference lowers to its tag-only JS object.
+		const parsed = parse(
+			`import System::Controls
+
+pub func main = () {
+	Console.write_line("ok")
+}
+`,
+			system,
+			undefined,
+			{ allow_internal: true },
+		);
+		expect(parsed.errors).toEqual([]);
+		const result = build(parsed.root, { arch: "js" });
+		expect(result.errors ?? []).toEqual([]);
+		await check_output("js_controls_link", result, "ok\n", { arch: "js", audit: false });
 	});
 });
 

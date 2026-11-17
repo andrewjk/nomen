@@ -322,9 +322,10 @@ Elevate it from "good long-term target" to the acceptance criterion.
    at `has_attr`, never a silent empty string. Acceptance:
    `test/attributes.test.ts` (incl. a runtime metadata consumer through
    the JS backend: table attr + field renames + plain-name fallbacks).
-   Two pre-existing issues surfaced by this work: the JS-backend
-   library-const default args (recorded in FOLLOWUP.md) and attribute names
-   participating in the library type-link scan (fixed: the scan now skips
+   Two pre-existing issues surfaced by this work, both now fixed: the
+   JS-backend library-const default args (library enums are collected, so
+   their case references lower to tag objects) and attribute names
+   participating in the library type-link scan (the scan skips
    attribute-name tokens).
 4. **Generic `T: type` parameters composing with reflection** (R3, R4).
 5. **Unify `#arch`/`#platform` into `#if META`** (D2), once the raw-block

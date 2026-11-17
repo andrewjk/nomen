@@ -72,8 +72,15 @@ function index_allocations(root: BaseNode, status: BuildStatus): void {
 
 /** Pre-collect every user struct/enum in the tree (declarations may be
  *  nested inside function bodies and are emitted where they appear, but the
- *  expression builders need the full type table up front). Library types are
- *  skipped — the runtime provides the supported slice of their surface. */
+ *  expression builders need the full type table up front). User structs are
+ *  indexed for value-copy detection; library structs go to their own table
+ *  (the runtime provides the supported slice of the struct surface). Enums —
+ *  USER and LIBRARY — all land in `status.enums`: a case reference lowers to
+ *  a tag-only JS object literal (there is no runtime definition to lean on),
+ *  and a library const's default arguments (`LayoutLength_auto` in
+ *  `LayoutParams_init`) are real references evaluated at module load. User
+ *  enums come first in tree order, so a user enum shadows a same-named
+ *  library one. */
 function collect_types(root: BaseNode, status: BuildStatus): void {
 	const visit = (node: BaseNode): void => {
 		const is_library = (node as unknown as { is_library?: boolean }).is_library === true;
@@ -81,7 +88,7 @@ function collect_types(root: BaseNode, status: BuildStatus): void {
 			if (is_library) status.library_structs.push(node as StructNode);
 			else status.structs.push(node as StructNode);
 		}
-		if (!is_library && node.node_type === "enum") {
+		if (node.node_type === "enum") {
 			status.enums.push(node as EnumNode);
 		}
 		// Bitsets are pure constants, so library ones are collected too (a

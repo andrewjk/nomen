@@ -644,22 +644,6 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## JS backend: library consts with library-enum default args emit undefined references
-
-`build_root_node` lowers library root-level `const`s into the output, but
-the JS backend never emits library enum-case constants that no checked
-code references. `core/System/Controls/LayoutParams.nm`'s
-`const LayoutParams DEFAULT_PARAMS = [ .. LayoutParams(), ...]` lowers to
-`const DEFAULT_PARAMS = LayoutParams_init();`, whose default arguments
-reference `LayoutLength_auto` / `Alignment_stretch` — undefined at
-runtime, so any program whose linked library set includes Controls
-crashes at module load. Found while testing attributes (an attribute
-named like a library type pulls that type — see the next entry); hit by
-building ANY program that links Controls through the JS backend.
-Fix shape: emit enum-case constants for every library enum with a
-referenced type, or skip lowering consts whose initializers transitively
-reference un-emitted symbols (loud, like other JS-backend gaps).
-
 ## Library serde performance: allocation-bound vs the DOM bench
 
 The stdlib `json_decode_into`/`json_encode` bench (json-serde-typed) is
