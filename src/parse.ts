@@ -289,8 +289,21 @@ export function resolve_linked_types(source: string, library: Library, file_path
 			}
 		}
 	}
+	// Attribute NAMES are metadata, not references: `@Table("users")` must not
+	// link Controls::Table (and its whole dependency subtree) just because the
+	// lookup key shares a library type's name. The attribute grammar is
+	// `@name` / `@name(value)`, comma-separated — the identifier token right
+	// after `@` is always the name (`@` has no other spelling in the language;
+	// a `@` inside a string literal is part of that token, not its own).
+	const attribute_name_tokens = new Set<number>();
+	for (let i = 0; i + 1 < tokens.length; i++) {
+		if (tokens[i].value === "@" && /^[A-Za-z_]\w*$/.test(tokens[i + 1].value)) {
+			attribute_name_tokens.add(i + 1);
+		}
+	}
 	for (let i = 0; i < tokens.length; i++) {
 		if (import_tokens.has(i)) continue;
+		if (attribute_name_tokens.has(i)) continue;
 		const token = tokens[i];
 		if (user_defined.has(token.value)) continue;
 		if (library.types.has(token.value) && !BASE_TYPES.includes(token.value)) {

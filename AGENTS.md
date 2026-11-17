@@ -280,9 +280,9 @@ above a field; `@flag` (no parens) is a flag. The compiler assigns no
 meaning to them — generic code consumes them via
 `META.info(T).attr(...)` / `field.attr(...)` / `field.has_attr(...)`
 (has_attr folds in comptime `if`s). Attribute names are snake_case
-lookup keys, not symbols — they never resolve as types or functions, but
-the type-link scan still matches them against library names, so prefer
-non-colliding words.
+lookup keys, not symbols — they never resolve as types or functions, and
+the library type-link scan skips attribute-name tokens (so `@Table("users")`
+does not drag `Controls::Table` in).
 
 String conditions beyond `META.arch`/`META.platform` don't exist yet (no
 rich `META` predicates — see stage 2 notes in `docs/COMPTIME_PLAN_2.md`).
