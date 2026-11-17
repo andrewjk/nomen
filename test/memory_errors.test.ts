@@ -271,12 +271,19 @@ struct Filey {
 var Filey a = Filey(1)
 var Filey b = a
 `;
-		// The free lives in a C raw block — it exists (and the destroy is a
-		// real release) only on the C target, so this asserts the c-arch
-		// program: the ownership detector's AST walk must see through the
-		// case list to find it, or a byte-copy of Filey would double-free.
+		// On the C target the release is live in the tree — the ownership
+		// detector's AST walk must see through the case list to find it, or a
+		// byte-copy of Filey would double-free.
 		const parsed = parse_with_imports(input, { allow_user_raw: true, arch: "c" });
 		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot copy 'Filey'"),
+		);
+		// On aarch64 the C arm folded away (no free exists in this tree — the
+		// copy would leak, not double-free), but the struct is just as owning:
+		// the folded-raw count converges the policy across targets, so the
+		// copy is rejected here too.
+		const aarch64 = parse_with_imports(input, { allow_user_raw: true, arch: "aarch64" });
+		expect(aarch64.errors.map((e) => e.message)).toContainEqual(
 			expect.stringContaining("cannot copy 'Filey'"),
 		);
 	});

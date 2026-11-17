@@ -179,7 +179,11 @@ function const_type_name(value: ConstValue): string {
  * away (a raw-only implementation whose every arm missed the target) are
  * counted on `FunctionNode.folded_away_raws` — check_function_node turns
  * that into the empty-implementation error, replacing the tag-era
- * "no aarch64 block found" coverage error.
+ * "no aarch64 block found" coverage error. Pragmas NESTED in the body
+ * (inside an `if`/`switch` arm) count too: the guard itself still requires
+ * an empty statement list, so nested drops can't fire it, but the ownership
+ * scan reads the count — a `#destroy` whose release lived in a folded arm
+ * keeps the struct owning on this target (see utils/ownership.ts).
  */
 export function fold_pragma_ifs(
 	node: unknown,
@@ -195,9 +199,10 @@ export function fold_pragma_ifs(
 	const any_node = node as Record<string, unknown>;
 	if (Array.isArray(any_node.statements)) {
 		const list = any_node.statements as BaseNode[];
-		// A function's own statement list is the coverage boundary (matching
-		// the tag-era scanner): nested functions are their own owner, but
-		// pragma arms INSIDE this list keep the owner.
+		// A function's own statement list is the OWNER boundary: nested
+		// functions are their own owner, and every other list nested in the
+		// body (if/switch arms, pragma arm blocks) keeps the enclosing
+		// function as the owner — the folded-raw count is per function.
 		const is_func_list = any_node.node_type === "func";
 		const list_owner = is_func_list ? (node as FunctionNode) : owner_func;
 		for (let i = list.length - 1; i >= 0; i--) {
@@ -208,7 +213,7 @@ export function fold_pragma_ifs(
 			fold_pragma_ifs(child, consts, status, list_owner);
 			if (!child || typeof child !== "object" || child.node_type !== "pragma_if") continue;
 			const inner = select_pragma_branch(child as PragmaIfNode, consts, status);
-			if (list_owner && list === list_owner.statements) {
+			if (list_owner) {
 				const dropped = count_dropped_raws(child as PragmaIfNode, consts);
 				if (dropped > 0) {
 					list_owner.folded_away_raws = (list_owner.folded_away_raws ?? 0) + dropped;

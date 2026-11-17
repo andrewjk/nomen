@@ -382,6 +382,10 @@ Elevate it from "good long-term target" to the acceptance criterion.
    (`FunctionNode.folded_away_raws`), and check_function_node rejects a
    raw-only implementation whose every arm folded away ("no implementation
    for this target") — callers would otherwise `bl` into nothing. The
+   count covers pragmas NESTED in the body too, and the ownership scan
+   reads it: a `#destroy` whose release lived in a folded arm keeps the
+   struct owning on this target (a copy would leak, not double-free), so
+   ownership classification is target-independent. The
    check-time scanners (mixed companion-C rejection, the string-mutation
    conservative rules, the `T_SIZE` numeric-vs-sizeof decision) now read
    the `#c` marker plus `CheckStatus.arch` instead of tag text.

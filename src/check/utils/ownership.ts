@@ -95,6 +95,13 @@ export function register_foreign_for_ownership(func: FunctionNode): void {
 }
 
 export function destroy_releases(func: FunctionNode): boolean {
+	// Stage-5 convergence: a release written for ANOTHER target folds away
+	// before check — this target's tree has no raw block, but the struct is
+	// just as owning here (the author wrote a release; this target simply
+	// never emits it, so a byte copy would leak it). Count the folded arms:
+	// the same conservatism a LIVE raw block gets (contains_release), which
+	// makes ownership classification target-independent.
+	if (func.folded_away_raws) return true;
 	const visited = new WeakSet<BaseNode>();
 	return func.statements.some((s) => contains_release(s, visited));
 }

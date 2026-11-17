@@ -679,13 +679,6 @@ work but bench-neutral — the cost is elsewhere:
 
 ## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
 
-- **Ownership classification is per-target.** A `#destroy` whose only
-  release sits in one target's raw arm makes the struct copyable on the
-  target where the arm folded away (the tree really has no destroy there).
-  The `memory_errors` "Filey" fixture now pins the C target, where the
-  release exists. Cross-target policy convergence would need the ownership
-  scan to count dead-arm releases — deliberately not done (the arms are
-  gone before check by design).
 - **The string-mutation scan is target-precise.** A raw consumer whose
   aarch64 arm is read-only no longer inherits the conservative rule from
   its C arm's pointer indexing — the argument elides on aarch64
