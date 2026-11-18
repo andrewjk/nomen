@@ -58,18 +58,27 @@ cases.
 
 ## Element iteration for remaining collections (split out of for-of-List)
 
-`for x of some_list` desugars to element iteration for `Array<T>` and now
-`List<T>`, but the other collections can't follow yet:
+`for x of some_list` desugars to element iteration for `Array<T>`, `List<T>`,
+and `StableList<T>`. The Enumerable conformers (`LinkedList<T>`/`Tree<T>`/
+`Graph<T>`) took a different, broken path until 2026-11-18: the checker's
+Enumerable arm admitted them (index iteration by design), but their
+`length` is a METHOD — no compile-time length node on the type — so the C
+backend crashed building the loop (`build_node` on the missing node) and
+the aarch64 binary silently iterated ZERO times. They are now rejected at
+check (`'for x of' over <T> is not supported yet`, pinned in
+test/enumerable_forof_gate.test.ts). What keeps them rejected:
 
-- `Graph<T>` has no `length` at all (the `Enumerable` default returns 0),
-  so desugaring via `0..length` would silently produce empty loops.
-- `LinkedList<T>`/`Tree<T>` have `length()` methods, but their `.at`
-  contracts are phrased against `count` (`idx < self.count`). Count
-  tracking itself landed 2026-11-09 (fresh = 0, `add` = +1, link setters
-  preserve; `.count` facts discharge `at`), but a `0..length()` RANGE still
-  does not link to the count field (verified failing on 0.2.2) — needs
-  return-contract linkage from `length()` to the count field.
-- `Map`/`Set`/`Buffer` have no `.at(i)` element semantics to desugar to.
+- Return-contract linkage from `length()` to the count field is still
+  missing (verified failing 2026-11-18: a `0..ll.length()` RANGE does not
+  discharge `at`'s count contract). Count tracking itself landed
+  2026-11-09 (fresh = 0, `add` = +1, link setters preserve; `.count` facts
+  discharge `at`), so the linkage is the one missing piece — it unlocks
+  both the explicit `0..length()` shape and a lowerable Enumerable arm.
+- `Graph<T>` additionally has only the `Enumerable` default `length`
+  (returns 0) — it needs a real length before any iteration can mean
+  anything.
+- `Map`/`Set`/`Buffer` are cleanly rejected (no `.at(i)` element semantics
+  to desugar to; they don't conform to `Enumerable`).
 
 Also still open from the same area: `for ref x of list` is rejected with
 a dedicated error (List `set` takes `mv T`, so the array writeback

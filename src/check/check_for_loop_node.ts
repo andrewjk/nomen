@@ -182,6 +182,21 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 				`For loop list must be an array, List, or Enumerable, not ${list_type.name}`,
 				for_loop.list.start,
 			);
+		} else if (is_enumerable && !list_type.is_array && !list_type.length && list_type.name) {
+			// An Enumerable conformer whose `length` is a METHOD (LinkedList/
+			// Tree/Graph — no compile-time length node on the type). The
+			// Enumerable iteration arm cannot lower its loop bound: the C
+			// backend crashed (build_node on the missing node) and the
+			// aarch64 binary silently iterated ZERO times. Element iteration
+			// for these containers needs return-contract linkage from
+			// `length()` to the count field first (FOLLOWUP.md, "Element
+			// iteration for remaining collections") — reject with the same
+			// clarity as the non-Enumerable gate above.
+			add_error(
+				for_status,
+				`'for x of' over ${list_type.name} is not supported yet — only arrays, List, and StableList iterate elements today`,
+				for_loop.list.start,
+			);
 		}
 
 		// `for ref x of arr` writes each element back via arr[idx] = x, which
