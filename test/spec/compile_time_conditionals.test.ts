@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import { compile_main, compile_module } from "./_helpers.ts";
 // SPEC.md, "Compile-Time Conditionals" — one test per fenced code block.

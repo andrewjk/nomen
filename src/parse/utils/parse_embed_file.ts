@@ -54,7 +54,7 @@ export default function parse_embed_file(status: ParseStatus): ValueNode {
 		// Binary-safe: PNGs, fonts, any bytes. Byte-transparent escaping
 		// (below) round-trips every value; text files decode identically.
 		content = fs.readFileSync(full);
-	} catch (cause) {
+	} catch {
 		const idx = status.tokens.findIndex((t) => t.value === "#embed_file" && t.i === start);
 		const near = status.tokens.slice(Math.max(0, idx - 2), idx + 4).map((t) => t.value);
 		console.log(

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { expect, test } from "vitest";
+import { expect, test } from "vite-plus/test";
 
 import build from "../src/build.ts";
 import build_js from "../src/build_js/build_js.ts";
