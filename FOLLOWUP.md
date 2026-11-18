@@ -290,16 +290,6 @@ byte-identical; pidigits baseline-relative arc 1.89× → ~1.53× vs C `-O2`):
   file-scope carrier gets skipped on aarch64 (its content never emits —
   put such blocks in a real method, e.g. set_content_size).
 
-## json-serde: remaining uniform-heap copy costs
-
-The Json-ownership half of the 0.7.0 run-time regression landed
-(PERF_PLAN item 5 — `JsonTree.take_text`/`get_text_view`, json-serde to
-−22% / −12% vs the 0.7.0 baseline). The regression's other cited causes
-are untouched: uniform-heap field reads/returns in user shapes and
-`List`/`Map` as `mv struct`s. Worth a pass over the Json parse path to
-identify which lowered reads can stay borrows (e.g. view-returning field
-reads where the caller immediately re-copies or hashes).
-
 ## Endgame: compiler magic keyed on marker traits (the `#spawn` retirement)
 
 `#spawn` began as a one-time construction hook (Thread/Fiber) and `#weak`
@@ -652,22 +642,6 @@ Ctrl-C keep working. Tests stay on bare executables.
 This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
-
-## Scalar element borrows misread in operation position (compiler)
-
-`ref f = list.at(i)` where the element is a SCALAR, read inside an
-OPERATION (`total = total + f`) — the library's encode walk doesn't hit
-this (the borrowed element feeds a call argument), but user code will:
-under the aarch64 induction promotion the loop's increment is duplicated
-(once hoisted into the body ahead of the alias store, once in the update),
-so the borrow advances two slots per iteration and reads every other
-element (a two-element `StableList<float>` sums 1.5 instead of 3.75).
-Repro: the op-position shape described above, aarch64 (split/audit test
-builds; the single-TU runner build is unaffected — the promotion fires in
-the test harness's emission). The struct-element and call-argument shapes
-are correct and pinned by test/element_borrow_reads.test.ts. The fix is in
-the promotion's increment rewriting for loops whose body stores an alias
-slot — not yet localized (all existing asm-pass kill switches leave it).
 
 ## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
 
