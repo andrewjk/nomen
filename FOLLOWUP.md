@@ -666,38 +666,33 @@ and double-launch.
 
 ## Comptime next steps (the Comptime II backlog, in order)
 
-Stages 1–5 of [`docs/COMPTIME_PLAN_2.md`](./docs/COMPTIME_PLAN_2.md) are
-shipped; these are the remaining items that came out of the 2026-11-18
-review, ordered cheapest-lever-first. Each is scaffolding for the one after
-it.
+All items shipped 2026-11-18; the mechanics are recorded in
+docs/COMPTIME_PLAN_2.md (stage-2 notes and the stage-6 entry):
 
-1. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
-   body statements or whole file-scope declarations only —
-   struct/trait-body arms are rejected at parse (the stage-1 note: "no
-   statement list to splice into — a stage-3+ problem" that stage 3 never
-   picked up), and `#for` is body-scope only (stage-2 known gap). A
-   `#for` at struct-body scope would generate fields per reflected item
-   and is the door to stage 6; needs a statement-collector slot in
-   `parse_struct`/`parse_trait` (the stage-1 mechanism — pragma on the
-   stack as a collector — is the template).
+1. **Comptime integers + arithmetic + a user `#error`** — int literals,
+   `+ - * / %` and `< <= > >=` in `#if`/`#switch` conditions (division by
+   zero is an error); `#error "message"` is a checked statement the fold
+   can gate; `META.info(T).field_count` as the first comptime int.
 
-2. **Declaration/type generation (stage 6, "(Someday)").** Generating
+2. **Migrate the hardcoded derives onto `#for`** — the three derive traits
+   carry `#for` reflection default bodies (`Self` = the conformer);
+   conformance without a hand-written method binds the default per
+   conformer; `auto_derive.ts` deleted (copy synthesis survives as
+   `copy_synthesis.ts`); the hash default is attribute-configured
+   (`@hash_ignore`).
 
-3. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
-   body statements or whole file-scope declarations only —
-   struct/trait-body arms are rejected at parse (the stage-1 note: "no
-   statement list to splice into — a stage-3+ problem" that stage 3 never
-   picked up), and `#for` is body-scope only (stage-2 known gap). A
-   `#for` at struct-body scope would generate fields per reflected item
-   and is the door to stage 6; needs a statement-collector slot in
-   `parse_struct`/`parse_trait` (the stage-1 mechanism — pragma on the
-   stack as a collector — is the template).
+3. **`#if`/`#for` at struct-body and declaration scope** — type bodies
+   carry member pragmas (`#if`/`#switch` folds at the check pre-pass,
+   distributing fields/methods; `#for` expands at the type's own check),
+   `$field.name` splices name generated members (`get_$field.name`
+   templates too), `Self` binds inside generated methods, and the auto
+   `#init` moved from parse time to check time so selected/generated
+   fields join the constructor (pre-synthesized at gather for forward
+   references, refreshed after expansion).
 
-4. **Declaration/type generation (stage 6, "(Someday)").** Generating
-   whole declarations — a struct per reflected item, an enum from a
-   table, Zig-`@Type`-class construction. The stage-6 placeholder in
-   `docs/COMPTIME_PLAN_2.md` is the only unshipped stage. Everything
-   above is scaffolding: ints give generated declarations computable
-   members, struct-body `#for` gives them a scope to land in, and the
-   derive migration proves expansion-in-clone composes with the generic
-   machinery.
+4. **Declaration/type generation (stage 6)** — a file-scope `#for`
+   generates whole structs/traits per reflected item with `$`-spliced
+   names, usable by their generated names; generated bodies compose with
+   `#if` member arms, the marker-trait derives, and `META.info(Self)`.
+   Enum-from-a-table and other richer iterables remain future work (the
+   iterable surface is `META.info(T).fields`).

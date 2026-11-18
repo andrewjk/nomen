@@ -3,16 +3,26 @@ import TraitNode from "../nodes/TraitNode.ts";
 import check_declaration_node from "./check_declaration_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { bind_comptime_self, expand_struct_member_pragmas } from "./utils/comptime.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import { uses_comptime_self } from "./utils/trait_defaults.ts";
 
 export default function check_trait_node(trait: TraitNode, status: CheckStatus) {
+	// Stage 3: expand the body's `#for` member loops before the members are
+	// processed (mirrors check_struct_node); `#if` member arms folded at the
+	// start of check.
+	expand_struct_member_pragmas(trait, status);
+
 	if (!status.types.includes(trait.name)) {
 		status.types.push(trait.name);
 	}
 	if (!status.traits.find((t) => t.name === trait.name)) {
 		status.traits.push(trait);
 	}
+
+	// A `$`-generated trait binds `Self` in its member bodies to its own
+	// name before the walk checks them (stage 6).
+	bind_comptime_self(trait, status);
 
 	// Register generic trait type params (e.g. `trait Viewable<T>`) so the
 	// trait's own method/field signatures may reference them. Mirrors how

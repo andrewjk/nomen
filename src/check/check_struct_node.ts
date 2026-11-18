@@ -2,6 +2,7 @@ import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
+import ParameterNode from "../nodes/ParameterNode.ts";
 import StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -15,6 +16,7 @@ import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_box_type } from "./utils/box.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
+import { bind_comptime_self, expand_struct_member_pragmas } from "./utils/comptime.ts";
 import { display_field_set } from "./utils/field_effects.ts";
 import {
 	is_class_type,
@@ -33,7 +35,103 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 	return false;
 }
 
+/**
+ * The auto-generated `#init`: one parameter per non-defaulted,
+ * non-private field (func-typed fields carry their SIGNATURE so a lambda
+ * argument can infer its parameter types). Ex-parse-time synthesis —
+ * moved to check time so the constructor covers the FINAL member list
+ * (`#if`-selected and `#for`-generated fields included; see the call
+ * site in check_struct_node). Stamped `is_synthesized_init` so the
+ * post-expansion re-synthesis can find and replace it.
+ */
+function build_auto_init(struct: StructNode): FunctionNode {
+	const func = new FunctionNode(-1, struct.visibility, "#init", new Type(struct.name));
+	func.is_synthesized_init = true;
+	func.params = struct.fields
+		.filter((f) => f.visibility !== "private" && !f.value)
+		.map((f) => {
+			const param = new ParameterNode(-1, f.name, f.func_params ? new Type("func") : f.type);
+			if (f.func_params) {
+				param.func_params = f.func_params;
+				param.func_return_type = f.func_return_type;
+			}
+			if (f.declaration === "mv") {
+				param.is_moved = true;
+			}
+			param.constraint = f.constraint;
+			return param;
+		});
+	func.is_static = true;
+	return func;
+}
+
+/**
+ * Pre-synthesize the auto `#init` for every registered struct whose
+ * constructor isn't written — a forward constructor call (`RxProg()` in a
+ * function checked before the struct) must resolve. Runs after each
+ * block's gather; check_struct_node re-synthesizes after member expansion
+ * when the member list changed.
+ */
+export function synthesize_auto_inits(status: CheckStatus): void {
+	for (const struct of status.structs) {
+		if (struct.is_generic || struct.is_simple_type) continue;
+		if (struct.name.startsWith("_Tuple_") || struct.name.startsWith("_Anon_")) continue;
+		// A monomorphized struct's constructor is monomorphize's own synthesis
+		// (pushed mid-loop — a pre-pass running inside that window must not
+		// add a second one).
+		if ((struct as unknown as { source_type_args?: unknown[] }).source_type_args?.length) {
+			continue;
+		}
+		synthesize_auto_init_once(struct);
+	}
+}
+
+/** Synthesize the auto `#init` unless a written one exists. Idempotent:
+ *  an existing synthesized init is left alone here (check_struct_node
+ *  replaces it when expansion changed the fields). */
+function synthesize_auto_init_once(struct: StructNode): void {
+	const existing = struct.functions.find((f) => f.name === "#init");
+	if (existing && !existing.is_synthesized_init) return;
+	if (struct.functions.some((f) => f.name === "#spawn")) return;
+	if (existing?.is_synthesized_init) return;
+	struct.functions.unshift(build_auto_init(struct));
+}
+
+/** Replace a pre-synthesized `#init` when expansion changed the member
+ *  list (`#if`-selected / `#for`-generated fields): the fresh shape's
+ *  parameter signature must match, or the constructor is rebuilt in place
+ *  (never re-ordered — registration order is stable and the stale body is
+ *  unchecked until the struct's own walk). */
+function refresh_auto_init(struct: StructNode): void {
+	const existing = struct.functions.find((f) => f.name === "#init");
+	if (!existing?.is_synthesized_init) return;
+	const fresh = build_auto_init(struct);
+	const same_shape =
+		existing.params.length === fresh.params.length &&
+		existing.params.every((p, i) => p.name === fresh.params[i].name);
+	if (same_shape) return;
+	const index = struct.functions.indexOf(existing);
+	struct.functions[index] = fresh;
+}
+
 export default function check_struct_node(struct: StructNode, status: CheckStatus) {
+	// Stage 3: expand the body's `#for` member loops first, so every
+	// downstream consumer (cycle detector, trait conformance, the auto
+	// `#init`, field checks) sees the FINAL member list. `#if` member arms
+	// were already folded (the check() pre-pass).
+	expand_struct_member_pragmas(struct, status);
+
+	// Synthesize the auto `#init` HERE rather than at parse time: the
+	// constructor must cover the FINAL member list, including fields that
+	// only exist for this target (`#if`-selected members folded at the
+	// start of check) and `#for`-generated members (expanded above).
+	// A `#spawn` construction hook (ASYNC.md) suppresses the default
+	// `#init` too: the class constructs through the compiler's
+	// deferred-call special form, not an ordinary constructor. The
+	// pre-pass already placed one for forward references — replace it when
+	// expansion changed the member shape.
+	refresh_auto_init(struct);
+
 	// STRUCT_PLAN_3 B1 full cutover — compiler-generated tuple / anonymous
 	// struct declarations cannot be spelled `mv`, so their ownership is
 	// re-derived here, at statement-check time: every referenced mono is
@@ -267,6 +365,10 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 
 	status.types.push(struct.name);
 	status.structs.push(struct);
+
+	// A `$`-generated type binds `Self` in its member bodies to its own
+	// (now-registered) name before the walk checks them (stage 6).
+	bind_comptime_self(struct, status);
 
 	// A nested-array FIELD is legal: the field holds the heap outer-buffer
 	// pointer (its slots are row pointers), owned by the struct — transfers

@@ -321,6 +321,11 @@ export default interface CheckStatus {
 	 */
 	arch?: string;
 
+	/** The compile platform (`#if META.platform` folding inside generated
+	 *  types' member pragmas — the main fold runs at check() start, before
+	 *  any generation, so expansions re-fold with these consts). */
+	platform?: string;
+
 	/**
 	 * COMPTIME_PLAN_2 stage 5: how many raw statements were folded away
 	 * from this function's body because their `#if` arm did not hold for

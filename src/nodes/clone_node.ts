@@ -238,6 +238,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 			// owning copy of the aliased slot (a value init from the slot_ptr
 			// call on C; a double-free at scope exit on aarch64).
 			c.is_ref_binding = n.is_ref_binding;
+			// A `$`-spliced comptime name rides the clone (member/type
+			// generation re-resolves it per iteration).
+			c.comptime_name = n.comptime_name;
 			return c;
 		}
 		case "assign": {
@@ -467,6 +470,10 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.scope = n.scope;
 			c.attrs = n.attrs;
 			c.allocations = n.allocations?.map(clone_node);
+			// A `$`-spliced comptime name + the body's member pragmas ride
+			// the clone (type generation re-resolves per iteration).
+			c.comptime_name = n.comptime_name;
+			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
 			return c;
 		}
 		case "func": {
@@ -497,6 +504,11 @@ export default function clone_node(node: BaseNode): BaseNode {
 			// Stage-5 coverage stamp: a mono clone of a raw-only body whose
 			// arms folded away must re-report the empty-implementation guard.
 			c.folded_away_raws = n.folded_away_raws;
+			// A `$`-spliced comptime name rides the clone; so does the
+			// synthesized-init stamp (mono rebuilds their own inits, but a
+			// cloned body must not be mistaken for a user-written one).
+			c.comptime_name = n.comptime_name;
+			c.is_synthesized_init = n.is_synthesized_init;
 			return c;
 		}
 		case "param": {
@@ -568,6 +580,8 @@ export default function clone_node(node: BaseNode): BaseNode {
 			);
 			c.allocations = n.allocations?.map(clone_node);
 			c.type_params = n.type_params.slice();
+			c.comptime_name = n.comptime_name;
+			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
 			return c;
 		}
 		case "pragma_if": {

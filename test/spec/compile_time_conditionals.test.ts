@@ -209,3 +209,73 @@ test("META.info(T).field_count is a comptime int", () => {
 	`;
 	expect(compile_module(body)).toEqual([]);
 });
+
+test("a type body can gate its own members per target", () => {
+	const body = `
+		struct Config {
+			pub var a = 1
+			#if META.arch == "c" {
+				pub var c_only = 7
+			} else {
+				pub var portable = 9
+			}
+		}
+		func probe = (out int) {
+			var c = Config()
+			return c.c_only
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+	expect(
+		compile_main(body, { arch: "aarch64", platform: "macos" }).some((e) =>
+			e.message.includes("Field not found: c_only"),
+		),
+	).toBe(true);
+});
+
+test("a struct-body #for generates fields and methods via $ splices", () => {
+	const body = `
+		pub struct Base {
+			pub var a = 1
+		}
+
+		pub struct Mirror {
+			#for field of META.info(Base).fields {
+				pub var $field.name = 0
+				pub func get_$field.name = (self, out string) {
+					return META.info(Self).name + "." + field.name
+				}
+			}
+		}
+
+		func probe = (out string) {
+			var m = Mirror()
+			return m.get_a()
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+});
+
+test("declaration generation: a struct per reflected field, used by name", () => {
+	const body = `
+		pub struct Config {
+			pub var http = 3
+			pub var disk = 4
+		}
+
+		#for field of META.info(Config).fields {
+			pub mv struct $field.name: Stringable {
+				pub var int value
+				pub func tag = (self, out string) {
+					return META.info(Self).name
+				}
+			}
+		}
+
+		func probe = (out string) {
+			var h = http(7)
+			return h.tag()
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+});

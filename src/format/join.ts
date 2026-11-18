@@ -1,4 +1,4 @@
-import { KEYWORDS } from "../keywords.ts";
+import { KEYWORDS, RESERVED_WORDS } from "../keywords.ts";
 import type { Piece } from "./scan.ts";
 
 // Words that are never a call target, so `(`, `[` and `.` keep a space after
@@ -98,6 +98,16 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	// `{}` stays tight (an empty block, or a `ref x {}` field set); a closing
 	// brace after content keeps its separating space.
 	if (current.text === "}") return previous.text !== "{";
+	// A `$` name splice binds tight to the name it splices (`$ field` is a
+	// different, unparseable program). After a KEYWORD the space follows the
+	// ordinary rules (`var $field.name`); after a plain word the `$` is a
+	// PREFIX splice inside the name (`func get_$field.name`) — tight. And
+	// the name the splice reads never gains a leading space.
+	if (previous.text === "$") return false;
+	const previous_is_word = /^[A-Za-z_]\w*$/.test(previous.text);
+	if (current.text === "$" && previous_is_word && !RESERVED_WORDS.has(previous.text)) {
+		return false;
+	}
 	if (NO_SPACE_AFTER.has(previous.text)) return false;
 	// `out`/`in` are parameter modifiers: `out int x`, `for x in (...)`, but
 	// `out.length` keeps the dot tight.

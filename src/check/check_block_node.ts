@@ -17,6 +17,7 @@ import Type from "../nodes/Type.ts";
 import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import { resolve_struct_field_types } from "./check_struct_node.ts";
+import { synthesize_auto_inits } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { materialize_anon_enum_type } from "./utils/anon_enum.ts";
 import { rewrite_meta_name_chains } from "./utils/comptime.ts";
@@ -71,6 +72,14 @@ export default function check_block_node(node: BlockNode, status: CheckStatus) {
 		// code that runs before the appended System library).
 		resolve_struct_field_types(status);
 	}
+
+	// Pre-synthesize every struct's auto `#init` so a constructor call in a
+	// function checked BEFORE the struct resolves (the old synthesis ran at
+	// parse time; the stage-3 move to check_struct_node put it after
+	// expansion, and `Regex`'s forward `RxProg()` calls caught the gap).
+	// check_struct_node re-synthesizes after member expansion when the
+	// member list changed (see build_auto_init).
+	synthesize_auto_inits(status);
 
 	// Bind the trait reflection defaults (`Stringable`/`Equatable`/`Hashable`
 	// — the derive traits' `#for`-based default bodies, utils/trait_defaults.ts)

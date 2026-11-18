@@ -41,6 +41,15 @@ export default class DeclarationNode extends BaseNode {
 	value?: BaseNode;
 	constraint?: BaseNode;
 	name_start?: number;
+	/**
+	 * A comptime name splice — `var $field.name int` inside a struct-scope
+	 * `#for` arm (the stage-3 member generation). Holds the dotted binding
+	 * path as written (`field.name`); the expansion resolves it through the
+	 * binding's comptime members and writes the folded string into `name`.
+	 * Empty `name` + set `comptime_name` is the parse-time shape; a
+	 * declaration outside an expansion never carries one.
+	 */
+	comptime_name?: string;
 	type_start?: number;
 	/** True when this top-level declaration is in the appended System library
 	 * source. Set by mark_library_nodes; used to route root-scope globals

@@ -305,8 +305,12 @@ compile time (SPEC, "Compile-Time Reflection"). The binding exposes
 `.name`, `.type.name`, `.get(obj)`, `.set(obj, value)`; comptime `if`
 conditions over `field.type.name` fold to the live arm. Inside a generic
 body the loop defers until specialization binds `T`, which is how one
-generic serves every struct (a reflection-driven `to_string`/`==`/`hash`
-matches the auto-derived versions). Comptime string `+` folds literals.
+generic serves every struct (the derive traits' defaults ARE reflection
+walks — conformance binds them per conformer). Comptime string `+` folds
+literals. Type bodies carry the pragmas too: `#if`/`#switch` select
+fields/methods per target, `#for` generates members with `$field.name`
+name splices, and a file-scope `#for` generates whole types (SPEC,
+"Declaration Generation").
 
 Attributes (SPEC, "Attributes") attach metadata to structs and fields:
 `@sql_table("users")` above a struct, `@rename("user_name"), @sql_type("VARCHAR")`

@@ -15,6 +15,18 @@ export default class TraitNode extends BaseNode {
 	 * concrete type arguments (`struct Users: Viewable<User>`).
 	 */
 	type_params: string[];
+	/**
+	 * Compile-time pragmas parsed INSIDE the body — `#if`/`#switch` target
+	 * selection and `#for` reflection loops over members. Folds/expands at
+	 * the trait's own check, exactly like a struct's (see StructNode).
+	 */
+	member_pragmas?: BaseNode[];
+	/** A comptime name splice for the trait's own name (`trait $field.name`,
+	 *  stage-6 generation) — see StructNode.comptime_name. */
+	comptime_name?: string;
+	/** Stamped by a comptime expansion on a `$`-generated trait — see
+	 *  StructNode.is_comptime_generated. */
+	is_comptime_generated?: boolean;
 
 	constructor(
 		start: number,

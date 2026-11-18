@@ -48,6 +48,7 @@ export default function check(
 		allow_internal: options?.allow_internal,
 		library_boundary: options?.library_boundary,
 		arch: options?.arch ?? "c",
+		platform: options?.platform ?? default_platform(),
 	};
 
 	// Compile-time conditionals first (docs/COMPTIME_PLAN_2.md stage 1):

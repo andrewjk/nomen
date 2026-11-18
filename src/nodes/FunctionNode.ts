@@ -117,6 +117,13 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 */
 	is_trait_default_binding?: boolean;
 	/**
+	 * Stamped on the compiler-synthesized auto `#init` (build_auto_init in
+	 * check_struct_node) — the marker lets the post-expansion refresh find
+	 * and replace it when `#if`/`#for` members changed the field shape. A
+	 * user-written `#init` never carries it.
+	 */
+	is_synthesized_init?: boolean;
+	/**
 	 * True for the auto-synthesized deep-copy method (`struct_is_copyable` →
 	 * `build_copy` in check/utils/copy_synthesis.ts). A user-written `copy`
 	 * method never carries the marker, so build-time passes can tell "a
@@ -138,6 +145,13 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 * under their own name).
 	 */
 	label_name?: string;
+	/**
+	 * A comptime name splice — `func $field.name = ...` inside a struct- or
+	 * file-scope `#for` arm (member/type generation). Same shape as
+	 * DeclarationNode.comptime_name: the dotted binding path as written;
+	 * expansion folds it and writes `name`.
+	 */
+	comptime_name?: string;
 	/**
 	 * Optional contract on the return value, parsed from `out TYPE: constraint`.
 	 * The placeholder `out` refers to the return value; other identifiers refer

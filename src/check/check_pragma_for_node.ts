@@ -1,4 +1,6 @@
+import BaseNode from "../nodes/BaseNode.ts";
 import type BlockNode from "../nodes/BlockNode.ts";
+import NestedBlockNode from "../nodes/NestedBlockNode.ts";
 import type PragmaForNode from "../nodes/PragmaForNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { expand_pragma_for } from "./utils/comptime.ts";
@@ -27,5 +29,21 @@ export default function check_pragma_for_node(node: PragmaForNode, status: Check
 	}
 	const index = parent.statements.indexOf(node);
 	if (index === -1) return;
-	parent.statements.splice(index + 1, 0, ...iterations);
+	// FILE scope (declaration generation, stage 6): the iterations splice
+	// FLAT — the generated structs/functions become root statements, exactly
+	// like hand-written declarations. The per-iteration wrapper block is the
+	// R8 hygiene for BODY scopes (iteration locals cannot collide) — at file
+	// scope there are no locals to collide, and a wrapper would nest the
+	// generated types inside a runtime block the backends would have to
+	// hoist back out.
+	const flat = parent.node_type === "root";
+	const spliced: BaseNode[] = [];
+	for (const iteration of iterations) {
+		if (flat && iteration.node_type === "block") {
+			spliced.push(...((iteration as NestedBlockNode).statements ?? []));
+		} else {
+			spliced.push(iteration);
+		}
+	}
+	parent.statements.splice(index + 1, 0, ...spliced);
 }

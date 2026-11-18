@@ -20,6 +20,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import check_missing_return from "./utils/check_missing_return.ts";
 import consume from "./utils/consume.ts";
+import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
@@ -107,11 +108,19 @@ export default function parse_declaration(
 	if (peek_current(status) === "func") {
 		parse_function_type_declaration(decl, status);
 	} else {
+		// A `$` comptime name splice is never a type — skip the type
+		// attempt entirely (`var $field.name = 0` is inferred from the
+		// default; an explicit type spells it first — `var int $field.name`,
+		// handled at the name position below). No annotation was written,
+		// so the declaration carries no type_start (the redundant-
+		// annotation lint keys on it).
+		const is_comptime_splice = peek_current(status) === "$";
 		// Try parsing a type, and backtrack if it turns out to be the name
 		const saved_i = status.i;
 		const saved_errors_length = status.errors.length;
 		decl.type_start = get_index(status);
-		decl.type = parse_type(status);
+		decl.type = is_comptime_splice ? new Type("") : parse_type(status);
+		if (is_comptime_splice) decl.type_start = undefined;
 		const is_func_alias = decl.type.name === "func";
 		if (is_func_alias) {
 			// The keyword spelling `var func (...) name`: the signature
@@ -157,11 +166,23 @@ export default function parse_declaration(
 				decl.type = new Type("");
 				decl.type_start = undefined;
 				decl.name_start = get_index(status);
-				decl.name = consume_name(status);
+				const splice = consume_comptime_name(status);
+				if (splice !== undefined) {
+					decl.comptime_name = splice;
+					decl.name = "";
+				} else {
+					decl.name = consume_name(status);
+				}
 			}
 		} else {
 			decl.name_start = get_index(status);
-			decl.name = consume_name(status);
+			const splice = consume_comptime_name(status);
+			if (splice !== undefined) {
+				decl.comptime_name = splice;
+				decl.name = "";
+			} else {
+				decl.name = consume_name(status);
+			}
 		}
 
 		// Parse field/variable constraint: var int x: x > 5

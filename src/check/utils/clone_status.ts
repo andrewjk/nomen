@@ -141,6 +141,7 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// generic's `type` parameter.
 		comptime_type_bindings: status.comptime_type_bindings,
 		arch: status.arch,
+		platform: status.platform,
 		checking_variadic_arg: status.checking_variadic_arg,
 		tuple_dst_from_array: status.tuple_dst_from_array,
 		// Nursery context: block clones (if/else/while inside `async { }`)

@@ -3233,11 +3233,13 @@ contributes nothing).
 // == / != (e.g. META.arch == "c")
 ```
 
-Arms hold ordinary Nomen: statements inside a function body, or whole
-declarations at file scope. The pragma is folded before the checker runs —
-only the selected arm is checked (a dead arm may reference names that do
-not exist for this target), and a pragma with no matching arm and no `else`
-disappears entirely:
+Arms hold ordinary Nomen: statements inside a function body, whole
+declarations at file scope, and — struct/trait-body scope — fields and
+methods (the selected arm's members distribute into the type's body before
+it is checked; a constructor covers selected fields like any other). The
+pragma is folded before the checker runs — only the selected arm is checked
+(a dead arm may reference names that do not exist for this target), and a
+pragma with no matching arm and no `else` disappears entirely:
 
 ```
 #if META.platform == "macos" {
@@ -3245,6 +3247,19 @@ disappears entirely:
         pub func hello = (self, out string) {
             return "mac"
         }
+    }
+}
+```
+
+A type body can gate its own members per target:
+
+```
+struct Config {
+    var a = 1
+    #if META.arch == "c" {
+        var c_only = 7
+    } else {
+        var portable = 9
     }
 }
 ```
@@ -3303,6 +3318,64 @@ func describe<T> = (T value, out string) {
   expressions; comptime string `+` folds literals eagerly).
 - `META.info(T).field_count` — the number of fields the loop iterates, as
   a comptime int (usable in expressions and comptime conditions).
+
+### Type-Body Loops and Generated Names (`$` splices)
+
+`#for` also runs at struct/trait-body scope, generating a member per
+reflected field. A `$`-splice in a member's name position folds a dotted
+path over the binding into the member's real name; inside a generated
+method's body, `Self` binds to the conformer the method landed on:
+
+```
+pub struct Mirror {
+    #for field of META.info(Base).fields {
+        pub var $field.name = 0
+        pub func get_$field.name = (self, out string) {
+            return META.info(Self).name + "." + field.name
+        }
+    }
+}
+```
+
+A generated field participates in the struct like a hand-written one —
+the constructor covers it when it has no default. A member that is not a
+field or a method is an error, and a loop over an unbound type parameter
+is an error (struct-scope reflection cannot defer — there is no
+specialization to re-check a type body).
+
+### Declaration Generation
+
+At file scope, a `#for` generates whole declarations: one struct (or
+trait) per reflected item, its name spliced from the binding, used by
+later code under the generated name. Inside a generated type's body,
+`Self` binds to the generated type's own name:
+
+```
+pub struct Config {
+    pub var http = 3
+    pub var disk = 4
+}
+
+#for field of META.info(Config).fields {
+    pub mv struct $field.name: Stringable {
+        pub var int value
+        pub func tag = (self, out string) {
+            return META.info(Self).name
+        }
+    }
+}
+
+var h = http(7)          // the generated struct, spelled by its known name
+Console.write_line(h.tag())   // "http"
+```
+
+Generated declarations compose with everything comptime: generated
+members may carry `#if` member arms, derive from the marker traits (the
+derivations are reflection defaults), and reference `META.info(Self)`.
+An enum from a reflected table, or other richer `@Type`-style
+construction, is future work — the iterable surface today is
+`META.info(T).fields`.
+
 - `field.type.name` — the field's type name as a comptime string. An `if`
   whose condition is comptime-constant folds to its live arm, so
   per-field-type dispatch reads naturally:

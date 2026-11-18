@@ -13,6 +13,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import check_missing_return from "./utils/check_missing_return.ts";
 import consume from "./utils/consume.ts";
+import { consume_comptime_name_path } from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
@@ -50,7 +51,21 @@ export default function parse_function(
 	// is unambiguous, and calls always go through `.name(...)` access (e.g.
 	// `Regex.match(...)`), which parses in its own unambiguous position.
 	let name = name_override || consume(status);
-	if (!name_override && name === "#") {
+	let comptime_name: string | undefined;
+	if (!name_override && name === "$") {
+		// A comptime name splice — `func $field.name = ...` inside a `#for`
+		// arm (member/type generation). The method's real name arrives at
+		// the expansion; the path rides `comptime_name`.
+		comptime_name = `\${${consume_comptime_name_path(status)}}`;
+		name = "";
+	} else if (!name_override && name !== "#" && peek_current(status) === "$") {
+		// A PREFIX splice — `func get_$field.name` — names the method from
+		// the binding with a literal prefix. Stored as a template
+		// (`get_${field.name}`) the expansion folds.
+		consume(status); // $
+		comptime_name = `${name}\${${consume_comptime_name_path(status)}}`;
+		name = "";
+	} else if (!name_override && name === "#") {
 		const next = consume(status);
 		if (
 			next === "init" ||
@@ -86,6 +101,7 @@ export default function parse_function(
 		return_type = new Type((parent_for_type as StructNode).name);
 	}
 	const func = new FunctionNode(start, visibility, name, return_type);
+	func.comptime_name = comptime_name;
 	func.attrs = take_attributes(status);
 	if (is_inline) func.is_inline = true;
 	if (is_unsafe) {
@@ -211,11 +227,14 @@ export default function parse_function(
 			switch (parent.node_type) {
 				case "root":
 				case "func":
+				case "block":
 				case "pragma_if": {
 					// `pragma_if` is the parse-time arm collector of a `#if` —
 					// declarations inside a compile-time arm attach to the
 					// pragma and move into the selected arm's block when it
-					// closes.
+					// closes. A plain block (a `#for` arm at type scope, or a
+					// bare `{ }` scope) collects the function into its
+					// statements the same way.
 					(parent as BlockNode).statements.push(func);
 					break;
 				}
@@ -305,6 +324,24 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 	const param = new ParameterNode(param_start, "");
 	func.params.push(param);
 
+	// A member pragma's arms sit on the PRAGMA on the stack (it is the
+	// parse-time collector), and a `#for` arm nests its members under an
+	// arm block — the enclosing struct/trait that a `self` parameter binds
+	// to is the nearest type entry below those parse-scope holders.
+	let self_owner: StructNode | undefined;
+	for (let i = status.stack.length - 1; i >= 0; i--) {
+		const entry = status.stack[i];
+		if (entry.node_type === "pragma_if" || entry.node_type === "block") continue;
+		if (
+			entry.node_type === "struct" ||
+			entry.node_type === "trait" ||
+			entry.node_type === "extend"
+		) {
+			self_owner = entry as StructNode;
+		}
+		break;
+	}
+
 	if (accept("var", status)) {
 		param.declaration = "var";
 	} else if (accept("mv", status)) {
@@ -329,7 +366,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		}
 
 		param.type_start = param.start;
-		param.type = new Type((parent as StructNode).name);
+		param.type = new Type(self_owner?.name ?? "");
 		param.is_self_param = true;
 		if (func.name === "#init") {
 			param.declaration = "var";
@@ -340,10 +377,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		}
 
 		return;
-	} else if (
-		status.tokens[status.i]?.value === "self" &&
-		(parent.node_type === "struct" || parent.node_type === "trait" || parent.node_type === "extend")
-	) {
+	} else if (status.tokens[status.i]?.value === "self" && self_owner) {
 		// `var self` / `cp self` / `mv self` are rejected: use `ref self`
 		// for mutation (visible to the caller) or bare `self` (read-only; in
 		// `#init` it may assign fields). A declaration keyword consumed above
@@ -377,7 +411,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		}
 
 		param.type_start = param.start;
-		param.type = new Type((parent as StructNode).name);
+		param.type = new Type(self_owner?.name ?? "");
 		param.is_self_param = true;
 		if (func.name === "#init") {
 			param.declaration = "var";

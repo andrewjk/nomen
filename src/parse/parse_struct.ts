@@ -14,6 +14,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
+import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
@@ -29,8 +30,21 @@ export default function parse_struct(
 	accept(visibility, status);
 	if (is_owning) accept("mv", status);
 	accept("struct", status);
-	const name = consume_name(status);
+	let name = "";
+	let struct_comptime_name: string | undefined;
+	{
+		// A comptime name splice — `struct $field.name { ... }` inside a
+		// file-scope `#for` (declaration generation, stage 6). The real
+		// name arrives at the expansion.
+		const splice = consume_comptime_name(status);
+		if (splice !== undefined) {
+			struct_comptime_name = splice;
+		} else {
+			name = consume_name(status);
+		}
+	}
 	const struct = new StructNode(start, visibility, name);
+	if (struct_comptime_name !== undefined) struct.comptime_name = struct_comptime_name;
 	if (is_owning) struct.is_owning = true;
 	struct.attrs = take_attributes(status);
 
@@ -65,33 +79,6 @@ export default function parse_struct(
 		parse_statement(status);
 		expect("}", status);
 		status.stack.pop();
-
-		// A `#spawn` construction hook (ASYNC.md) suppresses the
-		// default `#init` too: the class constructs through the compiler's
-		// deferred-call special form, not an ordinary constructor.
-		const has_custom_init = struct.functions.some((f) => f.name === "#init" || f.name === "#spawn");
-		if (!has_custom_init) {
-			const func = new FunctionNode(-1, visibility, "#init", new Type(struct.name));
-			func.params = struct.fields
-				.filter((f) => f.visibility !== "private" && !f.value)
-				.map((f) => {
-					// A func-typed field's ctor param carries the SIGNATURE so a
-					// lambda argument (`Rule((x) => …)`) can infer its parameter
-					// types, exactly like a func-typed local's declaration does.
-					const param = new ParameterNode(-1, f.name, f.func_params ? new Type("func") : f.type);
-					if (f.func_params) {
-						param.func_params = f.func_params;
-						param.func_return_type = f.func_return_type;
-					}
-					if (f.declaration === "mv") {
-						param.is_moved = true;
-					}
-					param.constraint = f.constraint;
-					return param;
-				});
-			func.is_static = true;
-			struct.functions.unshift(func);
-		}
 
 		add_to_parent(struct, "Struct", status);
 

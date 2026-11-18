@@ -2,12 +2,57 @@ import add_error from "../../add_error.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
+import type DeclarationNode from "../../nodes/DeclarationNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
 import PragmaIfNode from "../../nodes/PragmaIfNode.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import type { MemberHost } from "./comptime.ts";
+
+/**
+ * Move one generated/folded member into a type body. Only fields and
+ * methods are members; anything else (a raw block, a nested statement) is a
+ * compile error — loud, never silently dropped.
+ */
+export function distribute_member(member: BaseNode, host: MemberHost, status: CheckStatus): void {
+	if (member.node_type === "declare") {
+		host.fields.push(member as DeclarationNode);
+	} else if (member.node_type === "func") {
+		host.functions.push(member as FunctionNode);
+	} else {
+		add_error(status, "only fields and methods can be generated at type-body scope", member.start);
+	}
+}
+
+/**
+ * Fold a type body's `#if`/`#switch` member pragmas: the selected arm's
+ * members distribute into the body, the pragma disappears. `#for` member
+ * loops stay (they need the struct registry — expanded at the type's own
+ * check). Runs from the check() pre-pass for every parsed type AND from
+ * the comptime expansions for GENERATED types (whose bodies only exist
+ * after the pre-pass ran).
+ */
+export function fold_member_pragmas(
+	host: MemberHost,
+	consts: PragmaConsts,
+	status: CheckStatus,
+): void {
+	const pragmas = host.member_pragmas;
+	if (!pragmas || pragmas.length === 0) return;
+	const kept: BaseNode[] = [];
+	for (const pragma of pragmas) {
+		fold_pragma_ifs(pragma, consts, status);
+		if (pragma.node_type !== "pragma_if") {
+			kept.push(pragma);
+			continue;
+		}
+		const inner = select_pragma_branch(pragma as PragmaIfNode, consts, status);
+		for (const member of inner) distribute_member(member, host, status);
+	}
+	host.member_pragmas = kept;
+}
 
 /**
  * Compile-time conditionals — `#if META.arch == "c" { ... }` — docs/
@@ -284,6 +329,17 @@ export function fold_pragma_ifs(
 		return;
 	}
 	const any_node = node as Record<string, unknown>;
+	if (
+		(any_node.node_type === "struct" || any_node.node_type === "trait") &&
+		Array.isArray(any_node.member_pragmas)
+	) {
+		// Stage 3: `#if`/`#switch` INSIDE a struct/trait body — the selected
+		// arm's members distribute into the body (fields/methods), the
+		// pragma disappears. `#for` member loops stay for the type's own
+		// check (expand_struct_member_pragmas — they need the struct
+		// registry, which does not exist at fold time).
+		fold_member_pragmas(node as unknown as import("./comptime.ts").MemberHost, consts, status);
+	}
 	if (Array.isArray(any_node.statements)) {
 		const list = any_node.statements as BaseNode[];
 		// A function's own statement list is the OWNER boundary: nested

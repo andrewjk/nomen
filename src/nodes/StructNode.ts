@@ -50,6 +50,25 @@ export default class StructNode extends BaseNode {
 	 * resolution matches against `source_name ?? name`.
 	 */
 	source_name?: string;
+	/**
+	 * Compile-time pragmas parsed INSIDE the body — `#if`/`#switch` target
+	 * selection and `#for` reflection loops over members (the stage-3 gap:
+	 * "no statement list to splice into"). `#if` arms fold at the very
+	 * start of check (the selected arm's members distribute into
+	 * `fields`/`functions`); `#for` loops expand at the struct's own check,
+	 * before its members are processed. Empty for ordinary structs.
+	 */
+	member_pragmas?: BaseNode[];
+	/**
+	 * A comptime name splice for the struct's own name — `struct $field.name
+	 * { ... }` inside a file-scope `#for` (declaration generation, stage 6).
+	 * The dotted binding path as written; expansion folds it into `name`.
+	 */
+	comptime_name?: string;
+	/** Stamped by a comptime expansion on a `$`-generated type: its own
+	 *  check binds `Self` in the member bodies to the generated name
+	 *  (bind_comptime_self) before checking them. */
+	is_comptime_generated?: boolean;
 
 	constructor(
 		start: number,

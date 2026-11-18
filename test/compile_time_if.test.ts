@@ -232,18 +232,25 @@ test("pragmas nest inside pragma arms", () => {
 	expect(parsed.errors).toEqual([]);
 });
 
-test("a pragma inside a struct body is rejected (stage-1 limit)", () => {
+test("a pragma inside a struct body selects members (the stage-3 item)", () => {
+	// The stage-1 limit ("cannot appear here") is gone: a type body's
+	// `#if` is a MEMBER pragma — the selected arm's fields/methods
+	// distribute into the body before it is checked.
 	const parsed = parse_src(
 		`
 		struct S {
 			#if META.arch == "c" {
-				pub var int x
+				pub var x = 0
 			}
+		}
+		func probe = (out int) {
+			var s = S()
+			return s.x
 		}
 		`,
 		{ arch: "c", platform: "macos" },
 	);
-	expect(parsed.errors.some((e) => e.message.includes("cannot appear here"))).toBe(true);
+	expect(parsed.errors).toEqual([]);
 });
 
 test("raw blocks inside #switch arms select per target", () => {

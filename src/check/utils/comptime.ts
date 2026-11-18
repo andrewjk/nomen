@@ -2,6 +2,7 @@ import add_error from "../../add_error.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import { get_built_in_type } from "../../built_in_types.ts";
 import { is_int_type } from "../../built_in_types.ts";
+import default_platform from "../../default_platform.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -21,7 +22,57 @@ import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type AttributeMeta from "../../types/AttributeMeta.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { distribute_member, fold_member_pragmas, type PragmaConsts } from "./pragma.ts";
 import { resolve_declared_struct } from "./resolve_declared_type.ts";
+
+/** The fold consts for generated code's member pragmas (the main fold ran
+ *  at check() start, before any generation existed). */
+function status_consts(status: CheckStatus): PragmaConsts {
+	return {
+		arch: status.arch ?? "c",
+		platform: status.platform ?? default_platform(),
+	};
+}
+
+/** Fold the member pragmas of GENERATED types inside an expansion — their
+ *  bodies did not exist at check() start, so the main fold never saw
+ *  them. */
+function fold_generated_member_pragmas(statements: BaseNode[], status: CheckStatus): void {
+	for (const stmt of statements) {
+		if (stmt.node_type === "struct" || stmt.node_type === "trait") {
+			fold_member_pragmas(stmt as unknown as MemberHost, status_consts(status), status);
+		}
+	}
+}
+
+/** Bind `Self` inside a GENERATED type's members: the `$field.name`-spliced
+ *  struct's own name substitutes for `Self`, so its methods can reflect on
+ *  themselves (`META.info(Self).name`) exactly like a trait default does.
+ *  Called from check_struct_node/check_trait_node AFTER the type is
+ *  registered — the comptime chains resolve against the registry. The
+ *  expansion stamps `is_comptime_generated`; this runs before the member
+ *  walk checks the bodies. */
+export function bind_comptime_self(
+	host: MemberHost & { name: string; is_comptime_generated?: boolean },
+	status: CheckStatus,
+): void {
+	if (!host.is_comptime_generated || !host.name) return;
+	const substitution = new Map<string, string>([["Self", host.name]]);
+	for (const member of host.functions) {
+		// The method bodies parsed while the generated type's name was still
+		// the splice path — retype `self` now that the name is known.
+		for (const param of member.params) {
+			if (param.is_self_param) param.type = new Type(host.name);
+		}
+		substitute_pragma_iterables(member.statements ?? [], substitution);
+		rewrite_meta_name_chains(member.statements ?? [], status, substitution);
+	}
+	for (const pragma of host.member_pragmas ?? []) {
+		if (pragma.node_type === "pragma_for") {
+			substitute_pragma_iterables([(pragma as PragmaForNode).iterable], substitution);
+		}
+	}
+}
 
 /**
  * Compile-time field reflection — `#for field of META.info(T).fields` —
@@ -71,6 +122,133 @@ type IterableResolution =
 	| { struct: StructNode }
 	| { deferred: true }
 	| { error: string; start: number };
+
+/** A type body that can receive generated members (StructNode/TraitNode
+ *  shape — the expansion and the member fold only need these). */
+export interface MemberHost {
+	fields: import("../../nodes/DeclarationNode.ts").default[];
+	functions: import("../../nodes/FunctionNode.ts").default[];
+	member_pragmas?: BaseNode[];
+}
+
+/**
+ * Resolve a `$field.name` comptime name splice: the stored template is
+ * either a bare dotted path (`field.name`) or a prefix template with
+ * `${...}` markers (`get_${field.name}`). Each dotted path is rebuilt as an
+ * expression over the binding, run through the ordinary substitution
+ * rewrite, and must fold to a comptime string; the pieces concatenate into
+ * the member's real name.
+ */
+export function resolve_comptime_name(
+	template: string,
+	binding: string,
+	field: ComptimeField,
+	status: CheckStatus,
+	start: number,
+): string | undefined {
+	const fold_path = (path: string): string | undefined => {
+		const segments = path.split(".");
+		if (segments.length < 2 || segments[0] !== binding) {
+			add_error(
+				status,
+				`'$${path}' must be a dotted path over the '#for' binding ('${binding}.name')`,
+				start,
+			);
+			return undefined;
+		}
+		let expr: BaseNode = new ValueNode(start, segments[0]);
+		for (let i = 1; i < segments.length; i++) {
+			expr = new AccessNode(start, expr, new AccessFieldNode(start, segments[i]));
+		}
+		const rewritten = rewrite(expr, false, binding, field, status);
+		const text = literal_string(rewritten);
+		if (text === undefined) {
+			add_error(status, `'$${path}' must fold to a comptime string`, start);
+			return undefined;
+		}
+		return text;
+	};
+	const template_match = template.match(/^([^$]*)\$\{([^}]+)\}$/);
+	if (!template_match) {
+		return fold_path(template);
+	}
+	const spliced = fold_path(template_match[2]);
+	if (spliced === undefined) return undefined;
+	return `${template_match[1]}${spliced}`;
+}
+
+/**
+ * Expand a type body's `#for` member loops — `#for field of
+ * META.info(T).fields { <members> }` inside a struct/trait body (the
+ * stage-3 gap). Runs at the type's own check, BEFORE its members are
+ * processed: each iteration clones the arm's members, resolves `$`-spliced
+ * names through the binding, rewrites comptime uses (defaults, bodies),
+ * and appends the members to `fields`/`functions`. Concrete `T` only —
+ * struct-scope reflection cannot defer (there is no specialization to
+ * re-check a type body), so an unbound type parameter is a compile error.
+ * `#if` member pragmas were already folded at the start of check; a
+ * leftover pragma of any other kind is left untouched for its own pass.
+ */
+export function expand_struct_member_pragmas(host: MemberHost, status: CheckStatus): void {
+	const pragmas = host.member_pragmas ?? [];
+	if (pragmas.length === 0) return;
+	const kept: BaseNode[] = [];
+	for (const pragma of pragmas) {
+		if (pragma.node_type !== "pragma_for") {
+			kept.push(pragma);
+			continue;
+		}
+		const loop = pragma as PragmaForNode;
+		const resolved = resolve_meta_iterable(loop.iterable, status);
+		if ("error" in resolved) {
+			add_error(status, resolved.error, resolved.start);
+			continue;
+		}
+		if ("deferred" in resolved) {
+			add_error(
+				status,
+				`'#for' at struct/trait-body scope cannot defer — reflect over a concrete type, not a type parameter`,
+				loop.iterable.start,
+			);
+			continue;
+		}
+		const source = resolved.struct;
+		const typed_fields = source.fields.filter((f) => f.type && f.type.name);
+		const type_argument = iterable_type_argument(loop.iterable);
+		typed_fields.forEach((f, index) => {
+			const field: ComptimeField = {
+				name: f.name,
+				type_name: (f.type as Type).name,
+				index,
+				type_argument,
+				attrs: (f as unknown as { attrs?: AttributeMeta[] }).attrs,
+				type_value: f.type as Type,
+			};
+			for (const arm of loop.block.statements ?? []) {
+				const cloned = clone_node(arm);
+				for (const member of rewrite_statement(cloned, loop.binding, field, status)) {
+					distribute_member(member, host, status);
+					// A generated METHOD may reflect on the conformer it lands
+					// on (`META.info(Self).name`) — bind `Self` to the host's
+					// name now, before the walk checks the body.
+					if (member.node_type === "func") {
+						const self_substitution = new Map<string, string>([
+							["Self", (host as unknown as { name: string }).name],
+						]);
+						const generated_body = (member as unknown as { statements?: BaseNode[] }).statements;
+						substitute_pragma_iterables(generated_body ?? [], self_substitution);
+						rewrite_meta_name_chains(generated_body ?? [], status, self_substitution);
+					}
+					fold_generated_member_pragmas([member], status);
+					if (member.node_type === "struct" || member.node_type === "trait") {
+						(member as unknown as { is_comptime_generated?: boolean }).is_comptime_generated = true;
+					}
+				}
+			}
+		});
+	}
+	host.member_pragmas = kept;
+}
 
 function unwrap_grouped(node: BaseNode | undefined): BaseNode {
 	let current = node as BaseNode;
@@ -204,6 +382,15 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 			// R7: point diagnostics from generated code at the `#for`.
 			s.spawn_of = node.start;
 		}
+		// Generated types carry member pragmas that the check()-start fold
+		// never saw — fold them now (stage 3/6) — and stamp them so their
+		// own check binds `Self` to the generated name.
+		fold_generated_member_pragmas(rewritten, status);
+		for (const s of rewritten) {
+			if (s.node_type === "struct" || s.node_type === "trait") {
+				(s as unknown as { is_comptime_generated?: boolean }).is_comptime_generated = true;
+			}
+		}
 		iterations.push(new NestedBlockNode(node.block.start, rewritten));
 	});
 	return iterations;
@@ -313,6 +500,14 @@ function rewrite_statement(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode[] {
+	// A `$`-spliced comptime name (`var $field.name int`, `func $field.name`,
+	// `struct $field.name`) resolves FIRST — the folded string becomes the
+	// member's real name before the body/default rewrite descends.
+	const splice = (stmt as unknown as { comptime_name?: string }).comptime_name;
+	if (splice !== undefined) {
+		const name = resolve_comptime_name(splice, binding, field, status, stmt.start);
+		(stmt as unknown as { name: string }).name = name ?? "";
+	}
 	// A comptime-constant `if` folds to its live arm — but the condition is
 	// substituted and evaluated FIRST, so a dead arm never surfaces comptime
 	// errors (e.g. an `.attr` that only exists on the taken side). The

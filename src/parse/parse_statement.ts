@@ -253,13 +253,35 @@ export default function parse_statement(status: ParseStatus) {
 					// both before checking — only the matching arm's
 					// statements survive to codegen.
 					const pragma = next === "if" ? parse_pragma_if(status) : parse_pragma_switch(status);
-					add_to_parent(pragma, "Compile-time conditional", status);
+					// Struct/trait bodies have no statement list to splice
+					// into: the pragma attaches to the type as a MEMBER
+					// pragma — the selected arm's fields/methods distribute
+					// into the body at the check-time fold (the stage-3
+					// slot).
+					const pragma_parent = status.stack.at(-1);
+					if (pragma_parent?.node_type === "struct" || pragma_parent?.node_type === "trait") {
+						const pragma_owner = pragma_parent as { member_pragmas?: BaseNode[] };
+						if (!pragma_owner.member_pragmas) pragma_owner.member_pragmas = [];
+						pragma_owner.member_pragmas.push(pragma);
+					} else {
+						add_to_parent(pragma, "Compile-time conditional", status);
+					}
 				} else if (next === "for") {
 					// Compile-time field loop (stage 2): `#for field of
 					// META.info(T).fields { ... }` — unrolled at check time,
 					// deferred while T is an unbound type parameter.
 					const loop = parse_pragma_for(status);
-					add_to_parent(loop, "Compile-time for", status);
+					// Struct/trait bodies: a MEMBER loop — each iteration
+					// generates fields/methods into the body (expanded at
+					// the type's own check).
+					const loop_parent = status.stack.at(-1);
+					if (loop_parent?.node_type === "struct" || loop_parent?.node_type === "trait") {
+						const loop_owner = loop_parent as { member_pragmas?: BaseNode[] };
+						if (!loop_owner.member_pragmas) loop_owner.member_pragmas = [];
+						loop_owner.member_pragmas.push(loop);
+					} else {
+						add_to_parent(loop, "Compile-time for", status);
+					}
 				} else if (next === "error") {
 					// User compile-error directive (Comptime II): `#error
 					// "message"`. The checker reports the message when the

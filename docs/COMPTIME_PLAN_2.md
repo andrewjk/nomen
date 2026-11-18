@@ -264,8 +264,10 @@ Elevate it from "good long-term target" to the acceptance criterion.
    block on close) so the parser's parent-type attach switches treat
    declarations inside arms like declarations in the enclosing scope
    (`parse_function.ts`/`parse_declaration.ts` gained `case "pragma_if"`);
-   struct/trait-body arms are rejected at parse (no statement list to splice
-   into — a stage-3+ problem with attributes). The backends were left
+   struct/trait-body arms WERE rejected at parse (no statement list to
+   splice into — a stage-3+ problem with attributes; RESOLVED 2026-11-18:
+   type bodies carry member_pragmas — the stage-3 item shipped, see
+   stage 6). The backends were left
    STRICT: a `pragma_if` reaching a backend throws, since the fold runs
    unconditionally in `check()` — surviving nodes mean a fold gap (compiler
    bug), matching lower_function's "NIR lowering gap" contract.
@@ -437,7 +439,23 @@ file`). The node carries it (`RawNode.is_c` / `.scope`), deleting
    (a raw-only function has no JS arm by design). 155 core pairs and 19
    test-fixture pairs split; statement-level and platform `else` arms are
    untouched (a portable fallback is meaningful there).
-6. (Someday) declaration/type generation.
+6. **Declaration/type generation.** **SHIPPED** (2026-11-18, the Comptime
+   II backlog's final item) — a file-scope `#for` generates whole
+   structs/traits per reflected item: the `$field.name` splice (a dotted
+   path over the binding, resolved through the ordinary substitution
+   rewrite; `get_$field.name` prefix templates too) names the generated
+   type, whose members fold their `#if` member arms at the expansion and
+   bind `Self` to the generated name at the type's own check
+   (bind_comptime_self). Generated types are usable by their known
+   generated names. The underlying scaffolding: `#if`/`#for` at
+   struct/trait-body scope (member_pragmas on StructNode/TraitNode — the
+   `#if` fold distributes members at the check pre-pass, `#for` expands at
+   the type's own check via expand_struct_member_pragmas), and the auto
+   `#init` moved from parse time to check time (pre-synthesized at gather
+   so forward constructor calls resolve — Regex's `RxProg()` caught the
+   gap — and refreshed after expansion so selected/generated fields join
+   the constructor). Enum-from-a-table and other richer iterables remain
+   future work: the iterable surface today is `META.info(T).fields`.
 
 ## See also
 
