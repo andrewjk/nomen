@@ -45,9 +45,9 @@ function fold_generated_member_pragmas(statements: BaseNode[], status: CheckStat
 	}
 }
 
-/** Bind `Self` inside a GENERATED type's members: the `$field.name`-spliced
+/** Bind `Self` inside a GENERATED type's members: the `#field.name`-spliced
  *  struct's own name substitutes for `Self`, so its methods can reflect on
- *  themselves (`META.info(Self).name`) exactly like a trait default does.
+ *  themselves (`META.info(#self).name`) exactly like a trait default does.
  *  Called from check_struct_node/check_trait_node AFTER the type is
  *  registered — the comptime chains resolve against the registry. The
  *  expansion stamps `is_comptime_generated`; this runs before the member
@@ -57,7 +57,7 @@ export function bind_comptime_self(
 	status: CheckStatus,
 ): void {
 	if (!host.is_comptime_generated || !host.name) return;
-	const substitution = new Map<string, string>([["Self", host.name]]);
+	const substitution = new Map<string, string>([["#self", host.name]]);
 	for (const member of host.functions) {
 		// The method bodies parsed while the generated type's name was still
 		// the splice path — retype `self` now that the name is known.
@@ -132,7 +132,7 @@ export interface MemberHost {
 }
 
 /**
- * Resolve a `$field.name` comptime name splice: the stored template is
+ * Resolve a `#field.name` comptime name splice: the stored template is
  * either a bare dotted path (`field.name`) or a prefix template with
  * `${...}` markers (`get_${field.name}`). Each dotted path is rebuilt as an
  * expression over the binding, run through the ordinary substitution
@@ -168,7 +168,7 @@ export function resolve_comptime_name(
 		}
 		return text;
 	};
-	const template_match = template.match(/^([^$]*)\$\{([^}]+)\}$/);
+	const template_match = template.match(/^([^#]*)#\{([^}]+)\}$/);
 	if (!template_match) {
 		return fold_path(template);
 	}
@@ -181,7 +181,7 @@ export function resolve_comptime_name(
  * Expand a type body's `#for` member loops — `#for field of
  * META.info(T).fields { <members> }` inside a struct/trait body (the
  * stage-3 gap). Runs at the type's own check, BEFORE its members are
- * processed: each iteration clones the arm's members, resolves `$`-spliced
+ * processed: each iteration clones the arm's members, resolves `#`-spliced
  * names through the binding, rewrites comptime uses (defaults, bodies),
  * and appends the members to `fields`/`functions`. Concrete `T` only —
  * struct-scope reflection cannot defer (there is no specialization to
@@ -229,11 +229,11 @@ export function expand_struct_member_pragmas(host: MemberHost, status: CheckStat
 				for (const member of rewrite_statement(cloned, loop.binding, field, status)) {
 					distribute_member(member, host, status);
 					// A generated METHOD may reflect on the conformer it lands
-					// on (`META.info(Self).name`) — bind `Self` to the host's
+					// on (`META.info(#self).name`) — bind `Self` to the host's
 					// name now, before the walk checks the body.
 					if (member.node_type === "func") {
 						const self_substitution = new Map<string, string>([
-							["Self", (host as unknown as { name: string }).name],
+							["#self", (host as unknown as { name: string }).name],
 						]);
 						const generated_body = (member as unknown as { statements?: BaseNode[] }).statements;
 						substitute_pragma_iterables(generated_body ?? [], self_substitution);
@@ -384,7 +384,7 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 		}
 		// Generated types carry member pragmas that the check()-start fold
 		// never saw — fold them now (stage 3/6) — and stamp them so their
-		// own check binds `Self` to the generated name.
+		// own check binds `#self` to the generated name.
 		fold_generated_member_pragmas(rewritten, status);
 		for (const s of rewritten) {
 			if (s.node_type === "struct" || s.node_type === "trait") {
@@ -500,8 +500,8 @@ function rewrite_statement(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode[] {
-	// A `$`-spliced comptime name (`var $field.name int`, `func $field.name`,
-	// `struct $field.name`) resolves FIRST — the folded string becomes the
+	// A `#`-spliced comptime name (`var #field.name int`, `func #field.name`,
+	// `struct #field.name`) resolves FIRST — the folded string becomes the
 	// member's real name before the body/default rewrite descends.
 	const splice = (stmt as unknown as { comptime_name?: string }).comptime_name;
 	if (splice !== undefined) {

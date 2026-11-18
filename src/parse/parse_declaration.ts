@@ -109,12 +109,12 @@ export default function parse_declaration(
 		parse_function_type_declaration(decl, status);
 	} else {
 		// A `$` comptime name splice is never a type — skip the type
-		// attempt entirely (`var $field.name = 0` is inferred from the
-		// default; an explicit type spells it first — `var int $field.name`,
+		// attempt entirely (`var #field.name = 0` is inferred from the
+		// default; an explicit type spells it first — `var int #field.name`,
 		// handled at the name position below). No annotation was written,
 		// so the declaration carries no type_start (the redundant-
 		// annotation lint keys on it).
-		const is_comptime_splice = peek_current(status) === "$";
+		const is_comptime_splice = peek_current(status) === "#";
 		// Try parsing a type, and backtrack if it turns out to be the name
 		const saved_i = status.i;
 		const saved_errors_length = status.errors.length;

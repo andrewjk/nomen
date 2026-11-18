@@ -98,14 +98,14 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	// `{}` stays tight (an empty block, or a `ref x {}` field set); a closing
 	// brace after content keeps its separating space.
 	if (current.text === "}") return previous.text !== "{";
-	// A `$` name splice binds tight to the name it splices (`$ field` is a
+	// A `#` name splice binds tight to the name it splices (`# field` is a
 	// different, unparseable program). After a KEYWORD the space follows the
-	// ordinary rules (`var $field.name`); after a plain word the `$` is a
-	// PREFIX splice inside the name (`func get_$field.name`) — tight. And
-	// the name the splice reads never gains a leading space.
-	if (previous.text === "$") return false;
+	// ordinary rules (`var #field.name`); after a plain word the `#` is a
+	// PREFIX splice inside the name (`func get_#field.name`) — tight. And
+	// the name the splice reads never gains a leading space (`#` is already
+	// in NO_SPACE_AFTER).
 	const previous_is_word = /^[A-Za-z_]\w*$/.test(previous.text);
-	if (current.text === "$" && previous_is_word && !RESERVED_WORDS.has(previous.text)) {
+	if (current.text === "#" && previous_is_word && !RESERVED_WORDS.has(previous.text)) {
 		return false;
 	}
 	if (NO_SPACE_AFTER.has(previous.text)) return false;

@@ -5,7 +5,7 @@ import { compile_main, compile_module } from "./spec/_helpers.ts";
 
 // `#if`/`#for` at struct/trait-body scope (the Comptime II backlog's stage-3
 // item) and declaration generation (stage 6): arms hold members, a `#for`
-// generates fields/methods per reflected item, and `$field.name` splices
+// generates fields/methods per reflected item, and `#field.name` splices
 // the binding's comptime members into member/type names.
 
 test("a struct-body #if selects fields per target", () => {
@@ -63,7 +63,7 @@ pub struct Pair {
 
 pub struct Mirror {
 	#for field of META.info(Pair).fields {
-		pub var $field.name = 5
+		pub var #field.name = 5
 	}
 }
 
@@ -91,8 +91,8 @@ pub struct Base {
 
 pub struct Accessor {
 	#for field of META.info(Base).fields {
-		pub func get_$field.name = (self, out string) {
-			return META.info(Self).name + "." + field.name
+		pub func get_#field.name = (self, out string) {
+			return META.info(#self).name + "." + field.name
 		}
 	}
 	pub var n = 0
@@ -122,7 +122,7 @@ test("a trait body can carry #if-selected and #for-generated defaults", () => {
 				func c_feature = (self, out int) { return 1 }
 			}
 			#for field of META.info(Base).fields {
-				func count_$field.name = (self, out int) { return 0 }
+				func count_#field.name = (self, out int) { return 0 }
 			}
 		}
 
@@ -173,10 +173,10 @@ pub struct Config {
 }
 
 #for field of META.info(Config).fields {
-	pub mv struct $field.name: Stringable {
+	pub mv struct #field.name: Stringable {
 		pub var int value
 		pub func tag = (self, out string) {
-			return META.info(Self).name
+			return META.info(#self).name
 		}
 	}
 }
@@ -203,7 +203,7 @@ test("a malformed splice is a compile error", () => {
 		}
 		pub struct Bad {
 			#for field of META.info(Base).fields {
-				var $nope.name = 0
+				var #nope.name = 0
 			}
 		}
 	`);

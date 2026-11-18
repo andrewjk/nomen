@@ -14,7 +14,7 @@ import { rewrite_meta_name_chains, substitute_pragma_iterables } from "./comptim
  * "migrate the hardcoded derives onto `#for`" item).
  *
  * A trait default whose body references `Self` (the conformer) cannot be
- * emitted at the trait level — `META.info(Self)` and the `#for` walk over
+ * emitted at the trait level — `META.info(#self)` and the `#for` walk over
  * its fields only mean something once the conformer is known. So the three
  * derive traits (`Stringable` / `Equatable` / `Hashable` in core/System)
  * carry their derivations as REFLECTION DEFAULTS, and conformance binds
@@ -31,17 +31,17 @@ import { rewrite_meta_name_chains, substitute_pragma_iterables } from "./comptim
 
 /**
  * Whether a trait default body binds `Self` — a `Self` value node anywhere
- * in the body (the `META.info(Self)` chains and the `#for` iterables) or a
+ * in the body (the `META.info(#self)` chains and the `#for` iterables) or a
  * `Self`-typed parameter (`eq`'s `other`). Such a default is deferred at
  * the trait (R3: `Self` joins the function's type params) and expanded per
  * conformer.
  */
 export function uses_comptime_self(func: FunctionNode): boolean {
-	if (func.params.some((p) => p.type.name === "Self")) return true;
+	if (func.params.some((p) => p.type.name === "#self")) return true;
 	const visit = (node: unknown): boolean => {
 		if (!node || typeof node !== "object") return false;
 		const n = node as BaseNode;
-		if (n.node_type === "value" && (n as ValueNode).value === "Self") return true;
+		if (n.node_type === "value" && (n as ValueNode).value === "#self") return true;
 		for (const key of Object.keys(n)) {
 			if (key === "parent" || key === "scope") continue;
 			const value = (n as unknown as Record<string, unknown>)[key];
@@ -99,7 +99,7 @@ function bind_default_clone(
 	struct: StructNode,
 	status: CheckStatus,
 ): FunctionNode {
-	const substitution = new Map<string, string>([["Self", struct.name]]);
+	const substitution = new Map<string, string>([["#self", struct.name]]);
 	const cloned = clone_node(trait_func) as FunctionNode;
 	// The trait default is private (trait functions default to private);
 	// as a struct method it must be callable like any other method.
@@ -119,7 +119,7 @@ function bind_default_clone(
 	}
 	// The deferred comptime pieces resolve against the concrete conformer
 	// now, so the clone's own check sees ordinary AST: the `#for` iterable
-	// names the struct, and `META.info(Self)` chains (including inside the
+	// names the struct, and `META.info(#self)` chains (including inside the
 	// arm, where the comptime `if`s fold) rewrite to literals. The same
 	// order the monomorphizer applies to a specialized clone.
 	substitute_pragma_iterables(cloned.statements, substitution);

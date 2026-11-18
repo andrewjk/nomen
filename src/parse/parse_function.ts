@@ -32,6 +32,11 @@ import peek_next from "./utils/peek_next.ts";
 /** An identifier-shaped token value — the cheap gate for `type T` / `T: type`. */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** The `#`-lifecycle names a `func #<name>` spelling may declare (`#op_*`
+ *  is the open-ended fifth family, checked separately). Anything else
+ *  after `#` in a name position is a comptime name splice. */
+const LIFECYCLE_NAMES = new Set(["init", "destroy", "spawn", "weak", "handle"]);
+
 export default function parse_function(
 	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
@@ -52,29 +57,32 @@ export default function parse_function(
 	// `Regex.match(...)`), which parses in its own unambiguous position.
 	let name = name_override || consume(status);
 	let comptime_name: string | undefined;
-	if (!name_override && name === "$") {
-		// A comptime name splice — `func $field.name = ...` inside a `#for`
+	if (
+		!name_override &&
+		name === "#" &&
+		!LIFECYCLE_NAMES.has(peek_current(status) ?? "") &&
+		!(peek_current(status) ?? "").startsWith("op_")
+	) {
+		// A comptime name splice — `func #field.name = ...` inside a `#for`
 		// arm (member/type generation). The method's real name arrives at
-		// the expansion; the path rides `comptime_name`.
-		comptime_name = `\${${consume_comptime_name_path(status)}}`;
+		// the expansion; the path rides `comptime_name` as a template.
+		comptime_name = `#{${consume_comptime_name_path(status)}}`;
 		name = "";
-	} else if (!name_override && name !== "#" && peek_current(status) === "$") {
-		// A PREFIX splice — `func get_$field.name` — names the method from
+	} else if (
+		!name_override &&
+		name !== "#" &&
+		/^[A-Za-z_]\w*$/.test(name) &&
+		peek_current(status) === "#"
+	) {
+		// A PREFIX splice — `func get_#field.name` — names the method from
 		// the binding with a literal prefix. Stored as a template
-		// (`get_${field.name}`) the expansion folds.
-		consume(status); // $
-		comptime_name = `${name}\${${consume_comptime_name_path(status)}}`;
+		// (`get_#{field.name}`) the expansion folds.
+		consume(status); // #
+		comptime_name = `${name}#{${consume_comptime_name_path(status)}}`;
 		name = "";
 	} else if (!name_override && name === "#") {
 		const next = consume(status);
-		if (
-			next === "init" ||
-			next === "destroy" ||
-			next === "spawn" ||
-			next === "weak" ||
-			next === "handle" ||
-			next.startsWith("op_")
-		) {
+		if (LIFECYCLE_NAMES.has(next) || next.startsWith("op_")) {
 			name = `#${next}`;
 		}
 	}

@@ -675,7 +675,7 @@ docs/COMPTIME_PLAN_2.md (stage-2 notes and the stage-6 entry):
    can gate; `META.info(T).field_count` as the first comptime int.
 
 2. **Migrate the hardcoded derives onto `#for`** — the three derive traits
-   carry `#for` reflection default bodies (`Self` = the conformer);
+   carry `#for` reflection default bodies (`#self` = the conformer);
    conformance without a hand-written method binds the default per
    conformer; `auto_derive.ts` deleted (copy synthesis survives as
    `copy_synthesis.ts`); the hash default is attribute-configured
@@ -684,15 +684,15 @@ docs/COMPTIME_PLAN_2.md (stage-2 notes and the stage-6 entry):
 3. **`#if`/`#for` at struct-body and declaration scope** — type bodies
    carry member pragmas (`#if`/`#switch` folds at the check pre-pass,
    distributing fields/methods; `#for` expands at the type's own check),
-   `$field.name` splices name generated members (`get_$field.name`
-   templates too), `Self` binds inside generated methods, and the auto
+   `#field.name` splices name generated members (`get_#field.name`
+   templates too), `#self` binds inside generated methods and types, and the auto
    `#init` moved from parse time to check time so selected/generated
    fields join the constructor (pre-synthesized at gather for forward
    references, refreshed after expansion).
 
 4. **Declaration/type generation (stage 6)** — a file-scope `#for`
-   generates whole structs/traits per reflected item with `$`-spliced
+   generates whole structs/traits per reflected item with `#`-spliced
    names, usable by their generated names; generated bodies compose with
-   `#if` member arms, the marker-trait derives, and `META.info(Self)`.
+   `#if` member arms, the marker-trait derives, and `META.info(#self)`.
    Enum-from-a-table and other richer iterables remain future work (the
    iterable surface is `META.info(T).fields`).

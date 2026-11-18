@@ -604,7 +604,7 @@ function check_trait_conformance(struct: StructNode, status: CheckStatus) {
 			// traits) signs its methods with `Self` — a bound default clone
 			// (or a hand-written override) spells the conformer instead, so
 			// signature comparison substitutes Self -> the struct's name.
-			substitution.set("Self", struct.name);
+			substitution.set("#self", struct.name);
 		}
 
 		for (const trait_func of trait.functions) {

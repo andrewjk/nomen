@@ -18,6 +18,23 @@ import parse_qualified_name from "./utils/parse_qualified_name.ts";
 import peek_current from "./utils/peek_current.ts";
 
 function parse_type_base(status: ParseStatus): Type {
+	// `#self` in a type position — the conformer's own type inside a trait
+	// default signature (`func eq = (self, #self other, out bool)`). The
+	// internal name is substituted per conformer at binding time
+	// (utils/trait_defaults.ts) before anything checks or builds it, so no
+	// emitted type ever carries the marker.
+	if (peek_current(status) === "#") {
+		const start = get_index(status);
+		consume(status); // #
+		const word = consume(status);
+		if (word !== "self") {
+			add_error(status, `unknown comptime type '#${word}' — only '#self' is defined`, start);
+			return new Type("");
+		}
+		const type = new Type("#self");
+		type.start = start;
+		return type;
+	}
 	// Tuple type: `[T1, T2, ...]`
 	if (peek_current(status) === "[") {
 		const start = get_index(status);

@@ -41,13 +41,13 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 
 	for (let func of trait.functions) {
 		// A default body that binds `Self` (the conformer) can neither be
-		// checked nor emitted at the trait level — `META.info(Self)` and the
+		// checked nor emitted at the trait level — `META.info(#self)` and the
 		// `#for` walk over its fields resolve only per conformer. Marking it
 		// generic (Self as a type param) defers the body (R3); the
 		// per-conformer clones (utils/trait_defaults.ts) are checked fresh.
-		if (trait.type_params.length === 0 && !func.type_params.includes("Self")) {
+		if (trait.type_params.length === 0 && !func.type_params.includes("#self")) {
 			if (uses_comptime_self(func)) {
-				func.type_params.push("Self");
+				func.type_params.push("#self");
 			}
 		}
 		check_function_node(func, status);

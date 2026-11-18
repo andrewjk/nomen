@@ -5,7 +5,7 @@ import { compile_main, compile_module } from "./spec/_helpers.ts";
 
 // The derive migration (the Comptime II backlog item): `Stringable` /
 // `Equatable` / `Hashable` carry their derivations as `#for`-based
-// reflection default bodies (`META.info(Self).fields`), and conformance
+// reflection default bodies (`META.info(#self).fields`), and conformance
 // without a hand-written method binds the default per conformer. The
 // hardcoded checker synthesis is gone.
 

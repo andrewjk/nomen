@@ -307,7 +307,7 @@ Elevate it from "good long-term target" to the acceptance criterion.
    `< <= > >=`, division by zero is an error) alongside the user
    `#error "message"` directive (checked like a statement, so a dead arm
    R9 CUTOVER (2026-11-18): the hardcoded derives are RETIRED — the three
-   derive traits carry the R9 walks as their default bodies (`Self` as
+   derive traits carry the R9 walks as their default bodies (`#self` as
    the conformer), conformance binds the default per conformer through
    the trait-default cloning path (utils/trait_defaults.ts; deferred at
    the trait like a generic body, checked fresh per clone), and the
@@ -441,11 +441,11 @@ file`). The node carries it (`RawNode.is_c` / `.scope`), deleting
    untouched (a portable fallback is meaningful there).
 6. **Declaration/type generation.** **SHIPPED** (2026-11-18, the Comptime
    II backlog's final item) — a file-scope `#for` generates whole
-   structs/traits per reflected item: the `$field.name` splice (a dotted
+   structs/traits per reflected item: the `#field.name` splice (a dotted
    path over the binding, resolved through the ordinary substitution
-   rewrite; `get_$field.name` prefix templates too) names the generated
+   rewrite; `get_#field.name` prefix templates too) names the generated
    type, whose members fold their `#if` member arms at the expansion and
-   bind `Self` to the generated name at the type's own check
+   bind `#self` to the generated name at the type's own check
    (bind_comptime_self). Generated types are usable by their known
    generated names. The underlying scaffolding: `#if`/`#for` at
    struct/trait-body scope (member_pragmas on StructNode/TraitNode — the

@@ -3,7 +3,7 @@
  *
  * The default body is a REFLECTION DERIVATION (the derive migration): a
  * struct that conforms and does not write its own `to_string` gets the
- * default bound per conformer — `Self` becomes the struct's name and the
+ * default bound per conformer — `#self` becomes the struct's name and the
  * `#for` walk unrolls over its fields, rendering `Name(field=value, ...)`
  * exactly like the old hardcoded derive. A field whose type has no
  * `to_string` is a per-field compile error in the generated body; a
@@ -11,9 +11,9 @@
  **/
 pub trait Stringable {
 	func to_string = (self, out string) {
-		var s = META.info(Self).name + "("
+		var s = META.info(#self).name + "("
 		var first = true
-		#for field of META.info(Self).fields {
+		#for field of META.info(#self).fields {
 			if !first {
 				s = s + ", "
 			}

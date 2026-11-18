@@ -1031,7 +1031,7 @@ Interfaces that can be implemented by structs:
 
 ```
 pub trait Addable {
-    func add = (self, Self other, out Self)
+    func add = (self, #self other, out Self)
 }
 ```
 
@@ -2154,7 +2154,7 @@ underlying struct are not accessible through the trait reference.
 
 Conforming to `Stringable`, `Equatable`, or `Hashable` binds the trait's
 reflection default — a `#for`-based default body over
-`META.info(Self).fields` — when the struct does not supply the method
+`META.info(#self).fields` — when the struct does not supply the method
 itself, the same way a struct gets an auto-generated `#init`. A hand-written
 method always wins. The default is expanded per conformer (with `Self` as
 the conformer's type), so a field that cannot derive — a field type with no
@@ -3329,9 +3329,9 @@ method's body, `Self` binds to the conformer the method landed on:
 ```
 pub struct Mirror {
     #for field of META.info(Base).fields {
-        pub var $field.name = 0
-        pub func get_$field.name = (self, out string) {
-            return META.info(Self).name + "." + field.name
+        pub var #field.name = 0
+        pub func get_#field.name = (self, out string) {
+            return META.info(#self).name + "." + field.name
         }
     }
 }
@@ -3357,10 +3357,10 @@ pub struct Config {
 }
 
 #for field of META.info(Config).fields {
-    pub mv struct $field.name: Stringable {
+    pub mv struct #field.name: Stringable {
         pub var int value
         pub func tag = (self, out string) {
-            return META.info(Self).name
+            return META.info(#self).name
         }
     }
 }
@@ -3371,7 +3371,7 @@ Console.write_line(h.tag())   // "http"
 
 Generated declarations compose with everything comptime: generated
 members may carry `#if` member arms, derive from the marker traits (the
-derivations are reflection defaults), and reference `META.info(Self)`.
+derivations are reflection defaults), and reference `META.info(#self)`.
 An enum from a reflected table, or other richer `@Type`-style
 construction, is future work — the iterable surface today is
 `META.info(T).fields`.

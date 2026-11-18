@@ -33,7 +33,7 @@ export default function parse_struct(
 	let name = "";
 	let struct_comptime_name: string | undefined;
 	{
-		// A comptime name splice — `struct $field.name { ... }` inside a
+		// A comptime name splice — `struct #field.name { ... }` inside a
 		// file-scope `#for` (declaration generation, stage 6). The real
 		// name arrives at the expansion.
 		const splice = consume_comptime_name(status);
