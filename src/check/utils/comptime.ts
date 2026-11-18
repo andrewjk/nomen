@@ -133,11 +133,12 @@ export interface MemberHost {
 
 /**
  * Resolve a `#field.name` comptime name splice: the stored template is
- * either a bare dotted path (`field.name`) or a prefix template with
- * `${...}` markers (`get_${field.name}`). Each dotted path is rebuilt as an
- * expression over the binding, run through the ordinary substitution
- * rewrite, and must fold to a comptime string; the pieces concatenate into
- * the member's real name.
+ * either a bare dotted path (`field.name`) or a template of literal text
+ * with `#{path}` markers (`get_#{field.name}`, `#{field.name}_handler`,
+ * `pre_#{field.name}_post`). Each dotted path is rebuilt as an expression
+ * over the binding, run through the ordinary substitution rewrite, and
+ * must fold to a comptime string; the pieces concatenate into the
+ * member's real name.
  */
 export function resolve_comptime_name(
 	template: string,
@@ -151,7 +152,7 @@ export function resolve_comptime_name(
 		if (segments.length < 2 || segments[0] !== binding) {
 			add_error(
 				status,
-				`'$${path}' must be a dotted path over the '#for' binding ('${binding}.name')`,
+				`'#${path}' must be a dotted path over the '#for' binding ('${binding}.name')`,
 				start,
 			);
 			return undefined;
@@ -163,18 +164,23 @@ export function resolve_comptime_name(
 		const rewritten = rewrite(expr, false, binding, field, status);
 		const text = literal_string(rewritten);
 		if (text === undefined) {
-			add_error(status, `'$${path}' must fold to a comptime string`, start);
+			add_error(status, `'#${path}' must fold to a comptime string`, start);
 			return undefined;
 		}
 		return text;
 	};
-	const template_match = template.match(/^([^#]*)#\{([^}]+)\}$/);
-	if (!template_match) {
-		return fold_path(template);
+	if (!template.includes("#{")) return fold_path(template);
+	let out = "";
+	let last = 0;
+	for (const m of template.matchAll(/#\{([^}]+)\}/g)) {
+		out += template.slice(last, m.index);
+		const piece = fold_path(m[1]);
+		if (piece === undefined) return undefined;
+		out += piece;
+		last = m.index + m[0].length;
 	}
-	const spliced = fold_path(template_match[2]);
-	if (spliced === undefined) return undefined;
-	return `${template_match[1]}${spliced}`;
+	out += template.slice(last);
+	return out;
 }
 
 /**

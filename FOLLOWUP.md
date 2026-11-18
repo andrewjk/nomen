@@ -670,17 +670,10 @@ The 2026-11-18 comptime work shipped `#if`/`#for` at type-body scope,
 `#binding.name` name splices, `#self`, and file-scope declaration
 generation (mechanics recorded in docs/COMPTIME_PLAN_2.md, stage-2 notes
 and stage 6). Three splice shapes a real user reaches for first are still
-missing — smallest first (item 1,
-struct/trait prefix splices, shipped 2026-11-18):
+missing — smallest first (prefix splices on struct/trait names and
+suffix/middle braced templates shipped 2026-11-18):
 
-1. **Suffix/middle splices** — `#field.name_id` glues into the path
-   segment (`name_id` is not a binding member): word chars after an
-   unbraced splice are greedy. Needs a braced template form —
-   `#{field.name}_id`, `pre_#{field.name}`, mixed — parsed as
-   literal/`#{path}` pieces where zero-gap pieces glue into the template,
-   plus a generalized resolver (any number of splices per name).
-
-2. **Type splices** — `var #field.type.name #field.name = 0`: mirror the
+1. **Type splices** — `var #field.type.name #field.name = 0`: mirror the
    source field's TYPE into the generated member. The serde/schema-
    mirroring case — today generated members can only take fixed or
    literal-inferred types. Splice support in a declaration's type

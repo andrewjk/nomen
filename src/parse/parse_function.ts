@@ -13,7 +13,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import check_missing_return from "./utils/check_missing_return.ts";
 import consume from "./utils/consume.ts";
-import { consume_comptime_name_path } from "./utils/consume_comptime_name.ts";
+import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
@@ -55,35 +55,29 @@ export default function parse_function(
 	// Function/method names are allowed to be keywords: the name after `func`
 	// is unambiguous, and calls always go through `.name(...)` access (e.g.
 	// `Regex.match(...)`), which parses in its own unambiguous position.
-	let name = name_override || consume(status);
+	let name = name_override || "";
 	let comptime_name: string | undefined;
-	if (
-		!name_override &&
-		name === "#" &&
-		!LIFECYCLE_NAMES.has(peek_current(status) ?? "") &&
-		!(peek_current(status) ?? "").startsWith("op_")
-	) {
-		// A comptime name splice — `func #field.name = ...` inside a `#for`
-		// arm (member/type generation). The method's real name arrives at
-		// the expansion; the path rides `comptime_name` as a template.
-		comptime_name = `#{${consume_comptime_name_path(status)}}`;
-		name = "";
-	} else if (
-		!name_override &&
-		name !== "#" &&
-		/^[A-Za-z_]\w*$/.test(name) &&
-		peek_current(status) === "#"
-	) {
-		// A PREFIX splice — `func get_#field.name` — names the method from
-		// the binding with a literal prefix. Stored as a template
-		// (`get_#{field.name}`) the expansion folds.
-		consume(status); // #
-		comptime_name = `${name}#{${consume_comptime_name_path(status)}}`;
-		name = "";
-	} else if (!name_override && name === "#") {
-		const next = consume(status);
-		if (LIFECYCLE_NAMES.has(next) || next.startsWith("op_")) {
-			name = `#${next}`;
+	if (!name_override) {
+		if (
+			peek_current(status) === "#" &&
+			(LIFECYCLE_NAMES.has(status.tokens[status.i + 1]?.value ?? "") ||
+				(status.tokens[status.i + 1]?.value ?? "").startsWith("op_"))
+		) {
+			// A `#`-lifecycle or operator name (`#init`, `#op_eq`, ...).
+			consume(status); // #
+			name = `#${consume(status)}`;
+		} else {
+			// A comptime name splice — `func #field.name = ...` or a glued
+			// prefix/suffix template (`func get_#field.name`) inside a `#for`
+			// arm (member/type generation). The method's real name arrives at
+			// the expansion; the template rides `comptime_name`.
+			const template = consume_comptime_name(status);
+			if (template !== undefined) {
+				comptime_name = template;
+				name = "";
+			} else {
+				name = consume(status);
+			}
 		}
 	}
 	// Map #op_* to internal function names

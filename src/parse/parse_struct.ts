@@ -14,10 +14,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
-import consume_comptime_name, {
-	comptime_prefix_ahead,
-	consume_comptime_name_path,
-} from "./utils/consume_comptime_name.ts";
+import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
@@ -38,15 +35,12 @@ export default function parse_struct(
 	{
 		// A comptime name splice — `struct #field.name { ... }` inside a
 		// file-scope `#for` (declaration generation, stage 6) — bare, or
-		// with a literal prefix (`struct id_#field.name`). The real name
-		// arrives at the expansion.
+		// with a glued literal prefix (`struct id_#field.name`) or braced
+		// suffix (`struct #{field.name}_t`). The real name arrives at the
+		// expansion.
 		const splice = consume_comptime_name(status);
 		if (splice !== undefined) {
 			struct_comptime_name = splice;
-		} else if (comptime_prefix_ahead(status)) {
-			const prefix = consume(status);
-			consume(status); // #
-			struct_comptime_name = `${prefix}#{${consume_comptime_name_path(status)}}`;
 		} else {
 			name = consume_name(status);
 		}

@@ -226,6 +226,38 @@ pub func main = () {
 	);
 });
 
+test("suffix and middle template splices", async () => {
+	await build_and_check_output(
+		`
+import System
+
+pub struct Ids {
+	pub var user = 0
+	pub var order = 0
+}
+
+pub struct Mirrors {
+	#for field of META.info(Ids).fields {
+		pub var int #{field.name}_id = 0
+		pub func handle_#{field.name}_event = (self, out string) {
+			return "handled " + field.name
+		}
+	}
+}
+
+pub func main = () {
+	var m = Mirrors()
+	Console.write_line("\\{m.user_id == 0}")
+	Console.write_line(m.handle_order_event())
+}
+`,
+		"comptime_suffix_splice",
+		"true\nhandled order\n",
+		true,
+		{ js: true },
+	);
+});
+
 test("a malformed splice is a compile error", () => {
 	const errors = compile_module(`
 		pub struct Base {

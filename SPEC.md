@@ -3324,12 +3324,16 @@ func describe<T> = (T value, out string) {
 `#for` also runs at struct/trait-body scope, generating a member per
 reflected field. A `#`-splice in a member's name position folds a dotted
 path over the binding into the member's real name; inside a generated
-method's body, `#self` binds to the conformer the method landed on:
+method's body, `#self` binds to the conformer the method landed on. Names
+are templates: a glued literal prefix (`get_#field.name`) and a braced
+splice with glued text on either side (`#{field.name}_id` — the braces
+stop the greedy word scan) compose into the final name:
 
 ```
 pub struct Mirror {
     #for field of META.info(Base).fields {
         pub var #field.name = 0
+        pub var #{field.name}_count = 0
         pub func get_#field.name = (self, out string) {
             return META.info(#self).name + "." + field.name
         }

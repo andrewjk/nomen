@@ -242,6 +242,7 @@ test("a struct-body #for generates fields and methods via $ splices", () => {
 		pub struct Mirror {
 			#for field of META.info(Base).fields {
 				pub var #field.name = 0
+				pub var #{field.name}_count = 0
 				pub func get_#field.name = (self, out string) {
 					return META.info(#self).name + "." + field.name
 				}
