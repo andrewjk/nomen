@@ -21,7 +21,7 @@ export default class AssignmentNode extends BaseNode {
 	last_use_move?: boolean;
 
 	/**
-	 * Stamped by the synthesized-`copy` builder (auto_derive's build_copy) on
+	 * Stamped by the synthesized-`copy` builder (copy_synthesis's build_copy) on
 	 * a `c.<field> = self.<field>.copy()` assignment whose field's CURRENT
 	 * value is a BORROW: the shell constructor byte-copied `self.<field>` in
 	 * (struct/container ctor params alias their argument — only string params
@@ -32,7 +32,7 @@ export default class AssignmentNode extends BaseNode {
 	displaced_is_alias?: boolean;
 
 	/**
-	 * Stamped by the synthesized-`copy` builder (auto_derive's build_copy) on
+	 * Stamped by the synthesized-`copy` builder (copy_synthesis's build_copy) on
 	 * its `c.<field> = self.<field>` stores: the field-store path strdups
 	 * string values, so the RHS field read is a sanctioned deep-copy source
 	 * (the generic "copy out of an owning field by value" rejection does not

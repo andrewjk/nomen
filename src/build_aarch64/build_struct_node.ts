@@ -2742,11 +2742,14 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 		for (const func of trait.functions) {
 			if (!func.has_body) continue;
 			// A generic trait's default bodies reference its type params (e.g.
-			// `T`), unresolved at the trait level. They are cloned + substituted
-			// per conformer into struct methods (synthesize_generic_trait_defaults),
-			// so skip emitting the broken trait-level body here. Non-generic
-			// traits keep the shared default-body emission.
-			if (trait.type_params.length > 0) continue;
+			// `T`), unresolved at the trait level; a `Self`-bearing reflection
+			// default (the derive traits' `#for` bodies) resolves only per
+			// conformer. Both are cloned + substituted per conformer into
+			// struct methods (synthesize_generic_trait_defaults /
+			// utils/trait_defaults.ts) — skip the trait-level body here.
+			// Other non-generic defaults (Enumerable.length) keep the shared
+			// emission.
+			if (trait.type_params.length > 0 || func.is_generic) continue;
 
 			const trait_func_label = `${trait_name}_${func.name}`;
 			// The trait-level default body is shared across every conforming

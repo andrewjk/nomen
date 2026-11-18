@@ -1,10 +1,18 @@
 /**
- * Marker trait for value equality. A struct that conforms to `Equatable` and
- * does not define its own `#op_eq` gets a field-by-field equality method
- * derived automatically, so `==` and `!=` work between two instances. The
- * derivation only fires when every field is itself equatable (a primitive or
- * another `Equatable` type); otherwise the struct must supply `#op_eq` by
- * hand.
+ * Trait for value equality. A struct that conforms to `Equatable` and does
+ * not define its own `#op_eq` gets a field-by-field equality method bound
+ * from the reflection default below (`Self` becomes the struct's name, the
+ * `#op_eq` walk unrolls over `META.info(Self).fields`), so `==` — and `!=`
+ * as its negation — work between two instances. A field whose type cannot
+ * compare (`==` resolving to nothing) is a per-field compile error in the
+ * generated body; a hand-written `#op_eq` always wins.
  **/
 pub trait Equatable {
+	func eq = (self, Self other, out bool) {
+		var result = true
+		#for field of META.info(Self).fields {
+			result = result && field.get(self) == field.get(other)
+		}
+		return result
+	}
 }

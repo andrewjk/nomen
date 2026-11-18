@@ -2152,11 +2152,14 @@ underlying struct are not accessible through the trait reference.
 
 ### Auto-Derived Methods
 
-Conforming to `Stringable`, `Equatable`, or `Hashable` auto-generates the
-matching method when the struct does not supply it itself — the same way a
-struct gets an auto-generated `#init`. A hand-written method always wins. The
-derivation only fires when every field is itself derivable (a primitive or a
-conforming struct); otherwise the struct must provide the method by hand.
+Conforming to `Stringable`, `Equatable`, or `Hashable` binds the trait's
+reflection default — a `#for`-based default body over
+`META.info(Self).fields` — when the struct does not supply the method
+itself, the same way a struct gets an auto-generated `#init`. A hand-written
+method always wins. The default is expanded per conformer (with `Self` as
+the conformer's type), so a field that cannot derive — a field type with no
+`to_string`, no `==`, and no `hash` for the respective trait — is a
+per-field compile error in the generated body, not a silent skip.
 
 ```
 pub struct Point: Equatable, Stringable {
@@ -2174,7 +2177,14 @@ const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
 `Stringable` derives a `to_string` that lists each field as `name=value`.
 `Equatable` derives `#op_eq` (and `!=` as its negation) by comparing fields with
 `==`. `Hashable` derives a `hash` method (returning `uint`) by combining field
-values. Nested structs participate as long as they conform to the same trait.
+values — scalar fields (int/bool/char) cast to `uint`, other conforming fields
+call their own `hash`. Nested structs participate as long as they conform to
+the same trait; recursion is ordinary method dispatch on the field's type.
+
+The derivation is library code and attribute-configured: the `Hashable`
+default skips fields marked `@hash_ignore` (an identity-only field — a
+cache slot, a stamp — does not perturb the hash). Any conformer can write
+its own reflection default the same way.
 
 ## Statements
 

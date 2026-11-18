@@ -25,7 +25,6 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
-import { synthesize_copy_method } from "./utils/auto_derive.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
 import { resolve_case_enum_type } from "./utils/case_enum.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
@@ -35,6 +34,7 @@ import {
 	substitute_generic_constructs,
 	substitute_pragma_iterables,
 } from "./utils/comptime.ts";
+import { synthesize_copy_method } from "./utils/copy_synthesis.ts";
 import {
 	monomorphize_enum,
 	enforce_case_payload_ownership,
@@ -60,6 +60,7 @@ import {
 import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
 import { spawn_arg_root_name } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
+import { bind_trait_defaults } from "./utils/trait_defaults.ts";
 import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
@@ -1033,6 +1034,40 @@ export function monomorphize(
 			init_params,
 		);
 		mono_struct.functions.push(init_func);
+	}
+
+	// A mono struct materializes mid-check, after the block-level pre-pass
+	// ran — bind its trait reflection defaults here (Stringable/Equatable/
+	// Hashable conformance riding the generic template) and check the bound
+	// bodies now, since no later struct check will. Without this, the mono's
+	// vtable would point at a trait-level default that is deliberately never
+	// emitted (see build_trait_node / build_trait_functions).
+	const bound_defaults = bind_trait_defaults(mono_struct, status);
+	const bound_status: CheckStatus = {
+		stack: status.stack,
+		scope_depth: status.scope_depth,
+		types: status.types,
+		values: [],
+		function_value_base: 0,
+		structs: status.structs,
+		traits: status.traits,
+		enums: status.enums,
+		bitsets: status.bitsets,
+		functions: status.functions,
+		allocations: [],
+		var_name_counter: status.var_name_counter,
+		type_params: [],
+		errors: status.errors,
+		function_emission_names: status.function_emission_names,
+		allow_internal: status.allow_internal,
+		library_boundary: status.library_boundary,
+		arch: status.arch,
+		is_mono_body_recheck: true,
+		comptime_type_bindings: mono_type_bindings,
+	};
+	for (const bound of bound_defaults) {
+		bound.scope = mono_struct;
+		check_function_node(bound, bound_status);
 	}
 
 	// A mono struct materializes mid-check, after the block-level derive
@@ -2458,7 +2493,10 @@ function rederive_nursery_spawn_annotations(fc: AccessFunctionCallNode, status: 
  * `T` and the C backend emits an unresolved type in the function-pointer
  * signature (`T (*f)(T)`).
  */
-function substitute_param_signature(param: ParameterNode, substitution: Map<string, string>): void {
+export function substitute_param_signature(
+	param: ParameterNode,
+	substitution: Map<string, string>,
+): void {
 	param.type = substitute_type(param.type, substitution);
 	param.func_params = substitute_func_params(param.func_params, substitution);
 	param.func_return_type = param.func_return_type

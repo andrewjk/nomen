@@ -667,36 +667,11 @@ and double-launch.
 ## Comptime next steps (the Comptime II backlog, in order)
 
 Stages 1–5 of [`docs/COMPTIME_PLAN_2.md`](./docs/COMPTIME_PLAN_2.md) are
-shipped; these are the remaining items that came out of the 2026-11-18 review,
-ordered cheapest-lever-first. Each is scaffolding for the one after it.
+shipped; these are the remaining items that came out of the 2026-11-18
+review, ordered cheapest-lever-first. Each is scaffolding for the one after
+it.
 
-1. **Migrate the hardcoded derives onto `#for` and retire the magic.**
-   The three auto-derived methods (`Stringable`/`Equatable`/`Hashable`)
-   are 579 lines of checker synthesis
-   (`src/check/utils/auto_derive.ts`, stamped through FunctionNode/
-   AssignmentNode, dispatched from check_block_node) keyed on empty
-   marker traits (`core/System/Equatable.nm` is `pub trait Equatable {
-}`). R9 already proved the replacement:
-   `test/comptime_for.test.ts`'s `manual_to_string`/`manual_eq`/
-   `manual_hash` match the hardcoded derives (to_string byte-for-byte,
-   hash exactly on the all-int struct). Migration shape: give the traits
-   default method bodies holding the R9 `#for` walks (`Enumerable.length`
-   is the existing default-body precedent), make "conformance without a
-   hand-written method bind the trait's default" the only trigger rule,
-   delete `auto_derive.ts`. Two prerequisites: default bodies must bind
-   the conformer's type (`META.info(Self)`) and defer/expand per
-   conformer through the existing mono-clone hook; and the hardcoded
-   per-type hash rules (`is_hashable_scalar` cast-to-uint, string-field
-   hashing — R9 only diffed hash on the all-int struct) lift into library
-   functions first. Recursion for conforming struct fields becomes
-   ordinary dispatch (`field.get(a) == field.get(b)` via the field type's
-   own conformance), so the all-fields-derivable gate turns into
-   per-field type errors. Backends never see derives, so this is the
-   safe first migration for the marker-trait endgame above. Wins:
-   attribute-configured derives (`@hash_ignore`, `@label`), user-writable
-   derivations, one source of truth.
-
-2. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
+1. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
    body statements or whole file-scope declarations only —
    struct/trait-body arms are rejected at parse (the stage-1 note: "no
    statement list to splice into — a stage-3+ problem" that stage 3 never
@@ -706,7 +681,19 @@ ordered cheapest-lever-first. Each is scaffolding for the one after it.
    `parse_struct`/`parse_trait` (the stage-1 mechanism — pragma on the
    stack as a collector — is the template).
 
-3. **Declaration/type generation (stage 6, "(Someday)").** Generating
+2. **Declaration/type generation (stage 6, "(Someday)").** Generating
+
+3. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
+   body statements or whole file-scope declarations only —
+   struct/trait-body arms are rejected at parse (the stage-1 note: "no
+   statement list to splice into — a stage-3+ problem" that stage 3 never
+   picked up), and `#for` is body-scope only (stage-2 known gap). A
+   `#for` at struct-body scope would generate fields per reflected item
+   and is the door to stage 6; needs a statement-collector slot in
+   `parse_struct`/`parse_trait` (the stage-1 mechanism — pragma on the
+   stack as a collector — is the template).
+
+4. **Declaration/type generation (stage 6, "(Someday)").** Generating
    whole declarations — a struct per reflected item, an enum from a
    table, Zig-`@Type`-class construction. The stage-6 placeholder in
    `docs/COMPTIME_PLAN_2.md` is the only unshipped stage. Everything

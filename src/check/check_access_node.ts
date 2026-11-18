@@ -1013,7 +1013,19 @@ export function check_access_function_node(
 				return false;
 			}
 		}
-		add_error(status, `Function not found: ${target_type.name}.${node.name}`, node.start);
+		// Inside a derived trait-default body the position points at the
+		// library body, not the conformer — say what happened instead.
+		const in_derived =
+			node.spawn_of !== undefined || status.current_function?.is_trait_default_binding;
+		add_error(
+			status,
+			`Function not found: ${target_type.name}.${node.name}${
+				in_derived
+					? " (inside compile-time-generated code — the derived body's field type lacks this method; write it on the field's type, or skip the field)"
+					: ""
+			}`,
+			node.start,
+		);
 		return false;
 	}
 

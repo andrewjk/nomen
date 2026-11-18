@@ -359,4 +359,30 @@ const uint h = p.hash()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("the Hashable default skips @hash_ignore fields", () => {
+		const input = `
+pub struct Point: Hashable {
+    pub var int x
+    @hash_ignore
+    pub var int y
+}
+const p = Point(1, 2)
+const uint h = p.hash()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("a non-derivable field is a per-field error", () => {
+		const errors = compile_main(`
+pub struct Weak: Hashable {
+    pub var float ratio
+}
+pub func main = () {
+    var w = Weak(1.0)
+    var uint h = w.hash()
+}
+`);
+		expect(errors.some((e) => e.message.includes("hash"))).toBe(true);
+	});
 });

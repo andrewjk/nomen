@@ -108,8 +108,17 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 */
 	returns_string_borrow?: boolean;
 	/**
+	 * Stamped on a per-conformer clone of a trait's reflection default
+	 * (the derive traits' `#for` bodies — utils/trait_defaults.ts). The
+	 * clone's nodes keep their trait-source positions, so a compile error
+	 * inside the derived body points into the library file; this marker
+	 * lets the checker's diagnostics say what the generated code was
+	 * doing instead.
+	 */
+	is_trait_default_binding?: boolean;
+	/**
 	 * True for the auto-synthesized deep-copy method (`struct_is_copyable` →
-	 * `build_copy` in check/utils/auto_derive.ts). A user-written `copy`
+	 * `build_copy` in check/utils/copy_synthesis.ts). A user-written `copy`
 	 * method never carries the marker, so build-time passes can tell "a
 	 * `.copy()` whose semantics are exactly a fresh deep copy" from an
 	 * arbitrary method that happens to be named `copy`.

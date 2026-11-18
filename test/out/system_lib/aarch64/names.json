@@ -1,4 +1,6 @@
 [
+	"bool_hash",
+	"bool_to_string",
 	"uint_div",
 	"uint_mod",
 	"uint_hash",
@@ -12,8 +14,6 @@
 	"uint64_mod",
 	"uint64_hash",
 	"uint64_to_string",
-	"bool_hash",
-	"bool_to_string",
 	"char_hash",
 	"char_to_string",
 	"char_is_digit",

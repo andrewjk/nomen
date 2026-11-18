@@ -109,6 +109,17 @@ function visit(node: BaseNode | undefined, result: Set<string>, structs?: Struct
 			walk(n.else_branch?.statements, result, structs);
 			break;
 		}
+		case "block": {
+			// A bare nested block — including the per-iteration wrappers a
+			// `#for` unroll splices into the body (the R8 hygiene scopes):
+			// reassignments inside them force-heap the target's literal
+			// initializer exactly like if/loop arms do. Missing this left a
+			// folded-literal local out of the set, so its reassignment
+			// stored through the propagated rodata address (aarch64 SIGSEGV
+			// — the C backend's plain variable masked it).
+			walk((node as unknown as { statements?: BaseNode[] }).statements, result, structs);
+			break;
+		}
 		case "switch": {
 			const n = node as SwitchNode;
 			for (const c of n.cases) {

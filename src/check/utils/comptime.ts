@@ -1,6 +1,7 @@
 import add_error from "../../add_error.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import { get_built_in_type } from "../../built_in_types.ts";
+import { is_int_type } from "../../built_in_types.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../../nodes/AccessNode.ts";
@@ -525,6 +526,18 @@ function classify_type_name(
 }
 
 /**
+ * Whether a type name is a hashable scalar — an int type, `bool` or `char`:
+ * the types whose value casts to `uint` for hashing. This is the hardcoded
+ * derive's `is_hashable_scalar` rule lifted into comptime, exposed as
+ * `field.is_scalar` / `META.is_scalar(T)` so library code (the `Hashable`
+ * default body) can make the cast-vs-`.hash()` dispatch the old checker
+ * synthesis made.
+ */
+function is_scalar_type_name(name: string): boolean {
+	return is_int_type(name) || name === "bool" || name === "char";
+}
+
+/**
  * Resolve a comptime TYPE expression rooted at the binding's field type:
  *
  *   field.type                -> { type }
@@ -689,6 +702,16 @@ function rewrite_binding_access(
 		literal.type = new Type("bool", true);
 		return literal;
 	}
+	if (field_name === "is_scalar") {
+		// comptime bool: the field's type is an int/bool/char — a value the
+		// hash combine casts to uint (the lifted is_hashable_scalar rule).
+		const literal = new ValueNode(
+			node.start,
+			is_scalar_type_name(field.type_name) ? "true" : "false",
+		);
+		literal.type = new Type("bool", true);
+		return literal;
+	}
 	if (field_name === "type") {
 		add_error(
 			status,
@@ -699,7 +722,7 @@ function rewrite_binding_access(
 	}
 	add_error(
 		status,
-		`#for binding '${binding}' supports .name, .type.name, .type.arg_count, .type.args[i], .is_struct, .get(obj) and .set(obj, value) — not '.${field_name}'`,
+		`#for binding '${binding}' supports .name, .type.name, .type.arg_count, .type.args[i], .is_struct, .is_scalar, .get(obj) and .set(obj, value) — not '.${field_name}'`,
 		access.access.start,
 	);
 	return node;
@@ -946,7 +969,8 @@ export function rewrite_meta_name_chains(
 				arg.node_type === "value" &&
 				(predicate.name === "name" ||
 					predicate.name === "is_struct" ||
-					predicate.name === "is_container")
+					predicate.name === "is_container" ||
+					predicate.name === "is_scalar")
 			) {
 				let type_name = (arg as ValueNode).value;
 				if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
@@ -960,6 +984,14 @@ export function rewrite_meta_name_chains(
 				if (!known) return n;
 				if (!status.type_params.includes(type_name)) {
 					if (predicate.name === "name") return comptime_string(n.start, type_name);
+					if (predicate.name === "is_scalar") {
+						const literal = new ValueNode(
+							n.start,
+							is_scalar_type_name(type_name) ? "true" : "false",
+						);
+						literal.type = new Type("bool", true);
+						return literal;
+					}
 					const kind = classify_type_name(type_name, status);
 					const value = predicate.name === "is_struct" ? kind.is_struct : kind.is_container;
 					const literal = new ValueNode(n.start, value ? "true" : "false");

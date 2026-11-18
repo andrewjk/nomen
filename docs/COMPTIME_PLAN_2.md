@@ -304,6 +304,17 @@ Elevate it from "good long-term target" to the acceptance criterion.
    ints + arithmetic landed in the `#if` condition grammar (`+ - * / %`,
    `< <= > >=`, division by zero is an error) alongside the user
    `#error "message"` directive (checked like a statement, so a dead arm
+   R9 CUTOVER (2026-11-18): the hardcoded derives are RETIRED — the three
+   derive traits carry the R9 walks as their default bodies (`Self` as
+   the conformer), conformance binds the default per conformer through
+   the trait-default cloning path (utils/trait_defaults.ts; deferred at
+   the trait like a generic body, checked fresh per clone), and the
+   checker synthesis (`auto_derive.ts`) is deleted. The cast-vs-`.hash()`
+   scalar rule lifted into the `Hashable` default as the
+   `field.is_scalar` / `META.is_scalar(T)` predicate, and the default is
+   attribute-configured (`@hash_ignore` skips a field). A field with no
+   `to_string`/`==`/`hash` is a per-field compile error in the generated
+   body — the old silent "not derivable, no method" shape is gone.
    never fires) and `META.info(T).field_count` as the first comptime int.
 3. **Attributes** (D1) — sigil chosen then, surfaced via
    `META.info(T).fields[i].attrs`.

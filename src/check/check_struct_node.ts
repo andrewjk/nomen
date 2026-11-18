@@ -497,6 +497,12 @@ function check_trait_conformance(struct: StructNode, status: CheckStatus) {
 			for (let j = 0; j < trait.type_params.length; j++) {
 				substitution.set(trait.type_params[j], args[j].name);
 			}
+		} else if (trait.type_params.length === 0) {
+			// A non-generic trait whose defaults bind `Self` (the derive
+			// traits) signs its methods with `Self` — a bound default clone
+			// (or a hand-written override) spells the conformer instead, so
+			// signature comparison substitutes Self -> the struct's name.
+			substitution.set("Self", struct.name);
 		}
 
 		for (const trait_func of trait.functions) {

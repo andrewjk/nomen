@@ -35,11 +35,14 @@ export default function build_trait_node(node: TraitNode, status: BuildStatus) {
 		if (!func.has_body) {
 			continue;
 		}
-		// A generic trait's default bodies reference its type params (e.g. `T`),
-		// which are unresolved at the trait level. They are instead cloned +
-		// substituted per conformer (synthesize_generic_trait_defaults) and
-		// emitted as struct methods, so skip the broken trait-level emission.
-		if (node.type_params.length > 0) {
+		// A generic trait's default bodies reference its type params (e.g.
+		// `T`), unresolved at the trait level; a `Self`-bearing reflection
+		// default (the derive traits' `#for` bodies) resolves only per
+		// conformer. Both are cloned + substituted per conformer
+		// (synthesize_generic_trait_defaults / utils/trait_defaults.ts) and
+		// emitted as struct methods, so skip the broken trait-level
+		// emission.
+		if (node.type_params.length > 0 || func.is_generic) {
 			continue;
 		}
 
