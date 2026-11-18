@@ -58,3 +58,19 @@ export function consume_comptime_name_path(status: ParseStatus, start = get_inde
 export function splice_name_reserved(name: string): boolean {
 	return RESERVED_WORDS.has(name);
 }
+
+/**
+ * Whether a NAME position currently sits on a word immediately followed by
+ * a `#` (zero gap): `id_#field.name` — a literal PREFIX glued to a splice.
+ * Zero gap is the discriminator: `var int #field.name` (keyword, spaced)
+ * is an ordinary leading splice, while `id_#field.name` (word, glued)
+ * starts a prefix template.
+ */
+export function comptime_prefix_ahead(status: ParseStatus): boolean {
+	const token = status.tokens[status.i];
+	const next = status.tokens[status.i + 1];
+	if (!token || !next) return false;
+	if (!SEGMENT.test(token.value)) return false;
+	if (next.value !== "#") return false;
+	return next.i === token.i + token.value.length;
+}

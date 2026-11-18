@@ -664,35 +664,24 @@ and double-launch.
   to normalize body whitespace first; a future `nomen format` pass could do
   that, purely cosmetically.
 
-## Comptime next steps (the Comptime II backlog, in order)
+## Declaration generation splice gaps
 
-All items shipped 2026-11-18; the mechanics are recorded in
-docs/COMPTIME_PLAN_2.md (stage-2 notes and the stage-6 entry):
+The 2026-11-18 comptime work shipped `#if`/`#for` at type-body scope,
+`#binding.name` name splices, `#self`, and file-scope declaration
+generation (mechanics recorded in docs/COMPTIME_PLAN_2.md, stage-2 notes
+and stage 6). Three splice shapes a real user reaches for first are still
+missing — smallest first (item 1,
+struct/trait prefix splices, shipped 2026-11-18):
 
-1. **Comptime integers + arithmetic + a user `#error`** — int literals,
-   `+ - * / %` and `< <= > >=` in `#if`/`#switch` conditions (division by
-   zero is an error); `#error "message"` is a checked statement the fold
-   can gate; `META.info(T).field_count` as the first comptime int.
+1. **Suffix/middle splices** — `#field.name_id` glues into the path
+   segment (`name_id` is not a binding member): word chars after an
+   unbraced splice are greedy. Needs a braced template form —
+   `#{field.name}_id`, `pre_#{field.name}`, mixed — parsed as
+   literal/`#{path}` pieces where zero-gap pieces glue into the template,
+   plus a generalized resolver (any number of splices per name).
 
-2. **Migrate the hardcoded derives onto `#for`** — the three derive traits
-   carry `#for` reflection default bodies (`#self` = the conformer);
-   conformance without a hand-written method binds the default per
-   conformer; `auto_derive.ts` deleted (copy synthesis survives as
-   `copy_synthesis.ts`); the hash default is attribute-configured
-   (`@hash_ignore`).
-
-3. **`#if`/`#for` at struct-body and declaration scope** — type bodies
-   carry member pragmas (`#if`/`#switch` folds at the check pre-pass,
-   distributing fields/methods; `#for` expands at the type's own check),
-   `#field.name` splices name generated members (`get_#field.name`
-   templates too), `#self` binds inside generated methods and types, and the auto
-   `#init` moved from parse time to check time so selected/generated
-   fields join the constructor (pre-synthesized at gather for forward
-   references, refreshed after expansion).
-
-4. **Declaration/type generation (stage 6)** — a file-scope `#for`
-   generates whole structs/traits per reflected item with `#`-spliced
-   names, usable by their generated names; generated bodies compose with
-   `#if` member arms, the marker-trait derives, and `META.info(#self)`.
-   Enum-from-a-table and other richer iterables remain future work (the
-   iterable surface is `META.info(T).fields`).
+2. **Type splices** — `var #field.type.name #field.name = 0`: mirror the
+   source field's TYPE into the generated member. The serde/schema-
+   mirroring case — today generated members can only take fixed or
+   literal-inferred types. Splice support in a declaration's type
+   position, resolved at expansion exactly like the name splices.

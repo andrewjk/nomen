@@ -196,6 +196,36 @@ pub func main = () {
 	);
 });
 
+test("prefix splices work on struct and trait names", async () => {
+	await build_and_check_output(
+		`
+import System
+
+pub struct Ids {
+	pub var user = 0
+	pub var order = 0
+}
+
+#for field of META.info(Ids).fields {
+	pub mv struct id_#field.name: Equatable {
+		pub var int value = 0
+	}
+}
+
+pub func main = () {
+	var u = id_user()
+	var o = id_order()
+	Console.write_line("\\{u == u}")
+	Console.write_line("\\{u != u}")
+}
+`,
+		"comptime_prefix_splice",
+		"true\nfalse\n",
+		true,
+		{ js: true },
+	);
+});
+
 test("a malformed splice is a compile error", () => {
 	const errors = compile_module(`
 		pub struct Base {

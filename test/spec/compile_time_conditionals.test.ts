@@ -279,3 +279,23 @@ test("declaration generation: a struct per reflected field, used by name", () =>
 	`;
 	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
 });
+
+test("declaration generation with a literal name prefix", () => {
+	const body = `
+		pub struct Ids {
+			pub var user = 0
+		}
+
+		#for field of META.info(Ids).fields {
+			pub mv struct id_#field.name: Equatable {
+				pub var int value
+			}
+		}
+
+		func probe = (out bool) {
+			var u = id_user(3)
+			return u == u && u.value == 3
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+});

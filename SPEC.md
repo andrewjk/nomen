@@ -3319,12 +3319,12 @@ func describe<T> = (T value, out string) {
 - `META.info(T).field_count` — the number of fields the loop iterates, as
   a comptime int (usable in expressions and comptime conditions).
 
-### Type-Body Loops and Generated Names (`$` splices)
+### Type-Body Loops and Generated Names (`#` splices)
 
 `#for` also runs at struct/trait-body scope, generating a member per
-reflected field. A `$`-splice in a member's name position folds a dotted
+reflected field. A `#`-splice in a member's name position folds a dotted
 path over the binding into the member's real name; inside a generated
-method's body, `Self` binds to the conformer the method landed on:
+method's body, `#self` binds to the conformer the method landed on:
 
 ```
 pub struct Mirror {
@@ -3348,7 +3348,8 @@ specialization to re-check a type body).
 At file scope, a `#for` generates whole declarations: one struct (or
 trait) per reflected item, its name spliced from the binding, used by
 later code under the generated name. Inside a generated type's body,
-`Self` binds to the generated type's own name:
+`#self` binds to the generated type's own name. Names may carry a literal
+prefix (`struct id_#field.name` — the prefix glues to the splice):
 
 ```
 pub struct Config {
