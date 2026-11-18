@@ -300,6 +300,11 @@ Elevate it from "good long-term target" to the acceptance criterion.
    (loud, by design): `#for` inside a generic-struct method whose
    iterable's parameter never binds errors rather than silently dropping;
    reflection exposes no offsets/sizes yet; `#for` is body-scope only.
+   Post-review follow-ups (FOLLOWUP.md, "Comptime next steps"): comptime
+   ints + arithmetic landed in the `#if` condition grammar (`+ - * / %`,
+   `< <= > >=`, division by zero is an error) alongside the user
+   `#error "message"` directive (checked like a statement, so a dead arm
+   never fires) and `META.info(T).field_count` as the first comptime int.
 3. **Attributes** (D1) — sigil chosen then, surfaced via
    `META.info(T).fields[i].attrs`.
    **SHIPPED** — D1 RESOLVED: the sigil is `@`, one attribute per sigil,

@@ -227,6 +227,17 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			check_pragma_for_node(node as import("../nodes/PragmaForNode.ts").default, status);
 			break;
 		}
+		case "pragma_error": {
+			// User compile-error directive (`#error "message"`): a live one
+			// always fails the compile. Dead `#if` arms are folded away
+			// before any checking, so a gated `#error` never reaches here.
+			add_error(
+				status,
+				(node as import("../nodes/PragmaErrorNode.ts").default).message,
+				node.start,
+			);
+			break;
+		}
 		default: {
 			add_error(status, `Unknown node type: ${node.node_type}`, node.start);
 			result = false;

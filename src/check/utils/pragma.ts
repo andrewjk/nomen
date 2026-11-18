@@ -20,10 +20,12 @@ import type CheckStatus from "../CheckStatus.ts";
  * never parsed-as-checked — they may freely reference declarations that
  * don't exist for the target (that is the point).
  *
- * The condition grammar is deliberately tiny: META.arch / META.platform,
- * string and boolean literals, == != && || !, and parentheses. No user
- * identifiers, no arithmetic, no type info — that is stage 2's META.info
- * + `#for` (R3/R4), which defers instead of folding.
+ * The condition grammar is deliberately tiny: META.arch / META.platform
+ * (comptime strings), string and int literals, arithmetic over ints
+ * (`+ - * / %`, division by zero is a compile error), comparisons
+ * (`== != < <= > >=` — same-kind operands only), `&& || !`, and
+ * parentheses. No user identifiers — that is stage 2's META.info +
+ * `#for` (R3/R4), which defers instead of folding.
  */
 
 /** The compile-time target constants a `#if` condition may consult. */
@@ -32,7 +34,7 @@ export interface PragmaConsts {
 	platform: string;
 }
 
-type ConstValue = string | boolean;
+type ConstValue = string | boolean | number;
 
 type EvalResult =
 	| { ok: true; value: ConstValue; start: number }
@@ -43,6 +45,14 @@ type EvalResult =
  * Purely structural — there is no name resolution this early in check, so
  * `META.arch` is recognized by SHAPE (a `META` value node accessed as a
  * field), and anything else is an error naming the supported grammar.
+ *
+ * The grammar (the Comptime II "comptime integers + arithmetic" item):
+ * `META.arch` / `META.platform` are comptime strings; int literals are
+ * comptime ints; `+ - * / %` fold ints (division by zero is a compile
+ * error, never a silent zero); comparisons `== != < <= > >=` produce bools
+ * (`==`/`!=` compare same-kind values only); `&& || !` and parentheses
+ * compose bools. There are no user identifiers — anything else is an error
+ * naming the supported grammar.
  */
 export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts): EvalResult {
 	switch (node.node_type) {
@@ -53,10 +63,13 @@ export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts):
 			if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
 				return { ok: true, value: value.substring(1, value.length - 1), start: node.start };
 			}
+			if (/^-?\d+$/.test(value)) {
+				return { ok: true, value: parseInt(value, 10), start: node.start };
+			}
 			return {
 				ok: false,
 				message:
-					"Unsupported #if condition — expected a string literal, true, false, META.arch or META.platform",
+					"Unsupported #if condition — expected a string/int literal, true, false, META.arch or META.platform",
 				start: node.start,
 			};
 		}
@@ -88,7 +101,69 @@ export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts):
 		}
 		case "op": {
 			const op = node as OperationNode;
-			if (op.op === "==" || op.op === "!=") {
+			if (op.op === "!") {
+				// Prefix `!` parks its operand in both slots (parse_expression);
+				// reading right_value sees it either way.
+				const inner = evaluate_pragma_condition(op.right_value, consts);
+				if (!inner.ok) return inner;
+				const inner_ok = require_boolean(inner, "!");
+				if (!inner_ok.ok) return inner_ok;
+				return { ok: true, value: !inner.value, start: node.start };
+			}
+			if (op.op === "u-") {
+				// Unary minus on a parenthesized operand (`-(2 + 3)`); a signed
+				// literal folds its sign into one token and never reaches here.
+				const inner = evaluate_pragma_condition(op.right_value, consts);
+				if (!inner.ok) return inner;
+				if (typeof inner.value !== "number") {
+					return {
+						ok: false,
+						message: "unary '-' in a #if condition needs an int operand",
+						start: node.start,
+					};
+				}
+				return { ok: true, value: -inner.value, start: node.start };
+			}
+			if (op.op === "+" || op.op === "-" || op.op === "*" || op.op === "/" || op.op === "%") {
+				const left = evaluate_pragma_condition(op.left_value, consts);
+				if (!left.ok) return left;
+				const right = evaluate_pragma_condition(op.right_value, consts);
+				if (!right.ok) return right;
+				if (typeof left.value !== "number" || typeof right.value !== "number") {
+					return {
+						ok: false,
+						message: `'#if' arithmetic ('${op.op}') needs int operands — comptime strings only compose through == / !=`,
+						start: node.start,
+					};
+				}
+				if ((op.op === "/" || op.op === "%") && right.value === 0) {
+					return {
+						ok: false,
+						message: "compile-time division by zero in a #if condition",
+						start: node.start,
+					};
+				}
+				switch (op.op) {
+					case "+":
+						return { ok: true, value: left.value + right.value, start: node.start };
+					case "-":
+						return { ok: true, value: left.value - right.value, start: node.start };
+					case "*":
+						return { ok: true, value: left.value * right.value, start: node.start };
+					case "/":
+						return { ok: true, value: Math.trunc(left.value / right.value), start: node.start };
+					default:
+						return { ok: true, value: left.value % right.value, start: node.start };
+				}
+			}
+			if (
+				op.op === "==" ||
+				op.op === "!=" ||
+				op.op === "<" ||
+				op.op === "<=" ||
+				op.op === ">" ||
+				op.op === ">="
+			) {
 				const left = evaluate_pragma_condition(op.left_value, consts);
 				if (!left.ok) return left;
 				const right = evaluate_pragma_condition(op.right_value, consts);
@@ -100,8 +175,29 @@ export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts):
 						start: node.start,
 					};
 				}
-				const equal = left.value === right.value;
-				return { ok: true, value: op.op === "==" ? equal : !equal, start: node.start };
+				if (op.op === "==" || op.op === "!=") {
+					const equal = left.value === right.value;
+					return { ok: true, value: op.op === "==" ? equal : !equal, start: node.start };
+				}
+				if (typeof left.value !== "number") {
+					return {
+						ok: false,
+						message: `'${op.op}' in a #if condition needs int operands — strings only compare with == / !=`,
+						start: node.start,
+					};
+				}
+				const l = left.value as number;
+				const r = right.value as number;
+				switch (op.op) {
+					case "<":
+						return { ok: true, value: l < r, start: node.start };
+					case "<=":
+						return { ok: true, value: l <= r, start: node.start };
+					case ">":
+						return { ok: true, value: l > r, start: node.start };
+					default:
+						return { ok: true, value: l >= r, start: node.start };
+				}
 			}
 			if (op.op === "&&" || op.op === "||") {
 				const left = evaluate_pragma_condition(op.left_value, consts);
@@ -118,18 +214,9 @@ export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts):
 					start: node.start,
 				};
 			}
-			if (op.op === "!") {
-				// Prefix `!` parks its operand in both slots (parse_expression);
-				// reading right_value sees it either way.
-				const inner = evaluate_pragma_condition(op.right_value, consts);
-				if (!inner.ok) return inner;
-				const inner_ok = require_boolean(inner, "!");
-				if (!inner_ok.ok) return inner_ok;
-				return { ok: true, value: !inner.value, start: node.start };
-			}
 			return {
 				ok: false,
-				message: `Unsupported #if condition operator '${op.op}' — supported: == != && || !`,
+				message: `Unsupported #if condition operator '${op.op}' — supported: == != < <= > >= && || ! + - * / %`,
 				start: node.start,
 			};
 		}
@@ -137,7 +224,7 @@ export function evaluate_pragma_condition(node: BaseNode, consts: PragmaConsts):
 			return {
 				ok: false,
 				message:
-					"Unsupported #if condition — supported: META.arch, META.platform, string/bool literals, == != && || ! and parentheses",
+					"Unsupported #if condition — supported: META.arch, META.platform, string/int literals, == != < <= > >= && || ! + - * / % and parentheses",
 				start: node.start,
 			};
 		}
@@ -157,7 +244,7 @@ function require_boolean(
 }
 
 function const_type_name(value: ConstValue): string {
-	return typeof value === "string" ? "a string" : "a bool";
+	return typeof value === "string" ? "a string" : typeof value === "number" ? "an int" : "a bool";
 }
 
 /**

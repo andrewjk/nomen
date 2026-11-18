@@ -3199,11 +3199,14 @@ aarch64, C on the C backend), and `#raw("c")` marks companion-compiled C
 source (see "Unsafe Code"). `META.platform` is the
 target platform — `"macos"`, `"linux"` or `"windows"` by default, or
 whatever `--platform` passes.
-Conditions compose with `==`, `!=`, `&&`, `||`, `!` and parentheses. A bare
-`META` value is an error — conditions must be bools, so compare:
+Conditions compose with `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`, `!`,
+arithmetic (`+ - * / %` — integers only; compile-time division by zero is
+an error) and parentheses. `META.arch`/`META.platform` are comptime
+strings; int literals are comptime ints. A bare `META` value is an error —
+conditions must be bools, so compare:
 
 ```
-#if META.arch == "c" {
+#if META.arch == "c" && 2 + 3 >= 4 {
     Console.write_line("portable path")
 }
 ```
@@ -3250,6 +3253,25 @@ func clamp8 = (int v, out int) {
 }
 ```
 
+### Compile-Time Errors (`#error`)
+
+`#error "message"` fails the compile with the message. It is checked like a
+statement, so an `#if` arm that folded away never fires — the standard
+shape is a target gate:
+
+```
+#if META.arch == "js" {
+    #error "this module needs a native target"
+}
+```
+
+A live `#error` always fails, wherever it appears — file scope, a function
+body, or inside a selected arm:
+
+```
+#error "Feature X requires a license header"
+```
+
 ### Compile-Time Reflection (`#for` over `META.info(T).fields`)
 
 `#for` unrolls a body once per field of a struct, at compile time. The
@@ -3269,6 +3291,8 @@ func describe<T> = (T value, out string) {
 
 - `field.name` — the field's name as a comptime string (usable in
   expressions; comptime string `+` folds literals eagerly).
+- `META.info(T).field_count` — the number of fields the loop iterates, as
+  a comptime int (usable in expressions and comptime conditions).
 - `field.type.name` — the field's type name as a comptime string. An `if`
   whose condition is comptime-constant folds to its live arm, so
   per-field-type dispatch reads naturally:

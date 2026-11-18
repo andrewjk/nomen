@@ -29,6 +29,7 @@ import parse_if_else from "./parse_if_else.ts";
 import parse_import from "./parse_import.ts";
 import parse_match, { parse_try } from "./parse_match.ts";
 import parse_panic_or_todo from "./parse_panic_or_todo.ts";
+import parse_pragma_error from "./parse_pragma_error.ts";
 import parse_pragma_for from "./parse_pragma_for.ts";
 import parse_pragma_if, { parse_pragma_switch } from "./parse_pragma_if.ts";
 import parse_raw from "./parse_raw.ts";
@@ -259,6 +260,12 @@ export default function parse_statement(status: ParseStatus) {
 					// deferred while T is an unbound type parameter.
 					const loop = parse_pragma_for(status);
 					add_to_parent(loop, "Compile-time for", status);
+				} else if (next === "error") {
+					// User compile-error directive (Comptime II): `#error
+					// "message"`. The checker reports the message when the
+					// statement walk reaches the node — an `#error` inside a
+					// dead `#if` arm never fires, so it can be target-gated.
+					parse_pragma_error(status);
 				} else if (next === "raw") {
 					// Raw code block: `#raw { ... }`, `#raw("c") { ... }`,
 					// `#raw("c", "file") { ... }`. Target selection is the

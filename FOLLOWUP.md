@@ -667,22 +667,10 @@ and double-launch.
 ## Comptime next steps (the Comptime II backlog, in order)
 
 Stages 1–5 of [`docs/COMPTIME_PLAN_2.md`](./docs/COMPTIME_PLAN_2.md) are
-shipped; these are the four items that came out of the 2026-11-18 review,
+shipped; these are the remaining items that came out of the 2026-11-18 review,
 ordered cheapest-lever-first. Each is scaffolding for the one after it.
 
-1. **Comptime integers + arithmetic + a user `#error`.** The comptime
-   value model is strings and bools only — `+` folds string literals and
-   comptime-bool `if`s fold (stage 2), but there are no comptime
-   integers, no arithmetic, and no user-facing compile-error directive
-   (nothing in parse or SPEC). Ints unblock computed sizes, offsets/sizes
-   in reflection output, and richer `META` predicates (stage-2 notes:
-   conditions beyond `META.arch`/`META.platform` don't exist). The fold
-   lives in `src/check/utils/comptime.ts` next to the string fold; R4's
-   "comptime value" checker category is the shape to extend. `#error
-"message"` is a parse-time directive that always fails check, with R7's
-   `spawn_of` stamping for position.
-
-2. **Migrate the hardcoded derives onto `#for` and retire the magic.**
+1. **Migrate the hardcoded derives onto `#for` and retire the magic.**
    The three auto-derived methods (`Stringable`/`Equatable`/`Hashable`)
    are 579 lines of checker synthesis
    (`src/check/utils/auto_derive.ts`, stamped through FunctionNode/
@@ -708,7 +696,7 @@ ordered cheapest-lever-first. Each is scaffolding for the one after it.
    attribute-configured derives (`@hash_ignore`, `@label`), user-writable
    derivations, one source of truth.
 
-3. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
+2. **`#if`/`#for` at struct-body and declaration scope.** Today arms hold
    body statements or whole file-scope declarations only —
    struct/trait-body arms are rejected at parse (the stage-1 note: "no
    statement list to splice into — a stage-3+ problem" that stage 3 never
@@ -718,7 +706,7 @@ ordered cheapest-lever-first. Each is scaffolding for the one after it.
    `parse_struct`/`parse_trait` (the stage-1 mechanism — pragma on the
    stack as a collector — is the template).
 
-4. **Declaration/type generation (stage 6, "(Someday)").** Generating
+3. **Declaration/type generation (stage 6, "(Someday)").** Generating
    whole declarations — a struct per reflected item, an enum from a
    table, Zig-`@Type`-class construction. The stage-6 placeholder in
    `docs/COMPTIME_PLAN_2.md` is the only unshipped stage. Everything

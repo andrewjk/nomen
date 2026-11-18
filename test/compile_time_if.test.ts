@@ -146,10 +146,13 @@ test("unknown META field is an error", () => {
 	expect(parsed.errors[0].message).toContain("Unknown META field 'META.os'");
 });
 
-test("non-constant operators are rejected with the supported grammar", () => {
-	const parsed = parse_src(`#if 1 + 1 == 2 { }`, { arch: "c", platform: "macos" });
+test("non-constant operands are rejected with the supported grammar", () => {
+	// User identifiers were never comptime values; int arithmetic IS (the
+	// comptime-ints item folded `+ - * / %` and the comparisons into the
+	// grammar — see test/comptime_ints.test.ts).
+	const parsed = parse_src(`#if some_const == 2 { }`, { arch: "c", platform: "macos" });
 	expect(parsed.errors.length).toBe(1);
-	expect(parsed.errors[0].message).toContain("Unsupported #if condition operator '+'");
+	expect(parsed.errors[0].message).toContain("Unsupported #if condition");
 });
 
 test("comparing a string with a bool is an error", () => {

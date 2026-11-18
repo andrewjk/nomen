@@ -401,7 +401,8 @@ function rewrite(
 		// downstream (META is not a runtime value).
 		if (
 			access.access.node_type === "access_field" &&
-			(access.access as AccessFieldNode).name === "name" &&
+			((access.access as AccessFieldNode).name === "name" ||
+				(access.access as AccessFieldNode).name === "field_count") &&
 			target.node_type === "access" &&
 			(target as AccessNode).access.node_type === "access_func" &&
 			((target as AccessNode).access as AccessFunctionCallNode).name === "info" &&
@@ -415,7 +416,15 @@ function rewrite(
 				arg.node_type === "value" &&
 				(arg as ValueNode).value === field.type_argument
 			) {
-				return comptime_string(node.start, field.type_name);
+				if ((access.access as AccessFieldNode).name === "name") {
+					return comptime_string(node.start, field.type_name);
+				}
+				const count = status.structs
+					.findLast((s) => s.name === field.type_name)
+					?.fields.filter((f) => f.type && f.type.name).length;
+				const literal = new ValueNode(node.start, String(count ?? 0));
+				literal.type = new Type("int", true);
+				return literal;
 			}
 		}
 		if (target.node_type === "value" && (target as ValueNode).value === binding) {
@@ -965,12 +974,14 @@ export function rewrite_meta_name_chains(
 				(n as AccessNode).access.node_type === "access_func")
 		) {
 			const member = (n as AccessNode).access as AccessFieldNode | AccessFunctionCallNode;
-			// META.info(T).name / .attr("X") / .has_attr("X") — struct-level
-			// reflection (stage 3). Resolved against the substitution map
-			// when one is supplied (mono-clone path).
+			// META.info(T).name / .field_count / .attr("X") / .has_attr("X") —
+			// struct-level reflection (stage 3). Resolved against the
+			// substitution map when one is supplied (mono-clone path).
 			let meta_arg: string | undefined;
 			if (member.node_type === "access_field" && member.name === "name") {
 				meta_arg = "";
+			} else if (member.node_type === "access_field" && member.name === "field_count") {
+				meta_arg = "#count";
 			} else if (
 				member.node_type === "access_func" &&
 				(member.name === "attr" || member.name === "has_attr") &&
@@ -1000,6 +1011,16 @@ export function rewrite_meta_name_chains(
 							if (declared && (declared as StructNode).type_params.length === 0) {
 								const struct = declared as StructNode;
 								if (meta_arg === "") return comptime_string(n.start, struct.name);
+								if (meta_arg === "#count") {
+									// A comptime int: the number of fields `#for`
+									// iterates (typed fields — the same filter
+									// expand_pragma_for applies), so computed sizes
+									// and richer conditions can key on it.
+									const count = struct.fields.filter((f) => f.type && f.type.name).length;
+									const literal = new ValueNode(n.start, String(count));
+									literal.type = new Type("int", true);
+									return literal;
+								}
 								const attr = (struct.attrs ?? []).find((a) => a.name === meta_arg);
 								if (member.node_type === "access_func" && member.name === "has_attr") {
 									const literal = new ValueNode(n.start, attr ? "true" : "false");

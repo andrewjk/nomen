@@ -168,3 +168,44 @@ test("a function body may switch implementation per target", () => {
 	expect(compile_module(body, { arch: "aarch64", platform: "macos" })).toEqual([]);
 	expect(compile_module(body, { arch: "c", platform: "macos" })).toEqual([]);
 });
+
+test("conditions compose ints and arithmetic", () => {
+	const body = `
+		#if META.arch == "c" && 2 + 3 >= 4 {
+			Console.write_line("portable path")
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+	expect(compile_main(body, { arch: "aarch64", platform: "macos" })).toEqual([]);
+});
+
+test("an #error inside a folded-away arm never fires", () => {
+	const body = `
+		#if META.arch == "js" {
+			#error "this module needs a native target"
+		}
+	`;
+	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
+	expect(compile_main(body, { arch: "aarch64", platform: "macos" })).toEqual([]);
+});
+
+test("a live #error fails the compile with its message", () => {
+	const errors = compile_module(`#error "Feature X requires a license header"`);
+	expect(errors.some((e) => e.message === "Feature X requires a license header")).toBe(true);
+});
+
+test("META.info(T).field_count is a comptime int", () => {
+	const body = `
+		struct Point {
+			var int x
+			var int y
+		}
+		func probe = () {
+			var n = META.info(Point).field_count
+			if n == 2 {
+				Console.write_line("two")
+			}
+		}
+	`;
+	expect(compile_module(body)).toEqual([]);
+});
