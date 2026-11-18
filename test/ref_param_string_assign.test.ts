@@ -158,9 +158,7 @@ test("ref param -- ref string takes ONE ABI slot (trailing params read their own
 	// param read one register too high (garbage) — the shape the by-ref
 	// json_encode walk exposed (its `ref T value` first param, `ref
 	// StringBuilder sb` second). Both trailing shapes are pinned: scalars
-	// and a callee-saved struct param. (Statement calls only: a ref-string
-	// call in VALUE position is a separate, pre-existing C-backend
-	// statement-expression bug — see FOLLOWUP.)
+	// and a callee-saved struct param.
 	const input = `
 func add_into = (ref string r, int n, int m, ref int got) {
 	got = r.length + n * m
@@ -182,4 +180,26 @@ stitch(ref r, ref sb, ref result)
 Console.write_line(result)
 `;
 	await build_and_check_output(input, "ref_string_trailing_params", "19\nabcd!\n");
+});
+
+test("ref param -- a ref-string call in VALUE position builds and stays balanced", async () => {
+	// The C backend wraps such a call in a GNU statement expression (the
+	// displaced-pair reclaim), and used to close it right after the final
+	// expression — no semicolon — so clang rejected every value-position
+	// use ("expected ';' after expression"): a declaration initializer, an
+	// interpolation argument, an operation operand. Statement-position
+	// calls were unaffected (a plain call, no wrapper). Pin the value
+	// shapes; the audit harness proves the capture stays balanced.
+	const input = `
+func f = (ref string r, int n, out int) {
+	return r.length + n
+}
+
+var s = "abcd"
+Console.write_line(f(ref s, 3).to_string())
+var x = f(ref s, 3)
+Console.write_line(x.to_string())
+Console.write_line(s)
+`;
+	await build_and_check_output(input, "ref_string_value_position", "7\n7\nabcd\n");
 });

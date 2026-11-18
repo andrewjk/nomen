@@ -933,7 +933,11 @@ export default function build_function_call_node(node: FunctionCallNode, status:
 			status.code += `if (${r.lvalue}.ptr != ${r.temp}.ptr) { free(${r.temp}.ptr); } `;
 		}
 		if (ref_string_reclaim_ret) status.code += ref_string_reclaim_ret;
-		status.code += `})`;
+		// The trailing semicolon is REQUIRED: a GNU statement expression's
+		// value is its final expression-STATEMENT, and clang rejects the
+		// bare-expression form ("expected ';' after expression") — the
+		// malformed-value-position shape (see test/ref_param_string_assign).
+		status.code += `; })`;
 	}
 
 	// The inline capturing lambda args' descriptors are now borrowed-dead:

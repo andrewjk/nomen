@@ -653,30 +653,6 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## C backend: a ref-string call in VALUE position emits a malformed statement expression
-
-Recorded 2026-11-18 (found while pinning the by-ref `json_encode` walk; the
-aarch64 backend is fine). A call whose callee takes a `ref string` param must
-capture the slot's old pair around the call (the displaced-pair reclaim from
-test/ref_param_string_assign.test.ts). The C backend wraps such a call in a
-GNU statement expression — `({ nomen_string _ref_old = r; long _t = f(&r);
-if (...) free(...); _t })` — but omits the SCRIPT after the final expression,
-so clang rejects it ("expected ';' after expression") whenever the call's
-value is used (`var x = f(ref s, ...)`, an interpolation argument, …). A
-statement-position call (result discarded) is emitted as a plain call and is
-unaffected; struct-typed ref args (`ref T p`, `ref StringBuilder sb`) also
-avoid it (only owned-string slots need the capture). Repro:
-
-```
-func f = (ref string r, int n, out int) { return r.length + n }
-var s = "abcd"
-Console.write_line(f(ref s, 3).to_string())   // C backend: clang error
-```
-
-Not fixed inline (out of scope for the serde work); the test pin
-(test/ref_param_string_assign.test.ts) uses statement-position calls until
-this lands.
-
 ## Scalar element borrows misread in operation position (compiler)
 
 `ref f = list.at(i)` where the element is a SCALAR, read inside an
