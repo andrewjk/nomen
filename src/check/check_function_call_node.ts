@@ -1,10 +1,10 @@
 import add_error from "../add_error.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
 import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
+import { layout_size_of_name } from "../build_common/layout.ts";
 import { mono_type_name, type StructTable } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import type { NullableTypeTables } from "../build_common/nullable_scalar.ts";
-import { packed_own_fields } from "../build_common/struct_packing.ts";
 import { get_built_in_type } from "../built_in_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -2689,7 +2689,7 @@ function substitute_raw_types(
 	func: FunctionNode,
 	substitution: Map<string, string>,
 	structs: StructNode[],
-	traits: { name: string }[],
+	traits: RawTraitTable,
 	tables: NullableTypeTables,
 	arch?: string,
 ) {
@@ -2744,97 +2744,26 @@ function rename_local_labels(node: BaseNode, prefix: string) {
 	}
 }
 
-function raw_type_alignment(name: string): number {
-	switch (name) {
-		case "bool":
-		case "int8":
-		case "uint8":
-		case "char":
-			return 1;
-		case "int16":
-		case "uint16":
-			return 2;
-		case "int32":
-		case "uint32":
-			return 4;
-	}
-	return 8;
-}
-
-function raw_align_to(offset: number, alignment: number): number {
-	return Math.ceil(offset / alignment) * alignment;
-}
-
-function raw_type_size(name: string, structs: StructNode[], tables: NullableTypeTables): number {
-	switch (name) {
-		case "bool":
-		case "int8":
-		case "uint8":
-		case "char":
-			return 1;
-		case "int16":
-		case "uint16":
-			return 2;
-		case "int32":
-		case "uint32":
-			return 4;
-	}
-	// A concrete enum-with-data is `tag word + max case payload`, tail-padded
-	// to 8 — byte-for-byte get_enum_size in build_aarch64/utils/struct_layout.ts.
-	// A raw T-generic slab stride (`mov x3, #T_SIZE`) must agree with the real
-	// element layout, or every slot past the first is misaligned. Simple enums
-	// (no associated data) are a single tag word (8).
-	const enum_node = tables.enums.find((e) => e.name === name && !e.is_generic);
-	if (enum_node) {
-		if (!enum_node.has_associated_data) return 8;
-		let max_payload = 0;
-		for (const c of enum_node.cases) {
-			let case_size = 0;
-			for (const p of c.params) case_size += raw_type_size(p.type.name, structs, tables);
-			max_payload = Math.max(max_payload, case_size);
-		}
-		return 8 + Math.ceil(max_payload / 8) * 8;
-	}
-	// User-defined value struct: VT_SIZE prefix (8), each field aligned to
-	// its natural width (a nullable struct field carries an extra 8-byte
-	// `_has` flag), tail-padded to 8 — byte-for-byte the aarch64 layout in
-	// build_aarch64/utils/struct_layout.ts (get_struct_size). A mismatch
-	// desynchronizes slab strides (mov x3, #T_SIZE) from the real element
-	// layout, so every element past the first reads misaligned garbage.
-	// Classes are always 8 (a heap pointer); `string` is the fat 16-byte
-	// { char* ptr; long len; } value (aarch64 slot layout agrees — see
-	// aarch64_size.ts); other simple types are 8 (word-aligned).
-	const struct = structs.find((s) => s.name === name);
-	if (name === "string") return 16;
-	if (!struct || struct.is_simple_type || struct.is_class) return 8;
-	// Walk the PACKED layout order (build_common/struct_packing.ts) — the
-	// same order the aarch64 get_struct_size walk and the C typedef emission
-	// use — so a raw T-generic slab stride stays byte-for-byte in sync with
-	// the real element layout.
-	let size = 8;
-	for (const field of packed_own_fields(struct)) {
-		size = raw_align_to(size, raw_type_alignment(field.type.name));
-		// A `view T` field is the universal 16-byte (ptr, len) pair,
-		// regardless of its element type (matches get_type_size in
-		// build_aarch64/utils/struct_layout.ts and C's sizeof(nomen_view)).
-		if (field.type.is_view) {
-			size += 16;
-			continue;
-		}
-		size += raw_type_size(field.type.name, structs, tables);
-		if (
-			field.type.is_nullable &&
-			structs.find((s) => s.name === field.type.name && !s.is_simple_type && !s.is_class)
-		) {
-			// Nullable struct field: 8-byte `_has` flag word right after.
-			size += 8;
-		} else if (is_nullable_scalar_type(field.type, tables)) {
-			// Nullable scalar field: 1-byte `_has` flag right after the
-			// scalar (matches C's `unsigned char <f>_has;` member).
-			size += 1;
-		}
-	}
-	return raw_align_to(size, 8);
+function raw_type_size(
+	name: string,
+	structs: StructNode[],
+	tables: NullableTypeTables,
+	traits: RawTraitTable = [],
+): number {
+	// The shared layout model (build_common/layout.ts) — the native ABI the
+	// raw asm strides and unsafe-Nomen T_SIZE expressions ride. Riding the
+	// same walk `get_struct_size` emits from keeps a substituted stride in
+	// sync with the real element layout, including the trait-declared field
+	// tail, `ref`/fixed-array field shapes, and nullable `_has` flags. An
+	// unknown name (func, a trait handle) keeps the word default.
+	return (
+		layout_size_of_name(name, {
+			structs,
+			enums: tables.enums,
+			traits,
+			bitsets: tables.bitsets,
+		}) ?? 8
+	);
 }
 
 /**
@@ -2865,12 +2794,17 @@ function is_reference_type_arg(
 	);
 }
 
+/** The trait table the raw-substitution walks need: names for the
+ *  reference-type routing, declared fields for the shared layout walk's
+ *  trait tail (`status.traits` satisfies it structurally). */
+type RawTraitTable = { name: string; fields: DeclarationNode[] }[];
+
 function substitute_raw_in_node(
 	node: BaseNode,
 	substitution: Map<string, string>,
 	structs: StructNode[],
 	deref_params: Set<string> = new Set(),
-	traits: { name: string }[] = [],
+	traits: RawTraitTable = [],
 	tables: NullableTypeTables = { enums: [], bitsets: [] },
 	arch?: string,
 ) {
@@ -2885,7 +2819,7 @@ function substitute_raw_in_node(
 		const vn = node as ValueNode;
 		for (const [param, type] of substitution) {
 			if (vn.value === `${param}_SIZE`) {
-				vn.value = String(raw_type_size(type, structs, tables));
+				vn.value = String(raw_type_size(type, structs, tables, traits));
 				vn.type = new Type("int", true);
 				return;
 			}
@@ -2965,7 +2899,7 @@ function substitute_raw_in_node(
 			// class/trait element is a heap/vtable handle — `sizeof(T)`
 			// would name an undeclared (trait) type, and the slot stride is
 			// the pointer width anyway, so substitute sizeof(void *).
-			const size = raw_type_size(type, structs, tables);
+			const size = raw_type_size(type, structs, tables, traits);
 			const is_handle_element = struct_node?.is_class || traits.some((t) => t.name === type);
 			const size_expr = pure_asm
 				? String(size)

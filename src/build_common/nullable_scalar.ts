@@ -14,7 +14,7 @@ export interface NullableTypeTables {
 		source_name?: string;
 		is_generic?: boolean;
 		has_associated_data?: boolean;
-		cases: { params: { type: { name: string } }[] }[];
+		cases: { params: { type: Type }[] }[];
 	}[];
 	bitsets: { name: string; source_name?: string }[];
 }

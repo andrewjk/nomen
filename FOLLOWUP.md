@@ -712,16 +712,6 @@ TODOs carried over from the retired working notes `COMPTIME_PLAN.md` and
 `COMPTIME_PLAN_2.md`, now folded into [`docs/COMPTIME.md`](./docs/COMPTIME.md)
 and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON.md).
 
-- **`raw_type_size` doesn't ride the shared layout model** — the check-side
-  `T_SIZE` mirror for raw T-generic bodies
-  (`src/check/check_function_call_node.ts`) predates
-  `src/build_common/layout.ts` (the stage-7 layout introspection
-  extraction) and omits what the shared walk includes — trait-declared
-  fields, `ref` fields, fixed-array field shapes. A raw slab stride over an
-  element struct carrying trait fields would desync from the real aarch64
-  layout (`get_struct_size` includes the trait tail). Delegating it fixes
-  that, but changes emitted constants in raw library bodies, so it wants
-  its own byte-identical-output pass rather than a ride-along.
 - **Comptime string interpolation** — `"decode_\{T.name}"` does not fold;
   comptime strings today combine only via literal `+` and `#{...}` name
   templates. `#error` takes a single literal message. Needs a restricted
@@ -746,3 +736,18 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   reflect over a concrete type"). That is the intended posture, but the
   diagnostic does not yet say which substitution site failed to bind the
   parameter.
+
+## SPEC.md: dangling `#destroy-functions-1` anchor
+
+SPEC.md (around line 3104, in the memory-management list) links to
+`[Destroy Functions](#destroy-functions-1)`, but there is only one "Destroy
+Functions" heading (`#destroy-functions`). Noticed while rendering the spec on
+the website (`site/scripts/render-docs.ts`), where the link goes nowhere.
+
+## `nomen format` squashes `T ! E` to `T !E`
+
+`nomen format` rewrites a result return type such as
+`func divide = (int a, int b, out int ! MathError)` to `out int !MathError`,
+apparently treating the `!` as a prefix operator. SPEC.md ("The `T ! E`
+Result Form") spells it with spaces on both sides. Seen while writing the
+website's front-page sample (`site/src/samples/tour.nm`).

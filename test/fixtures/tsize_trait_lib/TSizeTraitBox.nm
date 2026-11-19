@@ -1,0 +1,27 @@
+// Minimal library fixture for the T_SIZE-over-trait-fields regression tests:
+// `unsafe` bodies and the per-instantiation T_SIZE constant are library-only,
+// so the shape under test must live behind the library boundary. The element
+// carries a TRAIT-DECLARED field — the raw stride must include the trait
+// tail (raw_type_size rides the shared layout model,
+// src/build_common/layout.ts), or every slab slot past the first misreads.
+// Declares just enough System surface for the test program.
+
+foreign func calloc = (int count, int size, out uint64)
+
+trait Tagged {
+	var tag = "x"
+}
+
+pub struct TaggedItem : Tagged {
+	var id = 0
+}
+
+pub struct TSizeTraitBox<T> {
+	internal var uint64 slab = 0
+
+	func alloc_direct = (ref self, int count) {
+		unsafe {
+			self.slab = calloc(count, T_SIZE)
+		}
+	}
+}
