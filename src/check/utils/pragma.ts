@@ -340,6 +340,41 @@ export function fold_pragma_ifs(
 		// registry, which does not exist at fold time).
 		fold_member_pragmas(node as unknown as import("./comptime.ts").MemberHost, consts, status);
 	}
+	if (any_node.node_type === "enum" && Array.isArray(any_node.member_pragmas)) {
+		// `#if`/`#switch` INSIDE an enum body selects CASES. The selected
+		// arm's `case` declarations append to the enum's list; a name
+		// template cannot resolve without a `#for` binding, so it is an
+		// error here.
+		const enum_node = node as unknown as {
+			cases: { name: string; params: unknown[] }[];
+			member_pragmas: BaseNode[];
+		};
+		const kept: BaseNode[] = [];
+		for (const pragma of enum_node.member_pragmas) {
+			if (pragma.node_type !== "pragma_if") {
+				kept.push(pragma);
+				continue;
+			}
+			const inner = select_pragma_branch(pragma as PragmaIfNode, consts, status);
+			for (const member of inner) {
+				if (member.node_type !== "enum_case_decl") {
+					add_error(status, "only cases can be generated at enum-body scope", member.start);
+					continue;
+				}
+				const decl = member as import("../../nodes/EnumCaseDeclNode.ts").default;
+				if (decl.comptime_name !== undefined) {
+					add_error(
+						status,
+						"a #if-selected case needs a literal name — name templates need a #for binding",
+						member.start,
+					);
+					continue;
+				}
+				enum_node.cases.push({ name: decl.name, params: decl.params });
+			}
+		}
+		enum_node.member_pragmas = kept;
+	}
 	if (Array.isArray(any_node.statements)) {
 		const list = any_node.statements as BaseNode[];
 		// A function's own statement list is the OWNER boundary: nested

@@ -43,4 +43,5 @@ export type NodeType =
 	| "unsafe"
 	| "pragma_if"
 	| "pragma_for"
-	| "pragma_error";
+	| "pragma_error"
+	| "enum_case_decl";

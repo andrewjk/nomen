@@ -454,8 +454,13 @@ file`). The node carries it (`RawNode.is_c` / `.scope`), deleting
    `#init` moved from parse time to check time (pre-synthesized at gather
    so forward constructor calls resolve — Regex's `RxProg()` caught the
    gap — and refreshed after expansion so selected/generated fields join
-   the constructor). Enum-from-a-table and other richer iterables remain
-   future work: the iterable surface today is `META.info(T).fields`.
+   the constructor). The iterable surface now covers comptime ranges
+   (`#for i of 0..16`, `#i`/`#{i}`), string tables (`#for w of
+["a", "b"]`), enum cases (`META.info(E).cases`, `.name`) and
+   enum-body case generation (`#for`/`#if` producing `case #{c.name}`
+   entries). Remaining: attribute-collected type sets
+   (`META.types_with("...")` — whole-program type knowledge at check
+   time).
 
 ## See also
 

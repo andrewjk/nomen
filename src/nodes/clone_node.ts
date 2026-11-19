@@ -11,6 +11,7 @@ import BreakNode from "./BreakNode.ts";
 import CastNode from "./CastNode.ts";
 import ContinueNode from "./ContinueNode.ts";
 import DeclarationNode from "./DeclarationNode.ts";
+import EnumCaseDeclNode from "./EnumCaseDeclNode.ts";
 import EnumNode from "./EnumNode.ts";
 import ForLoopNode from "./ForLoopNode.ts";
 import FunctionCallNode from "./FunctionCallNode.ts";
@@ -558,6 +559,17 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_library = n.is_library;
 			c.checked = n.checked;
 			c.allocations = n.allocations?.map(clone_node);
+			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
+			return c;
+		}
+		case "enum_case_decl": {
+			const n = node as EnumCaseDeclNode;
+			const c = new EnumCaseDeclNode(
+				n.start,
+				n.name,
+				n.params.map((p) => clone_node(p) as ParameterNode),
+			);
+			c.comptime_name = n.comptime_name;
 			return c;
 		}
 		case "bitset": {

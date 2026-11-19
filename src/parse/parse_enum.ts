@@ -1,6 +1,8 @@
+import add_error from "../add_error.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
 import Type from "../nodes/Type.ts";
+import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
@@ -50,28 +52,42 @@ export default function parse_enum(
 	if (expect("{", status)) {
 		status.stack.push(node);
 
-		while (accept("case", status)) {
-			const case_name = consume_name(status);
-			const params: ParameterNode[] = [];
+		while (peek_current(status) !== "}" && peek_current(status) !== undefined) {
+			if (accept("case", status)) {
+				const case_name = consume_name(status);
+				const params: ParameterNode[] = [];
 
-			if (accept("(", status)) {
-				if (peek_current(status) !== ")") {
-					const param_start = get_index(status);
-					const param_type = new Type(consume(status));
-					const param_name = consume_name(status);
-					params.push(new ParameterNode(param_start, param_name, param_type));
+				if (accept("(", status)) {
+					if (peek_current(status) !== ")") {
+						const param_start = get_index(status);
+						const param_type = new Type(consume(status));
+						const param_name = consume_name(status);
+						params.push(new ParameterNode(param_start, param_name, param_type));
 
-					while (accept(",", status)) {
-						const p_start = get_index(status);
-						const p_type = new Type(consume(status));
-						const p_name = consume_name(status);
-						params.push(new ParameterNode(p_start, p_name, p_type));
+						while (accept(",", status)) {
+							const p_start = get_index(status);
+							const p_type = new Type(consume(status));
+							const p_name = consume_name(status);
+							params.push(new ParameterNode(p_start, p_name, p_type));
+						}
 					}
+					expect(")", status);
 				}
-				expect(")", status);
-			}
 
-			node.cases.push({ name: case_name, params });
+				node.cases.push({ name: case_name, params });
+				continue;
+			}
+			const next = status.tokens[status.i + 1]?.value;
+			if (peek_current(status) === "#" && ["for", "if", "switch"].includes(next ?? "")) {
+				// An enum-body pragma (`#for` generating cases, `#if`
+				// selecting them) — parsed like a struct-body member pragma;
+				// the arms hold `case` declarations, which parse_statement
+				// accepts while an enum is on the stack.
+				parse_statement(status);
+				continue;
+			}
+			add_error(status, "expected a case declaration or a compile-time pragma", get_index(status));
+			consume(status);
 		}
 
 		expect("}", status);

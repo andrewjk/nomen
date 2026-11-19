@@ -238,6 +238,18 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			);
 			break;
 		}
+		case "enum_case_decl": {
+			// An enum-body pragma arm's `case` declaration that survived to
+			// check: expansion consumes every one, so this means a `#for`
+			// that never ran (an enum host outside a checked path).
+			add_error(
+				status,
+				"enum case declarations expand at the enum's check — this one never did",
+				node.start,
+			);
+			result = false;
+			break;
+		}
 		default: {
 			add_error(status, `Unknown node type: ${node.node_type}`, node.start);
 			result = false;

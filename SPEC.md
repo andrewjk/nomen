@@ -3376,6 +3376,27 @@ Tables iterate comptime string lists — the binding is a string VALUE
 
 Table entries must fold to comptime strings.
 
+`META.info(E).cases` iterates an enum's cases — the binding exposes
+`.name` (the case name as a comptime string). The same iterable works at
+file/body scope (generate per-case members) and inside an ENUM body,
+where the loop's arm holds `case` declarations (with optional fixed-type
+payload params — payload splices are not supported):
+
+```
+pub enum Mirrored {
+    #for c of META.info(Shape).cases {
+        case #{c.name}
+    }
+    #if META.arch == "c" {
+        case extra
+    }
+}
+```
+
+An `#if`/`#switch` inside an enum body selects cases (a selected case
+needs a literal name — a `#{...}` template needs a `#for` binding).
+Generated cases append after the pragmas are processed.
+
 A generated field participates in the struct like a hand-written one —
 the constructor covers it when it has no default. A member that is not a
 field or a method is an error, and a loop over an unbound type parameter

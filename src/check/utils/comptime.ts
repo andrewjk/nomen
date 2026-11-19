@@ -10,6 +10,8 @@ import AssignmentNode from "../../nodes/AssignmentNode.ts";
 import type BaseNode from "../../nodes/BaseNode.ts";
 import { is_ast_node } from "../../nodes/child_nodes.ts";
 import clone_node from "../../nodes/clone_node.ts";
+import type EnumCaseDeclNode from "../../nodes/EnumCaseDeclNode.ts";
+import type EnumNode from "../../nodes/EnumNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
@@ -103,7 +105,7 @@ export function bind_comptime_self(
  *  `#for w of ["a", "b"]`) — no members, referenced as `#<binding>` in
  *  expressions and `#{<binding>}` in name templates. */
 interface ComptimeField {
-	kind: "field" | "int" | "string";
+	kind: "field" | "int" | "string" | "case";
 	name: string;
 	type_name: string;
 	index: number;
@@ -128,6 +130,7 @@ type ComptimeValue =
 
 type IterableResolution =
 	| { struct: StructNode }
+	| { enum_node: EnumNode }
 	| { deferred: true }
 	| { error: string; start: number };
 
@@ -239,18 +242,23 @@ export function expand_struct_member_pragmas(host: MemberHost, status: CheckStat
 			);
 			continue;
 		}
-		const source = resolved.struct;
-		const typed_fields = source.fields.filter((f) => f.type && f.type.name);
+		// Items for an enum-body loop: struct fields OR another enum's
+		// cases — each contributes its NAME to the generated cases.
+		const items: { name: string; attrs?: import("../../types/AttributeMeta.ts").default[] }[] =
+			"struct" in resolved
+				? resolved.struct.fields
+						.filter((f) => f.type && f.type.name)
+						.map((f) => ({ name: f.name, attrs: f.attrs }))
+				: resolved.enum_node.cases.map((c) => ({ name: c.name }));
 		const type_argument = iterable_type_argument(loop.iterable);
-		typed_fields.forEach((f, index) => {
+		items.forEach((item, index) => {
 			const field: ComptimeField = {
 				kind: "field",
-				name: f.name,
-				type_name: (f.type as Type).name,
+				name: item.name,
+				type_name: "unknown",
 				index,
 				type_argument,
-				attrs: (f as unknown as { attrs?: AttributeMeta[] }).attrs,
-				type_value: f.type as Type,
+				attrs: item.attrs,
 			};
 			for (const arm of loop.block.statements ?? []) {
 				const cloned = clone_node(arm);
@@ -287,20 +295,25 @@ function unwrap_grouped(node: BaseNode | undefined): BaseNode {
 }
 
 /**
- * Recognize `META.info(T).fields` structurally and resolve `T`.
- * Deferred when `T` is an unbound type parameter (R3); an error when `T`
- * names nothing (which includes a type parameter that survived into a
- * re-checked body — there it means specialization never bound it).
+ * Recognize `META.info(T).fields` / `META.info(E).cases` structurally and
+ * resolve the struct/enum. Deferred when the head is an unbound type
+ * parameter (R3); an error when it names nothing.
  */
 function resolve_meta_iterable(node: BaseNode, status: CheckStatus): IterableResolution {
 	const fields_access = unwrap_grouped(node);
+	const member =
+		fields_access.node_type === "access" &&
+		(fields_access as AccessNode).access.node_type === "access_field"
+			? ((fields_access as AccessNode).access as AccessFieldNode).name
+			: "";
 	if (
 		fields_access.node_type !== "access" ||
 		(fields_access as AccessNode).access.node_type !== "access_field" ||
-		((fields_access as AccessNode).access as AccessFieldNode).name !== "fields"
+		!["fields", "cases"].includes(member)
 	) {
 		return {
-			error: "#for iterates META.info(T).fields — other iterables are not comptime values",
+			error:
+				"#for iterates META.info(T).fields / META.info(E).cases — other iterables are not comptime values",
 			start: node.start,
 		};
 	}
@@ -335,6 +348,16 @@ function resolve_meta_iterable(node: BaseNode, status: CheckStatus): IterableRes
 		// R3: inside a generic body the parameter is unbound — defer, the
 		// specialization re-checks the cloned body and expands there.
 		return { deferred: true };
+	}
+	if (member === "cases") {
+		const enum_node = status.enums.findLast((e) => e.name === type_name);
+		if (!enum_node || enum_node.is_generic) {
+			return {
+				error: `META.info: unknown enum '${type_name}' — .cases reflects over enum types`,
+				start: info_call.start,
+			};
+		}
+		return { enum_node };
 	}
 	const declared = resolve_declared_struct(type_name, status);
 	if (!declared) {
@@ -448,6 +471,32 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 		return [];
 	}
 	if ("deferred" in resolved) return null;
+	if ("enum_node" in resolved) {
+		// `META.info(E).cases` — one binding per case; `.name` is the
+		// case's name as a comptime string (`META.info(#self)` chains and
+		// name splices compose as usual).
+		const iterations: BaseNode[] = [];
+		resolved.enum_node.cases.forEach((c, index) => {
+			const binding: ComptimeField = {
+				kind: "case",
+				name: c.name,
+				type_name: "enum",
+				index,
+				type_argument: iterable_type_argument(node.iterable),
+			};
+			const body = (node.block.statements ?? []).map((s) => clone_node(s));
+			const rewritten: BaseNode[] = [];
+			for (const stmt of body) {
+				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+			}
+			for (const s of rewritten) {
+				s.spawn_of = node.start;
+			}
+			fold_generated_member_pragmas(rewritten, status);
+			iterations.push(new NestedBlockNode(node.block.start, rewritten));
+		});
+		return iterations;
+	}
 	const struct = resolved.struct;
 
 	const typed_fields = struct.fields.filter((f) => f.type && f.type.name);
@@ -680,7 +729,7 @@ function rewrite(
 	// Resolved before the generic descent, whose bare `.type` link would
 	// error. Binding members (`.name` of the FIELD, `.get`, `.is_struct`)
 	// are separate, below.
-	if (node.node_type === "index" || node.node_type === "access") {
+	if (field.kind === "field" && (node.node_type === "index" || node.node_type === "access")) {
 		const resolved = resolve_type_member(node, binding, field.type_value);
 		if (resolved) {
 			if (resolved.kind === "error") {
@@ -974,6 +1023,28 @@ function rewrite_binding_access(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode {
+	if (field.kind === "case" && access.access.node_type === "access_field") {
+		// Case bindings expose their NAME — everything else is an error
+		// pointing at the spelling that works.
+		const wanted = (access.access as AccessFieldNode).name;
+		if (wanted === "name") {
+			return comptime_string(node.start, field.name);
+		}
+		add_error(
+			status,
+			`case bindings expose .name — '#${binding}.${wanted}' is not a case member`,
+			access.access.start,
+		);
+		return node;
+	}
+	if (field.kind === "int" || field.kind === "string") {
+		add_error(
+			status,
+			`'#${binding}' is the comptime value — value bindings have no members`,
+			access.access.start,
+		);
+		return node;
+	}
 	if (access.access.node_type === "access_func") {
 		const call = access.access as AccessFunctionCallNode;
 		const args = call.params ?? [];
@@ -1537,4 +1608,68 @@ function evaluate_comptime(node: BaseNode | undefined): ComptimeValue | undefine
 		default:
 			return undefined;
 	}
+}
+
+/**
+ * Expand an ENUM body's member pragmas — `#for c of META.info(E2).cases`
+ * (or over struct fields, ranges, tables) whose arm holds `case`
+ * declarations. Mirrors expand_struct_member_pragmas, but the generated
+ * members are CASES: each arm's `EnumCaseDeclNode`s resolve their
+ * `#{...}` name templates and append `{ name, params }` entries to
+ * `enum.cases`. Anything else in the arm is an error.
+ */
+export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckStatus): void {
+	const pragmas = enum_node.member_pragmas ?? [];
+	if (pragmas.length === 0) return;
+	const kept: BaseNode[] = [];
+	for (const pragma of pragmas) {
+		if (pragma.node_type !== "pragma_for") {
+			kept.push(pragma);
+			continue;
+		}
+		const loop = pragma as PragmaForNode;
+		const resolved = resolve_meta_iterable(loop.iterable, status);
+		if ("error" in resolved) {
+			add_error(status, resolved.error, resolved.start);
+			continue;
+		}
+		if ("deferred" in resolved) {
+			add_error(
+				status,
+				`'#for' at enum-body scope cannot defer — reflect over a concrete type, not a type parameter`,
+				loop.iterable.start,
+			);
+			continue;
+		}
+		// Items for a case-generating loop: struct fields OR another
+		// enum's cases — each contributes its NAME.
+		const items: { name: string }[] =
+			"struct" in resolved
+				? resolved.struct.fields.filter((f) => f.type && f.type.name).map((f) => ({ name: f.name }))
+				: resolved.enum_node.cases.map((c) => ({ name: c.name }));
+		const type_argument = iterable_type_argument(loop.iterable);
+		items.forEach((item, index) => {
+			const binding: ComptimeField = {
+				kind: "field",
+				name: item.name,
+				type_name: "unknown",
+				index,
+				type_argument,
+			};
+			for (const arm of loop.block.statements ?? []) {
+				const cloned = clone_node(arm) as EnumCaseDeclNode;
+				const splice = cloned.comptime_name;
+				if (splice !== undefined) {
+					const name = resolve_comptime_name(splice, loop.binding, binding, status, cloned.start);
+					cloned.name = name ?? "";
+				}
+				if (!cloned.name) {
+					add_error(status, "a generated case needs a resolvable name", cloned.start);
+					continue;
+				}
+				enum_node.cases.push({ name: cloned.name, params: cloned.params });
+			}
+		});
+	}
+	enum_node.member_pragmas = kept;
 }

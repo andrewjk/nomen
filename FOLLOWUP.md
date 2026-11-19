@@ -672,17 +672,12 @@ and type splices), usable by their generated names; generated bodies
 compose with `#if` member arms, the marker-trait derives, and
 `META.info(#self)`. What remains is the iterable surface — today it is
 only `META.info(T).fields`. The richer iterables the generation patterns
-want, roughly in demand order (comptime ranges — `#for i of 0..16` with
-`#i`/`#{i}` value references — and string/table lists — `#for w of
-["a", "b"]` with `#w`/`#{w}` — shipped 2026-11-18):
+want, roughly in demand order (comptime ranges — `#for i of 0..16` with `#i`/`#{i}` value
+references — string/table lists — `#for w of ["a", "b"]` with
+`#w`/`#{w}` — and enum cases — `META.info(E).cases` plus `#for` inside
+enum bodies generating `case #{c.name}` — shipped 2026-11-18):
 
-1. **Enum cases** — `META.info(E).cases`, plus `#for` inside enum bodies
-   (generating cases from a table, the mirror image of generating FROM
-   cases). Command dispatch, wire-format names, per-case wrapper types:
-   the name-as-data pattern that works for struct fields today, extended
-   to the other half of the type world.
-
-2. **Attribute-collected type sets** — "every struct carrying
+1. **Attribute-collected type sets** — "every struct carrying
    `@entity`": a `META.types_with("entity")`-style iteration for
    registries, ORM table creation, test-matrix enumeration. Needs
    whole-program type knowledge at check time, so it is the deepest of

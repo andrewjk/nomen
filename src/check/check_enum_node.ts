@@ -1,10 +1,16 @@
 import add_error from "../add_error.ts";
 import EnumNode from "../nodes/EnumNode.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { expand_enum_member_pragmas } from "./utils/comptime.ts";
 import { type_owns_heap } from "./utils/ownership.ts";
 import { struct_has_view_fields } from "./utils/view_fields.ts";
 
 export default function check_enum_node(node: EnumNode, status: CheckStatus) {
+	// Stage 6: expand the body's `#for` case loops (`case #{c.name}`) and
+	// fold any `#if`-selected cases first, so every downstream consumer
+	// (dup checks, layout, mono) sees the final case list.
+	expand_enum_member_pragmas(node, status);
+
 	node.is_generic = node.type_params.length > 0;
 
 	// ERRORS_PLAN: an `error` enum is always `checked` — no opt-out. Stamping

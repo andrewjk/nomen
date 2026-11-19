@@ -1,0 +1,2 @@
+shape: circle
+shape: square

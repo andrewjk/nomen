@@ -48,6 +48,7 @@ import default_visibility from "./utils/default_visibility.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import parse_attributes, { attributes_target_allowed } from "./utils/parse_attributes.ts";
+import parse_enum_case_decl from "./utils/parse_enum_case_decl.ts";
 import peek_current from "./utils/peek_current.ts";
 
 export default function parse_statement(status: ParseStatus) {
@@ -259,7 +260,11 @@ export default function parse_statement(status: ParseStatus) {
 					// into the body at the check-time fold (the stage-3
 					// slot).
 					const pragma_parent = status.stack.at(-1);
-					if (pragma_parent?.node_type === "struct" || pragma_parent?.node_type === "trait") {
+					if (
+						pragma_parent?.node_type === "struct" ||
+						pragma_parent?.node_type === "trait" ||
+						pragma_parent?.node_type === "enum"
+					) {
 						const pragma_owner = pragma_parent as { member_pragmas?: BaseNode[] };
 						if (!pragma_owner.member_pragmas) pragma_owner.member_pragmas = [];
 						pragma_owner.member_pragmas.push(pragma);
@@ -275,7 +280,11 @@ export default function parse_statement(status: ParseStatus) {
 					// generates fields/methods into the body (expanded at
 					// the type's own check).
 					const loop_parent = status.stack.at(-1);
-					if (loop_parent?.node_type === "struct" || loop_parent?.node_type === "trait") {
+					if (
+						loop_parent?.node_type === "struct" ||
+						loop_parent?.node_type === "trait" ||
+						loop_parent?.node_type === "enum"
+					) {
 						const loop_owner = loop_parent as { member_pragmas?: BaseNode[] };
 						if (!loop_owner.member_pragmas) loop_owner.member_pragmas = [];
 						loop_owner.member_pragmas.push(loop);
@@ -357,6 +366,24 @@ export default function parse_statement(status: ParseStatus) {
 				} else {
 					status.pending_attributes = attrs;
 				}
+				break;
+			}
+			case "case": {
+				// `case <name>` / `case #{c.name}(T p)` — an enum CASE
+				// declaration, legal only inside an enum body's pragma arms
+				// (`#for c of META.info(E2).cases { case #{c.name} }`): the
+				// enum's expansion resolves the name and appends the case. A
+				// `case` outside an enum body is a loud error. (Switch bodies
+				// never reach parse_statement — parse_switch reads its own
+				// cases — so this branch is unambiguous.)
+				const on_enum = status.stack.some((n) => n.node_type === "enum");
+				if (!on_enum) {
+					add_error(status, "case declarations belong inside enum bodies", get_index(status));
+					consume(status); // case
+					break;
+				}
+				const decl = parse_enum_case_decl(status);
+				add_to_parent(decl, "Enum case", status);
 				break;
 			}
 			case "if": {

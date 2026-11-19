@@ -23,8 +23,7 @@ export default class EnumNode extends BaseNode {
 	 * monomorphized instantiations by `monomorphize_enum`.
 	 */
 	checked?: boolean;
-	/**
-	 * True when declared with the `error` keyword (`error FetchError { ... }`)
+	/** True when declared with the `error` keyword (`error FetchError { ... }`)
 	 * — the third specialized declaration next to `enum` and `bitset`. An
 	 * error enum IS an enum (cases, payloads, match, shorthand all inherited);
 	 * the keyword adds exactly two semantics: always `checked` (stamped below
@@ -33,6 +32,13 @@ export default class EnumNode extends BaseNode {
 	 * instantiations by `monomorphize_enum` alongside `checked`.
 	 */
 	is_error?: boolean;
+	/**
+	 * Compile-time pragmas parsed INSIDE the body — `#if`/`#switch` target
+	 * selection and `#for` loops generating cases (`#{case.name}` templates).
+	 * Expands at the enum's own check, exactly like a struct's
+	 * (see StructNode.member_pragmas).
+	 */
+	member_pragmas?: BaseNode[];
 	/**
 	 * ERRORS_PLAN composed sets: set on the GENERATED anon enum that fills
 	 * the E slot of a `T ! E1, E2` result — its cases carry whole member
