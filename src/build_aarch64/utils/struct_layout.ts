@@ -1,72 +1,27 @@
 import type BuildStatus from "../../build_c/BuildStatus.ts";
-import { is_nullable_scalar_type } from "../../build_common/nullable_scalar.ts";
-import { is_nullable_struct_type } from "../../build_common/nullable_struct.ts";
-import { packed_own_fields, packed_trait_extra_fields } from "../../build_common/struct_packing.ts";
-import { get_built_in_type } from "../../built_in_types.ts";
+import {
+	layout_enum_size,
+	layout_field_offset,
+	layout_field_offset_of_fields,
+	layout_struct_size,
+	layout_type_size,
+	packed_layout_fields,
+} from "../../build_common/layout.ts";
 import DeclarationNode from "../../nodes/DeclarationNode.ts";
 import type FunctionNode from "../../nodes/FunctionNode.ts";
-import ValueNode from "../../nodes/ValueNode.ts";
-import aarch64_size from "./aarch64_size.ts";
 import { emit_asm } from "./code_buffer.ts";
 import { emit_pair_store_x29 } from "./string_pair.ts";
 
-const VT_SIZE = 8;
-
 /**
- * Natural alignment of a type in bytes — must match C struct layout rules,
- * because raw `#arch: c` bodies and companion code read the SAME fields
- * through C's naturally-aligned layout. Sub-8-byte scalars (bool, char,
- * int8/16/32) align to their own storage width (BuiltInTypeInfo.bytes);
- * everything else (word-sized ints, floats, fat strings, pointers, nested
- * structs) aligns to 8.
+ * Thin delegates over the shared layout model (build_common/layout.ts) —
+ * the aarch64 offsets/sizes and the check-time META reflection
+ * (META.size_of / META.align_of / META.offset_of) answer from the SAME
+ * walk, so they cannot drift. The target defaults to the aarch64 ABI; see
+ * layout.ts for the one C-target divergence (fixed stack-array fields).
  */
-function get_type_alignment(
-	type: import("../../nodes/Type.ts").default,
-	status: BuildStatus,
-): number {
-	// A `view T` field is a (ptr, len) pair of words — 8-byte aligned like
-	// every other pointer-bearing value (checked before the struct lookup so
-	// a view OF a struct doesn't recurse into element layout rules).
-	if (type.is_view) return 8;
-	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
-	if (type.is_ref || (struct && struct.is_class)) return 8;
-	if (struct) return 8;
-	const enum_node = status.enums.find((e) => e.name === type.name);
-	if (enum_node) return 8;
-	if (type.is_array) return 8;
-	switch (get_built_in_type(type.name)?.bytes) {
-		case 1:
-		case 2:
-		case 4:
-			return get_built_in_type(type.name)!.bytes!;
-		default:
-			return 8;
-	}
-}
-
-/** Round `offset` up to `alignment` (alignment is a power of two). */
-function align_to(offset: number, alignment: number): number {
-	return Math.ceil(offset / alignment) * alignment;
-}
 
 export function get_struct_size(name: string, status: BuildStatus): number {
-	const struct = status.structs.find((s) => s.name === name);
-	if (!struct) return VT_SIZE;
-	if (struct.is_simple_type) return VT_SIZE;
-	let size = VT_SIZE;
-	for (const field of layout_fields(struct, status)) {
-		size = align_to(size, get_type_alignment(field.type, status));
-		size += get_type_size(field.type, status);
-		// A nullable struct field carries a companion 8-byte `_has` flag; a
-		// nullable scalar field a 1-byte `_has` flag right after the scalar
-		// (both match C's `unsigned char <f>_has;` member layout).
-		if (is_nullable_struct_type(field.type, status)) size += 8;
-		else if (is_nullable_scalar_type(field.type, status)) size += 1;
-	}
-	// Tail padding to the strictest member alignment so arrays of the struct
-	// keep every element aligned (matches C's sizeof).
-	size = align_to(size, 8);
-	return size;
+	return layout_struct_size(name, status);
 }
 
 /**
@@ -74,12 +29,6 @@ export function get_struct_size(name: string, status: BuildStatus): number {
  * the struct does not override. The C backend emits trait fields into the
  * typedef (the C compiler lays them out); the aarch64 layout must account for
  * them too, or a trait field's offset lands past the allocated instance.
- *
- * Own fields are PACKED (alignment-descending — see
- * build_common/struct_packing.ts) unless the struct is excluded (raw `#arch`
- * bodies, tuples, fixed-array fields); trait extras follow, packed among
- * themselves. Field declaration order is untouched on the node itself — the
- * positional `#init` contract depends on it.
  */
 export function layout_fields(
 	struct: {
@@ -90,43 +39,14 @@ export function layout_fields(
 	},
 	status: BuildStatus,
 ): DeclarationNode[] {
-	const own = packed_own_fields(struct);
-	if (!struct.traits?.length) return own;
-	const extra = packed_trait_extra_fields(struct, status.traits);
-	return extra.length ? [...own, ...extra] : own;
+	return packed_layout_fields(struct, status);
 }
 
 export function get_type_size(
 	type: import("../../nodes/Type.ts").default,
 	status: BuildStatus,
 ): number {
-	if (type.is_ref) return 8;
-	// A `view T` is the universal (ptr, len) pair — 16 bytes regardless of
-	// the element type (a view of a struct is a slice, NOT the struct value).
-	if (type.is_view) return 16;
-	const struct = status.structs.find((s) => s.name === type.name && !s.is_simple_type);
-	if (struct) {
-		if (struct.is_class) return 8;
-		return get_struct_size(type.name, status);
-	}
-	// Enums: an enum with associated data is multi-word (tag + payload), so its
-	// size must come from get_enum_size, not the default 8 — otherwise struct
-	// field offsets and struct sizes under-count a 16-byte enum and the next
-	// field overlaps its payload.
-	const enum_node = status.enums.find((e) => e.name === type.name);
-	if (enum_node) {
-		return get_enum_size(type.name, status);
-	}
-	const element_size = aarch64_size(type.name);
-	// A NESTED-array field is a heap outer-buffer POINTER (its slots are row
-	// pointers) — never inline row storage, whatever compile-time length the
-	// annotation spells.
-	if (type.is_array && !type.elem && type.length && (type.length.start ?? -1) >= 0) {
-		const length = parseInt((type.length as ValueNode).value || "0");
-		return 8 + element_size * length;
-	}
-	if (type.is_array) return 8;
-	return element_size;
+	return layout_type_size(type, status);
 }
 
 export function get_field_offset(
@@ -134,33 +54,15 @@ export function get_field_offset(
 	field_name: string,
 	status: BuildStatus,
 ): number {
-	const struct = status.structs.find((s) => s.name === struct_name);
-	if (!struct) return VT_SIZE;
-	return get_field_offset_of_fields(layout_fields(struct, status), field_name, status);
+	return layout_field_offset(struct_name, field_name, status);
 }
 
-/**
- * Aligned field-offset walk shared by every consumer of struct layout
- * (field access, destroy emission, ctor copies): each field starts at the
- * next position aligned to its natural alignment, with an extra 8-byte
- * `_has` flag word after a nullable struct field.
- */
 export function get_field_offset_of_fields(
 	fields: DeclarationNode[],
 	field_name: string,
 	status: BuildStatus,
 ): number {
-	let offset = VT_SIZE;
-	for (const field of fields) {
-		offset = align_to(offset, get_type_alignment(field.type, status));
-		if (field.name === field_name) return offset;
-		offset += get_type_size(field.type, status);
-		// Skip the companion `_has` flag following a nullable struct field
-		// (8-byte word) or nullable scalar field (1 byte).
-		if (is_nullable_struct_type(field.type, status)) offset += 8;
-		else if (is_nullable_scalar_type(field.type, status)) offset += 1;
-	}
-	return offset;
+	return layout_field_offset_of_fields(fields, field_name, status);
 }
 
 /**
@@ -201,20 +103,7 @@ export function get_field(
 }
 
 export function get_enum_size(enum_name: string, status: BuildStatus): number {
-	const enum_node = status.enums.find((e) => e.name === enum_name);
-	if (!enum_node || !enum_node.has_associated_data) return 8;
-	let max_payload = 0;
-	for (const c of enum_node.cases) {
-		let case_size = 0;
-		for (const p of c.params) {
-			// Use get_type_size, not aarch64_size: a struct payload (e.g. a
-			// string-bearing value struct) is multi-word, and sizing it as one
-			// word truncated the enum blob and mis-offset every later payload.
-			case_size += get_type_size(p.type, status);
-		}
-		max_payload = Math.max(max_payload, case_size);
-	}
-	return 8 + Math.ceil(max_payload / 8) * 8;
+	return layout_enum_size(enum_name, status);
 }
 
 /**

@@ -1,4 +1,11 @@
 import add_error from "../../add_error.ts";
+import {
+	layout_align_of_name,
+	layout_field_offset_of_name,
+	layout_size_of_name,
+	type LayoutTables,
+	type LayoutTarget,
+} from "../../build_common/layout.ts";
 import { mono_type_name } from "../../build_common/mono_name.ts";
 import { get_built_in_type } from "../../built_in_types.ts";
 import { is_int_type } from "../../built_in_types.ts";
@@ -26,7 +33,7 @@ import ValueNode from "../../nodes/ValueNode.ts";
 import type AttributeMeta from "../../types/AttributeMeta.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { distribute_member, fold_member_pragmas, type PragmaConsts } from "./pragma.ts";
-import { resolve_declared_struct } from "./resolve_declared_type.ts";
+import resolve_declared_type, { resolve_declared_struct } from "./resolve_declared_type.ts";
 
 /** The fold consts for generated code's member pragmas (the main fold ran
  *  at check() start, before any generation existed). */
@@ -1501,6 +1508,132 @@ export function substitute_generic_constructs(
 	}
 }
 
+/** A comptime int literal node: a checked-shape static int value. */
+function comptime_int(start: number, value: number): ValueNode {
+	const literal = new ValueNode(start, String(value));
+	literal.type = new Type("int", true);
+	return literal;
+}
+
+/** The ABI a layout query answers for: the C target's one divergence from
+ *  the native model (fixed stack-array fields are inline C arrays) keys off
+ *  status.arch (defaulting "c", matching the #if fold consts and the default
+ *  build target); every other target gets the aarch64 model. */
+function layout_target(status: CheckStatus): LayoutTarget {
+	return (status.arch ?? "c") === "c" ? "c" : "aarch64";
+}
+
+/**
+ * Fold `META.size_of(T)` / `META.align_of(T)` / `META.offset_of(T, "field")`
+ * into a comptime int literal — layout introspection over the shared layout
+ * model (build_common/layout.ts, the same walk the aarch64 backend lays out
+ * with and the C typedef emission mirrors).
+ *
+ * The type argument is a bare type-name word (`META.size_of(Point)`) or a
+ * quoted string — the latter is what a folded comptime string arrives as
+ * (`META.offset_of(Pair, field.name)` inside a `#for` arm, where `field.name`
+ * rewrote to a literal when the arm expanded). An argument that is not a
+ * literal yet is left for the pass that sees it folded. An unbound type
+ * parameter is skipped (the specialization's pass re-folds with the bound
+ * name — the predicate posture); a name that resolves to nothing is skipped
+ * too; a GENERIC spelling is a compile error (no concrete layout — the
+ * META.info posture).
+ */
+function rewrite_meta_layout(
+	node: BaseNode,
+	predicate: "size_of" | "align_of" | "offset_of",
+	args: BaseNode[],
+	status: CheckStatus,
+	substitution?: Map<string, string>,
+): BaseNode {
+	const tables: LayoutTables = {
+		structs: status.structs,
+		enums: status.enums,
+		traits: status.traits,
+		bitsets: status.bitsets,
+	};
+	const expected_args = predicate === "offset_of" ? 2 : 1;
+	if (args.length !== expected_args) {
+		add_error(
+			status,
+			predicate === "offset_of"
+				? `META.offset_of takes a type and a field name — META.offset_of(T, "field")`
+				: `META.${predicate} takes a type name — META.${predicate}(T)`,
+			node.start,
+		);
+		return node;
+	}
+	const type_arg = unwrap_grouped(args[0]);
+	if (type_arg.node_type !== "value") return node;
+	let type_name = (type_arg as ValueNode).value;
+	if (type_name.length >= 2 && type_name.startsWith('"') && type_name.endsWith('"')) {
+		type_name = type_name.substring(1, type_name.length - 1);
+	}
+	if (!type_name) {
+		add_error(status, `META.${predicate} takes a type name — META.${predicate}(T)`, node.start);
+		return node;
+	}
+	if (substitution?.has(type_name)) type_name = substitution.get(type_name)!;
+	// An unbound type parameter has no binding yet — defer; the
+	// specialization's re-check reaches the cloned body with it bound.
+	if (status.type_params.includes(type_name)) return node;
+	const declared = resolve_declared_type(type_name, status);
+	if (declared) {
+		const shape = declared as unknown as { is_generic?: boolean; type_params?: unknown[] };
+		if (shape.is_generic || (shape.type_params?.length ?? 0) > 0) {
+			add_error(
+				status,
+				`META.${predicate}: '${type_name}' is generic — reflect over a concrete instantiation`,
+				node.start,
+			);
+			return node;
+		}
+	} else if (!get_built_in_type(type_name)) {
+		// A name that resolves to nothing is skipped, like the comptime
+		// predicates: a deferred generic body scanned from the outside names
+		// no type yet, and the downstream check reports the unknown use.
+		return node;
+	}
+	if (predicate === "offset_of") {
+		const field_arg = unwrap_grouped(args[1]);
+		if (field_arg.node_type !== "value") return node;
+		const text = (field_arg as ValueNode).value;
+		const field_name =
+			text.length >= 2 && text.startsWith('"') && text.endsWith('"')
+				? text.substring(1, text.length - 1)
+				: "";
+		if (!field_name) {
+			add_error(
+				status,
+				`META.offset_of takes a field name string — META.offset_of(T, "field")`,
+				node.start,
+			);
+			return node;
+		}
+		const offset = layout_field_offset_of_name(
+			type_name,
+			field_name,
+			tables,
+			layout_target(status),
+		);
+		if (offset === undefined) {
+			add_error(
+				status,
+				`META.offset_of: type '${type_name}' has no field '${field_name}'`,
+				node.start,
+			);
+			return node;
+		}
+		return comptime_int(node.start, offset);
+	}
+	const value =
+		predicate === "size_of"
+			? layout_size_of_name(type_name, tables, layout_target(status))
+			: layout_align_of_name(type_name, tables);
+	if (value === undefined) return node;
+	return comptime_int(node.start, value);
+}
+
 /**
  * Rewrite `META.info(T).name` chains — in ANY statement position, not just
  * `#for` arms — into the reflected type's name as a comptime string
@@ -1528,6 +1661,18 @@ export function rewrite_meta_name_chains(
 		) {
 			const predicate = (n as AccessNode).access as AccessFunctionCallNode;
 			const args = predicate.params ?? [];
+			// Layout introspection (COMPTIME.md stage 7): META.size_of(T) /
+			// META.align_of(T) / META.offset_of(T, "field") fold to comptime
+			// int literals from the SAME layout walk the backends lay out
+			// with (build_common/layout.ts). Runs before the single-arg
+			// predicate gate below — offset_of takes two arguments.
+			if (
+				predicate.name === "size_of" ||
+				predicate.name === "align_of" ||
+				predicate.name === "offset_of"
+			) {
+				return rewrite_meta_layout(n, predicate.name, args, status, substitution);
+			}
 			const arg = unwrap_grouped(args[0]);
 			if (
 				args.length === 1 &&

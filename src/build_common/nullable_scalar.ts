@@ -1,15 +1,21 @@
 import { get_built_in_type } from "../built_in_types.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
-import type EnumNode from "../nodes/EnumNode.ts";
 import type Type from "../nodes/Type.ts";
 
 /**
  * The declaration tables a nullable-scalar classification consults for
  * NON-built-in type names. Both CheckStatus and BuildStatus carry `enums`
- * and `bitsets`, so every call site passes its status straight through.
+ * and `bitsets` (and so does the layout-table view in build_common/
+ * layout.ts), so every call site passes its status straight through.
  */
 export interface NullableTypeTables {
-	enums: EnumNode[];
+	enums: {
+		name: string;
+		source_name?: string;
+		is_generic?: boolean;
+		has_associated_data?: boolean;
+		cases: { params: { type: { name: string } }[] }[];
+	}[];
 	bitsets: { name: string; source_name?: string }[];
 }
 

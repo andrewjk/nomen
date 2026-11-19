@@ -17,9 +17,10 @@ import Type from "../nodes/Type.ts";
  * word right after the struct — same predicate, same name rule on both sides.
  */
 
-/** The struct table the predicates need; both backends' BuildStatus satisfy it. */
+/** The struct table the predicates need; both backends' BuildStatus and the
+ *  layout-table view (build_common/layout.ts) satisfy it structurally. */
 interface NullableStructTable {
-	structs: StructNode[];
+	structs: { name?: string; is_class?: boolean; is_simple_type?: boolean }[];
 }
 
 /** True if `type` is a nullable, non-class, non-array struct value type. */

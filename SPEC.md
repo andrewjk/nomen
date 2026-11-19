@@ -3583,8 +3583,65 @@ binding used without `.name`/`.get`/`.set` — are reported at the loop:
 ```
 
 Stage-2 limits: `#for` is body-scope only (whole-declaration generation is
-a later stage), reflection exposes field names/types but not offsets, and
-raw `#arch` blocks inside arms are not specialized per field.
+a later stage), and raw `#arch` blocks inside arms are not specialized per
+field.
+
+### Layout Introspection (`META.size_of` / `META.align_of` / `META.offset_of`)
+
+Sizes and offsets fold to comptime ints from the same layout the backends
+emit: every struct value starts with an 8-byte vtable word, fields follow
+in packed (alignment-descending) order at their natural alignment, and the
+total is tail-padded to 8:
+
+```
+struct Pair {
+    var int64 a
+    var int32 b
+}
+
+const PAIR_BYTES = META.size_of(Pair)
+
+func probe = () {
+    if META.offset_of(Pair, "b") == 16 {
+        Console.write_line("b follows a")
+    }
+}
+```
+
+`META.size_of(T)` is the byte size (a `string` is the 16-byte fat pair, an
+enum the tag word plus its widest payload, a class the heap pointer);
+`META.align_of(T)` is the natural alignment (`bool` 1, `int32` 4, every
+composite 8); `META.offset_of(T, "field")` is the field's byte offset from
+the value's first byte, vtable word included. Scalars and built-ins work
+like structs — `META.size_of(int)` is 8, `META.size_of(bool)` is 1.
+
+`T` is a bare type name, or a `type T` parameter (folded per
+specialization, like the predicates). The field argument is a comptime
+string, so reflection composes:
+
+```
+func dump = () {
+    #for field of META.info(Pair).fields {
+        if META.offset_of(Pair, field.name) >= 8 {
+            Console.write_line(field.name)
+        }
+    }
+}
+```
+
+Sizes answer for the compile target: the one native/C divergence is a
+fixed-size stack-array field (`uint64[4] slots`) — a length header plus
+elements on the native backend, an inline C array on the C target — and
+`META.size_of` follows the target being checked. Errors point at the
+spelling that works: a generic spelling has no layout, and a missing field
+names the type:
+
+```
+func probe = () {
+    var a = META.offset_of(Point, "z")
+}
+// Error: META.offset_of: type 'Point' has no field 'z'
+```
 
 ### Type Parameters (`type T`)
 

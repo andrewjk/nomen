@@ -105,6 +105,16 @@ The message is a single string literal today.
 `META.is_struct(T)`, `META.is_container(T)`, `META.is_scalar(T)` fold in
 any statement position.
 
+Layout introspection (stage 7) folds sizes and offsets in any statement
+position too: `META.size_of(T)`, `META.align_of(T)` and
+`META.offset_of(T, "field")` answer from the shared layout model
+(`src/build_common/layout.ts`) — the same walk the aarch64 backend lays out
+with and the C typedef emission mirrors, so a comptime size can never drift
+from the real one. Sizes are usable in expressions and comptime conditions;
+`META.offset_of(Pair, field.name)` composes with a `#for` loop (the folded
+field name is accepted as the field argument). A `type T` parameter defers
+to its specialization; a generic spelling is a compile error.
+
 Reflection is order-independent within a module: gather registers every
 file-scope declaration before check runs, so `META.info(T)` and
 `META.types_with("x")` may name a type declared later in the file.
@@ -207,6 +217,7 @@ scan skips them).
 | Attribute parse/attach                                     | `src/parse/utils/parse_attributes.ts`                                                                          |
 | Target fold (`fold_pragma_ifs`, member folds)              | `src/check/utils/pragma.ts`                                                                                    |
 | Expansion, name/type splices, deferral, binding resolution | `src/check/utils/comptime.ts`                                                                                  |
+| Layout model (`META.size_of`/`align_of`/`offset_of`)       | `src/build_common/layout.ts`, `src/check/utils/comptime.ts`                                                    |
 | File-scope pre-expansion (`expand_file_scope_pragmas`)     | `src/check/utils/comptime.ts`, `src/check/check_block_node.ts`                                                 |
 | Per-conformer trait defaults                               | `src/check/utils/trait_defaults.ts`                                                                            |
 | Statement/type/body wiring                                 | `src/check/check_pragma_for_node.ts`, `check_struct_node`, `check_trait_node`, `check_enum_node`, `check_node` |
@@ -237,12 +248,17 @@ This document supersedes the retired working notes `COMPTIME_PLAN.md` and
    declarations), and the
    iterable surface above (ranges, tables, enum cases, attribute type
    sets), with reflection defaults bound per conformer (`#self`).
+7. Layout introspection: `META.size_of(T)` / `META.align_of(T)` /
+   `META.offset_of(T, "field")` — the layout model extracted from the
+   aarch64 backend into the shared `src/build_common/layout.ts`, folded at
+   check time (sizes were a backend-only secret; the raw-body `T_SIZE`
+   mirror was the one check-side copy).
 
 ## Known Limits
 
 Recorded in [`FOLLOWUP.md`](../FOLLOWUP.md) ("Comptime residuals" and
-"Declaration/type generation (stage 6)"): no offsets/sizes in reflection,
-no comptime string interpolation, `#if` conditions limited to
+"Declaration/type generation (stage 6)"): no comptime string
+interpolation, `#if` conditions limited to
 `META.arch`/`META.platform` (no type-level conditions), single-literal
 attributes, no deep payload splices for generated enum cases, no nested
 `#for` composition inside a generated type body, no trait-conformer

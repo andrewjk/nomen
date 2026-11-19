@@ -712,11 +712,16 @@ TODOs carried over from the retired working notes `COMPTIME_PLAN.md` and
 `COMPTIME_PLAN_2.md`, now folded into [`docs/COMPTIME.md`](./docs/COMPTIME.md)
 and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON.md).
 
-- **Layout introspection** — `META.size_of(T)`, `offset_of`, alignment.
-  Reflection exposes no offsets/sizes; the aarch64 backend computes both
-  anyway, so the data exists. Real uses: fixed-size buffers, FFI struct
-  mirrors, serialization. Also unblocks the "computed sizes" motivation
-  for comptime ints.
+- **`raw_type_size` doesn't ride the shared layout model** — the check-side
+  `T_SIZE` mirror for raw T-generic bodies
+  (`src/check/check_function_call_node.ts`) predates
+  `src/build_common/layout.ts` (the stage-7 layout introspection
+  extraction) and omits what the shared walk includes — trait-declared
+  fields, `ref` fields, fixed-array field shapes. A raw slab stride over an
+  element struct carrying trait fields would desync from the real aarch64
+  layout (`get_struct_size` includes the trait tail). Delegating it fixes
+  that, but changes emitted constants in raw library bodies, so it wants
+  its own byte-identical-output pass rather than a ride-along.
 - **Comptime string interpolation** — `"decode_\{T.name}"` does not fold;
   comptime strings today combine only via literal `+` and `#{...}` name
   templates. `#error` takes a single literal message. Needs a restricted
