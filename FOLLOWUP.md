@@ -709,13 +709,6 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   multi-value query surface are the next step for ORM/CLI-grade
   configuration.
 
-## SPEC.md: dangling `#destroy-functions-1` anchor
-
-SPEC.md (around line 3104, in the memory-management list) links to
-`[Destroy Functions](#destroy-functions-1)`, but there is only one "Destroy
-Functions" heading (`#destroy-functions`). Noticed while rendering the spec on
-the website (`site/scripts/render-docs.ts`), where the link goes nowhere.
-
 ## `nomen format` squashes `T ! E` to `T !E`
 
 `nomen format` rewrites a result return type such as

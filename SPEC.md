@@ -3101,7 +3101,7 @@ Auto-free applies only to types that own heap resources:
 
 - **Structs** with a `#destroy` function (see [Destroy Functions](#destroy-functions))
 - **Classes** (always heap-allocated; `#destroy` runs if defined — see
-  [Destroy Functions](#destroy-functions-1))
+  [Destroy Functions](#destroy-functions))
 - **Strings** (heap-allocated character buffers)
 
 Value types with no heap ownership are not cleaned up: **enums**, **bitsets**,
