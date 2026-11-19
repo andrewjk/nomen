@@ -3414,10 +3414,42 @@ Tables iterate comptime string lists — the binding is a string VALUE
 Table entries must fold to comptime strings.
 
 `META.info(E).cases` iterates an enum's cases — the binding exposes
-`.name` (the case name as a comptime string). The same iterable works at
-file/body scope (generate per-case members) and inside an ENUM body,
-where the loop's arm holds `case` declarations (with optional fixed-type
-payload params — payload splices are not supported):
+`.name` (the case name as a comptime string), `.param_count` (the case's
+payload arity, as a comptime int) and `.params[i]` — each payload param,
+with `.name` and `.type` (`.type.name` for the type's name). The same
+iterable works at file/body scope (generate per-case members) and inside
+an ENUM body, where the loop's arm holds `case` declarations whose
+payload params may splice from the binding — the whole source param
+(`#{c.params[0]}`: type and name verbatim), or its slots
+(`#{c.params[0].type}` / `#{c.params[0].type.name}` in the type slot,
+`#{c.params[0].name}` in the name slot) — so one enum becomes a
+payload-preserving alias of another:
+
+```
+mv enum Shape {
+    case point(int x, int y)
+}
+
+mv enum Mirror {
+    #for c of META.info(Shape).cases {
+        case #{c.name}(#{c.params[0]}, #{c.params[1]})
+    }
+}
+
+pub func main = () {
+    var Mirror.point m = Mirror.point(3, 4)
+    match m {
+        case .point(px, py) {
+            Console.write_line("point \{px},\{py}")
+        }
+    }
+}
+```
+
+An index past the case's arity is a compile error naming the case and its
+count (`params[2] is out of range`), and payload splices over any other
+iterable (struct fields, ranges, tables) are rejected — `.params` is a
+case-binding member.
 
 ```
 pub enum Mirrored {

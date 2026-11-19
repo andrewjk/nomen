@@ -77,8 +77,10 @@ export default function consume_comptime_name(status: ParseStatus): string | und
 
 /**
  * The dotted path inside an open `#{ ... }` — exact segments joined by
- * dots, nothing greedy. Returns the path, or "" on a malformed splice
- * (the error is reported here).
+ * dots, nothing greedy. A segment may carry one literal index
+ * (`params[0]` — the case-payload splice); the resolver decides whether an
+ * indexed path is meaningful there. Returns the path, or "" on a malformed
+ * splice (the error is reported here).
  */
 export function consume_comptime_name_path(status: ParseStatus): string {
 	const segments: string[] = [];
@@ -87,7 +89,7 @@ export function consume_comptime_name_path(status: ParseStatus): string {
 		add_error(status, SPLICE_HINT, get_index(status));
 		return "";
 	}
-	segments.push(consume(status));
+	segments.push(consume_comptime_name_segment(status));
 	while (peek_current(status) === ".") {
 		consume(status); // .
 		const segment = status.tokens[status.i]?.value ?? "";
@@ -95,9 +97,26 @@ export function consume_comptime_name_path(status: ParseStatus): string {
 			add_error(status, SPLICE_HINT, get_index(status));
 			return segments.join(".");
 		}
-		segments.push(consume(status));
+		segments.push(consume_comptime_name_segment(status));
 	}
 	return segments.join(".");
+}
+
+/** A dotted-path segment with its optional literal index (`params[0]`). */
+function consume_comptime_name_segment(status: ParseStatus): string {
+	let segment = consume(status);
+	while (peek_current(status) === "[") {
+		consume(status); // [
+		const index = status.tokens[status.i]?.value ?? "";
+		if (!/^\d+$/.test(index)) {
+			add_error(status, SPLICE_HINT, get_index(status));
+			return segment;
+		}
+		consume(status); // the index
+		if (!expect("]", status)) return segment;
+		segment += `[${index}]`;
+	}
+	return segment;
 }
 
 /**

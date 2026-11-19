@@ -668,14 +668,6 @@ and double-launch.
 
 Two ideas surfaced by the stage-6 work, neither scheduled.
 
-**Deep payload splices for generated enum cases.** An enum-body `#for`
-today generates `case #{c.name}` with fixed-type payloads: the name
-mirrors the source case, its payload does not. Mirroring payload types
-too (`case #{c.name}(#{c.param.type.name} p)`) would let one enum become
-a payload-preserving alias of another. It needs a splice form in
-enum-param type positions plus a payload-type member on the case
-binding — case bindings expose only `.name` today.
-
 **Trait-conformer iteration.** `META.types_with("attr")` collects types
 by attribute; the same mechanism could enumerate a trait's conformers
 (`META.conformers("Sendable")`) for registry- or vtable-style

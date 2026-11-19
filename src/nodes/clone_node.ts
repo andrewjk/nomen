@@ -536,6 +536,10 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_variadic = n.is_variadic;
 			c.is_ref = n.is_ref;
 			c.is_comptime_type = n.is_comptime_type;
+			// Case-payload splices ride the clone (enum-body arms are cloned per
+			// generated case, and the expansion resolves the templates after).
+			c.comptime_name = n.comptime_name;
+			c.comptime_type_template = n.comptime_type_template;
 			c.field_set = n.field_set?.slice();
 			c.field_set_span = n.field_set_span ? { ...n.field_set_span } : undefined;
 			c.is_variadic_tuple = n.is_variadic_tuple;

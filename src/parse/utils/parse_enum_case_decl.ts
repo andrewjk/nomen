@@ -13,12 +13,12 @@ import peek_current from "./peek_current.ts";
 /**
  * One `case` declaration inside an enum-body pragma arm —
  * `#for c of META.info(Shape).cases { case #{c.name} }`. The name is a
- * braced splice template or an ordinary word; optional payload params
- * spell with fixed types (`case #{c.name}(int code)` — payload splices
- * are not supported). The current token is `case`.
- *
- * Returns the node with `comptime_name` set when the name was a template
- * (the enum's expansion resolves it); callers push it onto the arm.
+ * braced splice template or an ordinary word; payload params spell with
+ * fixed types (`case #{c.name}(int code)`), with `#{...}` splices over the
+ * binding (`#{c.params[0]}` — the whole source param, type and name;
+ * `#{c.params[0].type}` in the type slot and `#{c.params[0].name}` in the
+ * name slot for custom shapes). The enum's expansion resolves the
+ * templates; callers push the node onto the arm.
  */
 export default function parse_enum_case_decl(status: ParseStatus): EnumCaseDeclNode {
 	const start = get_index(status);
@@ -39,16 +39,9 @@ export default function parse_enum_case_decl(status: ParseStatus): EnumCaseDeclN
 	const params: ParameterNode[] = [];
 	if (accept("(", status)) {
 		if (peek_current(status) !== ")") {
-			const param_start = get_index(status);
-			const param_type = new Type(consume(status));
-			const param_name = consume(status);
-			params.push(new ParameterNode(param_start, param_name, param_type));
-
+			params.push(parse_case_param(status));
 			while (accept(",", status)) {
-				const p_start = get_index(status);
-				const p_type = new Type(consume(status));
-				const p_name = consume(status);
-				params.push(new ParameterNode(p_start, p_name, p_type));
+				params.push(parse_case_param(status));
 			}
 		}
 		expect(")", status);
@@ -56,4 +49,32 @@ export default function parse_enum_case_decl(status: ParseStatus): EnumCaseDeclN
 	const node = new EnumCaseDeclNode(start, name, params);
 	node.comptime_name = comptime_name;
 	return node;
+}
+
+/** One payload param of an arm's `case` — fixed, spliced, or whole. */
+function parse_case_param(status: ParseStatus): ParameterNode {
+	const start = get_index(status);
+	const param = new ParameterNode(start, "");
+	// TYPE slot: a `#{...}` splice or an ordinary (single-word) type.
+	const type_splice = consume_comptime_name(status);
+	if (type_splice !== undefined) {
+		param.comptime_type_template = type_splice;
+	} else {
+		param.type = new Type(consume(status));
+	}
+	// NAME slot: a splice or a word. A type-slot splice followed by no name
+	// at all is the WHOLE-PARAM form — the source param's type AND name.
+	const name_splice = consume_comptime_name(status);
+	if (name_splice !== undefined) {
+		param.comptime_name = name_splice;
+	} else {
+		const next = peek_current(status);
+		if (next !== "," && next !== ")") {
+			param.name = consume(status);
+			if (!/^[A-Za-z_]\w*$/.test(param.name)) {
+				add_error(status, "expected a payload param name or `#{...}` splice", get_index(status));
+			}
+		}
+	}
+	return param;
 }

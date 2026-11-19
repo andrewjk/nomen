@@ -26,6 +26,7 @@ import IfElseNode from "../../nodes/IfElseNode.ts";
 import type IndexNode from "../../nodes/IndexNode.ts";
 import NestedBlockNode from "../../nodes/NestedBlockNode.ts";
 import OperationNode from "../../nodes/OperationNode.ts";
+import ParameterNode from "../../nodes/ParameterNode.ts";
 import PragmaForNode from "../../nodes/PragmaForNode.ts";
 import type StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
@@ -129,6 +130,9 @@ interface ComptimeField {
 	/** The folded value for value bindings (int/string kinds). */
 	int_value?: number;
 	string_value?: string;
+	/** Source-case payload params for case bindings (`META.info(E).cases`)
+	 *  — the deep payload splices resolve `#{c.params[i]}` against these. */
+	case_params?: { name: string; type: Type }[];
 }
 
 type ComptimeValue =
@@ -632,6 +636,7 @@ export function expand_pragma_for(
 				type_name: "enum",
 				index,
 				type_argument: iterable_type_argument(node.iterable),
+				case_params: c.params.map((p) => ({ name: p.name, type: p.type })),
 			};
 			const bindings = loop_bindings(node, binding);
 			const body = (node.block.statements ?? []).map((s) => clone_node(s));
@@ -1287,9 +1292,16 @@ function rewrite_binding_access(
 		if (wanted === "name") {
 			return comptime_string(node.start, field.name);
 		}
+		if (wanted === "param_count") {
+			// A comptime int: the case's payload arity (the deep payload
+			// splices index `#{c.params[i]}` within it).
+			const literal = new ValueNode(node.start, String(field.case_params?.length ?? 0));
+			literal.type = new Type("int", true);
+			return literal;
+		}
 		add_error(
 			status,
-			`case bindings expose .name — '#${binding}.${wanted}' is not a case member`,
+			`case bindings expose .name, .param_count and .params[i] — '#${binding}.${wanted}' is not a case member`,
 			access.access.start,
 		);
 		return node;
@@ -2090,22 +2102,26 @@ export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckSta
 			continue;
 		}
 		// Items for a case-generating loop: struct fields OR another
-		// enum's cases OR an attribute's type set — each contributes its
-		// NAME.
-		const items: { name: string }[] =
+		// enum's cases (with their payload params, for the deep splices)
+		// OR an attribute's type set — each contributes its NAME.
+		const items: { name: string; case_params?: { name: string; type: Type }[] }[] =
 			"struct" in resolved
 				? resolved.struct.fields.filter((f) => f.type && f.type.name).map((f) => ({ name: f.name }))
 				: "enum_node" in resolved
-					? resolved.enum_node.cases.map((c) => ({ name: c.name }))
+					? resolved.enum_node.cases.map((c) => ({
+							name: c.name,
+							case_params: c.params.map((p) => ({ name: p.name, type: p.type })),
+						}))
 					: resolved.type_names.map((name) => ({ name }));
 		const type_argument = iterable_type_argument(loop.iterable);
 		items.forEach((item, index) => {
 			const binding: ComptimeField = {
-				kind: "field",
+				kind: "case",
 				name: item.name,
-				type_name: "unknown",
+				type_name: "enum",
 				index,
 				type_argument,
+				case_params: item.case_params,
 			};
 			const bindings = loop_bindings(loop, binding);
 			for (const arm of loop.block.statements ?? []) {
@@ -2119,9 +2135,178 @@ export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckSta
 					add_error(status, "a generated case needs a resolvable name", cloned.start);
 					continue;
 				}
-				enum_node.cases.push({ name: cloned.name, params: cloned.params });
+				const params: ParameterNode[] = [];
+				let param_error = false;
+				for (const param of cloned.params) {
+					const resolved_param = resolve_case_param(param, bindings, status, cloned.start);
+					if (!resolved_param) {
+						param_error = true;
+						break;
+					}
+					params.push(resolved_param);
+				}
+				if (param_error) continue;
+				enum_node.cases.push({ name: cloned.name, params });
 			}
 		});
 	}
 	enum_node.member_pragmas = kept;
+}
+
+/**
+ * Deep payload splices: resolve one generated case's payload param. A
+ * param whose TYPE slot (or NAME slot, or both) is a `#{...}` splice folds
+ * against the case binding's source params; a param with no templates is
+ * the fixed payload the arm spelled. Returns undefined after reporting an
+ * error (the generated case is dropped).
+ *
+ *   #{c.params[0]}           -> the whole source param (type AND name)
+ *   #{c.params[0].type}      -> the source param's type
+ *   #{c.params[0].type.name} -> the source param's type name
+ *   #{c.params[0].name}      -> the source param's name
+ *
+ * A type slot resolving to a NAME string lowers to `new Type(name)`; a
+ * NAME slot needs a name (a whole-param or `.type` path there is an
+ * error, spelling what works).
+ */
+function resolve_case_param(
+	param: ParameterNode,
+	bindings: ComptimeBinding[],
+	status: CheckStatus,
+	start: number,
+): ParameterNode | undefined {
+	const type_template = param.comptime_type_template;
+	const name_template = param.comptime_name;
+	if (type_template === undefined && name_template === undefined) return param;
+
+	const whole = type_template !== undefined && name_template === undefined && param.name === "";
+	const eval_template = (
+		template: string,
+		slot: "type" | "name",
+	): { kind: "type"; type: Type } | { kind: "string"; text: string } | undefined => {
+		const value = eval_case_param_path(template, bindings, status, start);
+		if (!value) return undefined;
+		if (slot === "type") {
+			// A param or a type value carries the Type; a NAME string (from
+			// `.type.name`) lowers to that type name.
+			if (value.kind === "param") {
+				return { kind: "type", type: value.type };
+			}
+			if (value.kind === "type") return value;
+			return { kind: "type", type: new Type(value.text) };
+		}
+		if (value.kind === "string") return value;
+		add_error(
+			status,
+			`'${template}' resolves to a ${value.kind === "param" ? "param" : "type"} — the payload NAME slot needs #{c.params[i].name}`,
+			start,
+		);
+		return undefined;
+	};
+
+	if (whole) {
+		// The whole-param form: the path must land on a source param, whose
+		// type AND name are copied verbatim.
+		const value = eval_case_param_path(type_template!, bindings, status, start);
+		if (!value) return undefined;
+		if (value.kind === "param") {
+			return new ParameterNode(start, value.name, value.type);
+		}
+		add_error(
+			status,
+			`'${type_template!}' resolves to a ${value.kind === "string" ? "name" : "type"} — the whole-param splice is #{c.params[i]} (or spell the slots: #{c.params[i].type} #{c.params[i].name})`,
+			start,
+		);
+		return undefined;
+	}
+
+	let type = param.type;
+	let name = param.name;
+	if (type_template !== undefined) {
+		const value = eval_template(type_template, "type");
+		if (!value) return undefined;
+		type = value.kind === "type" ? value.type : new Type(value.text);
+	}
+	if (name_template !== undefined) {
+		const value = eval_template(name_template, "name");
+		if (!value) return undefined;
+		if (value.kind === "string") name = value.text;
+	}
+	return new ParameterNode(start, name, type);
+}
+
+/**
+ * Evaluate a case-payload splice path against the case binding's source
+ * params: `c.params[0]`, `c.params[0].name`, `c.params[0].type`,
+ * `c.params[0].type.name`. The path grammar is the dotted template path
+ * with one literal index per segment (`params[0]`); anything else is an
+ * error spelling the shapes that work.
+ */
+function eval_case_param_path(
+	template: string,
+	bindings: ComptimeBinding[],
+	status: CheckStatus,
+	start: number,
+):
+	| { kind: "param"; name: string; type: Type }
+	| { kind: "string"; text: string }
+	| { kind: "type"; type: Type }
+	| undefined {
+	const fail = (message: string): undefined => {
+		add_error(status, message, start);
+		return undefined;
+	};
+	// A payload splice is exactly one `#{path}` marker — glued literals
+	// would mangle the emitted type or name.
+	const unwrap = template.match(/^#\{(.+)\}$/);
+	if (!unwrap) {
+		return fail(
+			`'${template}' — a payload splice is a single '#{...}' path over the binding (#{c.params[i]}, #{c.params[i].type}, #{c.params[i].name})`,
+		);
+	}
+	const segments = unwrap[1].split(".");
+	const head = segments[0];
+	const binding = bindings.findLast((b) => b.binding === head);
+	if (!binding || binding.field.kind !== "case" || !binding.field.case_params) {
+		return fail(
+			`'${template}' — payload splices iterate META.info(E).cases; a case binding exposes .name, .param_count and .params[i]`,
+		);
+	}
+	if (segments[1] === undefined || !segments[1].startsWith("params")) {
+		return fail(
+			`'${template}' — a case binding exposes .name, .param_count and .params[i]; payload splices index the params: #{${head}.params[0]}`,
+		);
+	}
+	const params_match = segments[1].match(/^params\[(\d+)\]$/);
+	if (!params_match) {
+		return fail(
+			`'${template}' — payload splices index the params with a literal: #{${head}.params[0]}`,
+		);
+	}
+	const index = parseInt(params_match[1], 10);
+	const source_param = binding.field.case_params[index];
+	if (!source_param) {
+		return fail(
+			`'${template}' — case '${binding.field.name}' has ${binding.field.case_params.length} payload param(s); params[${index}] is out of range`,
+		);
+	}
+	const rest = segments.slice(2);
+	if (rest.length === 0) {
+		return { kind: "param", name: source_param.name, type: source_param.type };
+	}
+	if (rest[0] !== "type" && rest[0] !== "name") {
+		return fail(
+			`'${template}' — a payload param exposes .name and .type (.type.name); not '.${rest[0]}'`,
+		);
+	}
+	if (rest[0] === "name") {
+		if (rest.length > 1) return fail(`'${template}' — a payload param's name has no members`);
+		return { kind: "string", text: source_param.name };
+	}
+	// .type or .type.name — the param's type (a single-word payload type
+	// today, so both spellings carry the same Type).
+	if (rest.length > 1 && rest[1] !== "name") {
+		return fail(`'${template}' — a payload param's type exposes .name; not '.${rest[1]}'`);
+	}
+	return { kind: "type", type: source_param.type };
 }

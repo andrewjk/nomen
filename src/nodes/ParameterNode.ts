@@ -44,6 +44,17 @@ export default class ParameterNode extends BaseNode {
 	 * At the call site, consecutive arguments are grouped into tuples.
 	 */
 	is_variadic_tuple?: boolean;
+	/**
+	 * Case-payload splices (enum-body `#for` arms): a generated case's
+	 * payload param may spell its TYPE and/or NAME as `#{...}` templates
+	 * over the loop binding — `case #{c.name}(#{c.params[0].type.name}
+	 * #{c.params[0].name})`, or the whole param at once
+	 * (`case #{c.name}(#{c.params[0]})` — the type slot splice with no
+	 * name slot). The enum's expansion resolves both through the binding's
+	 * source-case params. `name` stays "" until then.
+	 */
+	comptime_name?: string;
+	comptime_type_template?: string;
 	func_params?: ParameterNode[];
 	func_return_type?: Type;
 	/**
