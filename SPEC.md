@@ -3352,6 +3352,37 @@ field or a method is an error, and a loop over an unbound type parameter
 is an error (struct-scope reflection cannot defer — there is no
 specialization to re-check a type body).
 
+A `#for` arm may itself contain a nested `#for` — a member loop inside a
+generated type's body, or a body loop inside another loop's arm. The outer
+expansion leaves the nested loop's arm for the loop's OWN expansion (its
+templates resolve against the inner binding, not the outer one) and folds
+only its iterable — which may reference the outer binding
+(`META.info(#t).fields`). Inner arms can reference outer bindings too; the
+fold resolves each dotted path against the active bindings, innermost
+first:
+
+```
+struct Base {
+    var width = 0
+}
+
+#for w of META.info(Base).fields {
+    mv struct S_#{w.name} {
+        #for f of META.info(Base).fields {
+            var #{f.name} = 0
+            pub func describe_#{f.name} = (out string) {
+                return w.name + "/" + f.name
+            }
+        }
+    }
+}
+```
+
+Each generated `S_#{w.name}` mirrors `Base`'s fields, and its generated
+methods compose the outer and inner bindings (`describe_width` returns
+`"width/width"`). The same composition works for enum-body case loops and
+for body-scope loops nested in an arm (`#w` and `#i` fold per level).
+
 ### Compile-Time Iterables (`#for` over ranges and tables)
 
 Beyond struct fields, `#for` iterates comptime ranges — exclusive end,

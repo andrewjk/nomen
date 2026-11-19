@@ -149,6 +149,13 @@ file-scope declaration before check runs, so `META.info(T)` and
   (`substitute_pragma_iterables`) and re-checks the clone, expanding then.
   Mono-struct method clones are never re-checked — their loops expand in
   the clone hook (`expand_pragma_fors_in_list`).
+- **Nested loops defer to their own expansion.** A `#for` inside another
+  loop's arm (a member loop in a generated type's body, or a body loop in
+  an arm) is left alone by the outer rewrite — only its ITERABLE is folded
+  (it may reference the outer binding, `META.info(#t).fields`) and the
+  enclosing bindings are stamped on it (`outer_bindings`). The inner
+  expansion resolves inner templates against the inner binding and outer
+  references through the stamped stack (innermost first).
 - **Struct/trait/enum bodies expand at the type's own check** (member
   pragmas), before members are processed, so the auto `#init` can be
   re-synthesized over the final field list.

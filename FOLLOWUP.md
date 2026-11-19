@@ -666,7 +666,7 @@ and double-launch.
 
 ## Declaration/type generation (stage 6)
 
-Three ideas surfaced by the stage-6 work, none scheduled.
+Two ideas surfaced by the stage-6 work, neither scheduled.
 
 **Deep payload splices for generated enum cases.** An enum-body `#for`
 today generates `case #{c.name}` with fixed-type payloads: the name
@@ -675,25 +675,6 @@ too (`case #{c.name}(#{c.param.type.name} p)`) would let one enum become
 a payload-preserving alias of another. It needs a splice form in
 enum-param type positions plus a payload-type member on the case
 binding — case bindings expose only `.name` today.
-
-**Nested `#for` inside a generated type body.** A file-scope loop's
-rewrite walks the whole cloned arm, including `#for` member loops nested
-inside a `#{...}`-generated struct/enum body, and resolves their
-`#{inner.name}` templates against the OUTER binding. This:
-
-```
-struct S_#{w} {
-    #for f of META.info(Base).fields {
-        pub var #{f.name} = 0
-    }
-}
-```
-
-fails with "`#f.name` must be a dotted path over the `#for` binding
-(`w`)" (verified 2026-11-19 — pre-existing, same for enums). Fixing it
-needs the rewrite to skip a nested loop's arm body (deferring it to the
-inner expansion) while still rewriting its iterable — and a binding stack
-if outer references inside inner bodies are to compose too.
 
 **Trait-conformer iteration.** `META.types_with("attr")` collects types
 by attribute; the same mechanism could enumerate a trait's conformers

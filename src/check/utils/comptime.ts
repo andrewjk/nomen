@@ -136,6 +136,14 @@ type ComptimeValue =
 	| { kind: "string"; value: string }
 	| { kind: "int"; value: number };
 
+/** One active `#for` binding: the loop's binding name plus its comptime
+ *  value. Nested loops stack — an arm may reference an enclosing loop's
+ *  binding, so the rewrite walks the stack innermost-first. */
+interface ComptimeBinding {
+	binding: string;
+	field: ComptimeField;
+}
+
 type IterableResolution =
 	| { struct: StructNode }
 	| { enum_node: EnumNode }
@@ -156,19 +164,26 @@ export interface MemberHost {
  * either a bare dotted path (`field.name`) or a template of literal text
  * with `#{path}` markers (`get_#{field.name}`, `#{field.name}_handler`,
  * `pre_#{field.name}_post`). Each dotted path is rebuilt as an expression
- * over the binding, run through the ordinary substitution rewrite, and
- * must fold to a comptime string; the pieces concatenate into the
- * member's real name.
+ * over its binding, run through the ordinary substitution rewrite, and must
+ * fold to a comptime string; the pieces concatenate into the member's real
+ * name. A path may root at ANY active binding — nested loops stack, and the
+ * innermost binding whose name matches folds the path.
  */
 export function resolve_comptime_name(
 	template: string,
-	binding: string,
-	field: ComptimeField,
+	bindings: ComptimeBinding[],
 	status: CheckStatus,
 	start: number,
 ): string | undefined {
 	const fold_path = (path: string): string | undefined => {
 		const segments = path.split(".");
+		const matched = bindings.findLast((b) => b.binding === segments[0]) ?? bindings.at(-1);
+		if (!matched) {
+			add_error(status, `'#${path}' must be a dotted path over an active '#for' binding`, start);
+			return undefined;
+		}
+		const binding = matched.binding;
+		const field = matched.field;
 		if (segments.length === 1 && segments[0] === binding) {
 			// The binding itself — a VALUE binding (range index, table
 			// string) stringifies into the name. Field bindings have no
@@ -188,7 +203,11 @@ export function resolve_comptime_name(
 		if (segments.length < 2 || segments[0] !== binding) {
 			add_error(
 				status,
-				`'#${path}' must be a dotted path over the '#for' binding ('${binding}.name')`,
+				bindings.length === 1
+					? `'#${path}' must be a dotted path over the '#for' binding ('${binding}.name')`
+					: `'#${path}' must be a dotted path over an active '#for' binding (${bindings
+							.map((b) => `'${b.binding}.name'`)
+							.join(" or ")})`,
 				start,
 			);
 			return undefined;
@@ -197,7 +216,7 @@ export function resolve_comptime_name(
 		for (let i = 1; i < segments.length; i++) {
 			expr = new AccessNode(start, expr, new AccessFieldNode(start, segments[i]));
 		}
-		const rewritten = rewrite(expr, false, binding, field, status);
+		const rewritten = rewrite(expr, false, bindings, status);
 		const text = literal_string(rewritten);
 		if (text === undefined) {
 			add_error(status, `'#${path}' must fold to a comptime string`, start);
@@ -217,6 +236,16 @@ export function resolve_comptime_name(
 	}
 	out += template.slice(last);
 	return out;
+}
+
+/** The binding stack a loop's expansion resolves against: the enclosing
+ *  bindings stamped by the outer rewrite, then the loop's own (innermost). */
+function loop_bindings(
+	loop: { binding: string; outer_bindings?: { binding: string; field: unknown }[] },
+	field: ComptimeField,
+): ComptimeBinding[] {
+	const outer = (loop.outer_bindings ?? []) as { binding: string; field: ComptimeField }[];
+	return [...outer, { binding: loop.binding, field }];
 }
 
 /**
@@ -274,9 +303,10 @@ export function expand_struct_member_pragmas(host: MemberHost, status: CheckStat
 				type_argument,
 				attrs: item.attrs,
 			};
+			const bindings = loop_bindings(loop, field);
 			for (const arm of loop.block.statements ?? []) {
 				const cloned = clone_node(arm);
-				for (const member of rewrite_statement(cloned, loop.binding, field, status)) {
+				for (const member of rewrite_statement(cloned, bindings, status)) {
 					distribute_member(member, host, status);
 					// A generated METHOD may reflect on the conformer it lands
 					// on (`META.info(#self).name`) — bind `Self` to the host's
@@ -465,10 +495,11 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 				type_argument: "",
 				string_value: entry,
 			};
+			const bindings = loop_bindings(node, binding);
 			const body = (node.block.statements ?? []).map((s) => clone_node(s));
 			const rewritten: BaseNode[] = [];
 			for (const stmt of body) {
-				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+				rewritten.push(...rewrite_statement(stmt, bindings, status));
 			}
 			for (const s of rewritten) {
 				s.spawn_of = node.start;
@@ -500,10 +531,11 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 				type_argument: "",
 				int_value: i,
 			};
+			const bindings = loop_bindings(node, binding);
 			const body = (node.block.statements ?? []).map((s) => clone_node(s));
 			const rewritten: BaseNode[] = [];
 			for (const stmt of body) {
-				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+				rewritten.push(...rewrite_statement(stmt, bindings, status));
 			}
 			for (const s of rewritten) {
 				s.spawn_of = node.start;
@@ -533,10 +565,11 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 				index,
 				type_argument: type_name,
 			};
+			const bindings = loop_bindings(node, binding);
 			const body = (node.block.statements ?? []).map((s) => clone_node(s));
 			const rewritten: BaseNode[] = [];
 			for (const stmt of body) {
-				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+				rewritten.push(...rewrite_statement(stmt, bindings, status));
 			}
 			for (const s of rewritten) {
 				s.spawn_of = node.start;
@@ -559,10 +592,11 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 				index,
 				type_argument: iterable_type_argument(node.iterable),
 			};
+			const bindings = loop_bindings(node, binding);
 			const body = (node.block.statements ?? []).map((s) => clone_node(s));
 			const rewritten: BaseNode[] = [];
 			for (const stmt of body) {
-				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+				rewritten.push(...rewrite_statement(stmt, bindings, status));
 			}
 			for (const s of rewritten) {
 				s.spawn_of = node.start;
@@ -606,10 +640,11 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 			attrs: (f as unknown as { attrs?: AttributeMeta[] }).attrs,
 			type_value: reflect_type,
 		};
+		const bindings = loop_bindings(node, field);
 		const body = (node.block.statements ?? []).map((s) => clone_node(s));
 		const rewritten: BaseNode[] = [];
 		for (const stmt of body) {
-			rewritten.push(...rewrite_statement(stmt, node.binding, field, status));
+			rewritten.push(...rewrite_statement(stmt, bindings, status));
 		}
 		for (const s of rewritten) {
 			// R7: point diagnostics from generated code at the `#for`.
@@ -770,8 +805,7 @@ export function expand_pragma_fors_in_list(statements: BaseNode[], status: Check
  */
 function rewrite_statement(
 	stmt: BaseNode,
-	binding: string,
-	field: ComptimeField,
+	bindings: ComptimeBinding[],
 	status: CheckStatus,
 ): BaseNode[] {
 	// A comptime-constant `if` folds to its live arm — but the condition is
@@ -781,7 +815,7 @@ function rewrite_statement(
 	// with the dead-arm skip the runtime `if` path can't do.
 	if (stmt.node_type === "if") {
 		const if_else = stmt as IfElseNode;
-		if_else.condition = rewrite(if_else.condition, false, binding, field, status);
+		if_else.condition = rewrite(if_else.condition, false, bindings, status);
 		const folded = evaluate_comptime(if_else.condition);
 		if (folded && folded.kind === "bool") {
 			const arm = folded.value
@@ -789,12 +823,12 @@ function rewrite_statement(
 				: (if_else.else_branch ?? { statements: [] as BaseNode[] });
 			const out: BaseNode[] = [];
 			for (const inner of arm.statements ?? []) {
-				out.push(...rewrite_statement(inner, binding, field, status));
+				out.push(...rewrite_statement(inner, bindings, status));
 			}
 			return out;
 		}
 	}
-	const replaced = rewrite(stmt, true, binding, field, status);
+	const replaced = rewrite(stmt, true, bindings, status);
 	if (replaced !== stmt) return [replaced];
 	return [stmt];
 }
@@ -804,13 +838,14 @@ function rewrite_statement(
  * returns a replacement node when the whole node rewrites (a `field.*`
  * chain becomes a literal/access/assignment). Statement-position is
  * tracked so `field.set(obj, v)` is only accepted where an assignment is
- * legal.
+ * legal. `bindings` is the ACTIVE binding stack — the loop being expanded
+ * innermost, plus every enclosing loop's binding (stamped on a nested
+ * `#for` by its outer rewrite) — and each lookup walks it innermost-first.
  */
 function rewrite(
 	node: BaseNode,
 	statement_position: boolean,
-	binding: string,
-	field: ComptimeField,
+	bindings: ComptimeBinding[],
 	status: CheckStatus,
 ): BaseNode {
 	// A `#`-spliced comptime NAME or TYPE resolves here, on ANY carrier —
@@ -820,13 +855,7 @@ function rewrite(
 	// the parser's empty-placeholder name/type before checking.
 	const comptime_named = node as unknown as { comptime_name?: string };
 	if (comptime_named.comptime_name !== undefined) {
-		const name = resolve_comptime_name(
-			comptime_named.comptime_name,
-			binding,
-			field,
-			status,
-			node.start,
-		);
+		const name = resolve_comptime_name(comptime_named.comptime_name, bindings, status, node.start);
 		(node as unknown as { name: string }).name = name ?? "";
 		if (node.node_type === "extend") {
 			// The body's `self` parameters were typed at parse time, before
@@ -847,20 +876,35 @@ function rewrite(
 	if (comptime_typed.comptime_type_template !== undefined) {
 		const type_name = resolve_comptime_name(
 			comptime_typed.comptime_type_template,
-			binding,
-			field,
+			bindings,
 			status,
 			node.start,
 		);
 		comptime_typed.type = new Type(type_name ?? "");
 	}
-	// Comptime TYPE expressions rooted at the binding — `field.type`,
+	// A nested `#for` — a member loop inside a generated type's body, or a
+	// body loop inside this arm. Its ITERABLE may reference an enclosing
+	// binding (`META.info(#t).fields`) — rewrite it — but its arm body
+	// belongs to the loop's OWN expansion (at the generated type's check,
+	// or when the walk reaches the spliced block): resolving the inner
+	// templates here would fold them against THIS loop's binding (the
+	// "`#f.name` must be a dotted path over the `#for` binding" failure).
+	// Stamp the enclosing stack so the inner expansion folds outer
+	// references too.
+	if (node.node_type === "pragma_for") {
+		const loop = node as PragmaForNode;
+		loop.iterable = rewrite(loop.iterable, false, bindings, status);
+		loop.outer_bindings = bindings.map((b) => ({ binding: b.binding, field: b.field }));
+		return node;
+	}
+	// Comptime TYPE expressions rooted at a field binding — `field.type`,
 	// `.name`, `.arg_count`, `.args[i]`, recursively (`.args[0].args[0]`).
 	// Resolved before the generic descent, whose bare `.type` link would
 	// error. Binding members (`.name` of the FIELD, `.get`, `.is_struct`)
 	// are separate, below.
-	if (field.kind === "field" && (node.node_type === "index" || node.node_type === "access")) {
-		const resolved = resolve_type_member(node, binding, field.type_value);
+	const field_binding = bindings.findLast((b) => b.field.kind === "field");
+	if (field_binding && (node.node_type === "index" || node.node_type === "access")) {
+		const resolved = resolve_type_member(node, bindings);
 		if (resolved) {
 			if (resolved.kind === "error") {
 				add_error(status, resolved.error, resolved.error_start ?? node.start);
@@ -886,12 +930,16 @@ function rewrite(
 				}
 				add_error(
 					status,
-					`#for: '${binding}.type' is only valid as .name, .arg_count or .args[i]`,
+					`#for: '${field_binding.binding}.type' is only valid as .name, .arg_count or .args[i]`,
 					node.start,
 				);
 				return node;
 			}
-			add_error(status, `#for: '${binding}.type.args' must be indexed — args[0]`, node.start);
+			add_error(
+				status,
+				`#for: '${field_binding.binding}.type.args' must be indexed — args[0]`,
+				node.start,
+			);
 			return node;
 		}
 	}
@@ -914,61 +962,70 @@ function rewrite(
 		) {
 			const args = ((target as AccessNode).access as AccessFunctionCallNode).params ?? [];
 			const arg = unwrap_grouped(args[0]);
-			if (
-				args.length === 1 &&
-				arg.node_type === "value" &&
-				(arg as ValueNode).value === field.type_argument
-			) {
+			const matched =
+				args.length === 1 && arg.node_type === "value"
+					? bindings.findLast((b) => (arg as ValueNode).value === b.field.type_argument)
+					: undefined;
+			if (matched) {
 				if ((access.access as AccessFieldNode).name === "name") {
-					return comptime_string(node.start, field.type_name);
+					return comptime_string(node.start, matched.field.type_name);
 				}
 				const count = status.structs
-					.findLast((s) => s.name === field.type_name)
+					.findLast((s) => s.name === matched.field.type_name)
 					?.fields.filter((f) => f.type && f.type.name).length;
 				const literal = new ValueNode(node.start, String(count ?? 0));
 				literal.type = new Type("int", true);
 				return literal;
 			}
 		}
-		if (target.node_type === "value" && (target as ValueNode).value === binding) {
-			if (field.kind === "int" || field.kind === "string") {
-				add_error(
-					status,
-					`'#${binding}' is the comptime value — value bindings have no members`,
-					access.access.start,
-				);
-				return node;
+		if (target.node_type === "value") {
+			const matched = bindings.findLast((b) => (target as ValueNode).value === b.binding);
+			if (matched) {
+				if (matched.field.kind === "int" || matched.field.kind === "string") {
+					add_error(
+						status,
+						`'#${matched.binding}' is the comptime value — value bindings have no members`,
+						access.access.start,
+					);
+					return node;
+				}
+				return rewrite_binding_access(node, access, statement_position, bindings, matched, status);
 			}
-			return rewrite_binding_access(node, access, statement_position, binding, field, status);
 		}
 	}
 	if (node.node_type === "value") {
 		const value = (node as ValueNode).value;
-		if (value === "#" + binding && field.kind === "type") {
+		const marked = bindings.findLast((b) => value === "#" + b.binding);
+		if (marked && marked.field.kind === "type") {
 			// `META.info(#t)` / `#t` — the type binding folds to the plain
 			// type-name word the rest of the comptime machinery expects.
-			return new ValueNode(node.start, field.type_name);
+			return new ValueNode(node.start, marked.field.type_name);
 		}
-		if (value === "#" + binding && (field.kind === "int" || field.kind === "string")) {
+		if (marked && (marked.field.kind === "int" || marked.field.kind === "string")) {
 			// A comptime VALUE binding in expression position (`#i`) — folds
 			// to its literal.
-			if (field.kind === "int") {
-				const literal = new ValueNode(node.start, String(field.int_value ?? 0));
+			if (marked.field.kind === "int") {
+				const literal = new ValueNode(node.start, String(marked.field.int_value ?? 0));
 				literal.type = new Type("int", true);
 				return literal;
 			}
-			return comptime_string(node.start, field.string_value ?? "");
+			return comptime_string(node.start, marked.field.string_value ?? "");
 		}
-		if (value === binding) {
-			if (field.kind === "int" || field.kind === "string" || field.kind === "type") {
+		const bare = bindings.findLast((b) => value === b.binding);
+		if (bare) {
+			if (bare.field.kind === "int" || bare.field.kind === "string" || bare.field.kind === "type") {
 				add_error(
 					status,
-					`'#${binding}' is the comptime value — use '#${binding}' in expressions and '#{${binding}}' in names`,
+					`'#${bare.binding}' is the comptime value — use '#${bare.binding}' in expressions and '#{${bare.binding}}' in names`,
 					node.start,
 				);
 				return node;
 			}
-			add_error(status, `#for binding '${binding}' used without .name, .get or .set`, node.start);
+			add_error(
+				status,
+				`#for binding '${bare.binding}' used without .name, .get or .set`,
+				node.start,
+			);
 			return node;
 		}
 	}
@@ -978,8 +1035,8 @@ function rewrite(
 	// literal. Runtime concat (any non-literal operand) is left alone.
 	if (node.node_type === "op") {
 		const op = node as OperationNode;
-		op.left_value = rewrite(op.left_value, false, binding, field, status);
-		op.right_value = rewrite(op.right_value, false, binding, field, status);
+		op.left_value = rewrite(op.left_value, false, bindings, status);
+		op.right_value = rewrite(op.right_value, false, bindings, status);
 		if (op.op === "+") {
 			const left = literal_string(op.left_value);
 			const right = literal_string(op.right_value);
@@ -1003,21 +1060,15 @@ function rewrite(
 				const out: BaseNode[] = [];
 				for (const item of value as BaseNode[]) {
 					if (is_statement_list) {
-						out.push(...rewrite_statement(item, binding, field, status));
+						out.push(...rewrite_statement(item, bindings, status));
 					} else {
-						out.push(rewrite(item, false, binding, field, status));
+						out.push(rewrite(item, false, bindings, status));
 					}
 				}
 				(node as unknown as Record<string, unknown>)[key] = out;
 			}
 		} else if (is_ast_node(value)) {
-			(node as unknown as Record<string, unknown>)[key] = rewrite(
-				value,
-				false,
-				binding,
-				field,
-				status,
-			);
+			(node as unknown as Record<string, unknown>)[key] = rewrite(value, false, bindings, status);
 		}
 	}
 	return node;
@@ -1074,7 +1125,7 @@ function is_scalar_type_name(name: string): boolean {
 }
 
 /**
- * Resolve a comptime TYPE expression rooted at the binding's field type:
+ * Resolve a comptime TYPE expression rooted at an active FIELD binding:
  *
  *   field.type                -> { type }
  *   field.type.name           -> { string }   (the type's name)
@@ -1083,14 +1134,15 @@ function is_scalar_type_name(name: string): boolean {
  *   field.type.args[i]        -> { type }     (the i-th argument)
  *   ...recursively: field.type.args[0].args[0], .name, .arg_count
  *
- * Returns undefined for expressions not rooted at `field.type` (ordinary
- * user expressions fall through untouched). Structural problems come back
- * as `error` (with the offending start) for the caller to report.
+ * The base is whichever ACTIVE binding the path roots at (innermost first —
+ * a nested loop's binding shadows an enclosing one). Returns undefined for
+ * expressions not rooted at a binding (ordinary user expressions fall
+ * through untouched). Structural problems come back as `error` (with the
+ * offending start) for the caller to report.
  */
 function resolve_type_member(
 	node: BaseNode,
-	binding: string,
-	field_type: Type | undefined,
+	bindings: ComptimeBinding[],
 ):
 	| { kind: "type"; type?: Type }
 	| { kind: "list"; items: Type[]; name?: string }
@@ -1102,7 +1154,7 @@ function resolve_type_member(
 	if (!n) return undefined;
 	if (n.node_type === "index") {
 		const index = n as IndexNode;
-		const target = resolve_type_member(index.target, binding, field_type);
+		const target = resolve_type_member(index.target, bindings);
 		if (!target) return undefined;
 		if (target.kind === "error") return target;
 		if (target.kind !== "list") {
@@ -1110,18 +1162,20 @@ function resolve_type_member(
 		}
 		const folded = evaluate_comptime(index.index);
 		if (!folded || folded.kind !== "int") {
+			const owner = bindings.findLast((b) => b.field.kind === "field");
 			return {
 				kind: "error",
-				error: `#for: '${binding}.type.args[...]' needs a comptime int index`,
+				error: `#for: '${owner?.binding ?? "field"}.type.args[...]' needs a comptime int index`,
 				error_start: index.index?.start ?? n.start,
 			};
 		}
 		const items = target.items ?? [];
 		const at = folded.value;
 		if (at < 0 || at >= items.length) {
+			const owner = bindings.findLast((b) => b.field.kind === "field");
 			return {
 				kind: "error",
-				error: `#for: '${binding}.type.args[${at}]' out of range — type '${
+				error: `#for: '${owner?.binding ?? "field"}.type.args[${at}]' out of range — type '${
 					target.name ?? "?"
 				}' has ${items.length} argument(s)`,
 				error_start: n.start,
@@ -1134,12 +1188,17 @@ function resolve_type_member(
 	if (access.access.node_type !== "access_field") return undefined;
 	const member = (access.access as AccessFieldNode).name;
 	const target = unwrap_grouped(access.target);
-	if (target.node_type === "value" && (target as ValueNode).value === binding) {
-		// The base: `field.type`.
-		if (member !== "type") return undefined;
-		return { kind: "type", type: field_type };
+	if (target.node_type === "value") {
+		const matched = bindings.findLast((b) => (target as ValueNode).value === b.binding);
+		if (matched) {
+			// The base: `<binding>.type` (a field-kind binding only — value
+			// bindings have no `.type` expression).
+			if (member !== "type") return undefined;
+			if (matched.field.kind !== "field") return undefined;
+			return { kind: "type", type: matched.field.type_value };
+		}
 	}
-	const inner = resolve_type_member(access.target, binding, field_type);
+	const inner = resolve_type_member(access.target, bindings);
 	if (!inner) return undefined;
 	if (inner.kind === "error") return inner;
 	if (inner.kind !== "type") return undefined;
@@ -1154,10 +1213,12 @@ function rewrite_binding_access(
 	node: BaseNode,
 	access: AccessNode,
 	statement_position: boolean,
-	binding: string,
-	field: ComptimeField,
+	bindings: ComptimeBinding[],
+	matched: ComptimeBinding,
 	status: CheckStatus,
 ): BaseNode {
+	const binding = matched.binding;
+	const field = matched.field;
 	if (field.kind === "case" && access.access.node_type === "access_field") {
 		// Case bindings expose their NAME — everything else is an error
 		// pointing at the spelling that works.
@@ -1227,7 +1288,7 @@ function rewrite_binding_access(
 			// field.get(obj) -> obj.<field> — an ordinary field access. The
 			// argument is re-walked: it may itself use the binding
 			// (`field.get(field.get(inner))`) or fold comptime strings.
-			const arg = rewrite(clone_node(unwrap_grouped(args[0])), false, binding, field, status);
+			const arg = rewrite(clone_node(unwrap_grouped(args[0])), false, bindings, status);
 			return new AccessNode(node.start, arg, new AccessFieldNode(access.access.start, field.name));
 		}
 		if (call.name === "set" && args.length === 2) {
@@ -1245,7 +1306,7 @@ function rewrite_binding_access(
 			// or a comptime concat) must rewrite too, not just the statement's
 			// top level.
 			const target = clone_node(unwrap_grouped(args[0]));
-			const value = rewrite(clone_node(unwrap_grouped(args[1])), false, binding, field, status);
+			const value = rewrite(clone_node(unwrap_grouped(args[1])), false, bindings, status);
 			return new AssignmentNode(
 				node.start,
 				new AccessNode(node.start, target, new AccessFieldNode(access.access.start, field.name)),
@@ -1946,11 +2007,12 @@ export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckSta
 				index,
 				type_argument,
 			};
+			const bindings = loop_bindings(loop, binding);
 			for (const arm of loop.block.statements ?? []) {
 				const cloned = clone_node(arm) as EnumCaseDeclNode;
 				const splice = cloned.comptime_name;
 				if (splice !== undefined) {
-					const name = resolve_comptime_name(splice, loop.binding, binding, status, cloned.start);
+					const name = resolve_comptime_name(splice, bindings, status, cloned.start);
 					cloned.name = name ?? "";
 				}
 				if (!cloned.name) {

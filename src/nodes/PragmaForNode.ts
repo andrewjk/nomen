@@ -20,11 +20,22 @@ import NestedBlockNode from "./NestedBlockNode.ts";
  *
  * `spawn_of` (R7) is stamped on every cloned statement so diagnostics can
  * point from generated code back at the `#for` that produced it.
+ *
+ * A loop nested inside another loop's expansion arm (a member loop in a
+ * generated type's body, or a body loop inside an arm) carries
+ * `outer_bindings` — the enclosing bindings stamped by the outer rewrite.
+ * The outer walk leaves the nested arm alone (its templates resolve against
+ * the OUTER binding otherwise), and the loop's own expansion folds
+ * references to the enclosing bindings through the stack.
  */
 export default class PragmaForNode extends BaseNode {
 	binding: string;
 	iterable: BaseNode;
 	block: NestedBlockNode;
+	/** Enclosing `#for` bindings (`binding` + its comptime value), stamped
+	 *  when an outer expansion's rewrite reaches this loop. Loose-typed —
+	 *  the comptime value shapes are the checker's (`ComptimeField`). */
+	outer_bindings?: { binding: string; field: unknown }[];
 
 	constructor(start: number, binding: string, iterable: BaseNode, block?: NestedBlockNode) {
 		super("pragma_for", start);

@@ -648,6 +648,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 				clone_node(n.iterable),
 				new NestedBlockNode(n.block.start, (n.block.statements ?? []).map(clone_node)),
 			);
+			// Enclosing bindings stamped by an outer expansion's rewrite ride
+			// the clone (a cloned nested loop keeps its composition stack).
+			c.outer_bindings = n.outer_bindings;
 			return c;
 		}
 		default: {
