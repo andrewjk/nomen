@@ -3363,6 +3363,19 @@ in expressions (folds to the int literal) and `#{i}` in name templates
 
 Bounds must be comptime ints. An empty range (`5..5`) generates nothing.
 
+Tables iterate comptime string lists — the binding is a string VALUE
+(`#word` in expressions, `#{word}` in name templates):
+
+```
+#for word of ["get", "post"] {
+    pub func handle_#{word} = (out string) {
+        return "handled " + #word
+    }
+}
+```
+
+Table entries must fold to comptime strings.
+
 A generated field participates in the struct like a hand-written one —
 the constructor covers it when it has no default. A member that is not a
 field or a method is an error, and a loop over an unbound type parameter

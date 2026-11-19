@@ -367,6 +367,46 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 	// range-for semantics. The binding is an int VALUE: `#i` in
 	// expressions, `#{i}` in name templates.
 	const iterable_node = unwrap_grouped(node.iterable);
+	if (iterable_node.node_type === "array") {
+		// Table iterables: `#for w of ["get", "post", "delete"]` — every
+		// entry folds to a comptime string; the binding is a string VALUE
+		// (`#w` in expressions, `#{w}` in name templates).
+		const entries: string[] = [];
+		for (const v of (iterable_node as import("../../nodes/ArrayValuesNode.ts").default).values) {
+			const folded = evaluate_comptime(v);
+			if (!folded || folded.kind !== "string") {
+				add_error(
+					status,
+					`#for over a table needs comptime string entries — #for w of ["a", "b"]`,
+					iterable_node.start,
+				);
+				return [];
+			}
+			entries.push(folded.value);
+		}
+		const iterations: BaseNode[] = [];
+		for (const entry of entries) {
+			const binding: ComptimeField = {
+				kind: "string",
+				name: node.binding,
+				type_name: "string",
+				index: iterations.length,
+				type_argument: "",
+				string_value: entry,
+			};
+			const body = (node.block.statements ?? []).map((s) => clone_node(s));
+			const rewritten: BaseNode[] = [];
+			for (const stmt of body) {
+				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+			}
+			for (const s of rewritten) {
+				s.spawn_of = node.start;
+			}
+			fold_generated_member_pragmas(rewritten, status);
+			iterations.push(new NestedBlockNode(node.block.start, rewritten));
+		}
+		return iterations;
+	}
 	if (iterable_node.node_type === "range") {
 		const range = iterable_node as import("../../nodes/RangeNode.ts").default;
 		const start_v = evaluate_comptime(range.left_value);

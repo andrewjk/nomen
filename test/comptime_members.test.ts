@@ -289,6 +289,40 @@ pub func main = () {
 	);
 });
 
+test("string tables generate per-word handlers", async () => {
+	await build_and_check_output(
+		`
+import System
+
+#for word of ["get", "post"] {
+	pub func handle_#{word} = (out string) {
+		return "handled " + #word
+	}
+}
+
+pub func main = () {
+	Console.write_line(handle_get())
+	Console.write_line(handle_post())
+}
+`,
+		"comptime_table",
+		"handled get\nhandled post\n",
+		true,
+		{ js: true },
+	);
+});
+
+test("table entries must be comptime strings", () => {
+	const errors = compile_module(`
+		func f = (int n) {
+			#for w of [1, 2] {
+				var x = #w
+			}
+		}
+	`);
+	expect(errors.some((e) => e.message.includes("needs comptime string entries"))).toBe(true);
+});
+
 test("a malformed splice is a compile error", () => {
 	const errors = compile_module(`
 		pub struct Base {
