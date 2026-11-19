@@ -238,9 +238,10 @@ export default function clone_node(node: BaseNode): BaseNode {
 			// owning copy of the aliased slot (a value init from the slot_ptr
 			// call on C; a double-free at scope exit on aarch64).
 			c.is_ref_binding = n.is_ref_binding;
-			// A `$`-spliced comptime name rides the clone (member/type
+			// A `#`-spliced comptime name/type rides the clone (member/type
 			// generation re-resolves it per iteration).
 			c.comptime_name = n.comptime_name;
+			c.comptime_type_template = n.comptime_type_template;
 			return c;
 		}
 		case "assign": {
@@ -465,6 +466,12 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.type_param_bounds = n.type_param_bounds.map((bounds) => bounds.slice());
 			c.is_generic = n.is_generic;
+			// Declared ownership/class stamps ride the clone: a `#for` arm's
+			// `mv struct #field.name` must stay mv after expansion (its
+			// mirrored string field would otherwise be rejected as
+			// non-Copyable), and monomorphize calls are unaffected.
+			c.is_owning = n.is_owning;
+			c.is_class = n.is_class;
 			c.trait_args = n.trait_args.map((args) => args?.map(clone_type));
 			c.is_library = n.is_library;
 			c.scope = n.scope;

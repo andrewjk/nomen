@@ -411,7 +411,12 @@ function consume_string(input: string, status: TokenizeStatus) {
 			return j + 1;
 		}
 	}
-	return input.length - 1;
+	// Unterminated at EOF: return one PAST the opening quote at minimum, so
+	// the tokenizer's `status.i = end - 1` advance always moves forward. A
+	// string whose opening quote sits at (or adjacent to) EOF otherwise
+	// returned its own index, and the main loop re-entered here forever —
+	// an infinite token run that ended in heap exhaustion.
+	return Math.max(input.length - 1, status.i + 1);
 }
 
 function find_next_line_quote(input: string, line_start: number): number {

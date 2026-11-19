@@ -506,14 +506,6 @@ function rewrite_statement(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode[] {
-	// A `#`-spliced comptime name (`var #field.name int`, `func #field.name`,
-	// `struct #field.name`) resolves FIRST — the folded string becomes the
-	// member's real name before the body/default rewrite descends.
-	const splice = (stmt as unknown as { comptime_name?: string }).comptime_name;
-	if (splice !== undefined) {
-		const name = resolve_comptime_name(splice, binding, field, status, stmt.start);
-		(stmt as unknown as { name: string }).name = name ?? "";
-	}
 	// A comptime-constant `if` folds to its live arm — but the condition is
 	// substituted and evaluated FIRST, so a dead arm never surfaces comptime
 	// errors (e.g. an `.attr` that only exists on the taken side). The
@@ -553,6 +545,33 @@ function rewrite(
 	field: ComptimeField,
 	status: CheckStatus,
 ): BaseNode {
+	// A `#`-spliced comptime NAME or TYPE resolves here, on ANY carrier —
+	// declarations, methods, and types — so a member nested one level
+	// deeper than the arm (a field of a `#for`-generated struct) resolves
+	// too, not just top-level arm statements. The folded string replaces
+	// the parser's empty-placeholder name/type before checking.
+	const comptime_named = node as unknown as { comptime_name?: string };
+	if (comptime_named.comptime_name !== undefined) {
+		const name = resolve_comptime_name(
+			comptime_named.comptime_name,
+			binding,
+			field,
+			status,
+			node.start,
+		);
+		(node as unknown as { name: string }).name = name ?? "";
+	}
+	const comptime_typed = node as unknown as { comptime_type_template?: string; type?: Type };
+	if (comptime_typed.comptime_type_template !== undefined) {
+		const type_name = resolve_comptime_name(
+			comptime_typed.comptime_type_template,
+			binding,
+			field,
+			status,
+			node.start,
+		);
+		comptime_typed.type = new Type(type_name ?? "");
+	}
 	// Comptime TYPE expressions rooted at the binding — `field.type`,
 	// `.name`, `.arg_count`, `.args[i]`, recursively (`.args[0].args[0]`).
 	// Resolved before the generic descent, whose bare `.type` link would

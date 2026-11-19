@@ -663,18 +663,3 @@ and double-launch.
   tokenized BODY text, so teaching it to re-indent would need the tokenizer
   to normalize body whitespace first; a future `nomen format` pass could do
   that, purely cosmetically.
-
-## Declaration generation splice gaps
-
-The 2026-11-18 comptime work shipped `#if`/`#for` at type-body scope,
-`#binding.name` name splices, `#self`, and file-scope declaration
-generation (mechanics recorded in docs/COMPTIME_PLAN_2.md, stage-2 notes
-and stage 6). Three splice shapes a real user reaches for first are still
-missing — smallest first (prefix splices on struct/trait names and
-suffix/middle braced templates shipped 2026-11-18):
-
-1. **Type splices** — `var #field.type.name #field.name = 0`: mirror the
-   source field's TYPE into the generated member. The serde/schema-
-   mirroring case — today generated members can only take fixed or
-   literal-inferred types. Splice support in a declaration's type
-   position, resolved at expansion exactly like the name splices.

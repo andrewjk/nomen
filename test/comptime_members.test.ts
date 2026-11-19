@@ -258,6 +258,37 @@ pub func main = () {
 	);
 });
 
+test("type splices mirror the source field's type into generated members", async () => {
+	await build_and_check_output(
+		`
+import System
+
+pub mv struct Config {
+	pub var int timeout = 0
+	pub var string label = ""
+}
+
+#for field of META.info(Config).fields {
+	pub mv struct #field.name {
+		pub var #field.type.name stored
+	}
+}
+
+pub func main = () {
+	var t = timeout(30)
+	var l = label("hi")
+	Console.write_line("\\{t.stored == 30}")
+	Console.write_line("\\{t.stored == 31}")
+	Console.write_line("\\{l.stored == "hi"}")
+}
+`,
+		"comptime_type_splice",
+		"true\nfalse\ntrue\n",
+		true,
+		{ js: true },
+	);
+});
+
 test("a malformed splice is a compile error", () => {
 	const errors = compile_module(`
 		pub struct Base {

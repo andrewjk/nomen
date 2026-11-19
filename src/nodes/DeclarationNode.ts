@@ -50,6 +50,15 @@ export default class DeclarationNode extends BaseNode {
 	 * declaration outside an expansion never carries one.
 	 */
 	comptime_name?: string;
+	/**
+	 * A comptime TYPE splice — `var #field.type.name #field.name = 0` in a
+	 * `#for` arm (mirror the source field's type into the generated
+	 * member). Holds the dotted binding path; the expansion folds it and
+	 * writes the resolved type into `type` (replacing the empty
+	 * placeholder the parser left). Set iff the declaration's written
+	 * shape had a leading type splice.
+	 */
+	comptime_type_template?: string;
 	type_start?: number;
 	/** True when this top-level declaration is in the appended System library
 	 * source. Set by mark_library_nodes; used to route root-scope globals

@@ -107,20 +107,61 @@ export default function parse_declaration(
 	}
 	if (peek_current(status) === "func") {
 		parse_function_type_declaration(decl, status);
+	} else if (peek_current(status) === "#") {
+		// Comptime splices in the type/name positions. Two shapes:
+		//  (a) `var #field.name = 0` — the splice IS the name (the type
+		//      is inferred from the default);
+		//  (b) `var #field.type.name #field.name = 0` — a TYPE splice
+		//      (mirror the source field's type) followed by the name —
+		//      another splice, or a plain word.
+		// No annotation was written, so the declaration carries no
+		// type_start (the redundant-annotation lint keys on it).
+		const first = consume_comptime_name(status) ?? "";
+		const after = peek_current(status) ?? "";
+		const after_is_word = /^[A-Za-z_]\w*$/.test(after);
+		if (after === "#" || after_is_word) {
+			// Shape (b): the first splice is the declaration's TYPE.
+			decl.comptime_type_template = first;
+			decl.type = new Type("");
+			decl.type_start = undefined;
+			decl.name_start = get_index(status);
+			const name_splice = consume_comptime_name(status);
+			if (name_splice !== undefined) {
+				decl.comptime_name = name_splice;
+				decl.name = "";
+			} else {
+				decl.name = consume_name(status);
+			}
+		} else {
+			// Shape (a): the splice is the name.
+			decl.comptime_name = first;
+			decl.name = "";
+			decl.type = new Type("");
+			decl.type_start = undefined;
+		}
+		// Field constraint: `var #field.type.name #field.name: ...`
+		if (accept(":", status)) {
+			decl.constraint = parse_expression(status, false);
+		}
+		if (accept("=", status)) {
+			decl.value = parse_expression(status);
+			// The type splice owns the declaration's type — the literal's
+			// own inferred type must not overwrite the placeholder.
+			if (
+				decl.value &&
+				!decl.type.name &&
+				!decl.comptime_type_template &&
+				is_value_node(decl.value)
+			) {
+				decl.type = decl.value.type;
+			}
+		}
 	} else {
-		// A `$` comptime name splice is never a type — skip the type
-		// attempt entirely (`var #field.name = 0` is inferred from the
-		// default; an explicit type spells it first — `var int #field.name`,
-		// handled at the name position below). No annotation was written,
-		// so the declaration carries no type_start (the redundant-
-		// annotation lint keys on it).
-		const is_comptime_splice = peek_current(status) === "#";
 		// Try parsing a type, and backtrack if it turns out to be the name
 		const saved_i = status.i;
 		const saved_errors_length = status.errors.length;
 		decl.type_start = get_index(status);
-		decl.type = is_comptime_splice ? new Type("") : parse_type(status);
-		if (is_comptime_splice) decl.type_start = undefined;
+		decl.type = parse_type(status);
 		const is_func_alias = decl.type.name === "func";
 		if (is_func_alias) {
 			// The keyword spelling `var func (...) name`: the signature
@@ -220,14 +261,22 @@ export default function parse_declaration(
 		}
 	}
 
+	status.stack.pop();
+
 	// Check type or value has been set. A function-type declaration
 	// (`var func (string) run` — a func-typed variable/field) may have no
 	// initializer and no `out` return, so func_params must count as "typed".
-	if (!decl.type.name && !decl.value && !decl.func_return_type && !decl.func_params) {
+	// A comptime type splice supplies the type at expansion, so it counts
+	// too.
+	if (
+		!decl.type.name &&
+		!decl.value &&
+		!decl.func_return_type &&
+		!decl.func_params &&
+		decl.comptime_type_template === undefined
+	) {
 		add_error(status, `Expected type or default value`, decl.start + keyword.length + 1);
 	}
-
-	status.stack.pop();
 
 	// TODO: Move this into add_to_parent somehow
 	const parent = status.stack.at(-1)!;

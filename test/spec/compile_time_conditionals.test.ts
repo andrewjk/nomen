@@ -243,6 +243,7 @@ test("a struct-body #for generates fields and methods via $ splices", () => {
 			#for field of META.info(Base).fields {
 				pub var #field.name = 0
 				pub var #{field.name}_count = 0
+				pub var #field.type.name mirrored
 				pub func get_#field.name = (self, out string) {
 					return META.info(#self).name + "." + field.name
 				}
@@ -250,7 +251,7 @@ test("a struct-body #for generates fields and methods via $ splices", () => {
 		}
 
 		func probe = (out string) {
-			var m = Mirror()
+			var m = Mirror(0)
 			return m.get_a()
 		}
 	`;
