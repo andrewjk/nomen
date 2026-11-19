@@ -282,6 +282,27 @@ test("declaration generation: a struct per reflected field, used by name", () =>
 	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
 });
 
+test("declaration generation: an extend adds peer members to existing types", () => {
+	const body = `
+		@entity
+		pub struct User {
+			pub var int id
+		}
+
+		#for t of META.types_with("entity") {
+			extend struct #{t.name} {
+				pub func kind = (self, out string) {
+					return t.name
+				}
+			}
+		}
+
+		var u = User(1)
+		Console.write_line(u.kind())
+	`;
+	expect(compile_module(body, { arch: "c", platform: "macos" })).toEqual([]);
+});
+
 test("declaration generation with a literal name prefix", () => {
 	const body = `
 		pub struct Ids {

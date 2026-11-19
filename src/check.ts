@@ -90,7 +90,9 @@ export default function check(
 	unwrap_unsafe_blocks(root);
 
 	// Compile-time `#for` placeholders leave the tree once their iterations
-	// are spliced in (check_pragma_for_node). Deferred loops inside generic
+	// are spliced in (expand_file_scope_pragmas at the root removes the
+	// file-scope ones before the walk; check_pragma_for_node splices body
+	// loops and leaves its placeholder). Deferred loops inside generic
 	// bodies go too: those bodies are never built, their specializations
 	// carry already-expanded clones, and nothing downstream reads the node.
 	drop_pragma_for_placeholders(root);

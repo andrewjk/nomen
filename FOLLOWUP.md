@@ -666,7 +666,7 @@ and double-launch.
 
 ## Declaration/type generation (stage 6)
 
-Two ideas surfaced by the stage-6 work, neither scheduled.
+Three ideas surfaced by the stage-6 work, none scheduled.
 
 **Deep payload splices for generated enum cases.** An enum-body `#for`
 today generates `case #{c.name}` with fixed-type payloads: the name
@@ -676,14 +676,13 @@ a payload-preserving alias of another. It needs a splice form in
 enum-param type positions plus a payload-type member on the case
 binding — case bindings expose only `.name` today.
 
-**Peer members on existing types (`extend` in a `#for` arm).** A
-file-scope arm generates whole declarations, but cannot attach members to
-an EXISTING type: `extend struct #{t.name} { ... }` fails at parse —
-`parse_extend`'s target-name position does not accept a `#{...}` splice
-(verified 2026-11-19). That blocks the C# source-generator / Rust
-proc-macro shape of "find every `@entity` type and augment it" (the
-`META.types_with` half works). The fix is small: run the same name-splice
-intercept `parse_struct` uses in `parse_extend`.
+**Enum name splices for generated declarations.** File-scope `#for`
+generates structs, traits and functions (`struct #{field.name}`), but
+`parse_enum` has no `consume_comptime_name` intercept: `pub enum
+Kind_#{w} { ... }` fails at parse (verified 2026-11-19). Enum BODIES can
+already generate `case #{c.name}` entries, so this is the declaration-level
+counterpart — the same small parser fix `parse_struct` / `parse_trait` /
+`parse_function` already carry.
 
 **Trait-conformer iteration.** `META.types_with("attr")` collects types
 by attribute; the same mechanism could enumerate a trait's conformers

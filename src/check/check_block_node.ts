@@ -20,7 +20,7 @@ import { resolve_struct_field_types } from "./check_struct_node.ts";
 import { synthesize_auto_inits } from "./check_struct_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { materialize_anon_enum_type } from "./utils/anon_enum.ts";
-import { rewrite_meta_name_chains } from "./utils/comptime.ts";
+import { rewrite_meta_name_chains, expand_file_scope_pragmas } from "./utils/comptime.ts";
 import { synthesize_copy_methods } from "./utils/copy_synthesis.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
@@ -30,7 +30,20 @@ import { bind_trait_defaults_for_all } from "./utils/trait_defaults.ts";
 import type_name from "./utils/type_name.ts";
 
 export default function check_block_node(node: BlockNode, status: CheckStatus) {
-	gather_structs(node, status);
+	const names = gather_structs(node, status);
+
+	// FILE scope: expand declaration-generating `#for` loops NOW, before the
+	// extension merge below. A generated `extend struct #{t.name}` must be in
+	// the statement list when apply_extensions runs — a walk-time expansion
+	// (what body loops do) would leave the target already checked, so the
+	// merged methods would never be checked or emitted. Generated
+	// declarations register in expansion order, so a later loop's reflection
+	// sees an earlier loop's generated types.
+	if (node.node_type === "root") {
+		expand_file_scope_pragmas(node, status, (generated) =>
+			gather_declarations(generated, node, status, names),
+		);
+	}
 
 	// Pre-register root-level `foreign func` declarations so ANY earlier code
 	// (user structs checked before the appended library) can resolve calls to
@@ -445,23 +458,46 @@ function stamp_box_wrapper_representation(struct: StructNode): void {
 	struct.is_class = true;
 }
 
-function gather_structs(block: BlockNode, status: CheckStatus) {
-	const names_in_block = {
+interface BlockNames {
+	structs: Set<string>;
+	traits: Set<string>;
+	functions: Set<string>;
+	enums: Set<string>;
+	bitsets: Set<string>;
+}
+
+function gather_structs(block: BlockNode, status: CheckStatus): BlockNames {
+	const names: BlockNames = {
 		structs: new Set<string>(),
 		traits: new Set<string>(),
 		functions: new Set<string>(),
 		enums: new Set<string>(),
 		bitsets: new Set<string>(),
 	};
+	gather_declarations(block.statements, block, status, names);
+	return names;
+}
 
-	for (let node of block.statements) {
+/**
+ * Register one statement list's types/functions. Split out of
+ * `gather_structs` so FILE-scope `#for` output can be registered in
+ * expansion order against the same duplicate-name tracker, with the same
+ * labels/scoping the hand-written declarations got.
+ */
+function gather_declarations(
+	statements: BaseNode[],
+	block: BlockNode,
+	status: CheckStatus,
+	names: BlockNames,
+): void {
+	for (let node of statements) {
 		switch (node.node_type) {
 			case "struct": {
 				const struct = node as StructNode;
-				if (names_in_block.structs.has(struct.name)) {
+				if (names.structs.has(struct.name)) {
 					add_error(status, `Struct already declared: ${struct.name}`, struct.start);
 				} else {
-					names_in_block.structs.add(struct.name);
+					names.structs.add(struct.name);
 					assign_type_label(struct, block, status);
 					struct.scope = status.stack.at(-1) || block;
 					struct.is_generic = struct.type_params.length > 0;
@@ -482,10 +518,10 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 			}
 			case "trait": {
 				const trait = node as TraitNode;
-				if (names_in_block.traits.has(trait.name)) {
+				if (names.traits.has(trait.name)) {
 					add_error(status, `Trait already declared: ${trait.name}`, trait.start);
 				} else {
-					names_in_block.traits.add(trait.name);
+					names.traits.add(trait.name);
 					status.types.push(trait.name);
 					status.traits.push(trait);
 					// Trait method signatures get the same gather-time
@@ -500,10 +536,10 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 			}
 			case "func": {
 				const func = node as FunctionNode;
-				if (names_in_block.functions.has(func.name)) {
+				if (names.functions.has(func.name)) {
 					add_error(status, `Function already declared: ${func.name}`, func.start);
 				} else {
-					names_in_block.functions.add(func.name);
+					names.functions.add(func.name);
 					func.scope = status.stack.at(-1) || block;
 					// Materialize tuple / anonymous enum return types upfront so
 					// callers that are checked before this function (e.g. a
@@ -570,10 +606,10 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 			}
 			case "enum": {
 				const enum_node = node as EnumNode;
-				if (names_in_block.enums.has(enum_node.name)) {
+				if (names.enums.has(enum_node.name)) {
 					add_error(status, `Enum already declared: ${enum_node.name}`, enum_node.start);
 				} else {
-					names_in_block.enums.add(enum_node.name);
+					names.enums.add(enum_node.name);
 					assign_type_label(enum_node, block, status);
 					enum_node.is_generic = enum_node.type_params.length > 0;
 					status.types.push(enum_node.name);
@@ -583,10 +619,10 @@ function gather_structs(block: BlockNode, status: CheckStatus) {
 			}
 			case "bitset": {
 				const bitset_node = node as BitsetNode;
-				if (names_in_block.bitsets.has(bitset_node.name)) {
+				if (names.bitsets.has(bitset_node.name)) {
 					add_error(status, `Bitset already declared: ${bitset_node.name}`, bitset_node.start);
 				} else {
-					names_in_block.bitsets.add(bitset_node.name);
+					names.bitsets.add(bitset_node.name);
 					assign_type_label(bitset_node, block, status);
 					status.types.push(bitset_node.name);
 					status.bitsets.push(bitset_node);

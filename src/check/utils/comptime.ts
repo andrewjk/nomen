@@ -12,6 +12,7 @@ import { is_ast_node } from "../../nodes/child_nodes.ts";
 import clone_node from "../../nodes/clone_node.ts";
 import type EnumCaseDeclNode from "../../nodes/EnumCaseDeclNode.ts";
 import type EnumNode from "../../nodes/EnumNode.ts";
+import type ExtendNode from "../../nodes/ExtendNode.ts";
 import FunctionCallNode from "../../nodes/FunctionCallNode.ts";
 import GroupedNode from "../../nodes/GroupedNode.ts";
 import IfElseNode from "../../nodes/IfElseNode.ts";
@@ -684,6 +685,47 @@ export function substitute_pragma_iterables(
 }
 
 /**
+ * Expand every FILE-SCOPE `#for` in place, before the gather's extension
+ * merge and the statement walk.
+ *
+ * File-scope arms generate declarations, so their expansion has to run
+ * earlier than body loops: `extend struct #{t.name}` is merged into its
+ * target by `apply_extensions`, which runs before the walk — a loop that
+ * only expanded when the walk reached it would leave the target already
+ * checked, and its generated methods would never be checked or emitted.
+ *
+ * Each expansion's flat statement list goes to `on_generated` so the caller
+ * can register the generated declarations in expansion order (same
+ * duplicate-name tracker as hand-written declarations). That ordering
+ * matters: a later loop's `META.types_with("x")` must see an earlier loop's
+ * generated types, exactly as it would if each loop expanded at its
+ * statement position. Nested file-scope loops are expanded in order too.
+ */
+export function expand_file_scope_pragmas(
+	block: { statements: BaseNode[] },
+	status: CheckStatus,
+	on_generated: (statements: BaseNode[]) => void,
+): void {
+	for (let i = 0; i < block.statements.length; i++) {
+		const stmt = block.statements[i];
+		if (stmt.node_type !== "pragma_for") continue;
+		const iterations = expand_pragma_for(stmt as PragmaForNode, status);
+		if (iterations === null) continue; // deferred: unreachable at file scope
+		const flat: BaseNode[] = [];
+		for (const iteration of iterations) {
+			if (iteration.node_type === "block") {
+				flat.push(...((iteration as NestedBlockNode).statements ?? []));
+			} else {
+				flat.push(iteration);
+			}
+		}
+		block.statements.splice(i, 1, ...flat);
+		on_generated(flat);
+		i--; // a nested `#for` may now sit at this index
+	}
+}
+
+/**
  * Expand every `#for` in a statement list in place — the mono-clone hook.
  * Used where a cloned body will NOT be re-checked (monomorphized struct
  * methods are stamped `checked = true`), mirroring how the substituted
@@ -779,6 +821,20 @@ function rewrite(
 			node.start,
 		);
 		(node as unknown as { name: string }).name = name ?? "";
+		if (node.node_type === "extend") {
+			// The body's `self` parameters were typed at parse time, before
+			// the spliced target name existed (they carry an empty type).
+			// Now that the name resolved, retype them so the merged methods
+			// check against the real receiver.
+			const ext = node as ExtendNode;
+			for (const func of ext.functions) {
+				for (const param of func.params) {
+					if (param.is_self_param && param.type && !param.type.name) {
+						param.type = new Type(ext.name);
+					}
+				}
+			}
+		}
 	}
 	const comptime_typed = node as unknown as { comptime_type_template?: string; type?: Type };
 	if (comptime_typed.comptime_type_template !== undefined) {

@@ -6,6 +6,7 @@ import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import class_retired_error from "./utils/class_retired_error.ts";
 import consume from "./utils/consume.ts";
+import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
@@ -44,8 +45,22 @@ export default function parse_extend(
 		expect("struct", status);
 	}
 
-	const name = consume(status);
+	// A comptime name splice — `extend struct #{t.name} { ... }` inside a
+	// file-scope `#for` (member generation on an existing type) — bare, or
+	// with a glued literal prefix/suffix. The real target arrives at the
+	// expansion, before the extension is merged.
+	let name = "";
+	let comptime_name: string | undefined;
+	{
+		const splice = consume_comptime_name(status);
+		if (splice !== undefined) {
+			comptime_name = splice;
+		} else {
+			name = consume(status);
+		}
+	}
 	const node = new ExtendNode(start, visibility, name);
+	if (comptime_name !== undefined) node.comptime_name = comptime_name;
 
 	if (accept(":", status)) {
 		// Mirror parse_struct's conformance list: each entry is a trait name

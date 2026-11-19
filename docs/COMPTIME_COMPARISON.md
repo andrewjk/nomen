@@ -67,12 +67,14 @@ at compile time; Zig has no macros at all.
   members to your class.
 - **Rust:** proc macros emitting `impl Display for T`, `impl From`, trait
   impls for foreign traits.
-- **Nomen status:** the primary practical gap. A file-scope arm generates
-  _new_ declarations, but `extend struct #{t.name} { ... }` fails to parse
-  (`parse_extend`'s target-name position does not accept a splice). Trait
-  _defaults_ do attach generated method bodies to conforming types; peer
-  members on a hand-written type do not. Recorded in FOLLOWUP; a small
-  parser fix (the same intercept `parse_struct` uses).
+- **Nomen status:** covered, in-language. `extend struct #{t.name} { ... }`
+  at file scope merges generated methods (and out-of-line `: Trait`
+  conformance) into an existing type before it is checked, so they behave
+  exactly like in-body methods. Combined with `META.types_with("x")`, the
+  "find every `@entity` and augment it" shape works with no plugin API:
+  generated extensions merge in expansion order and may target a type
+  declared later in the file. Trait _defaults_ still attach generated
+  method bodies to conforming types, and the two compose.
 
 ### 4. Arbitrary syntax transformation and DSLs
 
@@ -118,9 +120,10 @@ at compile time; Zig has no macros at all.
   dependency, no macro/toolchain version skew. Any user trait with a
   reflection default gets the same treatment.
 - **Generated code gets the full checker.** Ownership, last-use,
-  strdup/free analysis and bounds contracts all run on it. Proc-macro
-  output is often opaque to such analyses; C# generators produce code the
-  compiler must trust.
+  strdup/free analysis and bounds contracts all run on it — including
+  generated `extend` members, which are ordinary methods of the target
+  after the merge. Proc-macro output is often opaque to such analyses;
+  C# generators produce code the compiler must trust.
 - **One coherent binding model** — member bare (`field.name`), whole value
   `#t`/`#i`/`#word`, identifier splice `#{...}` — with loud errors, across
   every declaration kind (structs, traits, enums, files) and both native
@@ -133,15 +136,13 @@ at compile time; Zig has no macros at all.
 
 ## Ranked Gaps (leverage vs cost)
 
-1. **`extend` target splices** — peer members on existing types; small
-   fix, unlocks framework-style code (ORMs, MVVM, registries).
-2. **Trait-conformer iteration** — DI/serializer registries by contract
+1. **Trait-conformer iteration** — DI/serializer registries by contract
    instead of attribute.
-3. **Structured attributes** (named arguments, lists) —
+2. **Structured attributes** (named arguments, lists) —
    serde/clap-grade configuration and diagnostics.
-4. **Comptime evaluation** (const-fn-like helpers callable from arms,
+3. **Comptime evaluation** (const-fn-like helpers callable from arms,
    sizes/offsets) — algorithmic tables, layout-sensitive code.
-5. **Compile-time IO / semantic analysis** — the sqlx/protobuf class;
+4. **Compile-time IO / semantic analysis** — the sqlx/protobuf class;
    decide explicitly whether it is in scope at all.
 
 Deliberately declined: arbitrary syntax/AST transformation (a different,

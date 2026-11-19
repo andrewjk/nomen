@@ -28,11 +28,18 @@ import Type from "./Type.ts";
  * `name` mirrors `StructNode.name` so the `self` / `ref self` parameter
  * parsing (which casts the parent to `StructNode`) resolves the receiver
  * type without special-casing.
+ *
+ * `comptime_name` carries a `#{...}` name template when the target was
+ * spliced (`extend struct #{t.name}` inside a file-scope `#for`); the
+ * expansion folds it into `name` (and retypes any `self` parameter, which
+ * the parser could not type before the target was known).
  */
 export default class ExtendNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
 	name: string;
 	is_class: boolean;
+	/** The `#{...}` template when the target name was a comptime splice. */
+	comptime_name?: string;
 	functions: FunctionNode[] = [];
 	/** Trait names the target conforms to via this extend (out-of-line). */
 	traits: string[] = [];

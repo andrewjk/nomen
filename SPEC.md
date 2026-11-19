@@ -3462,9 +3462,9 @@ marker, while name positions — read by the parser, before any binding exists
 
 ### Declaration Generation
 
-At file scope, a `#for` generates whole declarations: one struct (or
-trait) per reflected item, its name spliced from the binding, used by
-later code under the generated name. Inside a generated type's body,
+At file scope, a `#for` generates whole declarations: one struct, trait
+or function per reflected item, its name spliced from the binding, used
+by later code under the generated name. Inside a generated type's body,
 `#self` binds to the generated type's own name. Names may carry a literal
 prefix (`struct id_#{field.name}` — the prefix glues to the splice):
 
@@ -3487,12 +3487,39 @@ var h = http(7)          // the generated struct, spelled by its known name
 Console.write_line(h.tag())   // "http"
 ```
 
+A file-scope arm can also add members to an existing type:
+`extend struct #{t.name} { ... }` merges the generated methods — and any
+out-of-line `: Trait` conformance — into that type before it is checked,
+so they behave exactly like methods written in its body (`self` /
+`ref self`, trait dispatch, emission under the target's name). The target
+may be declared anywhere in the file. Whole-enum declaration generation
+is future work; enum bodies can already generate cases.
+
+```
+@entity
+pub struct User {
+    pub var int id
+}
+
+#for t of META.types_with("entity") {
+    extend struct #{t.name} {
+        pub func kind = (self, out string) {
+            return t.name
+        }
+    }
+}
+
+var u = User(1)
+Console.write_line(u.kind())   // "User"
+```
+
 Generated declarations compose with everything comptime: generated
 members may carry `#if` member arms, derive from the marker traits (the
 derivations are reflection defaults), and reference `META.info(#self)`.
-An enum from a reflected table, or other richer `@Type`-style
-construction, is future work — the iterable surface today is
-`META.info(T).fields`.
+Richer `@Type`-style construction (a type built from computed data) is
+future work — the iterable surface is the one above
+(`META.info(T).fields`, `META.info(E).cases`, ranges, string tables,
+`META.types_with(...)`).
 
 - `field.type.name` — the field's type name as a comptime string. An `if`
   whose condition is comptime-constant folds to its live arm, so

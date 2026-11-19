@@ -13,6 +13,7 @@ import ContinueNode from "./ContinueNode.ts";
 import DeclarationNode from "./DeclarationNode.ts";
 import EnumCaseDeclNode from "./EnumCaseDeclNode.ts";
 import EnumNode from "./EnumNode.ts";
+import ExtendNode from "./ExtendNode.ts";
 import ForLoopNode from "./ForLoopNode.ts";
 import FunctionCallNode from "./FunctionCallNode.ts";
 import FunctionNode from "./FunctionNode.ts";
@@ -601,6 +602,22 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.comptime_name = n.comptime_name;
 			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
+			return c;
+		}
+		case "extend": {
+			// `extend struct #{t.name} { ... }` inside a file-scope `#for`
+			// (member generation on an existing type). The body must be
+			// deep-copied per iteration — the default arm returns by
+			// reference, coupling every generated extension to one node —
+			// and the name splice rides the clone for the expansion to
+			// resolve.
+			const n = node as ExtendNode;
+			const c = new ExtendNode(n.start, n.visibility, n.name, n.is_class);
+			c.functions = n.functions.map((f) => clone_node(f) as FunctionNode);
+			c.traits = n.traits.slice();
+			c.trait_args = n.trait_args.map((args) => args?.map(clone_type));
+			c.scope = n.scope;
+			c.comptime_name = n.comptime_name;
 			return c;
 		}
 		case "pragma_if": {

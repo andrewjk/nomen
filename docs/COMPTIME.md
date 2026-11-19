@@ -142,9 +142,15 @@ file-scope declaration before check runs, so `META.info(T)` and
 - **Struct/trait/enum bodies expand at the type's own check** (member
   pragmas), before members are processed, so the auto `#init` can be
   re-synthesized over the final field list.
-- **File-scope loops generate whole declarations** (structs, traits,
-  enums, functions) with spliced names; generated types register and
-  check in statement order and are usable by their generated names.
+- **File-scope loops expand before the statement walk.** They generate
+  whole declarations (structs, traits, functions) with spliced names,
+  registered in expansion order — so a later loop's reflection sees an
+  earlier loop's generated types, and code before the loop can already
+  use them. A file-scope arm may also `extend struct #{t.name} { ... }`:
+  generated extensions are merged by `apply_extensions` before checking,
+  so their methods behave exactly like in-body methods (the target may be
+  declared later in the file). A body-scope `#for` cannot generate an
+  extension — the merge already ran — and reports that as an error.
 - **Type-body loops cannot defer** (there is no specialization to
   re-check a type body): an unbound parameter there is a compile error.
 
@@ -201,6 +207,7 @@ scan skips them).
 | Attribute parse/attach                                     | `src/parse/utils/parse_attributes.ts`                                                                          |
 | Target fold (`fold_pragma_ifs`, member folds)              | `src/check/utils/pragma.ts`                                                                                    |
 | Expansion, name/type splices, deferral, binding resolution | `src/check/utils/comptime.ts`                                                                                  |
+| File-scope pre-expansion (`expand_file_scope_pragmas`)     | `src/check/utils/comptime.ts`, `src/check/check_block_node.ts`                                                 |
 | Per-conformer trait defaults                               | `src/check/utils/trait_defaults.ts`                                                                            |
 | Statement/type/body wiring                                 | `src/check/check_pragma_for_node.ts`, `check_struct_node`, `check_trait_node`, `check_enum_node`, `check_node` |
 
@@ -226,9 +233,9 @@ This document supersedes the retired working notes `COMPTIME_PLAN.md` and
    were deleted).
 6. Declaration/type generation: type-body `#if`/`#for` (struct, trait,
    enum), `#`-spliced names (prefix, braced suffix/middle, type splices),
-   file-scope generation, and the iterable surface above (ranges, tables,
-   enum cases, attribute type sets), with reflection defaults bound per
-   conformer (`#self`).
+   file-scope generation (including `extend` of an existing type), and the
+   iterable surface above (ranges, tables, enum cases, attribute type
+   sets), with reflection defaults bound per conformer (`#self`).
 
 ## Known Limits
 
@@ -236,10 +243,10 @@ Recorded in [`FOLLOWUP.md`](../FOLLOWUP.md) ("Comptime residuals" and
 "Declaration/type generation (stage 6)"): no offsets/sizes in reflection,
 no comptime string interpolation, `#if` conditions limited to
 `META.arch`/`META.platform` (no type-level conditions), single-literal
-attributes, no `extend`-target splices, no deep payload splices for
-generated enum cases, no trait-conformer iteration, and a deliberately
-restricted model: no user comptime evaluation and no syntax/AST macros
-(see [`COMPTIME_COMPARISON.md`](./COMPTIME_COMPARISON.md)).
+attributes, no whole-enum declaration splices, no deep payload splices
+for generated enum cases, no trait-conformer iteration, and a
+deliberately restricted model: no user comptime evaluation and no
+syntax/AST macros (see [`COMPTIME_COMPARISON.md`](./COMPTIME_COMPARISON.md)).
 
 ## See Also
 
