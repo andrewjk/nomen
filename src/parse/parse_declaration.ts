@@ -109,9 +109,9 @@ export default function parse_declaration(
 		parse_function_type_declaration(decl, status);
 	} else if (peek_current(status) === "#") {
 		// Comptime splices in the type/name positions. Two shapes:
-		//  (a) `var #field.name = 0` — the splice IS the name (the type
+		//  (a) `var #{field.name} = 0` — the splice IS the name (the type
 		//      is inferred from the default);
-		//  (b) `var #field.type.name #field.name = 0` — a TYPE splice
+		//  (b) `var #{field.type.name} #{field.name} = 0` — a TYPE splice
 		//      (mirror the source field's type) followed by the name —
 		//      another splice, or a plain word.
 		// No annotation was written, so the declaration carries no
@@ -139,7 +139,7 @@ export default function parse_declaration(
 			decl.type = new Type("");
 			decl.type_start = undefined;
 		}
-		// Field constraint: `var #field.type.name #field.name: ...`
+		// Field constraint: `var #{field.type.name} #{field.name}: ...`
 		if (accept(":", status)) {
 			decl.constraint = parse_expression(status, false);
 		}

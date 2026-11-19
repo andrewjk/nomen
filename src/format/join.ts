@@ -100,8 +100,8 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	if (current.text === "}") return previous.text !== "{";
 	// A `#` name splice binds tight to the name it splices (`# field` is a
 	// different, unparseable program). After a KEYWORD the space follows the
-	// ordinary rules (`var #field.name`); after a plain word the `#` is a
-	// PREFIX splice inside the name (`func get_#field.name`) — tight. And
+	// ordinary rules (`var #{field.name}`); after a plain word the `#` is a
+	// PREFIX splice inside the name (`func get_#{field.name}`) — tight. And
 	// the name the splice reads never gains a leading space (`#` is already
 	// in NO_SPACE_AFTER).
 	const previous_is_word = /^[A-Za-z_]\w*$/.test(previous.text);

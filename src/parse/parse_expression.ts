@@ -287,7 +287,7 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 		case "#": {
 			// Compile-time `#` entries in expression position. `#self` —
 			// the conformer's own name/type, bound inside trait default
-			// bodies and `#field.name`-generated members
+			// bodies and `#{field.name}`-generated members
 			// (utils/trait_defaults.ts); resolves through the comptime
 			// rewrites before the body is checked, so an unbound use is a
 			// loud check error. Anything else falls through to

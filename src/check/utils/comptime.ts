@@ -45,7 +45,7 @@ function fold_generated_member_pragmas(statements: BaseNode[], status: CheckStat
 	}
 }
 
-/** Bind `Self` inside a GENERATED type's members: the `#field.name`-spliced
+/** Bind `Self` inside a GENERATED type's members: the `#{field.name}`-spliced
  *  struct's own name substitutes for `Self`, so its methods can reflect on
  *  themselves (`META.info(#self).name`) exactly like a trait default does.
  *  Called from check_struct_node/check_trait_node AFTER the type is
@@ -132,7 +132,7 @@ export interface MemberHost {
 }
 
 /**
- * Resolve a `#field.name` comptime name splice: the stored template is
+ * Resolve a `#{field.name}` comptime name splice: the stored template is
  * either a bare dotted path (`field.name`) or a template of literal text
  * with `#{path}` markers (`get_#{field.name}`, `#{field.name}_handler`,
  * `pre_#{field.name}_post`). Each dotted path is rebuilt as an expression

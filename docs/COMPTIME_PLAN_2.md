@@ -441,9 +441,9 @@ file`). The node carries it (`RawNode.is_c` / `.scope`), deleting
    untouched (a portable fallback is meaningful there).
 6. **Declaration/type generation.** **SHIPPED** (2026-11-18, the Comptime
    II backlog's final item) — a file-scope `#for` generates whole
-   structs/traits per reflected item: the `#field.name` splice (a dotted
+   structs/traits per reflected item: the `#{field.name}` splice (a dotted
    path over the binding, resolved through the ordinary substitution
-   rewrite; `get_#field.name` prefix templates too) names the generated
+   rewrite; `get_#{field.name}` prefix templates too) names the generated
    type, whose members fold their `#if` member arms at the expansion and
    bind `#self` to the generated name at the type's own check
    (bind_comptime_self). Generated types are usable by their known

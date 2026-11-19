@@ -60,7 +60,7 @@ export default class StructNode extends BaseNode {
 	 */
 	member_pragmas?: BaseNode[];
 	/**
-	 * A comptime name splice for the struct's own name — `struct #field.name
+	 * A comptime name splice for the struct's own name — `struct #{field.name}
 	 * { ... }` inside a file-scope `#for` (declaration generation, stage 6).
 	 * The dotted binding path as written; expansion folds it into `name`.
 	 */

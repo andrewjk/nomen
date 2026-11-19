@@ -3325,21 +3325,21 @@ func describe<T> = (T value, out string) {
 reflected field. A `#`-splice in a member's name position folds a dotted
 path over the binding into the member's real name; a splice in a
 declaration's TYPE position mirrors the source field's type
-(`#field.type.name` — an `int` field gives an `int` member, a `string`
+(`#{field.type.name}` — an `int` field gives an `int` member, a `string`
 field a `string`; the type is spelled by NAME, so a generic container
 resolves to its bare name). Inside a generated method's body, `#self`
 binds to the conformer the method landed on. Names are templates: a glued
-literal prefix (`get_#field.name`) and a braced splice with glued text on
+literal prefix (`get_#{field.name}`) and a braced splice with glued text on
 either side (`#{field.name}_id` — the braces stop the greedy word scan)
 compose into the final name:
 
 ```
 pub struct Mirror {
     #for field of META.info(Base).fields {
-        pub var #field.name = 0
+        pub var #{field.name} = 0
         pub var #{field.name}_count = 0
-        pub var #field.type.name mirrored
-        pub func get_#field.name = (self, out string) {
+        pub var #{field.type.name} mirrored
+        pub func get_#{field.name} = (self, out string) {
             return META.info(#self).name + "." + field.name
         }
     }
@@ -3358,7 +3358,7 @@ At file scope, a `#for` generates whole declarations: one struct (or
 trait) per reflected item, its name spliced from the binding, used by
 later code under the generated name. Inside a generated type's body,
 `#self` binds to the generated type's own name. Names may carry a literal
-prefix (`struct id_#field.name` — the prefix glues to the splice):
+prefix (`struct id_#{field.name}` — the prefix glues to the splice):
 
 ```
 pub struct Config {
@@ -3367,7 +3367,7 @@ pub struct Config {
 }
 
 #for field of META.info(Config).fields {
-    pub mv struct #field.name: Stringable {
+    pub mv struct #{field.name}: Stringable {
         pub var int value
         pub func tag = (self, out string) {
             return META.info(#self).name

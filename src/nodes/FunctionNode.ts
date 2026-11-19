@@ -146,7 +146,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	 */
 	label_name?: string;
 	/**
-	 * A comptime name splice — `func #field.name = ...` inside a struct- or
+	 * A comptime name splice — `func #{field.name} = ...` inside a struct- or
 	 * file-scope `#for` arm (member/type generation). Same shape as
 	 * DeclarationNode.comptime_name: the dotted binding path as written;
 	 * expansion folds it and writes `name`.

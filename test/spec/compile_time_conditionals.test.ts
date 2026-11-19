@@ -241,10 +241,10 @@ test("a struct-body #for generates fields and methods via $ splices", () => {
 
 		pub struct Mirror {
 			#for field of META.info(Base).fields {
-				pub var #field.name = 0
+				pub var #{field.name} = 0
 				pub var #{field.name}_count = 0
-				pub var #field.type.name mirrored
-				pub func get_#field.name = (self, out string) {
+				pub var #{field.type.name} mirrored
+				pub func get_#{field.name} = (self, out string) {
 					return META.info(#self).name + "." + field.name
 				}
 			}
@@ -266,7 +266,7 @@ test("declaration generation: a struct per reflected field, used by name", () =>
 		}
 
 		#for field of META.info(Config).fields {
-			pub mv struct #field.name: Stringable {
+			pub mv struct #{field.name}: Stringable {
 				pub var int value
 				pub func tag = (self, out string) {
 					return META.info(#self).name
@@ -289,7 +289,7 @@ test("declaration generation with a literal name prefix", () => {
 		}
 
 		#for field of META.info(Ids).fields {
-			pub mv struct id_#field.name: Equatable {
+			pub mv struct id_#{field.name}: Equatable {
 				pub var int value
 			}
 		}

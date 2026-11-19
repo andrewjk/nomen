@@ -21,7 +21,7 @@ export default class TraitNode extends BaseNode {
 	 * the trait's own check, exactly like a struct's (see StructNode).
 	 */
 	member_pragmas?: BaseNode[];
-	/** A comptime name splice for the trait's own name (`trait #field.name`,
+	/** A comptime name splice for the trait's own name (`trait #{field.name}`,
 	 *  stage-6 generation) — see StructNode.comptime_name. */
 	comptime_name?: string;
 	/** Stamped by a comptime expansion on a `$`-generated trait — see

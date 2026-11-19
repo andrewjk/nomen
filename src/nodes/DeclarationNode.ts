@@ -42,7 +42,7 @@ export default class DeclarationNode extends BaseNode {
 	constraint?: BaseNode;
 	name_start?: number;
 	/**
-	 * A comptime name splice — `var #field.name int` inside a struct-scope
+	 * A comptime name splice — `var int #{field.name}` inside a struct-scope
 	 * `#for` arm (the stage-3 member generation). Holds the dotted binding
 	 * path as written (`field.name`); the expansion resolves it through the
 	 * binding's comptime members and writes the folded string into `name`.
@@ -51,7 +51,7 @@ export default class DeclarationNode extends BaseNode {
 	 */
 	comptime_name?: string;
 	/**
-	 * A comptime TYPE splice — `var #field.type.name #field.name = 0` in a
+	 * A comptime TYPE splice — `var #{field.type.name} #{field.name} = 0` in a
 	 * `#for` arm (mirror the source field's type into the generated
 	 * member). Holds the dotted binding path; the expansion folds it and
 	 * writes the resolved type into `type` (replacing the empty

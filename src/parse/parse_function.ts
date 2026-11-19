@@ -67,8 +67,8 @@ export default function parse_function(
 			consume(status); // #
 			name = `#${consume(status)}`;
 		} else {
-			// A comptime name splice — `func #field.name = ...` or a glued
-			// prefix/suffix template (`func get_#field.name`) inside a `#for`
+			// A comptime name splice — `func #{field.name} = ...` or a glued
+			// prefix/suffix template (`func get_#{field.name}`) inside a `#for`
 			// arm (member/type generation). The method's real name arrives at
 			// the expansion; the template rides `comptime_name`.
 			const template = consume_comptime_name(status);

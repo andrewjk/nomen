@@ -467,7 +467,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_param_bounds = n.type_param_bounds.map((bounds) => bounds.slice());
 			c.is_generic = n.is_generic;
 			// Declared ownership/class stamps ride the clone: a `#for` arm's
-			// `mv struct #field.name` must stay mv after expansion (its
+			// `mv struct #{field.name}` must stay mv after expansion (its
 			// mirrored string field would otherwise be rejected as
 			// non-Copyable), and monomorphize calls are unaffected.
 			c.is_owning = n.is_owning;
