@@ -3462,9 +3462,9 @@ marker, while name positions — read by the parser, before any binding exists
 
 ### Declaration Generation
 
-At file scope, a `#for` generates whole declarations: one struct, trait
-or function per reflected item, its name spliced from the binding, used
-by later code under the generated name. Inside a generated type's body,
+At file scope, a `#for` generates whole declarations: one struct, trait,
+function or enum per reflected item, its name spliced from the binding,
+used by later code under the generated name. Inside a generated type's body,
 `#self` binds to the generated type's own name. Names may carry a literal
 prefix (`struct id_#{field.name}` — the prefix glues to the splice):
 
@@ -3492,8 +3492,21 @@ A file-scope arm can also add members to an existing type:
 out-of-line `: Trait` conformance — into that type before it is checked,
 so they behave exactly like methods written in its body (`self` /
 `ref self`, trait dispatch, emission under the target's name). The target
-may be declared anywhere in the file. Whole-enum declaration generation
-is future work; enum bodies can already generate cases.
+may be declared anywhere in the file.
+
+An enum declaration splices its name the same way; an `#if` inside its
+body still selects cases:
+
+```
+#for w of ["get", "post"] {
+    pub enum Route_#{w} {
+        case known
+        case unknown
+    }
+}
+
+var r = Route_get.known
+```
 
 ```
 @entity

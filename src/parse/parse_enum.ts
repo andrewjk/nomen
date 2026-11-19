@@ -7,6 +7,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
 import consume from "./utils/consume.ts";
+import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
 import expect_close_angle from "./utils/expect_close_angle.ts";
@@ -34,8 +35,22 @@ export default function parse_enum(
 	} else {
 		accept("enum", status);
 	}
-	const name = consume_name(status);
+	// A comptime name splice — `enum Kind_#{w} { ... }` inside a file-scope
+	// `#for` (declaration generation) — bare, or with a glued literal
+	// prefix/suffix. The real name arrives at the expansion; the enum-body
+	// case generation (`case #{c.name}`) is untouched by this.
+	let name = "";
+	let enum_comptime_name: string | undefined;
+	{
+		const splice = consume_comptime_name(status);
+		if (splice !== undefined) {
+			enum_comptime_name = splice;
+		} else {
+			name = consume_name(status);
+		}
+	}
 	const node = new EnumNode(start, visibility, name);
+	if (enum_comptime_name !== undefined) node.comptime_name = enum_comptime_name;
 	node.checked = checked;
 	if (is_error) node.is_error = true;
 	if (is_owning) node.is_owning = true;

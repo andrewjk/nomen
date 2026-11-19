@@ -676,13 +676,24 @@ a payload-preserving alias of another. It needs a splice form in
 enum-param type positions plus a payload-type member on the case
 binding — case bindings expose only `.name` today.
 
-**Enum name splices for generated declarations.** File-scope `#for`
-generates structs, traits and functions (`struct #{field.name}`), but
-`parse_enum` has no `consume_comptime_name` intercept: `pub enum
-Kind_#{w} { ... }` fails at parse (verified 2026-11-19). Enum BODIES can
-already generate `case #{c.name}` entries, so this is the declaration-level
-counterpart — the same small parser fix `parse_struct` / `parse_trait` /
-`parse_function` already carry.
+**Nested `#for` inside a generated type body.** A file-scope loop's
+rewrite walks the whole cloned arm, including `#for` member loops nested
+inside a `#{...}`-generated struct/enum body, and resolves their
+`#{inner.name}` templates against the OUTER binding. This:
+
+```
+struct S_#{w} {
+    #for f of META.info(Base).fields {
+        pub var #{f.name} = 0
+    }
+}
+```
+
+fails with "`#f.name` must be a dotted path over the `#for` binding
+(`w`)" (verified 2026-11-19 — pre-existing, same for enums). Fixing it
+needs the rewrite to skip a nested loop's arm body (deferring it to the
+inner expansion) while still rewriting its iterable — and a binding stack
+if outer references inside inner bodies are to compose too.
 
 **Trait-conformer iteration.** `META.types_with("attr")` collects types
 by attribute; the same mechanism could enumerate a trait's conformers

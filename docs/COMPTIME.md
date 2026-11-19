@@ -143,10 +143,10 @@ file-scope declaration before check runs, so `META.info(T)` and
   pragmas), before members are processed, so the auto `#init` can be
   re-synthesized over the final field list.
 - **File-scope loops expand before the statement walk.** They generate
-  whole declarations (structs, traits, functions) with spliced names,
-  registered in expansion order — so a later loop's reflection sees an
-  earlier loop's generated types, and code before the loop can already
-  use them. A file-scope arm may also `extend struct #{t.name} { ... }`:
+  whole declarations (structs, traits, functions, enums) with spliced
+  names, registered in expansion order — so a later loop's reflection
+  sees an earlier loop's generated types, and code before the loop can
+  already use them. A file-scope arm may also `extend struct #{t.name} { ... }`:
   generated extensions are merged by `apply_extensions` before checking,
   so their methods behave exactly like in-body methods (the target may be
   declared later in the file). A body-scope `#for` cannot generate an
@@ -233,7 +233,8 @@ This document supersedes the retired working notes `COMPTIME_PLAN.md` and
    were deleted).
 6. Declaration/type generation: type-body `#if`/`#for` (struct, trait,
    enum), `#`-spliced names (prefix, braced suffix/middle, type splices),
-   file-scope generation (including `extend` of an existing type), and the
+   file-scope generation (including `extend` of an existing type and enum
+   declarations), and the
    iterable surface above (ranges, tables, enum cases, attribute type
    sets), with reflection defaults bound per conformer (`#self`).
 
@@ -243,10 +244,11 @@ Recorded in [`FOLLOWUP.md`](../FOLLOWUP.md) ("Comptime residuals" and
 "Declaration/type generation (stage 6)"): no offsets/sizes in reflection,
 no comptime string interpolation, `#if` conditions limited to
 `META.arch`/`META.platform` (no type-level conditions), single-literal
-attributes, no whole-enum declaration splices, no deep payload splices
-for generated enum cases, no trait-conformer iteration, and a
-deliberately restricted model: no user comptime evaluation and no
-syntax/AST macros (see [`COMPTIME_COMPARISON.md`](./COMPTIME_COMPARISON.md)).
+attributes, no deep payload splices for generated enum cases, no nested
+`#for` composition inside a generated type body, no trait-conformer
+iteration, and a deliberately restricted model: no user comptime
+evaluation and no syntax/AST macros (see
+[`COMPTIME_COMPARISON.md`](./COMPTIME_COMPARISON.md)).
 
 ## See Also
 

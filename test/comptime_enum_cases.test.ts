@@ -154,3 +154,68 @@ test("a case outside an enum body is a loud error", () => {
 		errors.some((e) => e.message.includes("case declarations belong inside enum bodies")),
 	).toBe(true);
 });
+
+test("declaration generation: an enum per table entry", async () => {
+	await build_and_check_output(
+		`
+import System
+
+#for w of ["x", "y"] {
+	pub enum E_#{w} {
+		case on(int v)
+		case off
+	}
+}
+
+pub func read_x = (E_x e, out string) {
+	match e {
+		case .on(v) { return "x:" + v.to_string() }
+		case .off { return "x:off" }
+	}
+}
+
+pub func read_y = (E_y e, out string) {
+	match e {
+		case .on(v) { return "y:" + v.to_string() }
+		case .off { return "y:off" }
+	}
+}
+
+pub func main = () {
+	Console.write_line(read_x(E_x.on(7)))
+	Console.write_line(read_y(E_y.off))
+}
+`,
+		"comptime_enum_decl",
+		"x:7\ny:off\n",
+		true,
+		{ js: true },
+	);
+});
+
+test("a generated enum's body folds target-selected cases", () => {
+	const body = `
+		#for w of ["a"] {
+			pub enum E_#{w} {
+				case base
+				#if META.arch == "js" {
+					case js_only
+				} else {
+					case native_only
+				}
+			}
+		}
+
+		pub func probe = (out string) {
+			#if META.arch == "js" {
+				var j = E_a.js_only
+				return "js"
+			} else {
+				var n = E_a.native_only
+				return "native"
+			}
+		}
+	`;
+	expect(compile_module(body, { arch: "js", platform: "macos" })).toEqual([]);
+	expect(compile_module(body, { arch: "c", platform: "macos" })).toEqual([]);
+});

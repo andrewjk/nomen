@@ -42,7 +42,7 @@ function status_consts(status: CheckStatus): PragmaConsts {
  *  them. */
 function fold_generated_member_pragmas(statements: BaseNode[], status: CheckStatus): void {
 	for (const stmt of statements) {
-		if (stmt.node_type === "struct" || stmt.node_type === "trait") {
+		if (stmt.node_type === "struct" || stmt.node_type === "trait" || stmt.node_type === "enum") {
 			fold_member_pragmas(stmt as unknown as MemberHost, status_consts(status), status);
 		}
 	}

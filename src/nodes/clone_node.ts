@@ -559,6 +559,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.is_generic = n.is_generic;
 			c.is_library = n.is_library;
 			c.checked = n.checked;
+			c.comptime_name = n.comptime_name;
 			c.allocations = n.allocations?.map(clone_node);
 			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
 			return c;

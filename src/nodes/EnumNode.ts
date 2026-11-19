@@ -58,6 +58,12 @@ export default class EnumNode extends BaseNode {
 	 */
 	source_name?: string;
 	/**
+	 * A comptime name splice for the enum's own name — `enum #{w} { ... }`
+	 * inside a file-scope `#for` (declaration generation). The template as
+	 * written; the expansion folds it into `name`.
+	 */
+	comptime_name?: string;
+	/**
 	 * Variable-mode enum (PERF_PLAN item 13): set on a synthesized
 	 * single-case mono (`Res.ok` → enum `Res_ok` whose cases are [ok]).
 	 * `parent_enum` names the base enum; every case carries the ORIGINAL

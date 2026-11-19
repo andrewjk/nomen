@@ -282,6 +282,20 @@ test("declaration generation: a struct per reflected field, used by name", () =>
 	expect(compile_main(body, { arch: "c", platform: "macos" })).toEqual([]);
 });
 
+test("declaration generation: an enum per table entry", () => {
+	const body = `
+		#for w of ["get", "post"] {
+			pub enum Route_#{w} {
+				case known
+				case unknown
+			}
+		}
+
+		var r = Route_get.known
+	`;
+	expect(compile_module(body, { arch: "c", platform: "macos" })).toEqual([]);
+});
+
 test("declaration generation: an extend adds peer members to existing types", () => {
 	const body = `
 		@entity
