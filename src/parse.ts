@@ -3,6 +3,7 @@ import path from "node:path";
 
 import add_error from "./add_error.ts";
 import check from "./check.ts";
+import { collect_spawned_starts } from "./check/utils/comptime.ts";
 import { attach_doc_comments } from "./doc_comments.ts";
 import { library_path_prefixes, type Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
@@ -87,7 +88,7 @@ export default function parse(
 		return {
 			ok: false,
 			root,
-			errors: format_errors(source, status.errors),
+			errors: format_errors(source, status.errors, root),
 			warnings: [],
 		};
 	}
@@ -102,8 +103,8 @@ export default function parse(
 	return {
 		ok: !checked.errors.length,
 		root,
-		errors: format_errors(source, checked.errors),
-		warnings: format_errors(source, checked.warnings),
+		errors: format_errors(source, checked.errors, root),
+		warnings: format_errors(source, checked.warnings, root),
 	};
 }
 
@@ -466,21 +467,53 @@ function resolve_types_with_deps(
 	return result.join("\n");
 }
 
-function format_errors(source: string, errors: CompileError[]) {
+function format_errors(source: string, errors: CompileError[], root: RootNode) {
 	errors = errors.sort((a, b) => a.start - b.start).filter((e) => e.start >= 0);
 
-	// Add line and column information to errors
+	// Two-location diagnostics: an error raised on generated code keeps the
+	// generated node's offset — a position inside the `#for` arm's source —
+	// which says nothing about WHICH loop unrolled it. Map the offsets of
+	// `spawn_of`-stamped subtrees to their generating loop, decorate the
+	// matching errors, and resolve the note's position alongside the
+	// primary one (one scan, below).
+	const spawned = collect_spawned_starts(root);
+	for (const e of errors) {
+		const at = spawned.get(e.start);
+		if (at !== undefined) e.spawned_at = at;
+	}
+
+	// Add line and column information to errors (and to each spawned-at
+	// note's offset).
+	const spots: { offset: number; set: (line: number, column: number) => void }[] = [];
+	for (const e of errors) {
+		spots.push({
+			offset: e.start,
+			set: (l, c) => {
+				e.line = l;
+				e.column = c;
+			},
+		});
+		if (e.spawned_at !== undefined) {
+			spots.push({
+				offset: e.spawned_at,
+				set: (l, c) => {
+					e.spawned_line = l;
+					e.spawned_column = c;
+				},
+			});
+		}
+	}
+	spots.sort((a, b) => a.offset - b.offset);
 	let line = 1;
 	let lastLineStart = 0;
-	for (let i = 0, e = 0; i < source.length, e < errors.length; i++) {
+	for (let i = 0, s = 0; i < source.length && s < spots.length; i++) {
 		if (source[i] === "\n") {
 			line += 1;
 			lastLineStart = i + 1;
 		}
-		while (e < errors.length && errors[e].start === i) {
-			errors[e].line = line;
-			errors[e].column = i - lastLineStart + 1;
-			e += 1;
+		while (s < spots.length && spots[s].offset === i) {
+			spots[s].set(line, i - lastLineStart + 1);
+			s += 1;
 		}
 	}
 

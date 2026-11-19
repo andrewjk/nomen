@@ -1569,6 +1569,35 @@ export function substitute_generic_constructs(
 	}
 }
 
+/**
+ * Map every source offset inside a `spawn_of`-stamped subtree to the
+ * `#for` that generated it (two-location diagnostics, R7 follow-up): an
+ * error raised anywhere in generated code decorates with a
+ * "spawned by `#for` at <position>" note instead of leaving the reader to
+ * recognize the arm by eye. Only a loop's top-level generated statements
+ * carry `spawn_of`, so the walk covers each stamped statement's whole
+ * subtree; inner nodes inherit their statement's loop.
+ */
+export function collect_spawned_starts(root: BaseNode): Map<number, number> {
+	const map = new Map<number, number>();
+	const walk = (node: BaseNode, loop_start: number | undefined): void => {
+		const own = (node as { spawn_of?: number }).spawn_of;
+		const active = own ?? loop_start;
+		if (active !== undefined) map.set(node.start, active);
+		for (const key in node) {
+			if (key === "parent" || key === "scope") continue;
+			const value = (node as unknown as Record<string, unknown>)[key];
+			if (Array.isArray(value)) {
+				for (const item of value) if (is_ast_node(item)) walk(item as BaseNode, active);
+			} else if (is_ast_node(value)) {
+				walk(value as BaseNode, active);
+			}
+		}
+	};
+	walk(root, undefined);
+	return map;
+}
+
 /** A comptime int literal node: a checked-shape static int value. */
 function comptime_int(start: number, value: number): ValueNode {
 	const literal = new ValueNode(start, String(value));

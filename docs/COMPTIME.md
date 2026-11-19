@@ -225,6 +225,7 @@ scan skips them).
 | Target fold (`fold_pragma_ifs`, member folds)              | `src/check/utils/pragma.ts`                                                                                    |
 | Expansion, name/type splices, deferral, binding resolution | `src/check/utils/comptime.ts`                                                                                  |
 | Layout model (`META.size_of`/`align_of`/`offset_of`)       | `src/build_common/layout.ts`, `src/check/utils/comptime.ts`                                                    |
+| Two-location diagnostics (`spawned_at` notes)              | `src/check/utils/comptime.ts` (`collect_spawned_starts`), `src/parse.ts`, `cli/src/format_errors.ts`           |
 | File-scope pre-expansion (`expand_file_scope_pragmas`)     | `src/check/utils/comptime.ts`, `src/check/check_block_node.ts`                                                 |
 | Per-conformer trait defaults                               | `src/check/utils/trait_defaults.ts`                                                                            |
 | Statement/type/body wiring                                 | `src/check/check_pragma_for_node.ts`, `check_struct_node`, `check_trait_node`, `check_enum_node`, `check_node` |

@@ -6,6 +6,17 @@ export default interface CompileError {
 	line: number;
 	column: number;
 	/**
+	 * Secondary location (two-location diagnostics): when the error was
+	 * raised on code a compile-time `#for` expansion generated, the source
+	 * offset of the generating `#for` statement (`node.spawn_of`). Resolved
+	 * to `spawned_line`/`spawned_column` alongside the primary position and
+	 * rendered as a "spawned by `#for`" note, so a diagnostic inside an arm
+	 * is recognizable as generated code and points back at its loop.
+	 */
+	spawned_at?: number;
+	spawned_line?: number;
+	spawned_column?: number;
+	/**
 	 * Structured editor edit for declared-field-set diagnostics
 	 * (FIELD_EFFECTS.md): add or extend the field set (`{ … }`) on a `ref`
 	 * parameter. Offsets share `start`'s coordinate space. The CLI ignores

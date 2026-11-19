@@ -64,30 +64,45 @@ function render_messages(
 	const lines = source.split("\n");
 	const markers = find_file_markers(source);
 
+	// Map a joined-source line back to the originating file + in-file line
+	// (the same walk the primary location uses below).
+	function locate(joined_line: number): { rel_path: string; file_line: number } {
+		for (let m = markers.length - 1; m >= 0; m--) {
+			if (markers[m].joined_line < joined_line) {
+				return {
+					file_line: joined_line - markers[m].joined_line,
+					rel_path: path.relative(process.cwd(), markers[m].abs_path) || markers[m].abs_path,
+				};
+			}
+		}
+		return { rel_path: "", file_line: joined_line };
+	}
+
 	const blocks: string[] = [];
 	for (const message of messages) {
 		const line_text = lines[message.line - 1] ?? "";
 
 		// Map the joined-source line back to the originating file + in-file line.
-		let rel_path = "";
-		let file_line = message.line;
-		for (let m = markers.length - 1; m >= 0; m--) {
-			if (markers[m].joined_line < message.line) {
-				file_line = message.line - markers[m].joined_line;
-				rel_path = path.relative(process.cwd(), markers[m].abs_path) || markers[m].abs_path;
-				break;
-			}
-		}
+		const { rel_path, file_line } = locate(message.line);
 
 		const gutter = " ".repeat(String(file_line).length);
 		const col = Math.max(1, message.column);
 		const display_line = line_text.replace(/\t/g, " ".repeat(TAB_WIDTH));
 		const squiggle = "~".repeat(token_width(line_text, col - 1));
 
+		// Two-location diagnostics: an error raised on `#for`-generated code
+		// notes the loop that unrolled it, resolved through the same file
+		// markers as the primary location.
+		const note =
+			message.spawned_line !== undefined
+				? ` note: spawned by '#for' at ${locate(message.spawned_line).rel_path}:${locate(message.spawned_line).file_line}:${Math.max(1, message.spawned_column ?? 1)}`
+				: "";
+
 		blocks.push(
 			[
 				`${severity}: ${message.message}`,
 				` File: ${rel_path}:${file_line}:${col}`,
+				...(note ? [note] : []),
 				`${gutter} |`,
 				`${file_line} | ${display_line}`,
 				`${gutter} | ${" ".repeat(visual_start(line_text, col))}${squiggle}`,

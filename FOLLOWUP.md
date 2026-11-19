@@ -708,10 +708,6 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   worked; it works now, so structured/named attribute arguments and a
   multi-value query surface are the next step for ORM/CLI-grade
   configuration.
-- **Two-location diagnostics** — `spawn_of` is stamped on generated nodes
-  (R7) but errors surface only the generated site plus a marker sentence
-  ("inside compile-time-generated code"). A structural
-  "spawned by `#for` at line N" note needs `CompileError` plumbing.
 - **`#for` in a generic-struct method whose iterable never binds** — the
   loop cannot defer at type-body scope and errors loudly ("cannot defer —
   reflect over a concrete type"). That is the intended posture, but the
