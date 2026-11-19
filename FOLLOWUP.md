@@ -663,3 +663,35 @@ and double-launch.
   tokenized BODY text, so teaching it to re-indent would need the tokenizer
   to normalize body whitespace first; a future `nomen format` pass could do
   that, purely cosmetically.
+
+## Declaration/type generation (stage 6)
+
+Shipped 2026-11-18: a file-scope `#for` generates whole structs/traits
+per reflected item with `#`-spliced names (prefix, braced suffix/middle,
+and type splices), usable by their generated names; generated bodies
+compose with `#if` member arms, the marker-trait derives, and
+`META.info(#self)`. What remains is the iterable surface — today it is
+only `META.info(T).fields`. The richer iterables the generation patterns
+want, roughly in demand order:
+
+1. **Enum cases** — `META.info(E).cases`, plus `#for` inside enum bodies
+   (generating cases from a table, the mirror image of generating FROM
+   cases). Command dispatch, wire-format names, per-case wrapper types:
+   the name-as-data pattern that works for struct fields today, extended
+   to the other half of the type world.
+
+2. **Comptime ranges** — `#for i of 0..16`. Fixed-size lookup tables,
+   unrolled kernels, N-slot generation. The cheapest general-purpose
+   iterable, and it composes with name splices for indexed names
+   (`buffer_#i`).
+
+3. **String/table lists** — `#for word of ["get", "post", "delete"]` —
+   "an enum from a table" verbatim: generate the enum's cases, or a
+   handler type per word, straight from an inline table. No carrier
+   struct needed.
+
+4. **Attribute-collected type sets** — "every struct carrying
+   `@entity`": a `META.types_with("entity")`-style iteration for
+   registries, ORM table creation, test-matrix enumeration. Needs
+   whole-program type knowledge at check time, so it is the deepest of
+   the four.
