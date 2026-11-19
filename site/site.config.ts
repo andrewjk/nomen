@@ -24,8 +24,12 @@ site.viteConfig = {
 	// The compiler's backends read debug switches from `process.env` (and one
 	// reads it at module scope). The Worker has no `process`; all of these are
 	// simply "off".
+	// Likewise `process.platform`, which the compiler reads to pick a default
+	// target platform when none is passed (src/default_platform.ts); the
+	// playground's programs run in the browser.
 	define: {
 		"process.env": "({})",
+		"process.platform": JSON.stringify("web"),
 	},
 };
 

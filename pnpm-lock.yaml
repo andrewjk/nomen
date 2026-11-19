@@ -98,6 +98,9 @@ importers:
       nomen-shiki:
         specifier: workspace:^
         version: link:../shiki
+      phosphor-torpor:
+        specifier: ^1.0.2
+        version: 1.0.2(@torpor/view@1.2.6)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.68.0
@@ -105,6 +108,9 @@ importers:
       '@resvg/resvg-wasm':
         specifier: ^2.6.2
         version: 2.6.2
+      allmark:
+        specifier: ^1.0.23
+        version: 1.0.23
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -1408,6 +1414,7 @@ packages:
   '@secretlint/secretlint-rule-preset-recommend@10.2.2':
     resolution: {integrity: sha512-K3jPqjva8bQndDKJqctnGfwuAxU2n9XNCPtbXVI5JvC7FnQiNg/yWlQPbMUlBXtBoBGFYp08A94m6fvtc9v+zA==}
     engines: {node: '>=20.0.0'}
+    deprecated: Built into secretlint v14 and later. Remove this package; the rule id still works. https://github.com/secretlint/secretlint/blob/HEAD/docs/rules/preset-recommend.md
 
   '@secretlint/source-creator@10.2.2':
     resolution: {integrity: sha512-h6I87xJfwfUTgQ7irWq7UTdq/Bm1RuQ/fYhA3dtTIAop5BwSFmZyrchph4WcoEvbN460BWKmk4RYSvPElIIvxw==}
@@ -2138,6 +2145,10 @@ packages:
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
+  allmark@1.0.23:
+    resolution: {integrity: sha512-swAolAYe8Jg+w+UQP7iJ7SCnUPlnHfzckW66VORsF+Rs0VpaT+EI2tUDIv6ZJ5h7dMvpvJrla4AwSbZdfGv8FQ==}
+    hasBin: true
 
   ansi-escapes@7.3.0:
     resolution: {integrity: sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg==}
@@ -3038,6 +3049,15 @@ packages:
 
   pend@1.2.0:
     resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
+
+  phosphor-torpor@1.0.2:
+    resolution: {integrity: sha512-FtljLdnB2L/KrRM4Unz9zPMOciwayqAbTv9wWHRY+BYmB9HJ2I6+mv78m+u6ClXR3WKDj1VzoWUMDS6bmS22aA==}
+    peerDependencies:
+      '@torpor/view': '>=0.2'
+      vite: '>=5'
+    peerDependenciesMeta:
+      vite:
+        optional: true
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -5338,6 +5358,8 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
+  allmark@1.0.23: {}
+
   ansi-escapes@7.3.0:
     dependencies:
       environment: 1.1.0
@@ -6372,6 +6394,14 @@ snapshots:
   pathe@2.0.3: {}
 
   pend@1.2.0: {}
+
+  phosphor-torpor@1.0.2(@torpor/view@1.2.6)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2)):
+    dependencies:
+      '@torpor/view': 1.2.6
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: '@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2)'
 
   picocolors@1.1.1: {}
 

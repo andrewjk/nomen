@@ -679,6 +679,37 @@ consumer: runtime trait dispatch already covers the vtable case, so this
 only earns its keep if generated code needs the list itself, not the
 dispatch.
 
+## Ownership-spelling proposal: `mv` required on owning declarations and settings, implicit elsewhere (design, not scheduled)
+
+Proposed direction (2026-11-20): make the mv story uniform — "we are implicit
+with type inference, but very explicit with memory management."
+
+- **`mv` is legal only for owning types** (`string`, `mv struct`,
+  class/trait handles): disallow it for ints, plain (Copyable) structs, and
+  other non-owning types everywhere. Parameters already enforce this
+  (`mv is only allowed for class, trait, or mv struct types`); field
+  declarations silently accept `mv int count` today, and bindings and
+  stores would need the same rule.
+- **Field declarations of strings/mv structs require `mv`**: `mv string name`,
+  `mv Inner inner` — the inverse of today's redundancy warning, which calls
+  the mv form redundant and prefers plain `var`. Type inference stays
+  implicit; the ownership is explicit.
+- **Settings (assignments into strings/mv structs) require `mv`**:
+  `thing.name = mv name`, `mv other = thing` — today a field store transfers
+  implicitly (`thing.name = name` moves and invalidates `name` with no
+  marker, while `thing.rename(name)` demands `mv` — the site asymmetry this
+  proposal removes).
+- **Fresh initializations never take `mv`**: `name = "bob"`,
+  `thing = Thing()`, `rename("alice")` — a fresh value has no owner to
+  surrender, so the call site and the initializer stay clean.
+
+Open interpretation questions: whether "declarations" covers only struct
+fields or also binding declarations (`var name = "bob"` → `mv name = …`);
+whether generic type-param fields (`var T item`) stay implicit (they must —
+`T`'s ownership is unknown until monomorphization); and the churn: the flip
+inverts guidance documented in MEMORY.md ("prefer plain `var`") and touches
+core/, SPEC and README examples.
+
 ## Comptime residuals (from the retired plan documents)
 
 TODOs carried over from the retired working notes `COMPTIME_PLAN.md` and
@@ -700,3 +731,18 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   worked; it works now, so structured/named attribute arguments and a
   multi-value query surface are the next step for ORM/CLI-grade
   configuration.
+
+## `mv string` parameters are rejected without `import System`
+
+`check_function_parameter_node`'s `mv` validation rejects a `mv string`
+parameter unless `status.structs` contains a generic whose `type_params`
+include the literal name `"string"` (the "is this name a type parameter
+anywhere" escape hatch, `src/check/check_function_parameter_node.ts:130`).
+With the System library appended, some generic satisfies that scan, so
+`mv string` params are accepted everywhere a real program compiles — but a
+file checked without the library (a snippet harness, an embedded host) gets
+`mv is only allowed for class, trait, or mv struct types, not 'string'` even
+though `mv string` is a legal pass-by-value transfer (the TRANSFER row of the
+ownership table). The escape hatch should accept the built-in `string` (and
+other pass-by-value owning types) directly instead of depending on a generic's
+parameter happening to share the name.

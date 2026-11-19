@@ -1,0 +1,37 @@
+import SiteNav from "./SiteNav.torp";
+
+interface TocEntry {
+	depth: number;
+	id: string;
+	text: string;
+}
+
+/** A rendered Markdown document (README or SPEC) with a contents sidebar.
+ *  The HTML is generated at build time by `scripts/render-docs.ts`. */
+export default function DocPage($props: {
+	current: "readme" | "spec";
+	title: string;
+	doc: { html: string; toc: TocEntry[] };
+}) {
+	@render {
+		<SiteNav current={$props.current} />
+		<div id="doc">
+			<aside class="toc">
+				<details open>
+					<summary>Contents</summary>
+					<ul>
+						@for (let entry of $props.doc.toc) {
+							<li class={`depth-${entry.depth}`}>
+								<a href={`#${entry.id}`}>{entry.text}</a>
+							</li>
+						}
+					</ul>
+				</details>
+			</aside>
+			<article class="prose">
+				<h1>{$props.title}</h1>
+				@html($props.doc.html)
+			</article>
+		</div>
+	}
+}

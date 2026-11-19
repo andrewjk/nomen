@@ -4,3 +4,5 @@ temp/
 .wrangler/
 *.log
 .DS_Store
+src/lib/docs/
+src/assets/highlight.generated.css

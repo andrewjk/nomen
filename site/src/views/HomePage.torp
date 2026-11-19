@@ -1,10 +1,39 @@
-/** The site index: just the wordmark while the real landing page is built. */
+import home from "@/lib/docs/home.generated";
+
+import SiteNav from "./parts/SiteNav.torp";
+
+/** The landing page: README's introduction and feature list, plus a sample
+ *  program (all rendered at build time by `scripts/render-docs.ts`). */
 export default function HomePage() {
 	@render {
+		<SiteNav current="home" />
 		<main id="home">
-			<header>
-				<h1>Nomen</h1>
+			<header class="hero">
+				<h1>The Nomen Programming Language</h1>
+				<div class="prose intro">
+					@html(home.intro)
+				</div>
+				<div class="cta">
+					<a class="button" href="/playground">Try the playground</a>
+					<a class="button ghost" href="/readme">Read the readme</a>
+					<a class="button ghost" href="/spec">Language spec</a>
+				</div>
 			</header>
+			<div class="home-columns">
+				<section class="prose features">
+					<h2>Features</h2>
+					@html(home.features)
+				</section>
+				<section class="sample">
+					<div class="sample-title">
+						<h2>{home.sample_name}</h2>
+						<a class="ghost" href={home.sample_href}>Open in playground</a>
+					</div>
+					<div class="sample-code">
+						@html(home.sample)
+					</div>
+				</section>
+			</div>
 		</main>
 	}
 }

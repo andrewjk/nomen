@@ -1,0 +1,10 @@
+import doc from "@/lib/docs/spec.generated";
+
+import DocPage from "./parts/DocPage.torp";
+
+/** SPEC.md, rendered at build time. */
+export default function SpecPage() {
+	@render {
+		<DocPage current="spec" title="Nomen Language Specification" doc={doc} />
+	}
+}

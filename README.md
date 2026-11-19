@@ -2,25 +2,35 @@
 
 Nomen is a statically-typed, memory managed language that compiles to C, AArch64 assembly (macOS only for now), and JavaScript (run with Node).
 
-It's intended to make memory safe programming easier than it has traditionally been while maintaining a relatively small surface area.
+It's intended to make memory safe programming easier than it has traditionally been by making it explicit where ownership moves (and must move) and guiding you with informative error messages.
 
-Most types of memory corruption (use before initialization, use after free, double free) should be caught at compile time and there's a simple constraints system to ensure that array bounds are checked before their items are accessed.
+Most types of memory corruption (use before initialization, use after free, double free) are caught at compile time without garbage collection or reference counting, and there's a simple constraints system to ensure that array bounds are checked before their items are accessed.
+
+<!-- site:hide -->
+
+Try it in your browser at [nomenlang.dev](https://nomenlang.dev) — no install needed.
+<!-- /site:hide -->
 
 ## Features
 
 - **Typed Values** - bools, ints, strings and so forth
-- **Structs & Classes** — value-type structs and reference-type classes
-- **Automatic Memory Management** — `#init` functions to allocate resources, `#destroy` functions to clear them at scope exit
-- **Ownership** — `mv` instances to a new owner, or share instances by `ref`
-- **Borrowed Slices** — `view` instances are non-mv, zero-copy slices that can't outlive their source
+- **Structs** — value types with methods and auto-generated constructors
 - **Traits** — interface-based polymorphism
-- **Enums & Bitsets** — sum types with associated data, plus composable bit flags
-- **Error Handling** — `error` enums, `T ! E` result declarations, `!` propagation, `!!` coalescing, and `try … catch` for the error side
-- **Operator Overloading** — custom behavior for arithmetic operators
-- **Generics** — type-safe generic structs and classes with compile-time checking
+- **Automatic Memory Management** — `#init` functions to allocate resources, `#destroy` functions to clear them at scope exit
+- **Ownership** — `mv` moves an instance to a new owner, and `ref` shares it
+- **Borrowed Slices** — `view` instances are zero-copy slices that can't outlive their source
+- **Enums & Bitsets** — sum types with associated data, plus composable bit flag sets
+- **Pattern Matching** — `match` with exhaustiveness checking, binding the data a case carries
+- **Null Safety** — nullable `T?` types with compile-time null tracking, `?.` chaining, and `??` coalescing
+- **Error Handling** — `error` enums, `out T ! E` result declarations, `!` propagation, `!!` coalescing, and `try … catch` at the call
+- **Generics** — type-safe generic structs, enums and functions with compile-time checking
 - **Constraints** — compile-time assertions on parameters, fields, and variables
 - **Higher-Order Functions** — first-class functions, lambdas, and closures
 - **Structured Concurrency** — nurseries, OS threads, and lightweight fibers, with channels and cooperative cancellation
+- **Operator Overloading** — custom behavior for arithmetic operators
+- **Compile-Time Metaprogramming** — `#if` conditionals, `#for` reflection over structs and enums, `@attributes`, generated declarations, and type introspection
+- **Compile-Time JSON** — typed serialization and deserialization from and to structs with `@rename` and `@skip` attributes
+- **FFI** — body-less `foreign func` declarations call C functions directly
 - **Core System Library** - small but growing, with data structures that remove the need for you to fight with the borrow checker
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)
 - **VS Code Extension** - with syntax highlighting for `.nm` files as well as the usual LSP niceties
@@ -67,7 +77,7 @@ pub func main = () {
 
 ## Command-Line Interface
 
-The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`, `test` and `docs`. Top-level options:
+The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`, `test`, `docs` and `lib-path`. Top-level options:
 
 | Command       | Description                                                                                          |
 | ------------- | ---------------------------------------------------------------------------------------------------- |
@@ -78,6 +88,7 @@ The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`,
 | `format`      | formats the code (defaults to tabs, 100 chars wide, sorted imports, implicit types, trailing commas) |
 | `test`        | runs any `.test.nm` files in the current folder                                                      |
 | `docs`        | generates a folder of documentation from code comments                                               |
+| `lib-path`    | prints the path to the bundled `System` library                                                      |
 
 | Option            | Alias | Description                                                                          |
 | ----------------- | ----- | ------------------------------------------------------------------------------------ |
@@ -85,7 +96,7 @@ The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`,
 | `--out <path>`    | `-o`  | Declared but currently unused; output goes to `<root>/build/`.                       |
 | `--config <path>` | `-c`  | Path to a JSON build config file.                                                    |
 | `--watch`         | `-w`  | Re-run the pipeline on file changes.                                                 |
-| `--arch <a>`      | `-a`  | Backend: `aarch64` (default) or `c`.                                                 |
+| `--arch <a>`      | `-a`  | Backend: `aarch64` (default), `c`, or `js`.                                          |
 | `--platform <p>`  | `-p`  | Target: `macos`, `ios`, `linux`, `android`, `windows`, `web` (host-derived default). |
 | `--lib <path>`    | `-l`  | Path to the `System` library directory.                                              |
 | `--audit`         |       | Enable memory auditing of the generated program.                                     |
@@ -299,58 +310,6 @@ mv c2 = c
 c2.increment()
 ```
 
-### Enums
-
-Enums are sum types. Cases can carry associated data, and shorthand `.case`
-syntax works where the type is known:
-
-```nomen
-pub enum Direction {
-    case north
-    case south
-    case east
-    case west
-}
-
-var Direction dir = .east
-
-pub enum Shape {
-    case circle(int radius)
-    case rect(int width, int height)
-}
-
-const shape = Shape.rect(10, 20)
-```
-
-### Pattern Matching
-
-`match` compares a value against cases and can bind the data a case carries. A
-match on an enum is checked for exhaustiveness — cover every case, or add an
-`else`:
-
-```nomen
-const message = match shape {
-    case .circle(r) -> "radius \{r}"
-    case .rect(w, h) -> "\{w}x\{h}"
-}
-```
-
-### Bitsets
-
-A `bitset` defines flags meant to be combined with bitwise operators:
-
-```nomen
-pub bitset Permissions {
-    case read
-    case write
-    case execute
-}
-
-var flags = Permissions.read | Permissions.write
-const can_write = (flags & Permissions.write) == Permissions.write
-flags = flags ^ Permissions.execute
-```
-
 ### Traits
 
 Traits declare method signatures that implementing structs provide. A concrete
@@ -441,6 +400,148 @@ const bool diff = a != b            // false — derived from #op_eq
 const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
 ```
 
+### Enums
+
+Enums are sum types. Cases can carry associated data, and shorthand `.case`
+syntax works where the type is known:
+
+```nomen
+pub enum Direction {
+    case north
+    case south
+    case east
+    case west
+}
+
+var Direction dir = .east
+
+pub enum Shape {
+    case circle(int radius)
+    case rect(int width, int height)
+}
+
+const shape = Shape.rect(10, 20)
+```
+
+### Pattern Matching
+
+`match` compares a value against cases and can bind the data a case carries. A
+match on an enum is checked for exhaustiveness — cover every case, or add an
+`else`:
+
+```nomen
+const message = match shape {
+    case .circle(r) -> "radius \{r}"
+    case .rect(w, h) -> "\{w}x\{h}"
+}
+```
+
+### Null Safety
+
+Any type can be nullable with `?`, and the compiler tracks null state —
+assigning `null` to a non-nullable type is rejected, and using a variable known
+to be null is a compile error:
+
+```nomen
+var int? maybe = null        // any type can be nullable
+
+var int? x = 5
+const y = x + 1              // OK — the compiler knows x is not null
+
+var int? n = null
+const bad = n + 1            // Error: Variable 'n' may be null
+```
+
+`?.` chains read a member only when the target holds a value, and `??` picks a
+fallback — evaluated lazily, exactly once:
+
+```nomen
+struct Profile {
+    var int score
+}
+
+func find = (int id, out Profile?) {
+    if id == 1 {
+        return Profile(7)
+    }
+    return null
+}
+
+func score_or = (int id, out int) {
+    var p = find(id)
+    return p?.score ?? 0     // the fallback runs only when p is null
+}
+```
+
+`== null` / `!= null` test the whole chain. The spellings mirror the error-side
+operators below — `?.` and `??` handle absent values, `!` and `!!` handle
+failures.
+
+### Error Handling
+
+Functions that can fail declare a result type with `!` — `out T ! E` is sugar
+for `Result<T, E>`. The `E` side is an `error` enum: like a plain enum, but
+always checked (discarding one is a compile error) and the only type allowed
+after `!`:
+
+```nomen
+error FetchError {
+    case notfound
+}
+
+func fetch = (string url, out int ! FetchError) {
+    if url == "" {
+        return .notfound     // lifts to Result.fail
+    }
+    return 7                 // lifts to Result.ok
+}
+```
+
+Bare returns lift automatically — a `T` value becomes `.ok`, an error `.case`
+becomes `.fail`. Handle the error side at the point of encounter with
+`try expr catch`; the success value flows through as the expression's value:
+
+```nomen
+func describe = (string url, out int) {
+    return try fetch(url) catch {
+        case .notfound -> -1
+    }
+}
+```
+
+`match` inspects both sides explicitly, postfix `!` propagates a failure to the
+caller, and `!!` supplies a fallback:
+
+```nomen
+var result = fetch("u")
+match result {
+    case .ok(value) -> Console.write("\{value}")
+    case .fail(err) -> Console.write("failed")
+}
+
+const body = fetch("example.com") !! 0   // the value, or 0 on failure
+
+func reload = (string url, out int ! FetchError) {
+    return fetch(url)!                   // propagate to the caller
+}
+```
+
+### Bitsets
+
+A `bitset` defines flags meant to be combined with bitwise operators:
+
+```nomen
+pub bitset Permissions {
+    case read
+    case write
+    case execute
+}
+
+var flags = Permissions.read | Permissions.write
+const can_write = (flags & Permissions.write) == Permissions.write
+flags = flags ^ Permissions.execute
+```
+
 ### Operator Overloading
 
 Structs define custom operator behavior with `#`-prefixed function names:
@@ -460,7 +561,7 @@ const sum = Vec2(1, 2) + Vec2(3, 4)
 
 ### Generics
 
-Structs, classes, and free functions can declare type parameters. Instantiate
+Structs, enums, and free functions can declare type parameters. Instantiate
 a generic by passing concrete type arguments in angle brackets:
 
 ```nomen
@@ -561,14 +662,6 @@ func sum = (...int nums) {
 }
 ```
 
-### Strings
-
-```nomen
-const greeting = "Hello, " + name
-const dashes = "-" * 10
-Console.write("You are \{age} years old.")
-```
-
 ### Arrays
 
 ```nomen
@@ -635,7 +728,7 @@ The anonymous-struct type is inferred and has no source-level name, so it can on
 ### Destructuring
 
 The `var [ ... ] = expr` form binds names by pulling values out of the
-right-hand side. Tuples, arrays, structs, and classes are all supported — the
+right-hand side. Tuples, arrays, and structs are all supported — the
 kind of value determines how the brackets are read:
 
 ```nomen
@@ -650,7 +743,7 @@ var [a, b] = [11, "hello"]
 const nums = [1, 2, 3]
 var [first, second, third] = nums
 
-// Structs and classes — bind by field name (bare name or `field = name`)
+// Structs — bind by field name (bare name or `field = name`)
 struct Point {
     var int x
     var int y

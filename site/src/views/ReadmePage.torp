@@ -1,0 +1,10 @@
+import doc from "@/lib/docs/readme.generated";
+
+import DocPage from "./parts/DocPage.torp";
+
+/** README.md, rendered at build time. */
+export default function ReadmePage() {
+	@render {
+		<DocPage current="readme" title="The Nomen Programming Language" doc={doc} />
+	}
+}

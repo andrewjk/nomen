@@ -143,7 +143,7 @@ The compiler tracks which nullable variables are null. Using a null variable is 
 
 ```
 var int? x = null
-const y = x + 1          // Error: Variable 'x' is null
+const y = x + 1          // Error: Variable 'x' may be null
 ```
 
 Nullable variables initialized with a non-null value can be used freely:

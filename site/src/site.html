@@ -2,6 +2,19 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<script>
+			// Apply the stored theme before first paint: dark is the default; a
+			// stored "light" — or the OS preference, when nothing is stored —
+			// wins. The nav's toggle flips this class and persists the choice.
+			(() => {
+				const stored = localStorage.getItem("theme");
+				if (
+					stored ? stored === "light" : matchMedia("(prefers-color-scheme: light)").matches
+				) {
+					document.documentElement.classList.add("light");
+				}
+			})();
+		</script>
 		<link rel="icon" type="image/svg+xml" href="/src/assets/nomen.svg" />
 		<link rel="icon" href="/favicon.ico" sizes="any" />
 		<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />

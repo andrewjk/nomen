@@ -3,11 +3,13 @@ import type { PageEndPoint } from "@torpor/build";
 import component from "@/views/HomePage.torp";
 
 const TITLE = "Nomen";
-const DESCRIPTION = "The Nomen programming language.";
+const DESCRIPTION =
+	"Nomen is a statically-typed, memory managed language that compiles to C, AArch64 assembly, and JavaScript.";
 
-/** The site index. A placeholder until the real landing page exists. */
+/** The site index: README's introduction and features, plus a sample program. */
 export default {
 	component,
+	prerender: true,
 	head: (event) => [
 		{ title: TITLE },
 		{ name: "description", content: DESCRIPTION },

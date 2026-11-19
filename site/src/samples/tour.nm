@@ -1,0 +1,86 @@
+import System
+
+// Enums are sum types and cases can carry data
+enum Shape {
+	case circle(int radius)
+	case rect(int width, int height)
+}
+
+// Traits give types a shared interface
+trait Measured {
+	func area = (self, out int)
+}
+
+// A `struct` contains simple data and functions
+// A `mv struct` contains owned data (the `string` field)
+mv struct Tile: Measured {
+	var string name
+	var Shape shape
+	var int count
+
+	// `ref self`: the `self` (this struct) is shared mutably
+	// `mv string name`: the struct takes ownership of the string
+	func rename = (ref self, mv string name) {
+		self.name = name
+	}
+
+	// A match must cover every case
+	func area = (self, out int) {
+		const each = match self.shape {
+			case .circle(r) -> 3 * r * r
+			case .rect(w, h) -> w * h
+		}
+		return each * self.count
+	}
+}
+
+// Constraints: callers must prove `b` is non-zero
+func divide = (int a, int b: b != 0, out int) {
+	return a / b
+}
+
+// Errors are special enums
+error ShareError {
+	case no_workers
+}
+
+// `out T ! E` returns a result the caller must handle
+func share = (int a, int n, out int !ShareError) {
+	// Inside this `if` the constraint is proven
+	if n != 0 {
+		return divide(a, n)
+	}
+	return .no_workers
+}
+
+// The `main` function is the entry point
+pub func main = () {
+	var door = Tile("Door", .rect(2, 3), 4)
+
+	// The `label` string is moved into `door` and
+	// can't be used after that point
+	const label = "The good door"
+	door.rename(mv label)
+	Console.write_line("\{door.name}: \{door.area()}")
+
+	// Build an array and loop through it
+	const tiles = [
+		Tile("rect", .rect(2, 3), 4),
+		Tile("circle", .circle(1), 6),
+	]
+	var total = 0
+	for tile of tiles {
+		total += tile.area()
+	}
+	Console.write_line("Total area: \{total}")
+
+	// `try … catch` handles each error case
+	const each = try share(total, 3) catch {
+		case .no_workers -> -1
+	}
+	Console.write_line("Per worker: \{each}")
+
+	// `!!` gives a fallback value instead
+	const none = share(total, 0) !! 0
+	Console.write_line("With no workers: \{none}")
+}

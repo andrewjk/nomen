@@ -6,9 +6,10 @@
 	"type": "module",
 	"scripts": {
 		"bundle:core": "tsx scripts/bundle-core.ts",
-		"predev": "tsx scripts/bundle-core.ts && tsx scripts/generate-favicons.ts",
+		"docs": "tsx scripts/render-docs.ts",
+		"predev": "tsx scripts/bundle-core.ts && tsx scripts/render-docs.ts && tsx scripts/generate-favicons.ts",
 		"dev": "tb --dev",
-		"prebuild": "tsx scripts/bundle-core.ts && tsx scripts/generate-favicons.ts",
+		"prebuild": "tsx scripts/bundle-core.ts && tsx scripts/render-docs.ts && tsx scripts/generate-favicons.ts",
 		"build": "tb --build",
 		"preview": "tb --build && wrangler dev --config wrangler.jsonc",
 		"deploy": "tb --build && wrangler deploy",
@@ -20,11 +21,13 @@
 		"@torpor/build": "^1.8.5",
 		"@torpor/unplugin": "^1.2.9",
 		"@torpor/view": "^1.2.6",
-		"nomen-shiki": "workspace:^"
+		"nomen-shiki": "workspace:^",
+		"phosphor-torpor": "^1.0.2"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.68.0",
 		"@resvg/resvg-wasm": "^2.6.2",
+		"allmark": "^1.0.23",
 		"tsx": "^4.23.15",
 		"typescript": "^7.0.2",
 		"vitest": "^4.1.10",

@@ -1,8 +1,23 @@
 # Nomen site
 
-The Nomen website. `/` is a placeholder landing page for now; the real feature
-is the **playground at `/playground`**, a Nomen program editor that compiles on
-the server and runs the emitted JavaScript in a sandboxed Worker.
+The Nomen website:
+
+- `/` — the landing page: README's introduction and feature list, plus a
+  sample program (`src/samples/tour.nm`, a short tour of the headline
+  features) with an "Open in playground" share link.
+- `/readme` and `/spec` — `README.md` and `SPEC.md`, rendered with highlighted
+  code blocks and a contents sidebar.
+- `/playground` — a Nomen program editor that compiles on the server and runs
+  the emitted JavaScript in a sandboxed Worker.
+
+The first three are **prerendered at build time**. `scripts/render-docs.ts`
+(`pnpm docs`; `dev`/`build` run it automatically) turns the Markdown into HTML
+with [Allmark](https://github.com/andrewjk/allmark) and highlights Nomen blocks (unlabelled
+fences count as Nomen) with `nomen-shiki`, writing `src/lib/docs/*.generated.ts`
+and `src/assets/highlight.generated.css` (both gitignored). Shiki's inline
+colours are folded into a handful of classes to keep the HTML small. Links
+between the two docs stay on the site; links to other repository files go to
+GitHub.
 
 It is a [Torpor](https://torpor.dev) site deployed to **Cloudflare Workers**
 (with static assets). Compilation happens inside the Worker; the System library

@@ -1,0 +1,4 @@
+The good door: 24
+Total area: 42
+Per worker: 14
+With no workers: 0

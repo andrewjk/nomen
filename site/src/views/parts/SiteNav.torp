@@ -1,0 +1,35 @@
+/** The site-wide top bar: the wordmark plus the docs and playground links. */
+import Moon from "phosphor-torpor/lib/Moon";
+import Sun from "phosphor-torpor/lib/Sun";
+
+export default function SiteNav($props: { current?: "home" | "readme" | "spec" | "playground" }) {
+	function cls(name: string): string {
+		return $props.current === name ? "current" : "";
+	}
+
+	/** Flip the `html.light` class the inline head script seeded, persist the
+	 *  choice, and keep the browser chrome color in sync. */
+	function toggle_theme() {
+		const light = document.documentElement.classList.toggle("light");
+		localStorage.setItem("theme", light ? "light" : "dark");
+		document
+			.querySelector('meta[name="theme-color"]')
+			?.setAttribute("content", light ? "#f5f6f8" : "#101214");
+	}
+
+	@render {
+		<nav id="site-nav">
+			<a class="brand" href="/">Nomen</a>
+			<div class="links">
+				<a class={cls("readme")} href="/readme">Readme</a>
+				<a class={cls("spec")} href="/spec">Spec</a>
+				<a class={cls("playground")} href="/playground">Playground</a>
+				<a href="https://github.com/andrewjk/nomen" rel="noopener">GitHub</a>
+				<button class="theme-toggle" title="Toggle light/dark" onclick={toggle_theme}>
+					<span class="icon-sun"><Sun size={16} /></span>
+					<span class="icon-moon"><Moon size={16} /></span>
+				</button>
+			</div>
+		</nav>
+	}
+}
