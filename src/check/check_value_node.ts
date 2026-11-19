@@ -28,6 +28,14 @@ export default function check_value_node(node: ValueNode, status: CheckStatus): 
 	if (resolved.name) {
 		node.type = resolved;
 	} else if (!node.type?.name) {
+		if (node.value.startsWith("#") && node.value.length > 1) {
+			add_error(
+				status,
+				`Unknown comptime entry '${node.value}' — comptime bindings come from #for loops`,
+				node.start,
+			);
+			return false;
+		}
 		add_error(status, `Unknown value: ${node.value}`, node.start);
 		return false;
 	}

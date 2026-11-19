@@ -97,8 +97,13 @@ export function bind_comptime_self(
  * applies to substituted `T_*` conditions).
  */
 
-/** One comptime field binding value: what `META.info(T).fields[i]` is. */
+/** One comptime binding value. `kind: "field"` is a struct-field entry
+ *  (`.name`/`.type.*`/`.get`/`.set` members); `"int"` and `"string"` are
+ *  VALUE bindings from the non-struct iterables (`#for i of 0..16`,
+ *  `#for w of ["a", "b"]`) — no members, referenced as `#<binding>` in
+ *  expressions and `#{<binding>}` in name templates. */
 interface ComptimeField {
+	kind: "field" | "int" | "string";
 	name: string;
 	type_name: string;
 	index: number;
@@ -111,6 +116,9 @@ interface ComptimeField {
 	/** The field's declared type — the root of comptime type expressions
 	 *  (`field.type.name`, `.arg_count`, `.args[i]`, recursively). */
 	type_value?: Type;
+	/** The folded value for value bindings (int/string kinds). */
+	int_value?: number;
+	string_value?: string;
 }
 
 type ComptimeValue =
@@ -149,6 +157,19 @@ export function resolve_comptime_name(
 ): string | undefined {
 	const fold_path = (path: string): string | undefined => {
 		const segments = path.split(".");
+		if (segments.length === 1 && segments[0] === binding) {
+			// The binding itself — a VALUE binding (range index, table
+			// string) stringifies into the name. Field bindings have no
+			// single value; they fold via `.name`.
+			if (field.kind === "int" && field.int_value !== undefined) {
+				return String(field.int_value);
+			}
+			if (field.kind === "string" && field.string_value !== undefined) {
+				return field.string_value;
+			}
+			add_error(status, `'#${path}' has no single value — field bindings fold via .name`, start);
+			return undefined;
+		}
 		if (segments.length < 2 || segments[0] !== binding) {
 			add_error(
 				status,
@@ -223,6 +244,7 @@ export function expand_struct_member_pragmas(host: MemberHost, status: CheckStat
 		const type_argument = iterable_type_argument(loop.iterable);
 		typed_fields.forEach((f, index) => {
 			const field: ComptimeField = {
+				kind: "field",
 				name: f.name,
 				type_name: (f.type as Type).name,
 				index,
@@ -340,6 +362,46 @@ function resolve_meta_iterable(node: BaseNode, status: CheckStatus): IterableRes
  * downstream never sees a node it doesn't know).
  */
 export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): BaseNode[] | null {
+	// Range iterables: `#for i of 0..16` — bounds fold comptime (literals
+	// and comptime arithmetic), exclusive end, matching the runtime
+	// range-for semantics. The binding is an int VALUE: `#i` in
+	// expressions, `#{i}` in name templates.
+	const iterable_node = unwrap_grouped(node.iterable);
+	if (iterable_node.node_type === "range") {
+		const range = iterable_node as import("../../nodes/RangeNode.ts").default;
+		const start_v = evaluate_comptime(range.left_value);
+		const end_v = evaluate_comptime(range.right_value);
+		if (!start_v || start_v.kind !== "int" || !end_v || end_v.kind !== "int") {
+			add_error(
+				status,
+				`#for over a range needs comptime int bounds — #for i of 0..16`,
+				range.start,
+			);
+			return [];
+		}
+		const iterations: BaseNode[] = [];
+		for (let i = start_v.value; i < end_v.value; i++) {
+			const binding: ComptimeField = {
+				kind: "int",
+				name: node.binding,
+				type_name: "int",
+				index: i,
+				type_argument: "",
+				int_value: i,
+			};
+			const body = (node.block.statements ?? []).map((s) => clone_node(s));
+			const rewritten: BaseNode[] = [];
+			for (const stmt of body) {
+				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+			}
+			for (const s of rewritten) {
+				s.spawn_of = node.start;
+			}
+			fold_generated_member_pragmas(rewritten, status);
+			iterations.push(new NestedBlockNode(node.block.start, rewritten));
+		}
+		return iterations;
+	}
 	const resolved = resolve_meta_iterable(node.iterable, status);
 	if ("error" in resolved) {
 		add_error(status, resolved.error, resolved.start);
@@ -372,6 +434,7 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 			}
 		}
 		const field: ComptimeField = {
+			kind: "field",
 			name: f.name,
 			type_name: raw_type.name,
 			index,
@@ -649,12 +712,41 @@ function rewrite(
 			}
 		}
 		if (target.node_type === "value" && (target as ValueNode).value === binding) {
+			if (field.kind === "int" || field.kind === "string") {
+				add_error(
+					status,
+					`'#${binding}' is the comptime value — value bindings have no members`,
+					access.access.start,
+				);
+				return node;
+			}
 			return rewrite_binding_access(node, access, statement_position, binding, field, status);
 		}
 	}
-	if (node.node_type === "value" && (node as ValueNode).value === binding) {
-		add_error(status, `#for binding '${binding}' used without .name, .get or .set`, node.start);
-		return node;
+	if (node.node_type === "value") {
+		const value = (node as ValueNode).value;
+		if (value === "#" + binding && (field.kind === "int" || field.kind === "string")) {
+			// A comptime VALUE binding in expression position (`#i`) — folds
+			// to its literal.
+			if (field.kind === "int") {
+				const literal = new ValueNode(node.start, String(field.int_value ?? 0));
+				literal.type = new Type("int", true);
+				return literal;
+			}
+			return comptime_string(node.start, field.string_value ?? "");
+		}
+		if (value === binding) {
+			if (field.kind === "int" || field.kind === "string") {
+				add_error(
+					status,
+					`'#${binding}' is the comptime value — use '#${binding}' in expressions and '#{${binding}}' in names`,
+					node.start,
+				);
+				return node;
+			}
+			add_error(status, `#for binding '${binding}' used without .name, .get or .set`, node.start);
+			return node;
+		}
 	}
 
 	// Comptime string concatenation (R6): `"a" + "b"` (post-substitution —

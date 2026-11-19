@@ -285,19 +285,22 @@ function parse_primary(status: ParseStatus, value: string): BaseNode {
 			return node;
 		}
 		case "#": {
-			// Compile-time `#` entries in expression position. `#self` —
-			// the conformer's own name/type, bound inside trait default
-			// bodies and `#{field.name}`-generated members
-			// (utils/trait_defaults.ts); resolves through the comptime
+			// Compile-time `#` entries in expression position. `#<binding>` —
+			// a comptime binding value from an enclosing `#for` (a range
+			// index, a table string), rewritten to its literal at expansion;
+			// `#self` — the conformer's own name/type, bound inside trait
+			// default bodies and `#{field.name}`-generated members
+			// (utils/trait_defaults.ts). Both resolve through the comptime
 			// rewrites before the body is checked, so an unbound use is a
 			// loud check error. Anything else falls through to
 			// `#embed_file("path")` — a compile-time string literal of the
 			// file's contents (see parse_embed_file) — which consumes the
 			// `#` itself and validates the directive name.
-			if (status.tokens[status.i + 1]?.value === "self") {
+			const word = status.tokens[status.i + 1]?.value;
+			if (word !== "embed_file") {
 				consume(status); // #
-				consume(status); // self
-				return new ValueNode(start, "#self");
+				consume(status); // the binding/entry word
+				return new ValueNode(start, `#${word}`);
 			}
 			return parse_embed_file(status);
 		}

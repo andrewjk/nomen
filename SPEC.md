@@ -3346,6 +3346,23 @@ pub struct Mirror {
 }
 ```
 
+### Compile-Time Iterables (`#for` over ranges and tables)
+
+Beyond struct fields, `#for` iterates comptime ranges — exclusive end,
+matching the runtime range-for. The binding is a comptime VALUE: `#i`
+in expressions (folds to the int literal) and `#{i}` in name templates
+(folds to the index as text):
+
+```
+#for i of 0..4 {
+    pub func slot_#{i} = (out int) {
+        return #i * 100
+    }
+}
+```
+
+Bounds must be comptime ints. An empty range (`5..5`) generates nothing.
+
 A generated field participates in the struct like a hand-written one —
 the constructor covers it when it has no default. A member that is not a
 field or a method is an error, and a loop over an unbound type parameter
