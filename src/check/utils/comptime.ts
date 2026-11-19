@@ -260,9 +260,22 @@ function loop_bindings(
  * `#if` member pragmas were already folded at the start of check; a
  * leftover pragma of any other kind is left untouched for its own pass.
  */
+/**
+ * The host display name for a type-body loop diagnostic: `struct
+ * 'Holder<T>'` — the generic spelling, so the "cannot defer" error names
+ * the type and the parameter that never binds there.
+ */
+function host_display(host: { name?: string; type_params?: string[] }): string {
+	const params = host.type_params ?? [];
+	const name = host.name ?? "type";
+	return params.length ? `${name}<${params.join(", ")}>` : name;
+}
+
 export function expand_struct_member_pragmas(host: MemberHost, status: CheckStatus): void {
 	const pragmas = host.member_pragmas ?? [];
 	if (pragmas.length === 0) return;
+	const host_typed = host as MemberHost & { name?: string; type_params?: string[] };
+	const display = host_display(host_typed);
 	const kept: BaseNode[] = [];
 	for (const pragma of pragmas) {
 		if (pragma.node_type !== "pragma_for") {
@@ -272,13 +285,26 @@ export function expand_struct_member_pragmas(host: MemberHost, status: CheckStat
 		const loop = pragma as PragmaForNode;
 		const resolved = resolve_meta_iterable(loop.iterable, status);
 		if ("error" in resolved) {
-			add_error(status, resolved.error, resolved.start);
+			// A loop over the HOST's own type parameter looks like deferral
+			// (R3), but a type body is checked once — no specialization ever
+			// re-expands it, and the "unknown type" wording would not say
+			// which parameter of which type failed to bind.
+			const head = iterable_type_argument(loop.iterable);
+			if (head && (host_typed.type_params ?? []).includes(head)) {
+				add_error(
+					status,
+					`'#for' at '${display}' body scope cannot defer — '${head}' is the host's own type parameter and binds only per specialization; reflect over a concrete type`,
+					loop.iterable.start,
+				);
+			} else {
+				add_error(status, resolved.error, resolved.start);
+			}
 			continue;
 		}
 		if ("deferred" in resolved) {
 			add_error(
 				status,
-				`'#for' at struct/trait-body scope cannot defer — reflect over a concrete type, not a type parameter`,
+				`'#for' at struct/trait-body scope ('${display}') cannot defer — reflect over a concrete type, not a type parameter`,
 				loop.iterable.start,
 			);
 			continue;
@@ -461,8 +487,17 @@ function resolve_meta_iterable(node: BaseNode, status: CheckStatus): IterableRes
  * into ordinary AST, stamps `spawn_of` (R7), and wraps the result in a
  * fresh block scope (R8). Returns [] on error (the pragma is consumed —
  * downstream never sees a node it doesn't know).
+ *
+ * `mono_context` (the specialized type's display name, `'Holder<Drawable>'`)
+ * is set only by the monomorphization clone hook — clones are never
+ * re-checked, so a resolve failure there is final, and the message names
+ * the substitution site instead of pointing into the generic's source.
  */
-export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): BaseNode[] | null {
+export function expand_pragma_for(
+	node: PragmaForNode,
+	status: CheckStatus,
+	mono_context?: string,
+): BaseNode[] | null {
 	// Range iterables: `#for i of 0..16` — bounds fold comptime (literals
 	// and comptime arithmetic), exclusive end, matching the runtime
 	// range-for semantics. The binding is an int VALUE: `#i` in
@@ -547,7 +582,13 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 	}
 	const resolved = resolve_meta_iterable(node.iterable, status);
 	if ("error" in resolved) {
-		add_error(status, resolved.error, resolved.start);
+		add_error(
+			status,
+			mono_context
+				? `'#for' in the ${mono_context} specialization: ${resolved.error}`
+				: resolved.error,
+			resolved.start,
+		);
 		return [];
 	}
 	if ("deferred" in resolved) return null;
@@ -771,10 +812,17 @@ export function expand_file_scope_pragmas(
  * Expand every `#for` in a statement list in place — the mono-clone hook.
  * Used where a cloned body will NOT be re-checked (monomorphized struct
  * methods are stamped `checked = true`), mirroring how the substituted
- * `T_*` condition arms are folded there instead of re-checked. Deferred
- * loops whose parameter still doesn't resolve produce a compile error.
+ * `T_*` condition arms are folded there instead of re-checked. A loop that
+ * still defers here NEVER will (the substitution did not rename its
+ * iterable's head) — a compile error naming the substitution site
+ * (`mono_context`), never a silent drop. Deferred loops whose parameter
+ * still doesn't resolve produce a compile error.
  */
-export function expand_pragma_fors_in_list(statements: BaseNode[], status: CheckStatus): void {
+export function expand_pragma_fors_in_list(
+	statements: BaseNode[],
+	status: CheckStatus,
+	mono_context?: string,
+): void {
 	for (let i = 0; i < statements.length; i++) {
 		const stmt = statements[i];
 		if (stmt.node_type !== "pragma_for") {
@@ -783,15 +831,28 @@ export function expand_pragma_fors_in_list(statements: BaseNode[], status: Check
 				if (key === "parent" || key === "scope") continue;
 				const child = (stmt as unknown as Record<string, unknown>)[key];
 				if (Array.isArray(child) && child.every(is_ast_node) && key === "statements") {
-					expand_pragma_fors_in_list(child as BaseNode[], status);
+					expand_pragma_fors_in_list(child as BaseNode[], status, mono_context);
 				} else if (is_ast_node(child)) {
-					expand_pragma_fors_in_list([child as BaseNode], status);
+					expand_pragma_fors_in_list([child as BaseNode], status, mono_context);
 				}
 			}
 			continue;
 		}
-		const iterations = expand_pragma_for(stmt as PragmaForNode, status);
-		if (iterations === null) continue; // deferred — specialization re-checks
+		const iterations = expand_pragma_for(stmt as PragmaForNode, status, mono_context);
+		if (iterations === null) {
+			// This hook runs ONLY where clones are never re-checked — a loop
+			// that still defers here never will (the substitution did not
+			// rename its iterable's head). That is a compile error, never a
+			// silent drop.
+			add_error(
+				status,
+				mono_context
+					? `'#for' in the ${mono_context} specialization cannot defer — its iterable still names an unbound type parameter; reflect over a concrete type`
+					: "'#for' cannot defer — reflect over a concrete type",
+				stmt.start,
+			);
+			continue;
+		}
 		statements.splice(i, 1, ...iterations);
 		i += iterations.length - 1;
 	}
@@ -1998,6 +2059,7 @@ function evaluate_comptime(node: BaseNode | undefined): ComptimeValue | undefine
 export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckStatus): void {
 	const pragmas = enum_node.member_pragmas ?? [];
 	if (pragmas.length === 0) return;
+	const display = host_display(enum_node);
 	const kept: BaseNode[] = [];
 	for (const pragma of pragmas) {
 		if (pragma.node_type !== "pragma_for") {
@@ -2007,13 +2069,22 @@ export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckSta
 		const loop = pragma as PragmaForNode;
 		const resolved = resolve_meta_iterable(loop.iterable, status);
 		if ("error" in resolved) {
-			add_error(status, resolved.error, resolved.start);
+			const head = iterable_type_argument(loop.iterable);
+			if (head && (enum_node.type_params ?? []).includes(head)) {
+				add_error(
+					status,
+					`'#for' at '${display}' body scope cannot defer — '${head}' is the enum's own type parameter and binds only per specialization; reflect over a concrete type`,
+					loop.iterable.start,
+				);
+			} else {
+				add_error(status, resolved.error, resolved.start);
+			}
 			continue;
 		}
 		if ("deferred" in resolved) {
 			add_error(
 				status,
-				`'#for' at enum-body scope cannot defer — reflect over a concrete type, not a type parameter`,
+				`'#for' at enum-body scope ('${display}') cannot defer — reflect over a concrete type, not a type parameter`,
 				loop.iterable.start,
 			);
 			continue;

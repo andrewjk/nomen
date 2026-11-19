@@ -747,7 +747,11 @@ export function monomorphize(
 		// type-parameter references (T -> the bound name), then expand.
 		substitute_pragma_iterables(cloned.statements, substitution);
 		substitute_generic_constructs(cloned.statements, substitution, status);
-		expand_pragma_fors_in_list(cloned.statements, status);
+		expand_pragma_fors_in_list(
+			cloned.statements,
+			status,
+			`${generic_struct.name}<${flat_args.map((a) => a.name).join(", ")}>`,
+		);
 		// Mono method clones are never re-checked, so `META.info(T).name`
 		// chains outside `#for` arms resolve here, through the substitution.
 		rewrite_meta_name_chains(cloned.statements, status, substitution);

@@ -708,11 +708,6 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   worked; it works now, so structured/named attribute arguments and a
   multi-value query surface are the next step for ORM/CLI-grade
   configuration.
-- **`#for` in a generic-struct method whose iterable never binds** — the
-  loop cannot defer at type-body scope and errors loudly ("cannot defer —
-  reflect over a concrete type"). That is the intended posture, but the
-  diagnostic does not yet say which substitution site failed to bind the
-  parameter.
 
 ## SPEC.md: dangling `#destroy-functions-1` anchor
 

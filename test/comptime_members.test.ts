@@ -145,7 +145,15 @@ test("a generic struct cannot reflect at body scope — loud error", () => {
 			}
 		}
 	`);
-	expect(errors.some((e) => e.message.includes("META.info: unknown type 'T'"))).toBe(true);
+	// The diagnostic names the host type and the parameter that never binds
+	// there (formerly the opaque "META.info: unknown type 'T'").
+	expect(
+		errors.some(
+			(e) =>
+				e.message.includes("'Bad<T>' body scope cannot defer") &&
+				e.message.includes("'T' is the host's own type parameter"),
+		),
+	).toBe(true);
 });
 
 test("only fields and methods can be generated at type scope", () => {

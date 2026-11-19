@@ -148,7 +148,10 @@ file-scope declaration before check runs, so `META.info(T)` and
   rewrites the iterable's type-parameter references
   (`substitute_pragma_iterables`) and re-checks the clone, expanding then.
   Mono-struct method clones are never re-checked — their loops expand in
-  the clone hook (`expand_pragma_fors_in_list`).
+  the clone hook (`expand_pragma_fors_in_list`), where a loop that still
+  defers (or whose iterable fails against the substituted name) is a
+  compile error naming the specialization
+  (`'#for' in the 'Holder<Drawable>' specialization: ...`).
 - **Nested loops defer to their own expansion.** A `#for` inside another
   loop's arm (a member loop in a generated type's body, or a body loop in
   an arm) is left alone by the outer rewrite — only its ITERABLE is folded
