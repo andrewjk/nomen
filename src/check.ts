@@ -51,7 +51,7 @@ export default function check(
 		platform: options?.platform ?? default_platform(),
 	};
 
-	// Compile-time conditionals first (docs/COMPTIME_PLAN_2.md stage 1):
+	// Compile-time conditionals first (docs/COMPTIME.md stage 1):
 	// splice every `#if` into its target-selected statements so every pass
 	// below — the emission-label name counter (a dead arm's duplicate name
 	// must not rename live declarations), literal-move stamping, gather,

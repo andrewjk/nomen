@@ -334,9 +334,9 @@ the next "add a hook" request lands here instead of growing `#`-members.
   precedent that this scales to representation).
 
 This supersedes the "representation attributes" idea (which waited on the
-comptime attribute system — docs/COMPTIME_PLAN_2.md D1 punts attribute
-syntax): marker traits use the existing conformance clause, so there is no
-syntax prerequisite. It also absorbs the C# analogy correctly: interface
+comptime attribute system, since shipped — see docs/COMPTIME.md): marker
+traits use the existing conformance clause, so there is no syntax
+prerequisite. It also absorbs the C# analogy correctly: interface
 magic in C# lowers OPERATIONS to member calls (IEnumerable/foreach),
 while representation (Span) stays compiler-known — triggering markers
 unify both without a second mechanism.
@@ -652,7 +652,7 @@ This gives the _app_ name, not the live window title. Renaming/re-execing a
 bundle at startup to track the title is possible but not worth the complexity
 and double-launch.
 
-## `#if`-unified raw blocks (COMPTIME_PLAN_2 stage 5) — behavior changes
+## `#if`-unified raw blocks (COMPTIME.md stage 5) — behavior changes
 
 - **`nomen format` and `#raw` body indentation.** Raw bodies are emitted
   verbatim (one shared body scanner with the tokenizer), so the formatter
@@ -666,16 +666,68 @@ and double-launch.
 
 ## Declaration/type generation (stage 6)
 
-Shipped 2026-11-18, including the iterable surface it was waiting on:
-`META.info(T).fields`, `META.info(E).cases` (plus `#for` inside enum
-bodies generating `case #{c.name}`), comptime ranges (`#for i of
-0..16`), string tables (`#for w of ["a", "b"]`), and attribute-collected
-type sets (`META.types_with("entity")` with `META.info(#t)` reflection).
-A file-scope `#for` generates whole structs/traits/enums per reflected
-item with `#`-spliced names (prefix, braced suffix/middle, and type
-splices), usable by their generated names; generated bodies compose with
-`#if` member arms, the marker-trait derives, and `#self`. Mechanics are
-recorded in docs/COMPTIME_PLAN_2.md (stage-2 notes and the stage-6
-entry). Remaining ideas, none scheduled: deep payload splices for
-generated enum cases (mirroring a source case's payload types), and
-trait-conformer iteration.
+Two ideas surfaced by the stage-6 work, neither scheduled.
+
+**Deep payload splices for generated enum cases.** An enum-body `#for`
+today generates `case #{c.name}` with fixed-type payloads: the name
+mirrors the source case, its payload does not. Mirroring payload types
+too (`case #{c.name}(#{c.param.type.name} p)`) would let one enum become
+a payload-preserving alias of another. It needs a splice form in
+enum-param type positions plus a payload-type member on the case
+binding — case bindings expose only `.name` today.
+
+**Peer members on existing types (`extend` in a `#for` arm).** A
+file-scope arm generates whole declarations, but cannot attach members to
+an EXISTING type: `extend struct #{t.name} { ... }` fails at parse —
+`parse_extend`'s target-name position does not accept a `#{...}` splice
+(verified 2026-11-19). That blocks the C# source-generator / Rust
+proc-macro shape of "find every `@entity` type and augment it" (the
+`META.types_with` half works). The fix is small: run the same name-splice
+intercept `parse_struct` uses in `parse_extend`.
+
+**Trait-conformer iteration.** `META.types_with("attr")` collects types
+by attribute; the same mechanism could enumerate a trait's conformers
+(`META.conformers("Sendable")`) for registry- or vtable-style
+generation. It is the deepest of the iterable ideas because the
+conformer set is open-ended — a conformance declared later in the file,
+or in another module, must still participate — while every current
+iterable is closed at the point it runs. Waiting on a concrete
+consumer: runtime trait dispatch already covers the vtable case, so this
+only earns its keep if generated code needs the list itself, not the
+dispatch.
+
+## Comptime residuals (from the retired plan documents)
+
+TODOs carried over from the retired working notes `COMPTIME_PLAN.md` and
+`COMPTIME_PLAN_2.md`, now folded into [`docs/COMPTIME.md`](./docs/COMPTIME.md)
+and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON.md).
+
+- **Layout introspection** — `META.size_of(T)`, `offset_of`, alignment.
+  Reflection exposes no offsets/sizes; the aarch64 backend computes both
+  anyway, so the data exists. Real uses: fixed-size buffers, FFI struct
+  mirrors, serialization. Also unblocks the "computed sizes" motivation
+  for comptime ints.
+- **Comptime string interpolation** — `"decode_\{T.name}"` does not fold;
+  comptime strings today combine only via literal `+` and `#{...}` name
+  templates. `#error` takes a single literal message. Needs a restricted
+  comptime string evaluator over literals (and perhaps `META` values).
+- **Type-level `#if` conditions** — conditions are limited to
+  `META.arch`/`META.platform` because the fold runs before gather, so
+  `#if META.info(T).field_count > 0` (or `META.is_struct(T)`) cannot
+  resolve there. A second fold stage after gather (or a deferred
+  type-condition pragma) would allow it.
+- **Richer attributes** — arguments are single comptime literals and
+  `.attr("x")` returns the first value only. D1 deferred per-field
+  metadata (serde-style `default`, `skip`, `rename` grammars) until `#for`
+  worked; it works now, so structured/named attribute arguments and a
+  multi-value query surface are the next step for ORM/CLI-grade
+  configuration.
+- **Two-location diagnostics** — `spawn_of` is stamped on generated nodes
+  (R7) but errors surface only the generated site plus a marker sentence
+  ("inside compile-time-generated code"). A structural
+  "spawned by `#for` at line N" note needs `CompileError` plumbing.
+- **`#for` in a generic-struct method whose iterable never binds** — the
+  loop cannot defer at type-body scope and errors loudly ("cannot defer —
+  reflect over a concrete type"). That is the intended posture, but the
+  diagnostic does not yet say which substitution site failed to bind the
+  parameter.

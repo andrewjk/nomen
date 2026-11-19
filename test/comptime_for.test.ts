@@ -165,7 +165,7 @@ test("unresolvable T in a never-specialized generic is left deferred, not an err
 });
 
 // ---------------------------------------------------------------------------
-// R9 acceptance (docs/COMPTIME_PLAN_2.md): re-derive Stringable / Equatable /
+// R9 acceptance (docs/COMPTIME.md): re-derive Stringable / Equatable /
 // Hashable with `#for field of META.info(T).fields` and diff the behavior
 // against the hardcoded derives. Run through the JS backend (in-process,
 // deterministic) and build clean through the C backend.

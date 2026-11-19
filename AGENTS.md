@@ -276,7 +276,7 @@ a raw-only function's arm is missing).
   `src/raw_block.ts`). The old ``` fence is **gone** — it is a parse error
   pointing here — as are the in-band `#c` / `#scope:` header lines (the
   opener's arguments replace them). Target selection lives in the `#if`
-  (stage 5, docs/COMPTIME_PLAN_2.md): a `#if`-selected block is checked only
+  (stage 5, docs/COMPTIME.md): a `#if`-selected block is checked only
   for its target, and a raw-only function whose every arm folds away is an
   error ("no implementation for this target").
 
@@ -323,7 +323,7 @@ the library type-link scan skips attribute-name tokens (so `@Table("users")`
 does not drag `Controls::Table` in).
 
 String conditions beyond `META.arch`/`META.platform` don't exist yet (no
-rich `META` predicates — see stage 2 notes in `docs/COMPTIME_PLAN_2.md`).
+rich `META` predicates — see stage 2 notes in `docs/COMPTIME.md`).
 
 String convention (one ABI everywhere, both backends): raw bodies see the
 same fat `string` values Nomen code sees — a C `char*` is the explicit

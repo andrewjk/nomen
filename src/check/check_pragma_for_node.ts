@@ -6,7 +6,7 @@ import type CheckStatus from "./CheckStatus.ts";
 import { expand_pragma_for } from "./utils/comptime.ts";
 
 /**
- * Check a compile-time `#for` (stage 2, docs/COMPTIME_PLAN_2.md). The
+ * Check a compile-time `#for` (stage 2, docs/COMPTIME.md). The
  * expansion happens HERE — before the arm's statements are ever checked —
  * and the per-field iteration blocks are spliced into the statement list
  * directly AFTER the pragma node, so the enclosing walk (a live for..of

@@ -14,7 +14,7 @@ export default class ParameterNode extends BaseNode {
 	// `is_moved` is inherited from BaseNode (a mv parameter / mv expression).
 	is_ref?: boolean;
 	/**
-	 * COMPTIME_PLAN_2 stage 4 (R4): a comptime type parameter — `type T` (or
+	 * COMPTIME.md stage 4 (R4): a comptime type parameter — `type T` (or
 	 * the plan's `T: type` spelling). The parameter NAMES a type instead of
 	 * holding a runtime value: the call site passes the type as a bare name,
 	 * the body references it wherever a type (or `META.info(T)` argument)

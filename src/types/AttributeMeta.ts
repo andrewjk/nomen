@@ -13,7 +13,7 @@ export interface AttributeValue {
 /**
  * An attribute — `@rename("user_name")` or a bare flag `@deprecated` —
  * attached to a struct, field or function declaration (docs/
- * COMPTIME_PLAN_2.md D1, stage 3). Pure metadata at parse time; the
+ * docs/COMPTIME.md D1, stage 3). Pure metadata at parse time; the
  * checker surfaces it through META (`META.info(T).attr(...)`,
  * `field.has_attr(...)`). The compiler assigns no meaning to any
  * attribute name; names are snake_case lookup keys, not symbols.

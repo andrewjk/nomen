@@ -2,7 +2,7 @@ import RawNode from "../nodes/RawNode.ts";
 import type BuildStatus from "./BuildStatus.ts";
 
 export default function build_raw_node(node: RawNode, status: BuildStatus) {
-	// Target selection happened at the fold (stage 5, docs/COMPTIME_PLAN_2.md)
+	// Target selection happened at the fold (stage 5, docs/COMPTIME.md)
 	// — only blocks that exist for this target survive to the backends. On
 	// the C backend every surviving block is C source; the `#raw("c")`
 	// dialect is the aarch64 companion's concern.

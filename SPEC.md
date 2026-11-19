@@ -3346,6 +3346,12 @@ pub struct Mirror {
 }
 ```
 
+A generated field participates in the struct like a hand-written one —
+the constructor covers it when it has no default. A member that is not a
+field or a method is an error, and a loop over an unbound type parameter
+is an error (struct-scope reflection cannot defer — there is no
+specialization to re-check a type body).
+
 ### Compile-Time Iterables (`#for` over ranges and tables)
 
 Beyond struct fields, `#for` iterates comptime ranges — exclusive end,
@@ -3424,11 +3430,35 @@ pub struct User {
 Reflection through a type binding is `META.info(#t)` — a type binding's
 only member is `.name`.
 
-A generated field participates in the struct like a hand-written one —
-the constructor covers it when it has no default. A member that is not a
-field or a method is an error, and a loop over an unbound type parameter
-is an error (struct-scope reflection cannot defer — there is no
-specialization to re-check a type body).
+### Comptime Binding Spellings
+
+Inside a `#for` arm the loop binding is an expansion-time substitute, not a
+runtime value. Three spellings cover its uses:
+
+- **A member is spelled bare** — `field.name`, `field.get(obj)`,
+  `field.set(obj, value)`, `case.name`, `t.name`. The member shape itself
+  identifies the binding, and expansion folds it: `.name` becomes a string
+  literal, `.get`/`.set` become ordinary field access/assignment, `.type.*`
+  reads the declared type. An unknown member is a loud error
+  (`field.name_id` names a member called `name_id` — there is no suffix
+  gluing in expressions).
+- **The binding's whole value needs `#`** — `#i` (a range index), `#word` (a
+  table string), `#t` (the type itself, as in `META.info(#t)`). Expansion is
+  pre-scope, so it cannot tell a binding use from a local of the same name;
+  instead of guessing, the language reserves the binding name inside its arm
+  (a bare `word` there is an error) and requires the marker. The marker folds
+  the use to its value — `"handled " + #word` becomes `"handled " + "get"`
+  (a string literal), `#i` an int literal, `#t` the type-name word.
+- **A splice inside an identifier needs `#{...}`** — `#{field.name}`,
+  `keys_#{t.name}`, `#{i}`. Names are plain strings on declarations, not
+  expressions, so the parser carries the template and expansion folds it.
+  Braces are required; every piece glued to a `#{...}` on either side is
+  literal template text (`get_#{field.name}`, `#{field.name}_id`).
+
+The split follows the phase contract: expansion happens before checking, so
+expression uses resolve structurally (member shape) or by the explicit `#`
+marker, while name positions — read by the parser, before any binding exists
+— need a parse-time template.
 
 ### Declaration Generation
 
@@ -3652,7 +3682,7 @@ Stage-1 limits: pragmas are valid at file scope and in function bodies
 (not inside struct/trait bodies), and `META` exists only inside pragma
 conditions (it is not a runtime value). Raw code blocks select their target
 through the same `#if` fold (stage 5 — see "Unsafe Code" and
-`docs/COMPTIME_PLAN_2.md`); the `#raw` opener carries only the block's own
+`docs/COMPTIME.md`); the `#raw` opener carries only the block's own
 nature (`#raw("c")` dialect, `#raw(…, "file")` scope).
 
 ## Standard Library

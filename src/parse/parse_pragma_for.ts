@@ -10,7 +10,7 @@ import get_index from "./utils/get_index.ts";
 
 /**
  * `#for <binding> of <iterable> { ... }` — the compile-time field loop
- * (docs/COMPTIME_PLAN_2.md stage 2). Body scope only: the arm is an
+ * (docs/COMPTIME.md stage 2). Body scope only: the arm is an
  * ordinary nested block pushed on the stack, so declarations inside it are
  * legal exactly like declarations in a `{ }` block statement (they die at
  * the arm's closing brace — which is also the per-iteration hygiene when

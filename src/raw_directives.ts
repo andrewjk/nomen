@@ -7,7 +7,7 @@ import type RawNode from "./nodes/RawNode.ts";
  *
  * The block's own nature lives on the `RawNode` (`is_c` for companion-C,
  * `scope` for file scope) — spelled on the opener, `#raw("c", "file")`. Target
- * selection is the `#if META.arch` fold (docs/COMPTIME_PLAN_2.md stage 5), so
+ * selection is the `#if META.arch` fold (docs/COMPTIME.md stage 5), so
  * every raw node reaching these helpers already belongs to the current target.
  */
 

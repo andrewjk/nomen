@@ -22,7 +22,7 @@ export default class BaseNode {
 
 	/**
 	 * The `start` offset of the compile-time `#for` that generated this
-	 * node (R7, docs/COMPTIME_PLAN_2.md). Stamped on clones spliced out of
+	 * node (R7, docs/COMPTIME.md). Stamped on clones spliced out of
 	 * a `#for` arm so an error inside unrolled code can report both the
 	 * generated site and the loop that spawned it. Undefined on
 	 * hand-written nodes.
@@ -31,7 +31,7 @@ export default class BaseNode {
 
 	/**
 	 * Attributes attached to this declaration — `@Name("user_name")` lines
-	 * directly above it (stage 3, docs/COMPTIME_PLAN_2.md D1). Present on
+	 * directly above it (stage 3, docs/COMPTIME.md D1). Present on
 	 * struct, field and function declarations; pure metadata surfaced
 	 * through META.
 	 */

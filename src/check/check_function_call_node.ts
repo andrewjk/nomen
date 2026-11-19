@@ -1747,7 +1747,7 @@ function resolve_free_func_calls(nodes: BaseNode[], status: CheckStatus) {
 
 /**
  * Resolve deferred `type`-parameter forwarding calls in a monomorphized
- * clone (COMPTIME_PLAN_2 stage 4 residual). A call to a generic function
+ * clone (COMPTIME.md stage 4 residual). A call to a generic function
  * whose `type` argument is the STRUCT's type parameter (`inner(T)` inside
  * `Wrapper<T>.m`) defers at the declaration check — the parameter is
  * unbound there, so `specialize_function`'s R3 deferral leaves the call
@@ -3306,7 +3306,7 @@ function specialize_function(
 ): FunctionNode | null {
 	const substitution = new Map<string, string>();
 	const suffix_parts: string[] = [];
-	// COMPTIME_PLAN_2 stage 4 (R4): call-argument indexes aligned with
+	// COMPTIME.md stage 4 (R4): call-argument indexes aligned with
 	// `type` parameters — consumed at check time, spliced out of the call
 	// below so the specialized call carries only runtime arguments.
 	const type_arg_indices: number[] = [];
@@ -3432,7 +3432,7 @@ function specialize_function(
 		if (!generic_struct?.is_generic) {
 			// Bare type parameter (`func f<T> = (T value, ...)`) — the
 			// inference source for reflection-driven generics (stage 2,
-			// docs/COMPTIME_PLAN_2.md R9): bind T from the argument's
+			// docs/COMPTIME.md R9): bind T from the argument's
 			// concrete type. Only concrete bindings count — an argument
 			// whose type is itself an unbound parameter leaves T unbound,
 			// surfacing below as "Cannot infer" (an honest dead end, never

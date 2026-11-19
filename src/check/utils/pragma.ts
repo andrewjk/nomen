@@ -56,7 +56,7 @@ export function fold_member_pragmas(
 
 /**
  * Compile-time conditionals — `#if META.arch == "c" { ... }` — docs/
- * COMPTIME_PLAN_2.md stage 1.
+ * docs/COMPTIME.md stage 1.
  *
  * The phase contract (R2, applied to the only feature stage 1 has): the
  * pragma is folded BEFORE any checking, splicing the selected arm's

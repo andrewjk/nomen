@@ -302,7 +302,7 @@ export default interface CheckStatus {
 	library_boundary?: number;
 
 	/**
-	 * COMPTIME_PLAN_2 stage 4: `type` parameter bindings visible while
+	 * COMPTIME.md stage 4: `type` parameter bindings visible while
 	 * re-checking a free-function specialization clone (parameter name ->
 	 * bound type name, e.g. T -> "Point"). A call inside the clone may pass
 	 * the parameter on to another generic's `type` parameter (`decode(T, s)`
@@ -315,7 +315,7 @@ export default interface CheckStatus {
 	/**
 	 * Compile target this check runs for (`#if META.arch` folding and the
 	 * raw-block dialect defaults key off it — stage 5, docs/
-	 * COMPTIME_PLAN_2.md). Defaults to the C backend's target, matching
+	 * docs/COMPTIME.md). Defaults to the C backend's target, matching
 	 * check()'s fold consts. Callers that build for another target MUST
 	 * check with the same one.
 	 */
@@ -327,7 +327,7 @@ export default interface CheckStatus {
 	platform?: string;
 
 	/**
-	 * COMPTIME_PLAN_2 stage 5: how many raw statements were folded away
+	 * COMPTIME.md stage 5: how many raw statements were folded away
 	 * from this function's body because their `#if` arm did not hold for
 	 * the target (stamped by fold_pragma_ifs). The stage-5 replacement for
 	 * the tag-era coverage error: a raw-only implementation whose every arm

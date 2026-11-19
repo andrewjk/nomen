@@ -3,7 +3,7 @@ import NestedBlockNode from "./NestedBlockNode.ts";
 
 /**
  * A compile-time field iteration — `#for field of META.info(T).fields { ... }`
- * — docs/COMPTIME_PLAN_2.md stage 2 (R3/R4/R5/R8). Body scope only.
+ * — docs/COMPTIME.md stage 2 (R3/R4/R5/R8). Body scope only.
  *
  * The binding is a comptime value: inside the arm, `<binding>.name` is a
  * comptime string, `<binding>.type.name` a comptime type-name string, and

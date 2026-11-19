@@ -78,7 +78,7 @@ export function bind_comptime_self(
 
 /**
  * Compile-time field reflection — `#for field of META.info(T).fields` —
- * docs/COMPTIME_PLAN_2.md stage 2 (R2–R6, R8).
+ * docs/COMPTIME.md stage 2 (R2–R6, R8).
  *
  * The phase contract (R2): expansion happens at CHECK time and produces
  * ordinary AST before the arm is checked — one freshly-scoped block per
@@ -1294,7 +1294,7 @@ function literal_string(node: BaseNode): string | undefined {
  *
  * With a `status`, a struct target whose constructor REQUIRES arguments
  * (fields without defaults) gets reflection-driven default construction
- * (COMPTIME_PLAN_2 stage 4 residual): the call synthesizes a zero value
+ * (COMPTIME.md stage 4 residual): the call synthesizes a zero value
  * per required parameter, recursively — a scalar parameter becomes its
  * zero literal, a nullable one `null`, a struct parameter a nested
  * constructor call built the same way (`Pair(0, 0)`, `Outer(Inner(0))`).

@@ -17,7 +17,7 @@ import peek_current from "./utils/peek_current.ts";
  * This parser consumes them, validates the arguments, and builds the node.
  *
  * Target selection is NOT here — it is the ordinary `#if META.arch` fold
- * (docs/COMPTIME_PLAN_2.md stage 5): a raw block is wrapped like any other
+ * (docs/COMPTIME.md stage 5): a raw block is wrapped like any other
  * statement and only the surviving arm is checked. The opener carries the
  * block's own nature instead:
  *

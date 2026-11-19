@@ -207,7 +207,7 @@ second (`unwrap_Box_string`).
 
 A free function can take a **type** as a parameter — `type T` (the ordinary
 `Type name` order) or the plan's `T: type` spelling; both parse to the same
-AST (COMPTIME_PLAN_2 stage 4, docs/COMPTIME_PLAN_2.md R3/R4):
+AST (docs/COMPTIME.md stage 4, R3/R4):
 
 ```nomen
 func zero = (type T, out T) {

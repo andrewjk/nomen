@@ -15,7 +15,7 @@ import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 
 /**
- * Compile-time conditionals (docs/COMPTIME_PLAN_2.md stage 1), spelled with
+ * Compile-time conditionals (docs/COMPTIME.md stage 1), spelled with
  * the language's existing keywords:
  *
  *   #if <condition> { ... } else { ... }

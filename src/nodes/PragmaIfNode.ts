@@ -13,7 +13,7 @@ export interface PragmaBranch {
 
 /**
  * A compile-time conditional — `#if META.arch == "c" { ... }` — docs/
- * COMPTIME_PLAN_2.md stage 1. Parsed anywhere a statement or declaration
+ * docs/COMPTIME.md stage 1. Parsed anywhere a statement or declaration
  * is legal, but never checked or built: the checker folds it before
  * checking (fold_pragma_ifs in src/check/utils/pragma.ts), splicing the
  * first branch whose condition holds into the parent statement list and

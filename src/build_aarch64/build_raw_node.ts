@@ -8,7 +8,7 @@ import { raw_reload_lines_for } from "./utils/raw_reload.ts";
 import { get_enum_sret_size, get_struct_size } from "./utils/struct_layout.ts";
 
 export default function build_raw_node(node: RawNode, status: BuildStatus) {
-	// Target selection happened at the fold (stage 5, docs/COMPTIME_PLAN_2.md)
+	// Target selection happened at the fold (stage 5, docs/COMPTIME.md)
 	// — only blocks that exist for this target survive. `is_c` is the block's
 	// `#raw("c")` dialect: companion-compiled C rather than inline assembly.
 	const code = node.value;

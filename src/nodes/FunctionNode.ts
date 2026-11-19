@@ -42,7 +42,7 @@ export default class FunctionNode extends BaseNode implements BlockNode, Returni
 	is_specialization?: boolean;
 	is_inline?: boolean;
 	/**
-	 * COMPTIME_PLAN_2 stage 5: how many raw statements were folded away from
+	 * COMPTIME.md stage 5: how many raw statements were folded away from
 	 * this function's body because their `#if` arm did not hold for the
 	 * target (stamped by fold_pragma_ifs). With `has_body` and an empty
 	 * statement list it means the function has no implementation for this

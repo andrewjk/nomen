@@ -425,7 +425,7 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 
 		return;
 	} else {
-		// COMPTIME_PLAN_2 stage 4 (R4): a comptime type parameter — spelled
+		// COMPTIME.md stage 4 (R4): a comptime type parameter — spelled
 		// `type T` (canonical, the ordinary `Type name` order) or `T: type`
 		// (the plan's spelling). The parameter NAMES a type instead of
 		// holding a runtime value: the call site passes the type as a bare

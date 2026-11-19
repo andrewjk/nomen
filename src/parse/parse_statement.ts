@@ -248,7 +248,7 @@ export default function parse_statement(status: ParseStatus) {
 				// #init / #destroy / #spawn — special struct functions
 				const next = status.tokens[status.i + 1]?.value;
 				if (next === "if" || next === "switch") {
-					// Compile-time conditionals (docs/COMPTIME_PLAN_2.md stage
+					// Compile-time conditionals (docs/COMPTIME.md stage
 					// 1): `#if META.arch == "c" { ... } else { ... }` and the
 					// `#switch { case ... }` multi-arm form. The checker folds
 					// both before checking — only the matching arm's

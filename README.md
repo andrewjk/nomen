@@ -523,6 +523,11 @@ func field_names = (type T, out string) {
 Console.write_line(field_names(Point))   // "Point: x y "
 ```
 
+See [COMPTIME.md](docs/COMPTIME.md) for the full compile-time surface
+(`#if`, `#for`, `#error`, attributes, generated declarations) and
+[COMPTIME_COMPARISON.md](docs/COMPTIME_COMPARISON.md) for how it compares
+to Zig comptime, Rust macros, Swift macros and C# source generators.
+
 ### Constraints
 
 Constraints are compile-time assertions on parameters, fields, and variables.

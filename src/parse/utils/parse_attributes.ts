@@ -8,7 +8,7 @@ import get_index from "./get_index.ts";
 import peek_current from "./peek_current.ts";
 
 /**
- * Attributes (stage 3, docs/COMPTIME_PLAN_2.md D1): a comma-separated list
+ * Attributes (stage 3, docs/COMPTIME.md D1): a comma-separated list
  * of `@name` / `@name(arg)` items on the line(s) above a declaration —
  *
  *   @rename("user_name"), @sql_type("VARCHAR")
