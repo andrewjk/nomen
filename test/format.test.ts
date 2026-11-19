@@ -47,6 +47,26 @@ test("strips a declared type when the literal infers exactly it", () => {
 	expect(format("var int n = 5.0\n")).toBe("var int n = 5.0\n");
 });
 
+test("keeps `!` spacing as written (prefix, postfix, result form)", () => {
+	// The `T ! E` result form keeps spaces on both sides — the formatter
+	// used to squash it to `!MathError`, reading the `!` as a prefix
+	// operator. `!` is triple-role (prefix not, postfix propagate, infix
+	// result separator), so its spacing is the author's, like `<`/`>`.
+	expect(format("func divide = (int a, int b, out int ! MathError) {\n\treturn a / b\n}\n")).toBe(
+		"func divide = (int a, int b, out int ! MathError) {\n\treturn a / b\n}\n",
+	);
+	// Prefix not stays tight.
+	expect(
+		format(
+			"func f = (bool ready, out bool) {\n\tif !ready {\n\t\treturn false\n\t}\n\treturn true\n}\n",
+		),
+	).toBe(
+		"func f = (bool ready, out bool) {\n\tif !ready {\n\t\treturn false\n\t}\n\treturn true\n}\n",
+	);
+	// Postfix propagate stays tight.
+	expect(format("var e = divide(1, 2)!\n")).toBe("var e = divide(1, 2)!\n");
+});
+
 test("reindents from spaces to tabs by default", () => {
 	const source = "func f = () {\n    if true {\n        return 1\n    }\n}\n";
 	const expected = "func f = () {\n\tif true {\n\t\treturn 1\n\t}\n}\n";

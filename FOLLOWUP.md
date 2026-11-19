@@ -708,11 +708,3 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   worked; it works now, so structured/named attribute arguments and a
   multi-value query surface are the next step for ORM/CLI-grade
   configuration.
-
-## `nomen format` squashes `T ! E` to `T !E`
-
-`nomen format` rewrites a result return type such as
-`func divide = (int a, int b, out int ! MathError)` to `out int !MathError`,
-apparently treating the `!` as a prefix operator. SPEC.md ("The `T ! E`
-Result Form") spells it with spaces on both sides. Seen while writing the
-website's front-page sample (`site/src/samples/tour.nm`).
