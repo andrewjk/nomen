@@ -105,7 +105,7 @@ export function bind_comptime_self(
  *  `#for w of ["a", "b"]`) — no members, referenced as `#<binding>` in
  *  expressions and `#{<binding>}` in name templates. */
 interface ComptimeField {
-	kind: "field" | "int" | "string" | "case";
+	kind: "field" | "int" | "string" | "case" | "type";
 	name: string;
 	type_name: string;
 	index: number;
@@ -131,6 +131,7 @@ type ComptimeValue =
 type IterableResolution =
 	| { struct: StructNode }
 	| { enum_node: EnumNode }
+	| { type_names: string[] }
 	| { deferred: true }
 	| { error: string; start: number };
 
@@ -169,6 +170,9 @@ export function resolve_comptime_name(
 			}
 			if (field.kind === "string" && field.string_value !== undefined) {
 				return field.string_value;
+			}
+			if (field.kind === "type") {
+				return field.type_name;
 			}
 			add_error(status, `'#${path}' has no single value — field bindings fold via .name`, start);
 			return undefined;
@@ -249,7 +253,9 @@ export function expand_struct_member_pragmas(host: MemberHost, status: CheckStat
 				? resolved.struct.fields
 						.filter((f) => f.type && f.type.name)
 						.map((f) => ({ name: f.name, attrs: f.attrs }))
-				: resolved.enum_node.cases.map((c) => ({ name: c.name }));
+				: "enum_node" in resolved
+					? resolved.enum_node.cases.map((c) => ({ name: c.name }))
+					: resolved.type_names.map((name) => ({ name }));
 		const type_argument = iterable_type_argument(loop.iterable);
 		items.forEach((item, index) => {
 			const field: ComptimeField = {
@@ -301,6 +307,40 @@ function unwrap_grouped(node: BaseNode | undefined): BaseNode {
  */
 function resolve_meta_iterable(node: BaseNode, status: CheckStatus): IterableResolution {
 	const fields_access = unwrap_grouped(node);
+	// `META.types_with("entity")` — every non-generic struct carrying the
+	// attribute, in registration order (whole-program knowledge at check
+	// time; the set re-computes on a specialization re-check).
+	if (
+		fields_access.node_type === "access" &&
+		(fields_access as AccessNode).access.node_type === "access_func" &&
+		((fields_access as AccessNode).access as AccessFunctionCallNode).name === "types_with" &&
+		unwrap_grouped((fields_access as AccessNode).target).node_type === "value" &&
+		(unwrap_grouped((fields_access as AccessNode).target) as ValueNode).value === "META"
+	) {
+		const args = ((fields_access as AccessNode).access as AccessFunctionCallNode).params ?? [];
+		const arg = unwrap_grouped(args[0]);
+		const text = arg?.node_type === "value" ? (arg as ValueNode).value : "";
+		if (args.length !== 1 || !text.startsWith('"')) {
+			return {
+				error: 'META.types_with takes an attribute name string — META.types_with("entity")',
+				start: fields_access.start,
+			};
+		}
+		const attr_name = text.substring(1, text.length - 1);
+		// `status.structs` carries each struct more than once (gather and
+		// check both register it) — dedupe by name, first occurrence wins
+		// (registration order).
+		const seen = new Set<string>();
+		const matches: string[] = [];
+		for (const s of status.structs) {
+			if (s.is_generic || s.is_simple_type || s.name.startsWith("_")) continue;
+			if (seen.has(s.name)) continue;
+			if (!(s.attrs ?? []).some((a) => a.name === attr_name)) continue;
+			seen.add(s.name);
+			matches.push(s.name);
+		}
+		return { type_names: matches };
+	}
 	const member =
 		fields_access.node_type === "access" &&
 		(fields_access as AccessNode).access.node_type === "access_field"
@@ -471,6 +511,33 @@ export function expand_pragma_for(node: PragmaForNode, status: CheckStatus): Bas
 		return [];
 	}
 	if ("deferred" in resolved) return null;
+	if ("type_names" in resolved) {
+		// `META.types_with("entity")` — one binding per matching type. The
+		// binding is a TYPE: `.name` folds to the type name, and
+		// `META.info(#t)` reflects over it (the marker rewrites to the
+		// type-name word before the enclosing body is checked).
+		const iterations: BaseNode[] = [];
+		resolved.type_names.forEach((type_name, index) => {
+			const binding: ComptimeField = {
+				kind: "type",
+				name: type_name,
+				type_name,
+				index,
+				type_argument: type_name,
+			};
+			const body = (node.block.statements ?? []).map((s) => clone_node(s));
+			const rewritten: BaseNode[] = [];
+			for (const stmt of body) {
+				rewritten.push(...rewrite_statement(stmt, node.binding, binding, status));
+			}
+			for (const s of rewritten) {
+				s.spawn_of = node.start;
+			}
+			fold_generated_member_pragmas(rewritten, status);
+			iterations.push(new NestedBlockNode(node.block.start, rewritten));
+		});
+		return iterations;
+	}
 	if ("enum_node" in resolved) {
 		// `META.info(E).cases` — one binding per case; `.name` is the
 		// case's name as a comptime string (`META.info(#self)` chains and
@@ -814,6 +881,11 @@ function rewrite(
 	}
 	if (node.node_type === "value") {
 		const value = (node as ValueNode).value;
+		if (value === "#" + binding && field.kind === "type") {
+			// `META.info(#t)` / `#t` — the type binding folds to the plain
+			// type-name word the rest of the comptime machinery expects.
+			return new ValueNode(node.start, field.type_name);
+		}
 		if (value === "#" + binding && (field.kind === "int" || field.kind === "string")) {
 			// A comptime VALUE binding in expression position (`#i`) — folds
 			// to its literal.
@@ -825,7 +897,7 @@ function rewrite(
 			return comptime_string(node.start, field.string_value ?? "");
 		}
 		if (value === binding) {
-			if (field.kind === "int" || field.kind === "string") {
+			if (field.kind === "int" || field.kind === "string" || field.kind === "type") {
 				add_error(
 					status,
 					`'#${binding}' is the comptime value — use '#${binding}' in expressions and '#{${binding}}' in names`,
@@ -1033,6 +1105,20 @@ function rewrite_binding_access(
 		add_error(
 			status,
 			`case bindings expose .name — '#${binding}.${wanted}' is not a case member`,
+			access.access.start,
+		);
+		return node;
+	}
+	if (field.kind === "type" && access.access.node_type === "access_field") {
+		// Type bindings expose their NAME; reflection goes through
+		// `META.info(#t)`.
+		const wanted = (access.access as AccessFieldNode).name;
+		if (wanted === "name") {
+			return comptime_string(node.start, field.type_name);
+		}
+		add_error(
+			status,
+			`type bindings expose .name — reflect with META.info(#${binding}) instead of '#${binding}.${wanted}'`,
 			access.access.start,
 		);
 		return node;
@@ -1642,11 +1728,14 @@ export function expand_enum_member_pragmas(enum_node: EnumNode, status: CheckSta
 			continue;
 		}
 		// Items for a case-generating loop: struct fields OR another
-		// enum's cases — each contributes its NAME.
+		// enum's cases OR an attribute's type set — each contributes its
+		// NAME.
 		const items: { name: string }[] =
 			"struct" in resolved
 				? resolved.struct.fields.filter((f) => f.type && f.type.name).map((f) => ({ name: f.name }))
-				: resolved.enum_node.cases.map((c) => ({ name: c.name }));
+				: "enum_node" in resolved
+					? resolved.enum_node.cases.map((c) => ({ name: c.name }))
+					: resolved.type_names.map((name) => ({ name }));
 		const type_argument = iterable_type_argument(loop.iterable);
 		items.forEach((item, index) => {
 			const binding: ComptimeField = {

@@ -458,9 +458,11 @@ file`). The node carries it (`RawNode.is_c` / `.scope`), deleting
    (`#for i of 0..16`, `#i`/`#{i}`), string tables (`#for w of
 ["a", "b"]`), enum cases (`META.info(E).cases`, `.name`) and
    enum-body case generation (`#for`/`#if` producing `case #{c.name}`
-   entries). Remaining: attribute-collected type sets
-   (`META.types_with("...")` — whole-program type knowledge at check
-   time).
+   entries), and attribute-collected type sets (`META.types_with("x")`
+   over non-generic attribute-carrying structs, with `META.info(#t)`
+   reflection and `.name`). Remaining ideas, none scheduled: deep
+   payload splices for generated enum cases and trait-conformer
+   iteration.
 
 ## See also
 

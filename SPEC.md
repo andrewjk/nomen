@@ -3397,6 +3397,33 @@ An `#if`/`#switch` inside an enum body selects cases (a selected case
 needs a literal name — a `#{...}` template needs a `#for` binding).
 Generated cases append after the pragmas are processed.
 
+`META.types_with("attr")` iterates every non-generic struct carrying the
+attribute (`@attr` above the declaration), in registration order. The
+binding is a TYPE: `.name` folds to the type name, `#{t.name}` splices
+it into generated names, and `META.info(#t)` reflects over the type —
+so a type set composes with field reflection:
+
+```
+@entity
+pub struct User {
+    pub var name = ""
+    pub var age = 0
+}
+
+#for t of META.types_with("entity") {
+    pub func keys_#{t.name} = (out string) {
+        var s = ""
+        #for f of META.info(#t).fields {
+            s = s + f.name + ","
+        }
+        return s
+    }
+}
+```
+
+Reflection through a type binding is `META.info(#t)` — a type binding's
+only member is `.name`.
+
 A generated field participates in the struct like a hand-written one —
 the constructor covers it when it has no default. A member that is not a
 field or a method is an error, and a loop over an unbound type parameter

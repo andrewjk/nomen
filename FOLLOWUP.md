@@ -666,19 +666,16 @@ and double-launch.
 
 ## Declaration/type generation (stage 6)
 
-Shipped 2026-11-18: a file-scope `#for` generates whole structs/traits
-per reflected item with `#`-spliced names (prefix, braced suffix/middle,
-and type splices), usable by their generated names; generated bodies
-compose with `#if` member arms, the marker-trait derives, and
-`META.info(#self)`. What remains is the iterable surface — today it is
-only `META.info(T).fields`. The richer iterables the generation patterns
-want, roughly in demand order (comptime ranges — `#for i of 0..16` with `#i`/`#{i}` value
-references — string/table lists — `#for w of ["a", "b"]` with
-`#w`/`#{w}` — and enum cases — `META.info(E).cases` plus `#for` inside
-enum bodies generating `case #{c.name}` — shipped 2026-11-18):
-
-1. **Attribute-collected type sets** — "every struct carrying
-   `@entity`": a `META.types_with("entity")`-style iteration for
-   registries, ORM table creation, test-matrix enumeration. Needs
-   whole-program type knowledge at check time, so it is the deepest of
-   the four.
+Shipped 2026-11-18, including the iterable surface it was waiting on:
+`META.info(T).fields`, `META.info(E).cases` (plus `#for` inside enum
+bodies generating `case #{c.name}`), comptime ranges (`#for i of
+0..16`), string tables (`#for w of ["a", "b"]`), and attribute-collected
+type sets (`META.types_with("entity")` with `META.info(#t)` reflection).
+A file-scope `#for` generates whole structs/traits/enums per reflected
+item with `#`-spliced names (prefix, braced suffix/middle, and type
+splices), usable by their generated names; generated bodies compose with
+`#if` member arms, the marker-trait derives, and `#self`. Mechanics are
+recorded in docs/COMPTIME_PLAN_2.md (stage-2 notes and the stage-6
+entry). Remaining ideas, none scheduled: deep payload splices for
+generated enum cases (mirroring a source case's payload types), and
+trait-conformer iteration.
