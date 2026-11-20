@@ -14,6 +14,60 @@
 
 
 
+
+## 0.15.0
+<sub>2026-11-20</sub>
+
+-  *(minor)* - #if / #switch compile-time conditionals over META.arch / META.platform
+-  *(minor)* - #for + META.info(T).fields compile-time field reflection
+-  *(minor)*
+  @-attributes (snake_case, one value each: string/int/float/bool) on structs and fields, consumed via META.attr / field.attr / has_attr
+-  *(minor)*
+  Standard library compile-time serde: json_decode_into<T> / json_encode<T> with @rename, @skip, nested structs and StableList containers (including nested), plus T() generic construction and META.name/is_struct/is_container type predicates
+-  *(minor)*
+  type parameters (`type T` / `T: type`) — pass a type as a function argument; comptime-only, erased from the specialization signature, composes with META.info / #for reflection
+-  *(minor)*
+  raw-block target selection moves into `#if META` — the in-band `#arch:`/`#platform:` tags are removed; a `#c` header line marks companion-C, unmarked blocks are the target default
+-  *(minor)*
+  raw blocks are now `#raw { ... }` directives — dialect/scope move onto the opener (`#raw("c")`, `#raw(…, "file")`); the triple-backtick fence and the in-band `#c`/`#scope:` lines are removed
+-  *(minor)* - Generic instantiations as comptime type arguments
+-  *(minor)* - Default construction for T()
+-  *(minor)* - Target-independent ownership from folded destroy arms
+-  *(minor)* - Zero-copy element encode in typed JSON
+-  *(minor)* - Refill typed JSON decode in place, borrow the encode walk
+-  *(minor)* - Comptime ints, #if arithmetic, #error
+-  *(minor)* - Derives as #for trait defaults
+-  *(minor)* - Struct-body pragmas and declaration generation
+-  *(minor)* - Prefix splices on struct/trait names
+-  *(minor)* - Braced suffix/middle name templates
+-  *(minor)* - Type splices in generated members
+-  *(minor)* - Brace-required name splices
+-  *(minor)* - Comptime range iterables
+-  *(minor)* - String-table iterables
+-  *(minor)* - Enum cases iterable and case generation
+-  *(minor)* - Attribute type-set iterables
+-  *(minor)* - Generated extend: peer members on existing types
+-  *(minor)* - Enum declaration name splices
+-  *(minor)*
+  Layout introspection: META.size_of / META.align_of / META.offset_of fold to comptime ints from the shared layout model (build_common/layout.ts)
+-  *(minor)* - Nested #for: member loops inside generated type bodies expand against their own binding and compose with outer bindings
+-  *(minor)* - Two-location diagnostics: errors on #for-generated code carry a spawned-at note pointing at the generating loop
+-  *(minor)* - Deep payload splices: generated enum cases splice payload params from the case binding (c.params[i], c.param_count)
+-  *(patch)* - Generic free functions specialize once across call sites (no duplicate definitions)
+-  *(patch)* - Fix: nested container monos in the C emitter (in-place push splice lost the mono; META container classification)
+-  *(patch)* - Fix: ref-param string assignment leaked the displaced pair (caller-side reclaim)
+-  *(patch)* - Fix: nested StableList destroy leaks inner slabs (full idempotent mono destroy)
+-  *(patch)* - Perf: json serde encode keys/values append in place, int decode cursor
+-  *(patch)* - Fix: ref-param string displacement residuals (loop owns-flag, concat len half, may-store stale free)
+-  *(patch)* - Fix: attribute names no longer drag library types into the link scan
+-  *(patch)* - Fix: JS backend collects library enums (Controls module-load crash)
+-  *(patch)* - type-arg forwarding through struct bodies
+-  *(patch)* - Fix C-backend ref-string statement expression
+-  *(patch)* - Reject Enumerable for-of that cannot lower
+-  *(patch)* - raw_type_size rides the shared layout model (trait-field tails count in raw T_SIZE strides)
+-  *(patch)* - #for diagnostics name the failing parameter and specialization site
+-  *(patch)* - nomen format keeps the T ! E result-form spacing (the ! was squashed as a prefix operator)
+
 ## 0.14.0
 <sub>2026-11-16</sub>
 
