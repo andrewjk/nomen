@@ -1,7 +1,14 @@
 import { expect, describe, test } from "vite-plus/test";
 
 import parse from "../src/parse";
+import type CompileError from "../src/types/CompileError.ts";
 import test_error from "./test_error";
+
+// The ownership-spelling diagnostics carry structured `quick_fix` edits
+// (test/mv_quickfix.test.ts pins those shapes); the assertions here are
+// about the diagnostics themselves, so the payload is stripped.
+const without_fix = (errors: CompileError[]) =>
+	errors.map(({ message, line, column, start }) => ({ message, line, column, start }));
 
 // STRUCT_PLAN_3 B5 — the field restrictions collapsed into the Copyable
 // verifier: a class/trait-typed field (like a declared-mv or Box field)
@@ -20,7 +27,7 @@ struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `mv struct Holder`, or remove the field",
@@ -40,7 +47,7 @@ struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `mv struct Holder`, or remove the field",
@@ -58,7 +65,7 @@ struct Point {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 	});
 
@@ -77,7 +84,7 @@ struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"a trait-typed field is not supported yet — declare 's' with the concrete type, or `Box<Speaker>` once boxed",
@@ -114,7 +121,7 @@ mv struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("class with mv class field is fine", () => {
@@ -127,7 +134,7 @@ mv struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("trait with var mv field is fine (B5)", () => {
@@ -140,7 +147,7 @@ trait HasBox {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("trait with mv class field is fine", () => {
@@ -153,7 +160,7 @@ trait HasBox {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("class with value type var field is fine", () => {
@@ -163,7 +170,7 @@ mv struct Counter {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 	});
 
@@ -175,7 +182,7 @@ func identity = (mv int x, out int) {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'int'",
@@ -196,7 +203,7 @@ func identity = (mv Point p, out Point) {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'Point'",
@@ -216,7 +223,7 @@ func identity = (mv Box b, out Box) {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("mv string parameter is fine (built-in owner, no library needed)", () => {
@@ -226,7 +233,7 @@ func identity = (mv string s, out string) {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("mv on generic type parameter is allowed", () => {
@@ -239,7 +246,7 @@ struct Container<T> {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 	});
 
@@ -269,7 +276,7 @@ mv int x = 5
 			const parsed = parse(input);
 			// Two rules fire: mv is illegal on a non-owning type, and the
 			// initializer is a fresh value no mv could transfer.
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'int'",
@@ -291,7 +298,7 @@ var int y = 6
 mv x = y
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'int'",
@@ -308,7 +315,7 @@ struct Counter {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'int'",
@@ -325,7 +332,7 @@ var int x = 0
 x = mv y
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'int'",
@@ -346,7 +353,7 @@ var b = Point(0, 0)
 b = mv a
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'Point'",
@@ -365,7 +372,7 @@ var c = Config("x")
 mv c2 = c
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("mv field of a declared mv struct type is fine", () => {
@@ -378,7 +385,7 @@ mv struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 	});
 
@@ -394,7 +401,7 @@ mv struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"field 'name' owns memory — declare it 'mv string name' (plain 'var' is for non-owning types)",
@@ -414,7 +421,7 @@ mv struct Holder {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"field 'inner' owns memory — declare it 'mv Inner inner' (plain 'var' is for non-owning types)",
@@ -431,7 +438,7 @@ struct Counter {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("a type-param field stays implicit (mv optional, never required)", () => {
@@ -441,7 +448,7 @@ mv struct Box<T> {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("a field store of an owned local demands mv on the right-hand side", () => {
@@ -457,7 +464,7 @@ var i = Inner()
 h.inner = i
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"storing 'i' into owning field 'inner' moves it — write 'inner = mv i' to spell the transfer",
@@ -491,7 +498,7 @@ var h = Holder("x")
 h.name = "alice"
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("mv on a fresh binding initializer errors", () => {
@@ -499,7 +506,7 @@ h.name = "alice"
 mv n = "bob"
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"'mv' on 'n' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'",
@@ -518,7 +525,7 @@ var h = Holder("x")
 mv h2 = Holder("y")
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
+			expect(without_fix(parsed.errors)).toEqual([
 				test_error(
 					input,
 					"'mv' on 'h2' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'",
@@ -535,7 +542,7 @@ mv struct Node {
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 
 		test("mv binding from a bare variable is the transfer spelling", () => {
@@ -547,7 +554,7 @@ var c = Config("x")
 mv other = c
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([]);
+			expect(without_fix(parsed.errors)).toEqual([]);
 		});
 	});
 });

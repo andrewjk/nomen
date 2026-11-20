@@ -361,10 +361,25 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// so both are checked.
 		if (struct.spawn_of !== undefined || field.spawn_of !== undefined) continue;
 		if (!slot_requires_mv(field.type, status)) continue;
+		// Quick fix: swap the declaration keyword to `mv` — the same
+		// keyword-token replace the const lint offers. A `readonly` field
+		// parses with keyword_text "var" but no `var` token in the source,
+		// so the replace span would corrupt it — bare error there.
+		const fix =
+			!field.is_readonly && field.keyword_text === "var" && field.keyword_start !== undefined
+				? {
+						title: `Declare it 'mv ${type_name(field.type)} ${field.name}'`,
+						param_start: field.start,
+						replace_start: field.keyword_start,
+						replace_end: field.keyword_start + field.keyword_text.length,
+						replace_text: "mv",
+					}
+				: undefined;
 		add_error(
 			status,
 			`field '${field.name}' owns memory — declare it 'mv ${type_name(field.type)} ${field.name}' (plain 'var' is for non-owning types)`,
 			field.start,
+			fix,
 		);
 	}
 

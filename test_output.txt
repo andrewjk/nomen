@@ -7,8 +7,8 @@
 
 [system_lib] C object: built; aarch64 object: built
 
- Test Files  605 passed (605)
-      Tests  5389 passed | 8 skipped (5397)
-   Start at  23:52:43
-   Duration  702.82s (transform 36.10s, setup 0ms, import 887.65s, tests 4491.81s, environment 67ms)
+ Test Files  606 passed (606)
+      Tests  5394 passed | 8 skipped (5402)
+   Start at  08:18:24
+   Duration  423.78s (transform 29.77s, setup 0ms, import 591.92s, tests 2618.01s, environment 46ms)
 

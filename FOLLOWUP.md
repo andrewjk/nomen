@@ -679,34 +679,28 @@ consumer: runtime trait dispatch already covers the vtable case, so this
 only earns its keep if generated code needs the list itself, not the
 dispatch.
 
-## Quick fixes for the ownership-spelling errors
+## `nomen format` ownership-spelling pass
 
 Recorded 2026-11-21, when the ownership-spelling flip landed (owning fields
 require `mv`, field stores of owned locals demand `field = mv local`, fresh
-initializers reject the marker). The three new diagnostics name the exact
-corrected spelling, but nothing applies it: existing programs upgrade to
-hand-fixable compile errors. Two places already carry the machinery to
-autofix them:
+initializers reject the marker). The three diagnostics now carry structured
+quick fixes (checker-side, landed same day: the field requirement swaps
+`var` → `mv`, the store requirement inserts `mv ` before the donor, the
+fresh-marker rejection rewrites the keyword to `var` — pinned in
+test/mv_quickfix.test.ts, applied verbatim by the VSCode extension). What
+is still missing is the whole-program route: `nomen format` normalizes
+layout and strips redundant annotations but does not apply the ownership
+spellings, so a migrating program either visits every diagnostic in the
+editor or hand-edits.
 
-- **Checker quick fixes.** The declared-effect diagnostics already attach
-  structured `quick_fix` payloads (`insert_offset`/`insert_text`,
-  `replace_start`/`replace_end`) that the VSCode extension applies verbatim
-  — the shapes are pinned in test/field_effects_quickfix.test.ts. The new
-  errors could carry the same payloads: the field requirement
-  (check_struct_node) and the fresh-marker rejection (check_declaration_node)
-  can key off `keyword_start`/`keyword_text` (already stamped on
-  declarations) to insert or drop the `mv` keyword; the store requirement
-  (check_assignment_node) knows the RHS identifier's start, so inserting
-  `mv ` there is one offset.
-- **`nomen format`.** The formatter's `strip_redundant_type` already
-  recognizes `mv` declarations, but format does not rewrite
-  `var string name` → `mv string name`, insert the store marker, or strip
-  `mv` from a fresh initializer. A migrating whole program wants exactly
-  that pass. It needs ownership classification (`slot_requires_mv`), which
-  the token-level formatter lacks — so the pass belongs where types resolve
-  (a check-adjacent rewrite), not in the pure text transform.
-
-Until one of these lands, the error messages are the migration story.
+The pass belongs where types resolve, not in the token-level formatter:
+`nomen format` would parse + check the file (with the library), collect the
+three ownership diagnostics' `quick_fix` payloads, apply the edits
+(descending offsets, re-check in a loop until none remain), and only then
+run the layout formatter — `slot_requires_mv` is checker knowledge the
+token transform cannot recover. A `var`-keyword-less field
+(`pub string x`-style, no quick fix) and `readonly` fields stay
+hand-fixable; the error messages name the spelling.
 
 ## Comptime residuals (from the retired plan documents)
 

@@ -12,6 +12,7 @@ import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { is_class_type } from "./ownership.ts";
+import type QuickFix from "./QuickFix.ts";
 
 /**
  * Declared field sets (FIELD_EFFECTS.md).
@@ -37,29 +38,12 @@ import { is_class_type } from "./ownership.ts";
  * reason to be a reference.
  */
 
-/**
- * A structured edit the editor can apply to add or extend the field set on a
- * parameter. Offsets are source offsets, same coordinate space as
- * `CompileError.start`.
- */
-export interface FieldSetQuickFix {
-	title: string;
-	/** The parameter this edit modifies (its first token's offset). */
-	param_start: number;
-	/** Insert `insert_text` at this offset (creating a new set). */
-	insert_offset?: number;
-	insert_text?: string;
-	/** Replace [replace_start, replace_end) with `replace_text`. */
-	replace_start?: number;
-	replace_end?: number;
-	replace_text?: string;
-}
 interface CompileErrorWithFix {
 	message: string;
 	start: number;
 	line: number;
 	column: number;
-	quick_fix?: FieldSetQuickFix;
+	quick_fix?: QuickFix;
 }
 
 /** Per-`ref`-parameter write tracking, keyed by parameter identity. */
@@ -295,12 +279,12 @@ export function param_has_displaceable_field(param: ParameterNode, status: Check
 }
 
 /** Build the structured edit that adds `fields` to the parameter's set. */
-export function field_set_quick_fix(param: ParameterNode, fields: string[]): FieldSetQuickFix {
+export function field_set_quick_fix(param: ParameterNode, fields: string[]): QuickFix {
 	const rendered = fields.length ? `{ ${fields.join(", ")} }` : "{}";
 	const title = has_field_set(param)
 		? `Add ${fields.map((f) => `'${f}'`).join(", ")} to the field set`
 		: `Declare \`${rendered}\``;
-	const fix: FieldSetQuickFix = { title, param_start: param.start };
+	const fix: QuickFix = { title, param_start: param.start };
 	if (param.field_set !== undefined && param.field_set_span) {
 		const span = param.field_set_span;
 		if (param.field_set.length > 0) {
@@ -336,7 +320,7 @@ export function field_set_quick_fix(param: ParameterNode, fields: string[]): Fie
  * The edit that turns an un-annotated `ref self` receiver into a bare `self`
  * (a method that never writes through the receiver is a reader).
  */
-export function drop_ref_self_quick_fix(param: ParameterNode): FieldSetQuickFix {
+export function drop_ref_self_quick_fix(param: ParameterNode): QuickFix {
 	return {
 		title: "Use bare `self`",
 		param_start: param.start,
@@ -350,7 +334,7 @@ function add_field_effects_error(
 	status: CheckStatus,
 	message: string,
 	start: number,
-	fix: FieldSetQuickFix | undefined,
+	fix: QuickFix | undefined,
 ): void {
 	const error = { message, start, line: 0, column: 0 } as CompileErrorWithFix;
 	if (fix) error.quick_fix = fix;

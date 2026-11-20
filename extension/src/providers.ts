@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-import type { FieldSetQuickFix } from "../../src/check/utils/field_effects.ts";
+import type QuickFix from "../../src/check/utils/QuickFix.ts";
 import { format_source } from "../../src/format.ts";
 import {
 	all_members,
@@ -234,7 +234,7 @@ function matching_quick_fix(
 	state: DocumentAnalysis,
 	document: vscode.TextDocument,
 	diagnostic: vscode.Diagnostic,
-): FieldSetQuickFix | undefined {
+): QuickFix | undefined {
 	const offset = document.offsetAt(diagnostic.range.start);
 	for (const error of [...state.errors, ...state.warnings]) {
 		if (error.start !== offset || error.message !== diagnostic.message) continue;
@@ -243,10 +243,7 @@ function matching_quick_fix(
 	return undefined;
 }
 
-function quick_fix_edit(
-	document: vscode.TextDocument,
-	fix: FieldSetQuickFix,
-): vscode.TextEdit | undefined {
+function quick_fix_edit(document: vscode.TextDocument, fix: QuickFix): vscode.TextEdit | undefined {
 	if (fix.insert_offset !== undefined && fix.insert_text !== undefined) {
 		return vscode.TextEdit.insert(document.positionAt(fix.insert_offset), fix.insert_text);
 	}

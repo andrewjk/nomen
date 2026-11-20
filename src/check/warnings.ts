@@ -12,12 +12,9 @@ import Type from "../nodes/Type.ts";
 import type CompileError from "../types/CompileError.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { is_box_type } from "./utils/box.ts";
-import {
-	drop_ref_self_quick_fix,
-	field_set_quick_fix,
-	type FieldSetQuickFix,
-} from "./utils/field_effects.ts";
+import { drop_ref_self_quick_fix, field_set_quick_fix } from "./utils/field_effects.ts";
 import { is_owning_struct_value_type } from "./utils/ownership.ts";
+import type QuickFix from "./utils/QuickFix.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -514,7 +511,7 @@ function add_warning(
 	status: CheckStatus,
 	message: string,
 	start: number,
-	quick_fix?: FieldSetQuickFix,
+	quick_fix?: QuickFix,
 ): void {
 	if (!status.warnings) status.warnings = [];
 	status.warnings.push({ message, start, line: 0, column: 0, ...(quick_fix ? { quick_fix } : {}) });

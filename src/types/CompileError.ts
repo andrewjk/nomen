@@ -1,4 +1,4 @@
-import type { FieldSetQuickFix } from "../check/utils/field_effects.ts";
+import type QuickFix from "../check/utils/QuickFix.ts";
 
 export default interface CompileError {
 	message: string;
@@ -17,10 +17,11 @@ export default interface CompileError {
 	spawned_line?: number;
 	spawned_column?: number;
 	/**
-	 * Structured editor edit for declared-field-set diagnostics
-	 * (FIELD_EFFECTS.md): add or extend the field set (`{ … }`) on a `ref`
-	 * parameter. Offsets share `start`'s coordinate space. The CLI ignores
+	 * Structured editor edit. Two families: declared-field-set diagnostics
+	 * (FIELD_EFFECTS.md — add or extend the field set (`{ … }`) on a `ref`
+	 * parameter), and ownership-spelling diagnostics (insert or rewrite the
+	 * `mv` keyword). Offsets share `start`'s coordinate space. The CLI ignores
 	 * it; the VSCode extension turns it into a quick fix.
 	 */
-	quick_fix?: FieldSetQuickFix;
+	quick_fix?: QuickFix;
 }

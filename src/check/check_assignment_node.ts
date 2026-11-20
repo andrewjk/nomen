@@ -924,11 +924,18 @@ export default function check_assignment_node(
 						// error, and `field = mv local` is the spelling. (A swap
 						// store exchanges — the donor is revalidated, not moved —
 						// and a fresh call/literal RHS owns nothing to surrender,
-						// so neither takes the marker.)
+						// so neither takes the marker.) Quick fix: insert `mv `
+						// before the donor identifier.
 						add_error(
 							status,
 							`storing '${src_name}' into owning field '${field_access.name}' moves it — write '${field_access.name} = mv ${src_name}' to spell the transfer`,
 							assign.right_value.start,
+							{
+								title: `Insert 'mv' — write '${field_access.name} = mv ${src_name}'`,
+								param_start: assign.right_value.start,
+								insert_offset: assign.right_value.start,
+								insert_text: "mv ",
+							},
 						);
 					}
 				}

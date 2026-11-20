@@ -670,10 +670,29 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				decl.value.node_type === "value" &&
 				/^[A-Za-z_][A-Za-z0-9_]*$/.test((decl.value as ValueNode).value);
 			if (!value_is_bare_variable && decl.value.node_type !== "access") {
+				// Quick fix: rewrite the keyword to `var` — the slot keeps its
+				// declaration (dropping `mv` outright would turn the binding
+				// into an assignment to an undeclared name). The keyword span
+				// covers both source shapes: `mv n = …` and the parser's
+				// `var mv n = …` canonical rewrite (keyword_text stays "var"
+				// there, with " mv" consumed after it).
+				const keyword_len =
+					decl.keyword_text === "var" ? "var mv".length : (decl.keyword_text?.length ?? 0);
+				const fix =
+					decl.keyword_start !== undefined && keyword_len > 0
+						? {
+								title: "Use `var`",
+								param_start: decl.start,
+								replace_start: decl.keyword_start,
+								replace_end: decl.keyword_start + keyword_len,
+								replace_text: "var",
+							}
+						: undefined;
 				add_error(
 					status,
 					`'mv' on '${decl.name}' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'`,
 					decl.value.start,
+					fix,
 				);
 			}
 		}
