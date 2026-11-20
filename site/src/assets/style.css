@@ -653,7 +653,6 @@ pre.shiki {
 html.light pre.shiki,
 html.light pre.output,
 html.light #editor,
-html.light #editor textarea,
 html.light #editor-highlight {
 	background-color: #101214;
 	color: #d4d4d4;
@@ -663,7 +662,12 @@ html.light pre.shiki {
 	border-color: #2a313a;
 }
 
+/* The textarea OVERLAYS the highlight layer (z-index 1), so it must stay
+ * transparent — an opaque background here hides the highlighted code (the
+ * dark surface comes from #editor behind it). */
 html.light #editor textarea {
+	background: transparent;
+	color: #d4d4d4;
 	caret-color: #fff;
 }
 
