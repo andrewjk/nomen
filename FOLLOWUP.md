@@ -679,29 +679,6 @@ consumer: runtime trait dispatch already covers the vtable case, so this
 only earns its keep if generated code needs the list itself, not the
 dispatch.
 
-## `nomen format` ownership-spelling pass
-
-Recorded 2026-11-21, when the ownership-spelling flip landed (owning fields
-require `mv`, field stores of owned locals demand `field = mv local`, fresh
-initializers reject the marker). The three diagnostics now carry structured
-quick fixes (checker-side, landed same day: the field requirement swaps
-`var` → `mv`, the store requirement inserts `mv ` before the donor, the
-fresh-marker rejection rewrites the keyword to `var` — pinned in
-test/mv_quickfix.test.ts, applied verbatim by the VSCode extension). What
-is still missing is the whole-program route: `nomen format` normalizes
-layout and strips redundant annotations but does not apply the ownership
-spellings, so a migrating program either visits every diagnostic in the
-editor or hand-edits.
-
-The pass belongs where types resolve, not in the token-level formatter:
-`nomen format` would parse + check the file (with the library), collect the
-three ownership diagnostics' `quick_fix` payloads, apply the edits
-(descending offsets, re-check in a loop until none remain), and only then
-run the layout formatter — `slot_requires_mv` is checker knowledge the
-token transform cannot recover. A `var`-keyword-less field
-(`pub string x`-style, no quick fix) and `readonly` fields stay
-hand-fixable; the error messages name the spelling.
-
 ## Comptime residuals (from the retired plan documents)
 
 TODOs carried over from the retired working notes `COMPTIME_PLAN.md` and

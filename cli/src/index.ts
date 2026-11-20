@@ -7,6 +7,7 @@ import chokidar from "chokidar";
 
 import build, { default_platform } from "../../src/build.ts";
 import { format_source, type FormatOptions } from "../../src/format.ts";
+import { apply_ownership_spellings } from "../../src/format_ownership.ts";
 import join from "../../src/join.ts";
 import { get_library } from "../../src/lib.ts";
 import parse from "../../src/parse.ts";
@@ -115,20 +116,33 @@ try {
 		process.exit(ok ? 0 : 1);
 	}
 
-	// `nomen format` re-indents and tidies every .nm file under a folder.
+	// `nomen format` re-indents and tidies every .nm file under a folder. The
+	// ownership-spelling pass runs first: it is a check-adjacent rewrite
+	// (parse + check, apply the structured quick fixes) that needs the type
+	// information the token-level layout pass cannot see.
 	if (command === "format") {
 		const root = args.in ?? process.cwd();
 		const format_options = load_format_options(root);
 		const files = collect_nm_files(root);
 		let changed = 0;
 		for (const file of files) {
-			const source = fs.readFileSync(file, "utf8");
+			let source = fs.readFileSync(file, "utf8");
+			const lib_dir = resolve_lib(file);
+			const library = get_library(lib_dir);
+			const spellings = apply_ownership_spellings(source, {
+				lib: library,
+				file: path.resolve(file),
+			});
+			if (spellings.changed) {
+				source = spellings.code;
+				console.log(`Ownership fixes applied: ${file}`);
+			}
 			const result = format_source(source, format_options);
 			if (result.unsafe) {
 				console.log(`Skipped ${file}: ${result.unsafe}`);
 				continue;
 			}
-			if (result.changed) {
+			if (result.changed || spellings.changed) {
 				if (!args.check) fs.writeFileSync(file, result.code);
 				changed += 1;
 				console.log(`Formatted ${file}`);
