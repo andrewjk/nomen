@@ -149,6 +149,20 @@
 					"match": "\\b(?:func|struct|trait|enum|error|bitset)\\b"
 				},
 				{
+					"comment": "Comptime type parameter (SPEC 'Type Parameters'): `type` is a CONTEXTUAL keyword — parsed only in parameter position (`type T` / `T: type`) and legal as an identifier elsewhere (`var type = 5`), so it is matched positionally instead of joining the keyword lists. This arm is the `type T` spelling; the `T: type` arm below captures the whole spelling so the lookbehind stays fixed-length.",
+					"name": "storage.type.nm",
+					"match": "\\btype(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\b)"
+				},
+				{
+					"comment": "The `T: type` spelling: the parameter name keeps its type scope, the colon an operator scope, and the trailing `type` the keyword scope.",
+					"match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(:)\\s*(type)\\b",
+					"captures": {
+						"1": { "name": "entity.name.type.nm" },
+						"2": { "name": "keyword.operator.nm" },
+						"3": { "name": "storage.type.nm" }
+					}
+				},
+				{
 					"name": "keyword.other.nm",
 					"match": "\\b(?:var|const|let|mv|view|swap|import|panic|todo|extend)\\b"
 				},
