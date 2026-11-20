@@ -41,6 +41,7 @@ import {
 } from "./utils/flow_bounds.ts";
 import in_function from "./utils/in_function.ts";
 import materialize_type from "./utils/materialize_type.ts";
+import { mv_type_error } from "./utils/mv_rule.ts";
 import {
 	borrowed_param_transfer_error,
 	enclosing_function_param,
@@ -612,6 +613,32 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			track_ctor_null_paths(decl, status);
 
 			status.stack.pop();
+		}
+
+		// The mv rule (mv_rule.ts — the same predicate the parameter check
+		// enforces): `mv` on a non-owning type transfers nothing, so a `mv`
+		// FIELD or BINDING of one is rejected (`mv int count`, `mv x = 5`).
+		// By this point decl.type is final for both shapes (declared, or
+		// inferred from the initializer above). Func-typed bindings are
+		// exempt — their slot types carry the RETURN type, and the mv marker
+		// there transfers the closure descriptor. A MONOMORPHIZED struct's
+		// field walk re-checks substituted clones: a `mv T` field whose
+		// concrete binding owns nothing (Box<int>'s `mv int __value`) is the
+		// documented no-op degradation (B1 — ownership derives from the
+		// substituted type), so the clone replay stands down; the TEMPLATE
+		// declaration was already validated with its type params in scope.
+		const scope_is_mono_struct = !!(decl.scope as { source_type_args?: unknown[] } | undefined)
+			?.source_type_args?.length;
+		if (
+			declaration === "mv" &&
+			!decl.func_params &&
+			!status.is_mono_body_recheck &&
+			!scope_is_mono_struct
+		) {
+			const mv_error = mv_type_error(decl.type, status);
+			if (mv_error) {
+				add_error(status, mv_error, decl.start);
+			}
 		}
 
 		// View-binding enforcement. By this point decl.type is final (declared or

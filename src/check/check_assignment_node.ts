@@ -42,6 +42,8 @@ import {
 	expr_to_string,
 	record_fresh_list_length,
 } from "./utils/flow_bounds.ts";
+import materialize_type from "./utils/materialize_type.ts";
+import { mv_type_error } from "./utils/mv_rule.ts";
 import {
 	borrowed_param_transfer_error,
 	enclosing_function_param,
@@ -253,6 +255,34 @@ export default function check_assignment_node(
 	status.expected_type = old_expected_type;
 	if (!result) {
 		return false;
+	}
+
+	// The mv rule (mv_rule.ts — the same predicate parameters, fields, and
+	// bindings enforce): `x = mv y` where y's type owns nothing transfers
+	// nothing, so the marker is rejected. Runs BEFORE the trait-boxing
+	// block below, which stamps implicit `is_moved` on boxing donors (its
+	// shape must not read as a written mv). The one-shot flag keeps a
+	// re-dispatched check from seeing a LATER synthetic stamp as a written
+	// mv. A func-typed local's slot types carry its RETURN type and the mv
+	// marker there transfers the closure descriptor — exempt. A
+	// monomorphized clone's re-check stands down (the substituted `mv T`
+	// shape degrades to a no-op against a non-owning concrete type).
+	if (
+		!status.is_mono_body_recheck &&
+		assign.right_value.node_type === "value" &&
+		(assign.right_value as ValueNode).is_moved &&
+		!(assign.right_value as unknown as { mv_type_checked?: boolean }).mv_type_checked
+	) {
+		(assign.right_value as unknown as { mv_type_checked?: boolean }).mv_type_checked = true;
+		const src_sv = status.values.findLast(
+			(v) => v.name === (assign.right_value as ValueNode).value,
+		);
+		if (src_sv?.func_params === undefined) {
+			const mv_error = mv_type_error(type_from_value_node(assign.right_value, status), status);
+			if (mv_error) {
+				add_error(status, mv_error, assign.right_value.start);
+			}
+		}
 	}
 
 	// STRUCT_PLAN_3 N3: a WeakHandle binds ONCE, at its declaration (the

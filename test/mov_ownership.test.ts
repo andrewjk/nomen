@@ -257,4 +257,120 @@ identity(mv x)
 			expect(parsed.errors[0].message).toContain("mv");
 		});
 	});
+
+	// The mv-ownership rule (mv_rule.ts): `mv` is legal only for owning
+	// types (the parameter rule's domain — string, class/trait handles, mv
+	// structs, type params), enforced at fields, bindings, and stores too.
+	describe("mv only on owning types (fields, bindings, stores)", () => {
+		test("mv int binding", () => {
+			const input = `
+mv int x = 5
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"mv is only allowed for class, trait, or mv struct types, not 'int'",
+					2,
+					1,
+				),
+			]);
+		});
+
+		test("inferred mv binding of an int initializer", () => {
+			const input = `
+var int y = 6
+mv x = y
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"mv is only allowed for class, trait, or mv struct types, not 'int'",
+					3,
+					1,
+				),
+			]);
+		});
+
+		test("mv field of a scalar type", () => {
+			const input = `
+struct Counter {
+  mv int count = 0
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"mv is only allowed for class, trait, or mv struct types, not 'int'",
+					3,
+					3,
+				),
+			]);
+		});
+
+		test("mv store of an int donor", () => {
+			const input = `
+var int y = 6
+var int x = 0
+x = mv y
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"mv is only allowed for class, trait, or mv struct types, not 'int'",
+					4,
+					8,
+				),
+			]);
+		});
+
+		test("mv store of a plain (Copyable) struct donor", () => {
+			const input = `
+struct Point {
+  var int x
+  var int y
+}
+var a = Point(1, 2)
+var b = Point(0, 0)
+b = mv a
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"mv is only allowed for class, trait, or mv struct types, not 'Point'",
+					8,
+					8,
+				),
+			]);
+		});
+
+		test("mv binding of a declared mv struct is fine", () => {
+			const input = `
+mv struct Config {
+  var string name
+}
+var c = Config("x")
+mv c2 = c
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("mv field of a declared mv struct type is fine", () => {
+			const input = `
+mv struct Inner {
+  var string tag
+}
+mv struct Holder {
+  mv Inner inner
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+	});
 });

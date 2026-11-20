@@ -10,12 +10,8 @@ import check_type_exists from "./utils/check_type_exists.ts";
 import { validate_field_set } from "./utils/field_effects.ts";
 import { apply_bounds, strip_length_equalities } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
-import {
-	is_class_type,
-	is_pass_by_value_owning_struct,
-	is_owning_struct_type_requiring_move,
-} from "./utils/ownership.ts";
-import { is_trait_type } from "./utils/trait_slot.ts";
+import { mv_type_error } from "./utils/mv_rule.ts";
+import { is_pass_by_value_owning_struct } from "./utils/ownership.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
 
@@ -113,33 +109,16 @@ export default function check_function_parameter_node(
 	// the trait's `<Trait>_destroy` shim. Type parameters (T, U, …) are
 	// allowed since the actual type isn't known until monomorphization; when
 	// a generic is instantiated with a non-mv type, mv silently becomes
-	// a no-op.
-	if (
-		param.is_moved &&
-		param.type.name &&
-		// The built-in `string` is a legal mv (the ownership table's TRANSFER
-		// row): its fat pair owns its bytes, and the call-site machinery
-		// transfers/invalidates the donor. Accept it directly — without this,
-		// a file checked without the appended System library (whose
-		// `pub mv struct string` satisfies is_owning_struct_type_requiring_move)
-		// would reject `mv string` unless some generic's type param happened
-		// to share the name.
-		param.type.name !== "string" &&
-		!is_class_type(param.type.name, status) &&
-		!is_trait_type(param.type.name, status) &&
-		!is_owning_struct_type_requiring_move(param.type, status) &&
-		// A pass-by-value mv struct takes `mv` too: the TRANSFER row
-		// of the ownership table — no boundary copy, the callee's seeded
-		// records own (and free) the argument's string fields.
-		!is_pass_by_value_owning_struct(param.type, status) &&
-		!status.type_params.includes(param.type.name) &&
-		!status.structs.some((s) => s.type_params.includes(param.type.name))
-	) {
-		add_error(
-			status,
-			`mv is only allowed for class, trait, or mv struct types, not '${param.type.name}'`,
-			param.start,
-		);
+	// a no-op. The shared mv_rule predicate enforces the same rule at
+	// fields, bindings, and stores. A monomorphized clone's re-check
+	// (is_mono_body_recheck) stands down: the substituted `mv T` param is
+	// the template's already-validated declaration replayed against a
+	// concrete type, where the no-op degradation governs.
+	if (param.is_moved && !status.is_mono_body_recheck) {
+		const mv_error = mv_type_error(param.type, status);
+		if (mv_error) {
+			add_error(status, mv_error, param.start);
+		}
 	}
 
 	if (param.is_variadic && param.default_value) {

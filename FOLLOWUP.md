@@ -684,12 +684,14 @@ dispatch.
 Proposed direction (2026-11-20): make the mv story uniform — "we are implicit
 with type inference, but very explicit with memory management."
 
-- **`mv` is legal only for owning types** (`string`, `mv struct`,
-  class/trait handles): disallow it for ints, plain (Copyable) structs, and
-  other non-owning types everywhere. Parameters already enforce this
-  (`mv is only allowed for class, trait, or mv struct types`); field
-  declarations silently accept `mv int count` today, and bindings and
-  stores would need the same rule.
+The first bullet has shipped (2026-11-20): `mv` is now legal only for owning
+types everywhere — the shared `mv_rule` predicate enforces the parameter
+rule's domain (`string`, class/trait handles, mv structs, type params) at
+struct fields, bindings, and stores too (`src/check/utils/mv_rule.ts`).
+Monomorphized clones stand down (`is_mono_body_recheck` / mono-struct field
+walks): a substituted `mv T` whose concrete binding owns nothing keeps the
+documented no-op degradation (`Box<int>`'s `mv int __value`).
+
 - **Field declarations of strings/mv structs require `mv`**: `mv string name`,
   `mv Inner inner` — the inverse of today's redundancy warning, which calls
   the mv form redundant and prefers plain `var`. Type inference stays
