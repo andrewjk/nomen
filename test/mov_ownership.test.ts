@@ -219,21 +219,14 @@ func identity = (mv Box b, out Box) {
 			expect(parsed.errors).toEqual([]);
 		});
 
-		test("mv string parameter", () => {
+		test("mv string parameter is fine (built-in owner, no library needed)", () => {
 			const input = `
 func identity = (mv string s, out string) {
   return s
 }
 `;
 			const parsed = parse(input);
-			expect(parsed.errors).toEqual([
-				test_error(
-					input,
-					"mv is only allowed for class, trait, or mv struct types, not 'string'",
-					2,
-					18,
-				),
-			]);
+			expect(parsed.errors).toEqual([]);
 		});
 
 		test("mv on generic type parameter is allowed", () => {

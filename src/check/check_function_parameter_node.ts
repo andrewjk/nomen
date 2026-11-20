@@ -117,6 +117,14 @@ export default function check_function_parameter_node(
 	if (
 		param.is_moved &&
 		param.type.name &&
+		// The built-in `string` is a legal mv (the ownership table's TRANSFER
+		// row): its fat pair owns its bytes, and the call-site machinery
+		// transfers/invalidates the donor. Accept it directly — without this,
+		// a file checked without the appended System library (whose
+		// `pub mv struct string` satisfies is_owning_struct_type_requiring_move)
+		// would reject `mv string` unless some generic's type param happened
+		// to share the name.
+		param.type.name !== "string" &&
 		!is_class_type(param.type.name, status) &&
 		!is_trait_type(param.type.name, status) &&
 		!is_owning_struct_type_requiring_move(param.type, status) &&
