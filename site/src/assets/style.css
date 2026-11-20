@@ -219,6 +219,18 @@ button:disabled {
 	overflow: visible;
 }
 
+/* A source that ends with a newline lays out a phantom caret line in the
+ * textarea, and Shiki's trailing line span for it is EMPTY — an empty
+ * inline span generates no box, so the layer comes up one line short and
+ * the caret lands one line above the glyphs once scrolled to the bottom.
+ * A zero-width space gives the last line a real (invisible) inline box, so
+ * both layers are the same height and scroll in lockstep. On a source
+ * without the trailing newline the span already has content, and the
+ * extra character is zero-width on the same line — no layout change. */
+#editor-highlight .shiki .line:last-child::after {
+	content: "\200B";
+}
+
 /* The global inline-`code` chrome (background, border, padding) must not
  * apply to Shiki's block: on an inline <code> it paints a box around each
  * line. */
