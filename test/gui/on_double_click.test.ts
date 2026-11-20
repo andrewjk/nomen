@@ -29,8 +29,8 @@ import System
 import System::Controls
 
 mv struct OpenApp : App {
-	var Text label
-	var Container grid
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -39,8 +39,8 @@ mv struct OpenApp : App {
 		var Container grid = VStack(8)
 		grid.add(label.handle, 0, 30, 1)
 		// Locals are used up before the moves into fields (mv).
-		self.label = label
-		self.grid = grid
+		self.label = mv label
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {
@@ -139,10 +139,10 @@ import System
 import System::Controls
 
 mv struct RowsApp : App {
-	var Container rows
-	var List<CheckBox> owned
-	var List<uint64> handles
-	var Text status
+	mv Container rows
+	mv List<CheckBox> owned
+	mv List<uint64> handles
+	mv Text status
 
 	pub func #init = (self, Window window) {
 		var Container rows = VStack(0)
@@ -154,12 +154,12 @@ mv struct RowsApp : App {
 		handles.push(row.handle)
 		owned.push(mv row)
 		// Locals are used up before the moves into fields (mv).
-		self.rows = rows
-		self.owned = owned
-		self.handles = handles
+		self.rows = mv rows
+		self.owned = mv owned
+		self.handles = mv handles
 		var Text status = Text(window)
 		status.set_text("idle")
-		self.status = status
+		self.status = mv status
 	}
 
 	pub func start = (ref self, ref Window win {}) {

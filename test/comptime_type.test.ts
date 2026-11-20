@@ -147,7 +147,7 @@ test("META.info(T) + #for compose inside a type-param function", () => {
 	const lines = run_js(`
 		mv struct Sample {
 			var int count = 0
-			var string label = ""
+			mv string label = ""
 		}
 		func sample_value = (type T, mv out T) {
 			var T x = T()
@@ -269,7 +269,7 @@ test("forwarding: an instantiation spelling rides the struct parameter", () => {
 test("a type-param function specializes over a concrete struct with containers", () => {
 	const lines = run_js(`
 		mv struct Holder {
-			var items = StableList<int>()
+			mv items = StableList<int>()
 			var n = 0
 		}
 		func describe = (type T, out string) {
@@ -601,7 +601,7 @@ test("the C backend builds the expanded program clean", () => {
 		}
 		mv struct Sample {
 			var int count = 0
-			var string label = ""
+			mv string label = ""
 		}
 		struct Pair {
 			var int a

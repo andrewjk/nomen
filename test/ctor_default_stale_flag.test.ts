@@ -20,8 +20,8 @@ func generate = (mv out string) {
 }
 
 mv struct C {
-	var string a = generate()
-	var string b = ("literal")
+	mv string a = generate()
+	mv string b = ("literal")
 }
 
 pub func main = () {

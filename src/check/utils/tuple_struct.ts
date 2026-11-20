@@ -5,6 +5,7 @@ import RootNode from "../../nodes/RootNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { declares_mv_shallow, slot_requires_mv } from "./mv_rule.ts";
 import { type_owns_heap } from "./ownership.ts";
 
 /**
@@ -75,21 +76,39 @@ export function get_or_create_tuple_struct(tuple_types: Type[], status: CheckSta
 	// Create fields `_0`, `_1`, ... with materialized element types.
 	// Nested tuple elements must be materialized so the generated struct
 	// has concrete field types (e.g. `_Tuple_int_string`, not `tuple`).
+	// An element that IS a tuple needs the nested struct's derived flag —
+	// `type_owns_heap` cannot see through a raw `tuple` name, so a
+	// `[[int, string], bool]` element would classify as value and its field
+	// would miss the mv spelling its own storage demands.
+	const element_owns = (t: Type): boolean => {
+		if (t.tuple_types?.length) {
+			return !!get_or_create_tuple_struct(t.tuple_types, status).is_owning;
+		}
+		return slot_requires_mv(t, status) || declares_mv_shallow(t, status);
+	};
 	const fields = tuple_types.map((t, i) => {
 		const field_type =
 			t.name === "tuple" && t.tuple_types?.length
 				? materialize_tuple_type(t, status)
 				: clone_type(t);
-		return new DeclarationNode(0, "pub", "var", `_${i}`, field_type);
+		// The ownership-spelling rule reaches generated fields too: an owning
+		// element slots in as `mv _i` — the same spelling a hand-written
+		// struct must use; a value element keeps `var`.
+		return new DeclarationNode(0, "pub", element_owns(t) ? "mv" : "var", `_${i}`, field_type);
 	});
 
 	const struct = new StructNode(0, "private", name, [], fields, []);
 	// STRUCT_PLAN_3 B1 full cutover — a tuple is Copyable iff every element
-	// is: any mv element (`string`, a `List`, …) makes the generated
-	// struct mv, mirroring the enum-mono derive. The verifier would
-	// otherwise reject the generated struct outright (a generated struct
-	// cannot be spelled `mv`).
-	struct.is_owning = tuple_types.some((t) => type_owns_heap(t, status));
+	// is: any mv element (`string`, a `List`, a nested tuple holding one, …)
+	// makes the generated struct mv, mirroring the enum-mono derive. The
+	// verifier would otherwise reject the generated struct outright (a
+	// generated struct cannot be spelled `mv`).
+	struct.is_owning = tuple_types.some((t) => {
+		if (t.tuple_types?.length) {
+			return !!get_or_create_tuple_struct(t.tuple_types, status).is_owning;
+		}
+		return type_owns_heap(t, status);
+	});
 
 	// Build #init params: self + one param per field, matching positions
 	const self_param = new ParameterNode(0, "self", new Type(name));

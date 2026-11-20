@@ -24,7 +24,7 @@
 // null and every read (get_text/get_text_view) answers the empty string.
 mv struct JsonNode {
 	var kind = 0
-	var string? text = null
+	mv string? text = null
 	var int child = -1
 	var int next = -1
 	var int val = -1
@@ -34,7 +34,7 @@ mv struct JsonNode {
  * A flat, pool-backed set of JSON tree nodes — the parsed representation `Json.parse` produces
  **/
 pub mv struct JsonTree {
-	var nodes = StableList<JsonNode>()
+	mv nodes = StableList<JsonNode>()
 
 	// Append a fresh node and return its index.
 	func alloc_node = (ref self { nodes }, out int) {

@@ -28,8 +28,8 @@ import System::Controls
 // closures hoist to hidden methods on MyPager and the arms keep the page.
 // No polls, no captures, no twins.
 mv struct MyPager {
-	var Button prev
-	var Button next
+	mv Button prev
+	mv Button next
 	var int page = 0
 
 	pub func #init = (self, Window window) {
@@ -48,20 +48,20 @@ mv struct MyPager {
 }
 
 mv struct PagerApp : App {
-	var MyPager pager
-	var Text label
-	var Container grid
+	mv MyPager pager
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("idle")
 		var MyPager pager = MyPager(window)
-		self.pager = pager
+		self.pager = mv pager
 		var Container grid = VStack(8)
 		grid.add(self.label.handle, 0, 24, 1)
 		self.pager.add_to(ref grid, grid.root_index())
-		self.grid = grid
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {
@@ -153,8 +153,8 @@ import System::Controls
 // pending flag; its mutators raise. tick forwards the owner down per call —
 // the borrow flows down, nothing is stored, nothing outlives the tick.
 mv struct MyPager {
-	var Button prev
-	var Button next
+	mv Button prev
+	mv Button next
 	var int page = 0
 	var int page_change_id = -1
 	var bool page_change_pending = false
@@ -192,20 +192,20 @@ mv struct MyPager {
 }
 
 mv struct PagerApp : App {
-	var MyPager pager
-	var Text label
-	var Container grid
+	mv MyPager pager
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("idle")
 		var MyPager pager = MyPager(window)
-		self.pager = pager
+		self.pager = mv pager
 		var Container grid = VStack(8)
 		grid.add(self.label.handle, 0, 24, 1)
 		self.pager.add_to(ref grid, grid.root_index())
-		self.grid = grid
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

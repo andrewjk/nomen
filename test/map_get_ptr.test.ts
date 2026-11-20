@@ -61,7 +61,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Holder {
-	var vals = List<int>()
+	mv vals = List<int>()
 }
 
 pub func main = (Init init) {

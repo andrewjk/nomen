@@ -39,11 +39,11 @@ pub mv struct Arena<T> {
 	var values = Buffer<T>()
 	// Per-slot generation, bumped on every free. Slots are calloc'd, so a
 	// fresh slot's generation is 0.
-	var generations = Buffer<int>()
+	mv generations = Buffer<int>()
 	// Freed slot indices available for reuse (LIFO free list). A raw Buffer
 	// plus an explicit count: a `List<int>` field would need its own
 	// monomorphization from inside a generic struct body.
-	var free_indices = Buffer<int>()
+	mv free_indices = Buffer<int>()
 	var free_count = 0
 	// High-water mark: every index < count has a slot (live or free).
 	var count = 0

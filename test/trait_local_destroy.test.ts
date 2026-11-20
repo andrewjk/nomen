@@ -16,7 +16,7 @@ describe("trait-typed local destroy (scope-exit propagation)", () => {
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
 		Console.write("destroying " + self.name)
@@ -44,7 +44,7 @@ Console.write("\\ndone")
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 
@@ -64,8 +64,8 @@ Console.write("\\ndone")
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
-	var string title
+	mv string name
+	mv string title
 	func speak = (self, out string) { return self.title.copy() }
 }
 

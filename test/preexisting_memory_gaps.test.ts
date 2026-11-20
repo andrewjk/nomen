@@ -129,7 +129,7 @@ mv struct Box {
 	}
 }
 mv struct Holder {
-	var Box c
+	mv Box c
 }
 func make = (int n, out Box) {
 	return Box(n)

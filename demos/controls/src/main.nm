@@ -23,112 +23,112 @@ pub func main = () {
 
 mv struct GalleryApp: App {
 	// ── Page scaffold ──
-	var Scrollable page
-	var Container outer
-	var Container page_grid
+	mv Scrollable page
+	mv Container outer
+	mv Container page_grid
 
 	// ── Inputs ──
-	var Text header
-	var Text title
-	var TextBox name
-	var SecureField secret
-	var SearchField search
-	var TextView notes
+	mv Text header
+	mv Text title
+	mv TextBox name
+	mv SecureField secret
+	mv SearchField search
+	mv TextView notes
 
 	// ── Choices ──
-	var Text choice_title
-	var CheckBox agree
-	var Radio radio_a
-	var Radio radio_b
-	var Switch flip
-	var Toggle stamp
-	var Segmented views
-	var Select pick
-	var Stepper step
-	var Slider slide
+	mv Text choice_title
+	mv CheckBox agree
+	mv Radio radio_a
+	mv Radio radio_b
+	mv Switch flip
+	mv Toggle stamp
+	mv Segmented views
+	mv Select pick
+	mv Stepper step
+	mv Slider slide
 
 	// ── Display (each row pairs the control with a caption label) ──
-	var Text display_title
-	var Progress bar
-	var Spinner spin
-	var LevelIndicator stars
-	var ImageView icon
-	var DatePicker when
-	var ColorPicker color
-	var Text prog_caption
-	var Text spin_caption
-	var Text stars_caption
-	var Text icon_caption
-	var Text when_caption
-	var Text color_caption
+	mv Text display_title
+	mv Progress bar
+	mv Spinner spin
+	mv LevelIndicator stars
+	mv ImageView icon
+	mv DatePicker when
+	mv ColorPicker color
+	mv Text prog_caption
+	mv Text spin_caption
+	mv Text stars_caption
+	mv Text icon_caption
+	mv Text when_caption
+	mv Text color_caption
 
 	// ── Actions ──
-	var Text action_title
-	var Button hover_btn
-	var Button alert_btn
-	var Button sheet_btn
-	var Button pop_btn
+	mv Text action_title
+	mv Button hover_btn
+	mv Button alert_btn
+	mv Button sheet_btn
+	mv Button pop_btn
 
 	// ── Grouping ──
-	var Text group_title
-	var Separator rule
-	var GroupBox form
+	mv Text group_title
+	mv Separator rule
+	mv GroupBox form
 
 	// ── Scrolling (a viewport nested in the page) ──
-	var Text scroll_title
-	var Scrollable scroll
-	var Container scroll_grid
+	mv Text scroll_title
+	mv Scrollable scroll
+	mv Container scroll_grid
 
 	// ── Tabs (each page is its own layout root) ──
-	var Text tabs_title
-	var Tabs tabs
-	var Container tabs_grid_0
-	var Container tabs_grid_1
-	var Window tabs_page_0
-	var Window tabs_page_1
+	mv Text tabs_title
+	mv Tabs tabs
+	mv Container tabs_grid_0
+	mv Container tabs_grid_1
+	mv Window tabs_page_0
+	mv Window tabs_page_1
 
 	// ── List / combo ──
-	var Text list_title
-	var ListView list
-	var Text combo_title
-	var ComboBox combo
+	mv Text list_title
+	mv ListView list
+	mv Text combo_title
+	mv ComboBox combo
 
 	// ── Context menu ──
-	var Menu menu
-	var Button menu_btn
+	mv Menu menu
+	mv Button menu_btn
 
 	// ── Split view (NSSplitView owns the pane geometry) ──
-	var Text split_title
-	var SplitView split
-	var Container split_grid_0
-	var Container split_grid_1
-	var Window split_left
-	var Window split_right
+	mv Text split_title
+	mv SplitView split
+	mv Container split_grid_0
+	mv Container split_grid_1
+	mv Window split_left
+	mv Window split_right
 
 	// ── Outline / table ──
-	var Text outline_title
-	var OutlineView outline
-	var Text table_title
-	var Table table
+	mv Text outline_title
+	mv OutlineView outline
+	mv Text table_title
+	mv Table table
 
 	// ── Composites (pure Nomen over the controls above) ──
-	var Text comp_title
-	var NumberInput num
-	var OtpInput otp
-	var Pagination pag
-	var Form signin
-	var TextBox form_name
-	var CheckBox form_ok
+	mv Text comp_title
+	mv NumberInput num
+	mv OtpInput otp
+	mv Pagination pag
+	mv Form signin
+	mv TextBox form_name
+	mv CheckBox form_ok
 
 	// ── Chrome + modals + state ──
-	var Toolbar toolbar
-	var Alert alert
-	var Sheet sheet
-	var Container sheet_grid
-	var Button sheet_close_btn
-	var Popover pop
-	var Text status
-	var prev_status = ""
+	mv Toolbar toolbar
+	mv Alert alert
+	mv Sheet sheet
+	mv Container sheet_grid
+	mv Button sheet_close_btn
+	mv Popover pop
+	mv Text status
+	mv prev_status = ""
 
 	pub func #init = (self, Window window) {
 		// The whole gallery scrolls: the page lives on a Scrollable's
@@ -491,85 +491,85 @@ mv struct GalleryApp: App {
 		page_grid.add(status.handle, 0, 40, 2)
 
 		// ── Move everything into the app's fields ──
-		self.page = page
-		self.outer = outer
-		self.page_grid = page_grid
-		self.header = header
-		self.title = title
-		self.name = name
-		self.secret = secret
-		self.search = search
-		self.notes = notes
-		self.choice_title = choice_title
-		self.agree = agree
-		self.radio_a = radio_a
-		self.radio_b = radio_b
-		self.flip = flip
-		self.stamp = stamp
-		self.views = views
-		self.pick = pick
-		self.step = step
-		self.slide = slide
-		self.display_title = display_title
-		self.bar = bar
-		self.spin = spin
-		self.stars = stars
-		self.icon = icon
-		self.when = when
-		self.color = color
-		self.prog_caption = prog_caption
-		self.spin_caption = spin_caption
-		self.stars_caption = stars_caption
-		self.icon_caption = icon_caption
-		self.when_caption = when_caption
-		self.color_caption = color_caption
-		self.action_title = action_title
-		self.hover_btn = hover_btn
-		self.alert_btn = alert_btn
-		self.sheet_btn = sheet_btn
-		self.pop_btn = pop_btn
-		self.group_title = group_title
-		self.rule = rule
-		self.form = form
-		self.scroll_title = scroll_title
-		self.scroll = scroll
-		self.scroll_grid = scroll_grid
-		self.tabs_title = tabs_title
-		self.tabs = tabs
-		self.tabs_grid_0 = tabs_grid_0
-		self.tabs_grid_1 = tabs_grid_1
-		self.tabs_page_0 = tabs_page_0
-		self.tabs_page_1 = tabs_page_1
-		self.list_title = list_title
-		self.list = list
-		self.combo_title = combo_title
-		self.combo = combo
-		self.menu = menu
-		self.menu_btn = menu_btn
-		self.split_title = split_title
-		self.split = split
-		self.split_grid_0 = split_grid_0
-		self.split_grid_1 = split_grid_1
-		self.split_left = split_left
-		self.split_right = split_right
-		self.outline_title = outline_title
-		self.outline = outline
-		self.table_title = table_title
-		self.table = table
-		self.comp_title = comp_title
-		self.num = num
-		self.otp = otp
-		self.pag = pag
-		self.signin = signin
-		self.form_name = form_name
-		self.form_ok = form_ok
-		self.toolbar = toolbar
-		self.alert = alert
-		self.sheet = sheet
-		self.sheet_grid = sheet_grid
-		self.sheet_close_btn = sheet_close_btn
-		self.pop = pop
-		self.status = status
+		self.page = mv page
+		self.outer = mv outer
+		self.page_grid = mv page_grid
+		self.header = mv header
+		self.title = mv title
+		self.name = mv name
+		self.secret = mv secret
+		self.search = mv search
+		self.notes = mv notes
+		self.choice_title = mv choice_title
+		self.agree = mv agree
+		self.radio_a = mv radio_a
+		self.radio_b = mv radio_b
+		self.flip = mv flip
+		self.stamp = mv stamp
+		self.views = mv views
+		self.pick = mv pick
+		self.step = mv step
+		self.slide = mv slide
+		self.display_title = mv display_title
+		self.bar = mv bar
+		self.spin = mv spin
+		self.stars = mv stars
+		self.icon = mv icon
+		self.when = mv when
+		self.color = mv color
+		self.prog_caption = mv prog_caption
+		self.spin_caption = mv spin_caption
+		self.stars_caption = mv stars_caption
+		self.icon_caption = mv icon_caption
+		self.when_caption = mv when_caption
+		self.color_caption = mv color_caption
+		self.action_title = mv action_title
+		self.hover_btn = mv hover_btn
+		self.alert_btn = mv alert_btn
+		self.sheet_btn = mv sheet_btn
+		self.pop_btn = mv pop_btn
+		self.group_title = mv group_title
+		self.rule = mv rule
+		self.form = mv form
+		self.scroll_title = mv scroll_title
+		self.scroll = mv scroll
+		self.scroll_grid = mv scroll_grid
+		self.tabs_title = mv tabs_title
+		self.tabs = mv tabs
+		self.tabs_grid_0 = mv tabs_grid_0
+		self.tabs_grid_1 = mv tabs_grid_1
+		self.tabs_page_0 = mv tabs_page_0
+		self.tabs_page_1 = mv tabs_page_1
+		self.list_title = mv list_title
+		self.list = mv list
+		self.combo_title = mv combo_title
+		self.combo = mv combo
+		self.menu = mv menu
+		self.menu_btn = mv menu_btn
+		self.split_title = mv split_title
+		self.split = mv split
+		self.split_grid_0 = mv split_grid_0
+		self.split_grid_1 = mv split_grid_1
+		self.split_left = mv split_left
+		self.split_right = mv split_right
+		self.outline_title = mv outline_title
+		self.outline = mv outline
+		self.table_title = mv table_title
+		self.table = mv table
+		self.comp_title = mv comp_title
+		self.num = mv num
+		self.otp = mv otp
+		self.pag = mv pag
+		self.signin = mv signin
+		self.form_name = mv form_name
+		self.form_ok = mv form_ok
+		self.toolbar = mv toolbar
+		self.alert = mv alert
+		self.sheet = mv sheet
+		self.sheet_grid = mv sheet_grid
+		self.sheet_close_btn = mv sheet_close_btn
+		self.pop = mv pop
+		self.status = mv status
 		// The polled status line — rewritten only when the string actually
 		// changes ("" forces the next poll to refresh after a transient
 		// message like the alert result).

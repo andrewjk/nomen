@@ -217,7 +217,7 @@ struct Super {
 mv struct Big {
 ${fields}
 	var bool done = false
-	var string label
+	mv string label
 }
 
 func flip = (ref bool v) {

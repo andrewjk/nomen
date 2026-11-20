@@ -9,11 +9,11 @@ describe("trait build", () => {
 	test("trait with struct field access", async () => {
 		const input = `
 trait Person {
-  var string name
+  mv string name
 }
 
 mv struct Frank: Person {
-  var string name = "Frank"
+  mv string name = "Frank"
 }
 
 const f = Frank()
@@ -45,14 +45,14 @@ Console.write(f.greet())
 	test("trait with default method implementation", async () => {
 		const input = `
 trait Person {
-  var string name
+  mv string name
   func greet = (out string) {
     return "hi"
   }
 }
 
 mv struct Frank: Person {
-  var string name = "Frank"
+  mv string name = "Frank"
 }
 
 const f = Frank()
@@ -106,14 +106,14 @@ Console.write("\\{f.greet()} \\{f.dance()}")
 	test("trait method using struct fields", async () => {
 		const input = `
 trait Person {
-  var string name
+  mv string name
   func greet = (self, out string) {
     return self.name
   }
 }
 
 mv struct Frank: Person {
-  var string name = "Frank"
+  mv string name = "Frank"
 }
 
 const f = Frank()
@@ -144,15 +144,15 @@ Console.write("\\{c.value()}")
 	test("multiple struct instances from same trait", async () => {
 		const input = `
 trait Person {
-  var string name
+  mv string name
 }
 
 mv struct Alice: Person {
-  var string name = "Alice"
+  mv string name = "Alice"
 }
 
 mv struct Bob: Person {
-  var string name = "Bob"
+  mv string name = "Bob"
 }
 
 const a = Alice()
@@ -165,12 +165,12 @@ Console.write("\\{a.name} \\{b.name}")
 	test("trait with multiple fields", async () => {
 		const input = `
 trait Person {
-  var string name
+  mv string name
   var int age
 }
 
 mv struct Frank: Person {
-  var string name = "Frank"
+  mv string name = "Frank"
   var int age = 30
 }
 
@@ -193,11 +193,11 @@ struct Foo: Empty {}
 test("trait struct in function", async () => {
 	const input = `
 trait Named {
-  var string name
+  mv string name
 }
 
 mv struct Alice: Named {
-  var string name = "Alice"
+  mv string name = "Alice"
 }
 
 func get_name = (Alice a, out string) {
@@ -264,12 +264,12 @@ Console.write("\\{s.active}")
 test("trait struct with method using fields", async () => {
 	const input = `
 trait Person {
-  var string name
+  mv string name
   var int age
 }
 
 mv struct Frank: Person {
-  var string name = "Frank"
+  mv string name = "Frank"
   var int age = 30
   func describe = (out string) {
     return "hello"

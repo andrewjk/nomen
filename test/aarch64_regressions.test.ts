@@ -110,7 +110,7 @@ test("class borrow from at() not destroyed", async () => {
 import System
 
 pub mv struct Box {
-  var List<int> items = List<int>()
+  mv List<int> items = List<int>()
 }
 
 func first_of = (List<int> xs, int i, out int) {
@@ -644,7 +644,7 @@ test("ref deref as later arg keeps hoisted arg 0", async () => {
 import System
 
 pub mv struct Token {
-  var text = ""
+  mv text = ""
   var index = 0
 }
 
@@ -701,7 +701,7 @@ test("ref deref as later static-call arg keeps x0 arg", async () => {
 import System
 
 pub mv struct Token {
-  var text = ""
+  mv text = ""
   var index = 0
 }
 
@@ -807,8 +807,8 @@ test("nullable struct local frees guarded on _has flag", async () => {
 import System
 
 pub mv struct Pair {
-	pub var name = ""
-	pub var title = ""
+	pub mv name = ""
+	pub mv title = ""
 }
 
 func make = (int n, mv out Pair?) {
@@ -849,8 +849,8 @@ test("nullable struct reassignment reclaims old value", async () => {
 import System
 
 pub mv struct Pair {
-	pub var name = ""
-	pub var title = ""
+	pub mv name = ""
+	pub mv title = ""
 }
 
 func make = (int n, mv out Pair?) {
@@ -890,11 +890,11 @@ test("mutating a field through a call-chained receiver", async () => {
 import System
 
 pub mv struct Box {
-	pub var children = List<int>()
+	pub mv children = List<int>()
 }
 
 pub mv struct Store {
-	pub var box = Box()
+	pub mv box = Box()
 }
 
 	pub func main = (Init init) {
@@ -945,7 +945,7 @@ mv struct Big {
 }
 
 mv struct Holder {
-	var Big big = Big()
+	mv Big big = Big()
 }
 
 mv struct Small {

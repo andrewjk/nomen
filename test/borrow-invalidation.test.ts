@@ -22,7 +22,7 @@ describe("mv field reads are copies (rejected without a swap)", () => {
 		const input = `
 mv struct Box { var int value }
 mv struct Holder {
-	var Box content
+	mv Box content
 	var int scratch
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1
@@ -39,7 +39,7 @@ Console.write("\\{b.value}")
 		const input = `
 mv struct Box { var int value }
 mv struct Holder {
-	var Box content
+	mv Box content
 	var int scratch
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1

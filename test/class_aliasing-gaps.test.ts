@@ -49,7 +49,7 @@ mv struct Inner {
 	var int v
 }
 mv struct Outer {
-	var Inner c
+	mv Inner c
 }
 var Box<Outer> p = Box<Outer>(Outer(mv Inner(7)))
 ref Box<Outer> q = p
@@ -195,7 +195,7 @@ pub mv struct Node {
 }
 
 pub mv struct Store {
-	var List<Box<Node>> items = List<Box<Node>>()
+	mv List<Box<Node>> items = List<Box<Node>>()
 
 	pub func add = (self, mv Box<Node> n) {
 		self.items.push(mv n)

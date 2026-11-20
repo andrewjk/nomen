@@ -8,11 +8,11 @@
  * fields are hit-tested through their handles like every control's).
  **/
 pub mv struct OtpInput {
-	var SecureField f0
-	var SecureField f1
-	var SecureField f2
-	var SecureField f3
-	var SecureField f4
+	mv SecureField f0
+	mv SecureField f1
+	mv SecureField f2
+	mv SecureField f3
+	mv SecureField f4
 
 	pub func #init = (self, Window window) {
 		self.f0 = SecureField(window)

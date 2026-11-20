@@ -16,7 +16,7 @@ describe("struct-returning functions and string params/locals", () => {
 		const input = `
 mv struct R {
 	var int a
-	var string b
+	mv string b
 }
 
 func no_loop = (string s, out R) {

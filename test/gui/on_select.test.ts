@@ -25,11 +25,11 @@ import System
 import System::Controls
 
 mv struct SelectApp : App {
-	var Tabs tabs
-	var Table table
-	var Segmented seg
-	var Text status
-	var Container stack
+	mv Tabs tabs
+	mv Table table
+	mv Segmented seg
+	mv Text status
+	mv Container stack
 	var int hits = 0
 	var int frames = 0
 
@@ -51,11 +51,11 @@ mv struct SelectApp : App {
 		stack.add(seg.handle, 0, 24, 1)
 		stack.add(status.handle, 0, 24, 1)
 		// Locals are used up before the moves into fields (mv).
-		self.tabs = tabs
-		self.table = table
-		self.seg = seg
-		self.status = status
-		self.stack = stack
+		self.tabs = mv tabs
+		self.table = mv table
+		self.seg = mv seg
+		self.status = mv status
+		self.stack = mv stack
 	}
 
 	pub func start = (ref self, ref Window win {}) {
@@ -144,16 +144,16 @@ import System
 import System::Controls
 
 mv struct PickApp : App {
-	var Select pick
-	var ComboBox combo
+	mv Select pick
+	mv ComboBox combo
 
 	pub func #init = (self, Window window) {
 		var Select pick = Select(window)
 		pick.add_item("Red")
-		self.pick = pick
+		self.pick = mv pick
 		var ComboBox combo = ComboBox(window)
 		combo.add_item("Green")
-		self.combo = combo
+		self.combo = mv combo
 	}
 
 	pub func start = (ref self, ref Window win {}) {

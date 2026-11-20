@@ -302,6 +302,14 @@ export default interface CheckStatus {
 	library_boundary?: number;
 
 	/**
+	 * Library types whose declaration spells `mv` (`mv struct List<T>`) —
+	 * the generated-slot spelling rule consults it while a generic
+	 * instantiation is still unregistered (declares_mv_shallow in
+	 * mv_rule.ts). Undefined with no library.
+	 */
+	owning_library_types?: Set<string>;
+
+	/**
 	 * COMPTIME.md stage 4: `type` parameter bindings visible while
 	 * re-checking a free-function specialization clone (parameter name ->
 	 * bound type name, e.g. T -> "Point"). A call inside the clone may pass

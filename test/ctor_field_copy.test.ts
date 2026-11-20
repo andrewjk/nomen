@@ -21,11 +21,11 @@ describe("ctor field seeds and the synthesized copy body", () => {
 import System
 
 mv struct Inner {
-	var string text = ""
+	mv string text = ""
 }
 
 mv struct Mid {
-	var Inner inner
+	mv Inner inner
 }
 
 pub func main = (Init init) {
@@ -44,11 +44,11 @@ pub func main = (Init init) {
 import System
 
 mv struct Inner {
-	var string text = ""
+	mv string text = ""
 }
 
 mv struct Mid {
-	var Inner inner
+	mv Inner inner
 }
 
 pub func main = (Init init) {
@@ -90,11 +90,11 @@ pub func main = (Init init) {
 import System
 
 mv struct Inner {
-	var string text = ""
+	mv string text = ""
 }
 
 mv struct Mid {
-	var Inner inner
+	mv Inner inner
 }
 
 pub func main = (Init init) {

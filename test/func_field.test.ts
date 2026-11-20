@@ -176,7 +176,7 @@ pub func main = (Init init) {
 			`
 func dbl = (int n, out int) { return n * 2 }
 mv struct Rule {
-	var string name
+	mv string name
 	var func (int, out int) f
 }
 pub func main = (Init init) {

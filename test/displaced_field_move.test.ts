@@ -18,7 +18,7 @@ describe("container-field mv-assign displaced reclaim", () => {
 	test("two displaced stores: the first list is reclaimed (audit clean)", async () => {
 		const input = `
 mv struct Item {
-	var string name
+	mv string name
 }
 
 mv struct Box {
@@ -42,7 +42,7 @@ Console.write("len=\\{box.items.length} name=\\{box.items.at_or_panic(0).name}\\
 	test("a plain List<Item> scope exit stays balanced", async () => {
 		const input = `
 mv struct Item {
-	var string name
+	mv string name
 }
 
 var l = List<Item>()
@@ -60,7 +60,7 @@ describe("field-read string bindings are borrows", () => {
 	test("the binding aliases the field, and the field stays valid", async () => {
 		const input = `
 mv struct Attr {
-	var string value = ""
+	mv string value = ""
 }
 
 mv struct Box {
@@ -99,12 +99,12 @@ describe("kept-copy field stores reclaim the displaced value", () => {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
 mv struct Holder {
-	var r = Rec()
+	mv r = Rec()
 	var tag = 0
 }
 
@@ -132,12 +132,12 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
 mv struct Holder {
-	var r = Rec()
+	mv r = Rec()
 	var tag = 0
 }
 

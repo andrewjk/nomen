@@ -59,10 +59,10 @@ mv struct Engine {
 }
 
 mv struct Car {
-	var Engine engine
+	mv Engine engine
 
 	pub func #init = (self, mv Engine e) {
-		self.engine = e
+		self.engine = mv e
 	}
 }
 

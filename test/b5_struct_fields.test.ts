@@ -15,10 +15,10 @@ describe("B5: mv struct class fields", () => {
 	test("construct, read, and scope-exit destroy (runtime, both backends)", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
@@ -35,10 +35,10 @@ Console.write_line("done")
 	test("field store reclaims the displaced instance", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
@@ -54,10 +54,10 @@ Console.write_line("done")
 	test("mv binding transfers the field (donor not destroyed)", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
@@ -73,10 +73,10 @@ Console.write_line("done")
 	test("nullable class field", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog? d
+	mv Dog? d
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
@@ -93,13 +93,13 @@ Console.write_line("done")
 	test("class field with a user #destroy runs it", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 	func #destroy = (ref self) {
 		Console.write_line("destroyed a dog")
 	}
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func probe = () {
 	var Holder h = Holder(Dog("Rex"))
@@ -118,10 +118,10 @@ Console.write_line("done")
 	test("a method on the mv struct mutates the class field", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 	func rename = (ref self, string n) {
 		self.d.name = n.copy()
 	}
@@ -140,13 +140,13 @@ Console.write_line("done")
 	test("nested mv structs with class fields", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Inner {
-	var Dog d
+	mv Dog d
 }
 mv struct Outer {
-	var Inner inner
+	mv Inner inner
 }
 func probe = () {
 	var Outer o = Outer(Inner(Dog("Rex")))
@@ -161,10 +161,10 @@ Console.write_line("done")
 	test("List push(mv)/pop of mv structs with class fields", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func probe = () {
 	var List<Holder> ls = List<Holder>()
@@ -182,10 +182,10 @@ Console.write_line("done")
 	test("return a mv struct with a class field", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func make = (string n, out Holder) {
 	return Holder(Dog(n.copy()))
@@ -203,10 +203,10 @@ Console.write_line("done")
 	test("mv param of a mv struct with a class field", async () => {
 		const input = `
 mv struct Dog {
-	var string name
+	mv string name
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 func use = (mv Holder h) {
 	Console.write_line(h.d.name)
@@ -233,7 +233,7 @@ Console.write_line("done")
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -270,7 +270,7 @@ mv struct Dog {
 	var int age
 }
 struct Holder {
-	var Dog d
+	mv Dog d
 }
 `;
 		const parsed = parse(input);
@@ -290,7 +290,7 @@ trait Speaker {
 	func say = (out string)
 }
 mv struct Holder {
-	var Speaker s
+	mv Speaker s
 }
 `;
 		const parsed = parse(input);
@@ -310,7 +310,7 @@ mv struct Dog {
 	var int age
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 `;
 		const parsed = parse(input);
@@ -323,7 +323,7 @@ mv struct Dog {
 	var int age
 }
 mv struct Holder {
-	var Dog d
+	mv Dog d
 }
 `;
 		const parsed = parse(input);

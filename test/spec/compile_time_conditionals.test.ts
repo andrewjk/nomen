@@ -22,7 +22,7 @@ test("#for unrolls per field — the binding drives names, reads and writes", ()
 	const body = `
 		mv struct Counter {
 			var int n
-			var string label
+			mv string label
 		}
 		func zero_ints = (mv Counter c, mv out Counter) {
 			#for field of META.info(Counter).fields {
@@ -73,10 +73,10 @@ test("attributes attach to structs and fields", () => {
 		@sql_table("users")
 		mv pub struct User {
 			@rename("user_name"), @sql_type("VARCHAR")
-			var string user_name
+			mv string user_name
 			var int age
 			@deprecated
-			var string old_field
+			mv string old_field
 		}
 	`;
 	expect(compile_module(body)).toEqual([]);
@@ -87,7 +87,7 @@ test("META.attr / has_attr drive a generic metadata consumer", () => {
 		@sql_table("users")
 		mv pub struct User {
 			@Name("user_name")
-			var string user_name
+			mv string user_name
 			var int age
 		}
 		func keys<T> = (T value, out string) {

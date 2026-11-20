@@ -16,7 +16,7 @@ mv struct Node {
 }
 
 mv struct Holder {
-	var Box<Node> node
+	mv Box<Node> node
 }
 
 func main_test = (out int) {
@@ -40,7 +40,7 @@ mv struct Node {
 }
 
 mv struct Holder {
-	var Box<Node> node
+	mv Box<Node> node
 }
 
 func main_test = (out int) {
@@ -68,7 +68,7 @@ mv struct Node {
 }
 
 mv struct Holder {
-	var Box<Node> node
+	mv Box<Node> node
 }
 
 func pick = (int n, out int) {

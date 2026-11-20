@@ -28,7 +28,7 @@ pub struct VLine {
 }
 
 pub mv struct Doc {
-	var text = ""
+	mv text = ""
 	pub func lines = (ref self, out List<VLine>) {
 		var List<VLine> result = List<VLine>()
 		view txt = self.text.slice(0, self.text.length)
@@ -59,7 +59,7 @@ pub struct Span {
 }
 
 pub mv struct Doc {
-	var text = ""
+	mv text = ""
 	pub func words = (ref self, out List<Span>) {
 		var List<Span> result = List<Span>()
 		var int i = 0
@@ -110,7 +110,7 @@ while i < spans.length {
 test("guarded slice of self field verifies", async () => {
 	const input = `
 pub mv struct Doc {
-	var text = ""
+	mv text = ""
 	pub func first_two = (ref self, out string) {
 		if self.text.length >= 2 {
 			view first = self.text.slice(0, 2)

@@ -28,7 +28,7 @@ describe("string field store through a ref struct param", () => {
 import System
 
 mv struct Box {
-	var string s = ""
+	mv string s = ""
 }
 
 func fill = (ref Box dst) {
@@ -55,14 +55,14 @@ pub func main = (Init init) {
 import System
 
 mv struct Box {
-	var string s = ""
+	mv string s = ""
 }
 
 func fill_two = (ref Box dst) {
 	var string first = "first".to_string()
 	var string second = "second".to_string()
-	dst.s = first
-	dst.s = second
+	dst.s = mv first
+	dst.s = mv second
 }
 
 pub func main = (Init init) {
@@ -83,7 +83,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Box {
-	var string s = ""
+	mv string s = ""
 }
 
 func fill = (ref Box dst, string raw) {
@@ -108,13 +108,13 @@ pub func main = (Init init) {
 import System
 
 mv struct Box {
-	var string s = ""
+	mv string s = ""
 }
 
 pub func main = (Init init) {
 	var Box b = Box()
 	var string s = "abc123".substring(0, 3)
-	b.s = s
+	b.s = mv s
 	Console.write("[" + b.s + "]\\n")
 }
 `,
@@ -131,7 +131,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Box2 {
-	var string s
+	mv string s
 
 	func #init = (ref self, string v) {
 		self.s = v.copy()
@@ -140,7 +140,7 @@ mv struct Box2 {
 
 func fill_class = (ref Box2 dst) {
 	var string s = "hey".to_string()
-	dst.s = s
+	dst.s = mv s
 }
 
 pub func main = (Init init) {

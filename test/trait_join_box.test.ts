@@ -42,7 +42,7 @@ func make_match = (int k, out Shape) {
 	} else -> scaled(4)
 }
 mv struct Label : Shape {
-	var string text = ""
+	mv string text = ""
 	func area = (self, out int) {
 		return self.text.length
 	}

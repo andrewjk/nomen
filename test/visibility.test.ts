@@ -25,7 +25,7 @@ pub if true {
 	test("accessing private fields from outside struct", () => {
 		const input = `
 mv struct Person {
-  private var string name
+  private mv string name
   private func greet = () {}
 }
 var Person x = Person()
@@ -233,7 +233,7 @@ func useHelper = () {
 	test("mixed visibility - pub and private fields", () => {
 		const input = `
 mv struct User {
-  pub var string name
+  pub mv string name
   private var int age = 0
   pub func getName = (self, out string) {
     return self.name
@@ -281,7 +281,7 @@ struct Foo {
 		const input = `
 mv struct Widget {
   private var int id = 0
-  private var string label = ""
+  private mv string label = ""
   private func reset = (ref self) {
     self.id = 0
     self.label = ""

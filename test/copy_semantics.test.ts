@@ -9,7 +9,7 @@ describe("mv value struct copy()", () => {
 	test("copy is independent — writes to the copy don't escape", async () => {
 		await build_and_check_output(
 			`
-mv struct Info { var string name = ""  var int n = 0 }
+mv struct Info { mv string name = ""  var int n = 0 }
 var Info a = Info()
 a.name = "x"
 var Info b = a.copy()
@@ -31,7 +31,7 @@ Console.write_line(b.n.to_string())
 		// cannot stay silently local; mutation must be spelled `ref` (the
 		// next test pins its write-through visibility).
 		const input = `
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func mutate = (Info p) {
 	p.name = "changed"
 	Console.write_line(p.name)
@@ -52,7 +52,7 @@ Console.write_line(a.name)
 		// is about WRITE-THROUGH visibility, which pass-by-value must not
 		// have.
 		const input = `
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func mutate = (ref Info p) {
 	p.name = "changed"
 }
@@ -73,7 +73,7 @@ Console.write_line(a.name)
 	test("passthrough chain copies only the field read, and stays leak-free", async () => {
 		await build_and_check_output(
 			`
-mv struct Pair { var int n = 0  var string tag = "" }
+mv struct Pair { var int n = 0  mv string tag = "" }
 func build = (int n, string t, out Pair) {
 	var p = Pair()
 	p.n = n
@@ -100,7 +100,7 @@ Console.write_line(p.tag)
 	test("copy argument is legal and equals the plain by-value form", async () => {
 		await build_and_check_output(
 			`
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func show = (Info p) {
 	Console.write_line(p.name)
 }
@@ -122,7 +122,7 @@ describe("pass-by-value ownership table", () => {
 		// copy is sound, so transfer semantics are unnecessary), and the
 		// stray keyword still invalidates the source.
 		const input = `
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func take = (Info p) {
 	Console.write_line(p.name)
 }
@@ -140,7 +140,7 @@ Console.write_line(a.name)
 	test("fresh values (construction, call results) pass copy-free", async () => {
 		await build_and_check_output(
 			`
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func make = (string s, out Info) {
 	var i = Info()
 	i.name = s + "!"
@@ -162,7 +162,7 @@ describe("mv transfer of mv value structs", () => {
 	test("transfer: callee owns and frees the strings, no copy at the boundary", async () => {
 		await build_and_check_output(
 			`
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func consume = (mv Info p) {
 	p.name = "consumed"
 	Console.write_line(p.name)
@@ -179,7 +179,7 @@ Console.write_line("done")
 
 	test("transfer param requires the mv keyword for owned variables", () => {
 		const input = `
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func consume = (mv Info p) {
 	Console.write_line(p.name)
 }
@@ -197,7 +197,7 @@ consume(a)
 
 	test("transferred source is invalidated", () => {
 		const input = `
-mv struct Info { var string name = "" }
+mv struct Info { mv string name = "" }
 func consume = (mv Info p) {
 	Console.write_line(p.name)
 }
@@ -212,8 +212,8 @@ Console.write_line(a.name)
 
 	test("moving a pbv struct out of a field requires swap", () => {
 		const input = `
-mv struct Info { var string name = "" }
-struct Holder { var Info info = Info() }
+mv struct Info { mv string name = "" }
+struct Holder { mv Info info = Info() }
 func consume = (mv Info p) {
 	Console.write_line(p.name)
 }

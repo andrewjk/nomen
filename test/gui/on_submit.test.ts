@@ -23,11 +23,11 @@ import System
 import System::Controls
 
 mv struct SubmitApp : App {
-	var TextBox name
-	var SecureField secret
-	var SearchField search
-	var Text status
-	var Container stack
+	mv TextBox name
+	mv SecureField secret
+	mv SearchField search
+	mv Text status
+	mv Container stack
 	var int hits = 0
 	var int frames = 0
 
@@ -43,11 +43,11 @@ mv struct SubmitApp : App {
 		stack.add(search.handle, 0, 24, 1)
 		stack.add(status.handle, 0, 24, 1)
 		// Locals are used up before the moves into fields (mv).
-		self.name = name
-		self.secret = secret
-		self.search = search
-		self.status = status
-		self.stack = stack
+		self.name = mv name
+		self.secret = mv secret
+		self.search = mv search
+		self.status = mv status
+		self.stack = mv stack
 	}
 
 	pub func start = (ref self, ref Window win {}) {
@@ -153,15 +153,15 @@ import System
 import System::Controls
 
 mv struct SearchApp : App {
-	var SearchField search
-	var Text status
+	mv SearchField search
+	mv Text status
 
 	pub func #init = (self, Window window) {
 		var SearchField search = SearchField(window)
-		self.search = search
+		self.search = mv search
 		var Text status = Text(window)
 		status.set_text("idle")
-		self.status = status
+		self.status = mv status
 	}
 
 	pub func start = (ref self, ref Window win {}) {

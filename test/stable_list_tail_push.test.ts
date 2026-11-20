@@ -30,7 +30,7 @@ function build_c(source: string): string {
 
 const PROGRAM = `
 mv struct Rec {
-	var string tag
+	mv string tag
 	var int x
 }
 // Strings across the chunk boundary, donor spelling (the non-producer path).

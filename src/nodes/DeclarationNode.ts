@@ -36,6 +36,13 @@ export default class DeclarationNode extends BaseNode {
 	 * `class_alias_of`. Reference types only (classes).
 	 */
 	is_ref_binding?: boolean;
+	/**
+	 * True for a field declared in a TRAIT body (check_trait_node stamps it).
+	 * The ownership-spelling rules key on it: the field's `mv` is the slot's
+	 * declaration, never a transfer marker, so the fresh-initializer rule
+	 * must exempt it.
+	 */
+	is_trait_field?: boolean;
 	name: string;
 	type: Type;
 	value?: BaseNode;

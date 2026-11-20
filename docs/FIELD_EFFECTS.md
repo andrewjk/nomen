@@ -77,7 +77,7 @@ mv struct Data {
 
 mv struct Holder {
 	var int scratch
-	var Box<Data> data
+	mv Box<Data> data
 
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1

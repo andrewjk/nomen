@@ -10,7 +10,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))
@@ -26,7 +26,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))
@@ -42,7 +42,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(10))
 var Holder h2 = Holder(mv Box(20))
@@ -58,7 +58,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))
@@ -74,7 +74,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))

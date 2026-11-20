@@ -1,0 +1,14 @@
+
+> nomen-monorepo@1.0.0 test
+> vp test
+
+
+ RUN  v4.1.10 /Users/andrewjk/Source/nomen
+
+[system_lib] C object: built; aarch64 object: built
+
+ Test Files  605 passed (605)
+      Tests  5389 passed | 8 skipped (5397)
+   Start at  23:52:43
+   Duration  702.82s (transform 36.10s, setup 0ms, import 887.65s, tests 4491.81s, environment 67ms)
+

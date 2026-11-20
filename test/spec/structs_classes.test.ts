@@ -96,7 +96,7 @@ describe("spec: mv structs (types section)", () => {
 	test("mv struct declaration and construction", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 var c = Config("x")
 `;
@@ -106,7 +106,7 @@ var c = Config("x")
 	test("mv / .copy() / ref-Box aliasing, each spelled", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 var c = Config("x")
 mv c2 = c
@@ -118,7 +118,7 @@ var c3 = c2.copy()
 	test("a plain copy of a mv binding is an error", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 var c = Config("x")
 var c4 = c
@@ -173,7 +173,7 @@ mv struct Resource {
 	test("passing a mv struct to a function", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 func get_name = (Config c, out string) {
 	return c.name.copy()
@@ -239,7 +239,7 @@ describe("spec: construction overrides", () => {
 	test("struct constructed and passed to function", () => {
 		const input = `
 mv struct Circle {
-    var string name
+    mv string name
     var int center_x
     var int center_y
     var int radius

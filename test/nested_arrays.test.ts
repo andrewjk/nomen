@@ -190,7 +190,7 @@ Console.write("\\{total(g)} \\{g.at(0).at(0)}")
 	test("owning struct rows (mv element teardown)", async () => {
 		const input = `
 mv struct Rec {
-	var string name
+	mv string name
 }
 var g = [[Rec("a"), Rec("b")], [Rec("c")]]
 Console.write("\\{g.at(0).at(1).name} \\{g.at(1).at(0).name} \\{g.at(0).length}")

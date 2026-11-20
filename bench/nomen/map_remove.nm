@@ -12,8 +12,8 @@ import System
 // comparable.
 
 mv struct Rec {
-	var string a
-	var string b
+	mv string a
+	mv string b
 	var int x
 	var int y
 }

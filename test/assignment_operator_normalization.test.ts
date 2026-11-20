@@ -30,8 +30,8 @@ describe("plain assignment operator normalization", () => {
 	test("a derived copy still round-trips a List field", async () => {
 		const input = `
 mv struct Rule {
-	var name = ""
-	var protocols = List<string>()
+	mv name = ""
+	mv protocols = List<string>()
 }
 var a = Rule()
 a.name = "href"

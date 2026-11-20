@@ -440,7 +440,7 @@ import System
 
 mv struct Counter {
     var int count
-    var string label
+    mv string label
 }
 
 func bump = (int by, out int) {
@@ -538,7 +538,7 @@ mv struct Box {
     var int value
 }
 mv struct Holder {
-    var Box content
+    mv Box content
 }
 func run_swap_var = (out int) {
     var Box a = Box(1)
@@ -688,7 +688,7 @@ import System
 
 mv struct Counter {
     var int count
-    var string label
+    mv string label
 }
 struct Pt {
     var int x

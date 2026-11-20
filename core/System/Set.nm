@@ -17,8 +17,8 @@
 pub mv struct Set<T: Hashable + Equatable> {
 	var length = 0
 	var slots = Buffer<T>()
-	var used = Buffer<int>()
-	var hashes = Buffer<int>()
+	mv used = Buffer<int>()
+	mv hashes = Buffer<int>()
 
 	pub func add = (ref self { hashes, slots, used }, mv T value) {
 		var int cap = self.slots.cap

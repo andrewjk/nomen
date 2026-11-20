@@ -13,9 +13,9 @@ import System
 // both shapes.
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
-	var tags = List<int>()
+	mv tags = List<int>()
 }
 
 func consume = (mv Rec r, out int) {

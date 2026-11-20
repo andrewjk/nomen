@@ -15,8 +15,8 @@ describe("recursive destroy leak", () => {
 	test("boxed recursive tree stores, traverses, and frees completely", async () => {
 		const input = `
 mv struct TreeNode {
-  var Box<TreeNode>? left = null
-  var Box<TreeNode>? right = null
+  mv Box<TreeNode>? left = null
+  mv Box<TreeNode>? right = null
 }
 
 func create_tree = (int depth, out TreeNode) {

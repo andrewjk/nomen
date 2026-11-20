@@ -5,15 +5,15 @@
  * A flat, buffer-backed layout tree — nodes stored in parallel arrays for the layout engine
  **/
 pub mv struct Layout {
-	var kinds = Buffer<int>() // 0=leaf, 1=vstack, 2=hstack
-	var ws = Buffer<int>() // intrinsic width (leaf) or 0
-	var hs = Buffer<int>() // intrinsic height (leaf) or 0
-	var gaps = Buffer<int>() // spacing between children (containers)
-	var par = Buffer<int>() // parent index (-1 = root)
-	var rx = Buffer<int>() // result x
-	var ry = Buffer<int>() // result y
-	var rw = Buffer<int>() // result width
-	var rh = Buffer<int>() // result height
+	mv kinds = Buffer<int>() // 0=leaf, 1=vstack, 2=hstack
+	mv ws = Buffer<int>() // intrinsic width (leaf) or 0
+	mv hs = Buffer<int>() // intrinsic height (leaf) or 0
+	mv gaps = Buffer<int>() // spacing between children (containers)
+	mv par = Buffer<int>() // parent index (-1 = root)
+	mv rx = Buffer<int>() // result x
+	mv ry = Buffer<int>() // result y
+	mv rw = Buffer<int>() // result width
+	mv rh = Buffer<int>() // result height
 }
 
 /**

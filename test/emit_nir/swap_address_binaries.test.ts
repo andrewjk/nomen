@@ -22,7 +22,7 @@ mv struct Box {
   var int value
 }
 mv struct Holder {
-  var Box content
+  mv Box content
 }
 func mk = (int a, out Pt) {
   return Pt(a, a + 1)

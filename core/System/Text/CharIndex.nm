@@ -22,7 +22,7 @@ pub struct CharRun {
  **/
 pub mv struct CharIndex {
 	var view string source
-	var runs = List<CharRun>()
+	mv runs = List<CharRun>()
 	var char_count = 0
 
 	pub func #init = (self, view string source) {

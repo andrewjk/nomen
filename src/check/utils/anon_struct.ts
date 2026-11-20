@@ -5,6 +5,7 @@ import RootNode from "../../nodes/RootNode.ts";
 import StructNode from "../../nodes/StructNode.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { declares_mv_shallow, slot_requires_mv } from "./mv_rule.ts";
 import { type_owns_heap } from "./ownership.ts";
 import { clone_type, sanitize_type_name } from "./tuple_struct.ts";
 
@@ -37,7 +38,17 @@ export function get_or_create_anon_struct(
 	if (existing) return existing;
 
 	const struct_fields = sorted.map(
-		(f) => new DeclarationNode(0, "pub", "var", f.name, clone_type(f.type)),
+		(f) =>
+			new DeclarationNode(
+				0,
+				"pub",
+				// The ownership-spelling rule reaches generated fields too: an
+				// owning member slots in as `mv` — the same spelling a
+				// hand-written struct must use; a value member keeps `var`.
+				slot_requires_mv(f.type, status) || declares_mv_shallow(f.type, status) ? "mv" : "var",
+				f.name,
+				clone_type(f.type),
+			),
 	);
 
 	const struct = new StructNode(0, "private", name, [], struct_fields, []);

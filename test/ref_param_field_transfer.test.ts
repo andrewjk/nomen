@@ -23,8 +23,8 @@ describe("string field store through a ref struct param", () => {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 }
 
 func set = (ref Pair p, string raw) {
@@ -53,8 +53,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 }
 
 func set = (ref Pair p, string raw) {
@@ -83,12 +83,12 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 }
 
 mv struct Other {
-	var string a = "lit"
+	mv string a = "lit"
 }
 
 func set = (ref Pair p, string raw) {
@@ -115,8 +115,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 }
 
 func set = (ref Pair dst, string raw) {
@@ -141,8 +141,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 
 	func fill = (ref self, ref Pair other) {
 		other.a = "filled"
@@ -171,8 +171,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 }
 
 func set = (ref Pair p, string raw) {
@@ -232,7 +232,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func decorated = (string v, mv out string) {
@@ -268,7 +268,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func decorated = (string v, mv out string) {
@@ -309,7 +309,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func decorated = (string v, int n, mv out string) {
@@ -353,7 +353,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
+	mv string a = "default"
 }
 
 func set = (ref Pair p, string raw) {

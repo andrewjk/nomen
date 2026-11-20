@@ -150,7 +150,7 @@ mv struct Data {
 
 mv struct Holder {
 	var int scratch
-	var Box<Data> data
+	mv Box<Data> data
 
 	func poke = (ref self {}) {
 		self.scratch = self.scratch + 1
@@ -188,7 +188,7 @@ pub func main = (Init init) {
 		const r = run(`
 mv struct Counter {
 	var int n
-	var Box<Data> data
+	mv Box<Data> data
 
 	func bump = (ref self {}) {
 		self.n = self.n + 1
@@ -249,7 +249,7 @@ mv struct Counter {
 }
 
 mv struct Holder {
-	var Counter c
+	mv Counter c
 
 	func peek = (ref self {}, out int) {
 		return self.c.n
@@ -318,8 +318,8 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
-	var Box<Inner> spare
+	mv Box<Inner> inner
+	mv Box<Inner> spare
 }
 
 func touch = (ref Item item { inner }) {
@@ -367,7 +367,7 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
+	mv Box<Inner> inner
 }
 
 func reset = (ref Item item {}) {
@@ -393,8 +393,8 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
-	var Box<Inner> other
+	mv Box<Inner> inner
+	mv Box<Inner> other
 }
 
 func touch = (ref Item item {}) {
@@ -422,8 +422,8 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
-	var Box<Inner> other
+	mv Box<Inner> inner
+	mv Box<Inner> other
 }
 
 func touch = (ref Item item { inner }) {
@@ -490,8 +490,8 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
-	var Box<Inner> spare
+	mv Box<Inner> inner
+	mv Box<Inner> spare
 }
 
 func narrow = (ref Item item { inner }) {
@@ -557,7 +557,7 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
+	mv Box<Inner> inner
 }
 
 func read = (ref Item item {}, out int) {
@@ -580,7 +580,7 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
+	mv Box<Inner> inner
 }
 
 func read = (ref Item item, out int) {
@@ -644,7 +644,7 @@ pub func main = (Init init) {
 		const r = run(`
 mv struct Item {
 	var int n
-	var Box<Inner> inner
+	mv Box<Inner> inner
 }
 
 mv struct Inner {
@@ -754,7 +754,7 @@ trait Holder {
 
 mv struct H: Holder {
 	var int scratch
-	var Box<Data> data
+	mv Box<Data> data
 
 	func poke = (ref self {}) {
 		self.scratch = self.scratch + 1

@@ -35,7 +35,7 @@ mv struct Box {
 mv struct Wall {
 	mv Box? art = null
 	func set_art = (ref self, mv Box b) {
-		self.art = b
+		self.art = mv b
 	}
 	func show = (self, out string) {
 		if self.art == null {

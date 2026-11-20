@@ -27,9 +27,9 @@ import System
 import System::Controls
 
 mv struct RightClickApp : App {
-	var Container todos
-	var List<CheckBox> owned
-	var List<uint64> handles
+	mv Container todos
+	mv List<CheckBox> owned
+	mv List<uint64> handles
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -44,9 +44,9 @@ mv struct RightClickApp : App {
 		todos.add(cb.handle, 0, 24, 1)
 		handles.push(cb.handle)
 		owned.push(mv cb)
-		self.todos = todos
-		self.owned = owned
-		self.handles = handles
+		self.todos = mv todos
+		self.owned = mv owned
+		self.handles = mv handles
 	}
 
 	pub func start = (ref self, ref Window win {}) {

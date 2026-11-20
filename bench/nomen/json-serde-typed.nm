@@ -13,26 +13,26 @@ import System
 
 mv struct Properties {
 	@rename("name")
-	var name = ""
+	mv name = ""
 }
 
 mv struct Geometry {
 	@rename("type")
-	var kind = ""
-	var coordinates = StableList<StableList<StableList<float>>>()
+	mv kind = ""
+	mv coordinates = StableList<StableList<StableList<float>>>()
 }
 
 mv struct Feature {
 	@rename("type")
-	var kind = ""
-	var properties = Properties()
-	var geometry = Geometry()
+	mv kind = ""
+	mv properties = Properties()
+	mv geometry = Geometry()
 }
 
 mv struct GeoData {
 	@rename("type")
-	var kind = ""
-	var features = StableList<Feature>()
+	mv kind = ""
+	mv features = StableList<Feature>()
 }
 
 pub func main = (Init init) {

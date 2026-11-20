@@ -73,7 +73,7 @@ mv struct Binding {
 }
 
 pub mv struct Store {
-	var List<Binding> list = List<Binding>()
+	mv List<Binding> list = List<Binding>()
 	var int ran = 0
 
 	pub func #init = (self) {

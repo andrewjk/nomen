@@ -191,7 +191,7 @@ describe("List of mv value structs", () => {
 	// locals read from `.at()`/`.first()` are borrows (not destroyed, since the
 	// slot owns the strings).
 	const OWNING = `mv struct Person {
-  var string name
+  mv string name
   var int age
 }`;
 
@@ -272,11 +272,11 @@ for i of 0 .. people.length {
 	test("nested mv value struct (push/at)", async () => {
 		const input = `
 mv struct Inner {
-  var string text
+  mv string text
 }
 mv struct Outer {
   var int n
-  var Inner inner
+  mv Inner inner
 }
 var List<Outer> xs = List<Outer>()
 xs.push(Outer(1, Inner("a")))
@@ -292,11 +292,11 @@ for i of 0 .. xs.length {
 	test("nested mv value struct (set replaces — old freed)", async () => {
 		const input = `
 mv struct Inner {
-  var string text
+  mv string text
 }
 mv struct Outer {
   var int n
-  var Inner inner
+  mv Inner inner
 }
 var List<Outer> xs = List<Outer>()
 xs.push(Outer(1, Inner("a")))
@@ -319,14 +319,14 @@ for i of 0 .. xs.length {
 		// exercises the destroy + deep-copy recursion two levels deep.
 		const input = `
 mv struct Inner {
-  var string text
+  mv string text
 }
 mv struct Mid {
-  var Inner inner
+  mv Inner inner
 }
 mv struct Outer {
   var int n
-  var Mid mid
+  mv Mid mid
 }
 var List<Outer> xs = List<Outer>()
 xs.push(Outer(1, Mid(Inner("a"))))
@@ -623,7 +623,7 @@ for i of 0 .. a.length {
 	test("mv value struct list copy deep-copies elements", async () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   var int age
 }
 var List<Person> a = List<Person>()
@@ -658,7 +658,7 @@ for i of 0 .. a.length {
 		// ownership; `.copy()` takes a deep copy and leaves the field intact.
 		const input = `
 mv struct Group {
-  var List<int> items = List<int>()
+  mv List<int> items = List<int>()
 }
 var Group g = Group()
 g.items.push(1)
@@ -726,7 +726,7 @@ describe("List<T> as an explicit struct-field type", () => {
 	test("construct with mv — field reads back on both backends", async () => {
 		const input = `
 mv struct Group {
-  var List<int> items
+  mv List<int> items
 }
 var List<int> xs = List<int>()
 xs.push(1)
@@ -744,7 +744,7 @@ Console.write("\\{g.items.length} \\{total}")
 	test("construct with a fresh list argument (implicit mv)", async () => {
 		const input = `
 mv struct Group {
-  var List<int> items
+  mv List<int> items
 }
 var Group g = Group(List<int>())
 g.items.push(7)
@@ -757,7 +757,7 @@ Console.write("\\{g.items.length} \\{g.items.pop()}")
 	test("mv-declared field still works with mv", async () => {
 		const input = `
 mv struct Group {
-  var List<int> items
+  mv List<int> items
 }
 var List<int> xs = List<int>()
 xs.push(5)
@@ -770,7 +770,7 @@ Console.write("\\{g.items.pop()}")
 	test("mv out of the field with swap revalidates it", async () => {
 		const input = `
 mv struct Group {
-  var List<int> items = List<int>()
+  mv List<int> items = List<int>()
 }
 var Group g = Group()
 g.items.push(1)
@@ -855,7 +855,7 @@ Console.write("\\{first_of(w)}")
 	test("plain by-value constructor arg is rejected (missing mv)", () => {
 		const input = `
 mv struct Group {
-  var List<int> items
+  mv List<int> items
 }
 var List<int> xs = List<int>()
 var Group g = Group(xs)
@@ -869,7 +869,7 @@ var Group g = Group(xs)
 	test("copying a field into the constructor by value is rejected", () => {
 		const input = `
 mv struct Group {
-  var List<int> items
+  mv List<int> items
 }
 var Group a = Group(List<int>())
 var Group b = Group(a.items)
@@ -884,7 +884,7 @@ var Group b = Group(a.items)
 	test("bare mv out of a field into the constructor is rejected (needs swap)", () => {
 		const input = `
 mv struct Group {
-  var List<int> items
+  mv List<int> items
 }
 var Group a = Group(List<int>())
 var Group b = Group(mv a.items)

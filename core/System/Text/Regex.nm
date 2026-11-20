@@ -2097,7 +2097,7 @@ pub mv struct RegexMatch {
 	var start = 0
 	var end = 0
 	var length = 0
-	var text = ""
+	mv text = ""
 }
 
 // Whether the escaped character c (the byte after a backslash) is a
@@ -2339,37 +2339,37 @@ mv struct RxProg {
 	// SEQ: one "pattern range" (whole pattern, group inner, lookaround inner).
 	// Its alternatives live at seq_alt0[seq] .. +seq_nalt[seq]-1 and are tried
 	// in order — the compiled form of match_here's top-level '|' split.
-	var seq_alt0 = Buffer<int>()
-	var seq_nalt = Buffer<int>()
+	mv seq_alt0 = Buffer<int>()
+	mv seq_nalt = Buffer<int>()
 	var nseq = 0
 	var cap_seq = 0
 
 	// ALT: a linear sequence of steps (one source alternative).
-	var step0 = Buffer<int>()
-	var nsteps = Buffer<int>()
+	mv step0 = Buffer<int>()
+	mv nsteps = Buffer<int>()
 	var nalt = 0
 	var cap_alt = 0
 
 	// STEP: one quantified atom.
-	var step_atom = Buffer<int>()
-	var step_q = Buffer<int>() // 0 none, 1 star(*), 2 plus(+), 3 opt(?), 4 counted
-	var step_lazy = Buffer<int>()
-	var step_min = Buffer<int>()
-	var step_max = Buffer<int>()
+	mv step_atom = Buffer<int>()
+	mv step_q = Buffer<int>() // 0 none, 1 star(*), 2 plus(+), 3 opt(?), 4 counted
+	mv step_lazy = Buffer<int>()
+	mv step_min = Buffer<int>()
+	mv step_max = Buffer<int>()
 	var nstep = 0
 	var cap_step = 0
 
 	// ATOM.
-	var atom_kind = Buffer<int>()
-	var atom_v0 = Buffer<int>() // lit byte / class id / group index / look kind
-	var atom_v1 = Buffer<int>() // group & look inner SEQ id
+	mv atom_kind = Buffer<int>()
+	mv atom_v0 = Buffer<int>() // lit byte / class id / group index / look kind
+	mv atom_v1 = Buffer<int>() // group & look inner SEQ id
 	var natom = 0
 	var cap_atom = 0
 
 	// CLASS bitmaps: class c occupies bits[c*4 .. c*4+4); one 64-bit word per
 	// 64 byte codes, 4 words = the full 256-bit membership set. Negated
 	// classes and complement shorthands are resolved at compile time.
-	var bits = Buffer<int>()
+	mv bits = Buffer<int>()
 	var ncls = 0
 	var cap_cls = 0
 
@@ -2382,16 +2382,16 @@ mv struct RxProg {
 	// alternative — breaking the contiguous step0+nsteps addressing). The
 	// (atom, range) pairs are parked here; rx_compile_alt drains the stack
 	// after its walk, when the enclosing steps are contiguous.
-	var dq = Buffer<int>()
-	var ds = Buffer<int>()
-	var de = Buffer<int>()
+	mv dq = Buffer<int>()
+	mv ds = Buffer<int>()
+	mv de = Buffer<int>()
 	var nd = 0
 
 	// Alternative SIBLING CHAIN: deferred inner compiles allocate alt ids
 	// BETWEEN a seq's own alternatives, so ids are not contiguous. The seq
 	// header stores the first alt; each alt's alt_next points at its next
 	// sibling (-1 = end), patched by the parent after both ids exist.
-	var alt_next = Buffer<int>()
+	mv alt_next = Buffer<int>()
 
 	// First-byte sets, computed per ALT after its steps are laid out (and
 	// per SEQ as the union of its alternatives). A gate consults them to
@@ -2400,17 +2400,17 @@ mv struct RxProg {
 	// its first byte-consuming atom before any capture state changes (the
 	// first-byte walk stops at the first non-nullable step, so every path
 	// the gate excludes needs a byte the position does not hold).
-	var alt_fb = Buffer<int>()
-	var alt_flags = Buffer<int>() // bit 0: may start with any byte; bit 1: may match empty
-	var seq_fb = Buffer<int>()
-	var seq_flags = Buffer<int>()
+	mv alt_fb = Buffer<int>()
+	mv alt_flags = Buffer<int>() // bit 0: may start with any byte; bit 1: may match empty
+	mv seq_fb = Buffer<int>()
+	mv seq_flags = Buffer<int>()
 }
 
 // Capture-span log: the same (group, start, end) triple format the old
 // engine's List<int> carried, hoisted to one allocation per public call and
 // reset per candidate position (n = 0 — no realloc, no per-position heap).
 mv struct RxCaps {
-	var slots = Buffer<int>()
+	mv slots = Buffer<int>()
 	var n = 0
 }
 

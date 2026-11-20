@@ -15,7 +15,7 @@ import System
 // malloc, 1 free at the box's scope exit). n from argv.
 
 mv struct Boxed {
-	var text = ""
+	mv text = ""
 }
 
 func make = (int i, out string) {

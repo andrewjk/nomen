@@ -29,8 +29,8 @@ import System
 import System::Controls
 
 mv struct KeyboardApp : App {
-	var Text label
-	var Container grid
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -38,8 +38,8 @@ mv struct KeyboardApp : App {
 		label.set_text("idle")
 		var Container grid = VStack(8)
 		grid.add(label.handle, 0, 30, 1)
-		self.label = label
-		self.grid = grid
+		self.label = mv label
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

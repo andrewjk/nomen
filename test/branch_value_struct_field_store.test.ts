@@ -17,12 +17,12 @@ import build_and_check_output from "./build_and_check_output";
 
 const Defs = `
 mv struct Attr {
-	var name = ""
-	var value = ""
+	mv name = ""
+	mv value = ""
 }
 
 mv struct Node {
-	var attributes = List<Attr>()
+	mv attributes = List<Attr>()
 }
 
 func owned_of = (string text, mv out string) {
@@ -81,7 +81,7 @@ test("switch: direct store into a local value-struct field across cases", async 
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func owned_of = (string text, mv out string) {

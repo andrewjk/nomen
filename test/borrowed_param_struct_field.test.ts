@@ -12,13 +12,13 @@ describe("borrowed string param stored into a field", () => {
 	test("value struct and class fields from borrowed params", async () => {
 		const input = `
 mv struct Attr {
-	var string name = ""
-	var string value = ""
+	mv string name = ""
+	mv string value = ""
 }
 
 mv struct CAttr {
-	pub var string name = ""
-	pub var string value = ""
+	pub mv string name = ""
+	pub mv string value = ""
 }
 
 func make_attr = (string name, string value, out Attr) {
@@ -46,11 +46,11 @@ Console.write("c=\\{c.name}:\\{c.value}\\n")
 	test("ref class and ref value struct fields from borrowed params", async () => {
 		const input = `
 mv struct C {
-	pub var string v = ""
+	pub mv string v = ""
 }
 
 mv struct S {
-	var string v = ""
+	mv string v = ""
 }
 
 func set_c = (ref C c, string v) {

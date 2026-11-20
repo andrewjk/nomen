@@ -658,7 +658,7 @@ func probe = (List<int> list, int i, out int) {
 		test("mv element type at verifies under a return-guard", () => {
 			const input = `
 import System
-mv struct Item { var string name }
+mv struct Item { mv string name }
 func probe = (List<Item> list, int i, out Item) {
     if i < 0 { return Item("neg") }
     if i < list.length { return list.at(i) }

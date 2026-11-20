@@ -213,7 +213,7 @@ test("trait-declared fields join the conformer's layout", () => {
 	// V: own x @8; trait tail tag (string, 16) @16 → 32.
 	const body = `
 		trait Tagged {
-			var tag = "trait-default"
+			mv tag = "trait-default"
 		}
 		struct V : Tagged {
 			var x = 1

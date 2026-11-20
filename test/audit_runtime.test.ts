@@ -249,7 +249,7 @@ describe("audit mode is a whole-build property", () => {
 import System
 
 mv struct Pair {
-	var string name
+	mv string name
 	pub func #init = (self, string n) {
 		self.name = n.copy()
 	}

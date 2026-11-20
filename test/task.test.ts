@@ -918,7 +918,7 @@ pub mv struct Counter {
 }
 
 pub struct HoldsClass {
-	var Counter c
+	mv Counter c
 }
 
 pub func work = (HoldsClass h) {

@@ -79,7 +79,7 @@ describe("in-place store: List.set with value-struct elements", () => {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int a
 	var int b
 }
@@ -114,7 +114,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int a
 }
 
@@ -349,7 +349,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int a
 }
 

@@ -14,7 +14,7 @@ mv struct Box {
   var int value
 }
 mv struct Holder {
-  var Box content
+  mv Box content
 }
 func run_swap_var = (out int) {
   var Box a = Box(1)

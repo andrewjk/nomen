@@ -26,7 +26,7 @@ describe("Box: checker", () => {
 		const input = `
 mv struct Node {
 	var int value
-	var Node next
+	mv Node next
 }
 `;
 		const errors = check(input);
@@ -43,7 +43,7 @@ mv struct Node {
 		const input = `
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 `;
 		expect(check(input)).toEqual([]);
@@ -101,7 +101,7 @@ func take = (Box<Node> h) {
 	test("a Box field in a bare struct triggers the Copyable verifier", () => {
 		const input = `
 struct Wrapper {
-	var Box<Wrapper>? child
+	mv Box<Wrapper>? child
 }
 `;
 		expect(check(input).some((e) => e.message.includes("'Wrapper' cannot be Copyable"))).toBe(true);
@@ -114,7 +114,7 @@ describe("Box: runtime (both backends)", () => {
 import System
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 pub func main = () {
 	var Node n = Node(7, null)
@@ -142,7 +142,7 @@ mv struct Node {
 	var int value
 }
 mv struct Store {
-	var List<Box<Node>> items = List<Box<Node>>()
+	mv List<Box<Node>> items = List<Box<Node>>()
 	func add = (ref self, mv Box<Node> n) {
 		self.items.push(mv n)
 	}
@@ -180,7 +180,7 @@ pub func main = () {
 import System
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 pub func main = () {
 	var Node inner = Node(20, null)
@@ -218,7 +218,7 @@ describe("Box: construct-in-place elision", () => {
 		const input = `
 import System
 mv struct Wrap {
-	var string name
+	mv string name
 	var int value
 }
 pub func main = () {
@@ -246,7 +246,7 @@ pub func main = () {
 import System
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 pub func main = () {
 	var Node n = Node(1, null)
@@ -273,7 +273,7 @@ pub func main = () {
 import System
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 pub func main = () {
 	var Node n = Node(1, null)
@@ -299,7 +299,7 @@ pub func main = () {
 import System
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 pub func main = () {
 	var Node n = Node(1, null)

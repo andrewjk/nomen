@@ -55,7 +55,7 @@ describe("ownership: scope-exit cleanup with class anchors", () => {
 	test("array literal temp frees in a scope with a class anchor", async () => {
 		const input = `
 mv struct Holder {
-	var items = List<string>()
+	mv items = List<string>()
 }
 
 func count_of = (Array<string> names, out int) {
@@ -84,11 +84,11 @@ describe("ownership: heap array temp on the return path", () => {
 	// into a `List<string>` field.
 	const helper = `
 pub mv struct Inner {
-	pub var protocols = List<string>()
+	pub mv protocols = List<string>()
 }
 
 pub mv struct Outer {
-	pub var items = List<Inner>()
+	pub mv items = List<Inner>()
 }
 
 func make_inner = (Array<string> protocols, out Inner) {
@@ -163,7 +163,7 @@ describe("ownership: container field mv-assign", () => {
 import System::Test
 
 mv struct Box {
-	var items = List<string>()
+	mv items = List<string>()
 }
 
 pub func test_move_assign = (ref Tester t) {

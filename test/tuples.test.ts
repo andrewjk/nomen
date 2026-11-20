@@ -338,7 +338,7 @@ Console.write("\\{p._0} \\{p._1}")
 	test("tuple as struct field", async () => {
 		const input = `
 struct Container {
-	var [int, string] payload
+	mv [int, string] payload
 }
 const c = Container([99, "bottles"])
 Console.write("\\{c.payload._0} \\{c.payload._1}")
@@ -359,8 +359,8 @@ Console.write("\\{x._0._0} \\{x._0._1} \\{x._1}")
 
 	test("nested tuple as struct field", async () => {
 		const input = `
-struct Container {
-	var [[int, string], bool] payload
+mv struct Container {
+	mv [[int, string], bool] payload
 }
 const c = Container([[99, "bottles"], true])
 Console.write("\\{c.payload._0._0} \\{c.payload._0._1} \\{c.payload._1}")

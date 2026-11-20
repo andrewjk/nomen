@@ -16,11 +16,11 @@ describe("nested mv struct field in a List element", () => {
 	test("read back owns an independent Map-carrying inner struct", async () => {
 		const input = `
 mv struct Inner {
-	var Map<string, int> data = Map<string, int>()
+	mv Map<string, int> data = Map<string, int>()
 }
 
 mv struct Outer {
-	var Inner inner = Inner()
+	mv Inner inner = Inner()
 }
 
 var list = List<Outer>()
@@ -43,11 +43,11 @@ Console.write("still=\\{again.inner.data.get_or_panic("k")}\\n")
 		// audit runtime catches the shallow load's double-free at teardown.
 		const input = `
 mv struct Inner {
-	var Buffer<int> buf = Buffer<int>()
+	mv Buffer<int> buf = Buffer<int>()
 }
 
 mv struct Outer {
-	var Inner inner = Inner()
+	mv Inner inner = Inner()
 }
 
 var list = List<Outer>()
@@ -63,11 +63,11 @@ Console.write("cap=\\{loaded.inner.buf.cap}\\n")
 	test("read back owns an independent string-carrying inner struct", async () => {
 		const input = `
 mv struct Inner {
-	var string name = ""
+	mv string name = ""
 }
 
 mv struct Outer {
-	var Inner inner = Inner()
+	mv Inner inner = Inner()
 }
 
 var list = List<Outer>()

@@ -19,7 +19,7 @@ async function build_and_run(input: string, name: string, expected: string, audi
 test("value-struct method overwriting tracked string field", async () => {
 	const input = `
 mv struct Person {
-  var string name
+  mv string name
 
   func rename = (ref self, string new_name) {
     self.name = new_name.copy()
@@ -39,7 +39,7 @@ Console.write("\\{p.name}")
 test("caller reassignment after self-write uses fresh ownership state", async () => {
 	const input = `
 mv struct Person {
-  var string name
+  mv string name
 
   func rename = (ref self, string new_name) {
     self.name = new_name.copy()
@@ -60,7 +60,7 @@ Console.write("\\{p.name}")
 test("self-write through a delegated self-call", async () => {
 	const input = `
 mv struct Person {
-  var string name
+  mv string name
 
   func rename = (ref self, string new_name) {
     self.name = new_name.copy()

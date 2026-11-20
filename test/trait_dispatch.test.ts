@@ -82,11 +82,11 @@ Console.write("\\{c.value()}")
 	test("trait field access through trait-typed variable", async () => {
 		const input = `
 trait Named {
-  var string name
+  mv string name
 }
 
 mv struct Alice: Named {
-  var string name = "Alice"
+  mv string name = "Alice"
 }
 
 const Named n = Alice()
@@ -130,7 +130,7 @@ trait Speaker {
 }
 
 mv struct Dog: Speaker {
-  var string name
+  mv string name
   func speak = (self, out string) {
     return self.name.copy()
   }
@@ -158,7 +158,7 @@ Console.write("\\ndone")
 		// — the wrapper's caller must not free the borrowed field pointer.
 		const input = `
 mv struct Dog {
-  var string name
+  mv string name
   func speak = (self, out string) {
     return self.name.copy()
   }

@@ -38,7 +38,7 @@ Console.write("\\{b.load(0)}")
 test("Buffer.modify mv struct element", async () => {
 	const input = `
 mv struct Named {
-	var string name
+	mv string name
 	var int hits
 }
 
@@ -200,7 +200,7 @@ Console.write_line("")
 test("ctor scalar args survive a preceding string field (aarch64)", async () => {
 	const input = `
 mv struct Named {
-	var string name
+	mv string name
 	var int value
 }
 
@@ -217,7 +217,7 @@ Console.write_line("\\{n.name}")
 test("ctor overflow args after a string field (aarch64)", async () => {
 	const input = `
 mv struct Big {
-	var string name
+	mv string name
 	var int a
 	var int b
 	var int c

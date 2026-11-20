@@ -307,7 +307,7 @@ describe("field = mv local (value-struct field ownership transfer)", () => {
 import System
 
 pub mv struct Node {
-	pub var List<int> children = List<int>()
+	pub mv List<int> children = List<int>()
 }
 
 pub func main = (Init init) {

@@ -122,7 +122,7 @@ trait Counter {
 }
 
 mv struct Tally : Counter {
-	pub var string label
+	pub mv string label
 	pub func count = (self, out int) {
 		return 3
 	}
@@ -200,7 +200,7 @@ mv struct Box {
 }
 
 struct Host {
-	var Box item
+	mv Box item
 	pub func #init = (ref self, Box b) {
 		self.item = b
 	}

@@ -19,8 +19,8 @@ describe("non-literal struct field defaults", () => {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b
+	mv string a = "de" + "fault"
+	mv string b
 }
 
 pub func main = (Init init) {
@@ -44,8 +44,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b
+	mv string a = "de" + "fault"
+	mv string b
 
 	func #init = (self, string s) {
 		self.b = s.copy()
@@ -70,8 +70,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b
+	mv string a = "de" + "fault"
+	mv string b
 }
 
 func make = (out Pair) {
@@ -97,8 +97,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b
+	mv string a = "de" + "fault"
+	mv string b
 }
 
 pub func main = (Init init) {
@@ -120,7 +120,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Box {
-	var string tag = "de" + "fault"
+	mv string tag = "de" + "fault"
 }
 
 pub func main = (Init init) {
@@ -174,11 +174,11 @@ func fresh = (out string) {
 }
 
 mv struct Lit {
-	var string s = ro()
+	mv string s = ro()
 }
 
 mv struct Owned {
-	var string s = fresh()
+	mv string s = fresh()
 }
 
 pub func main = (Init init) {

@@ -96,6 +96,9 @@ export default function parse(
 	const checked = check(root, {
 		allow_internal: options?.allow_internal,
 		library_boundary: library ? user_source_length : undefined,
+		owning_library_types: library
+			? new Set([...library.types.values()].filter((t) => t.is_owning).map((t) => t.name))
+			: undefined,
 		arch: options?.arch,
 		platform: options?.platform,
 	});

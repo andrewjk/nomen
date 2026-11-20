@@ -20,7 +20,7 @@ import System
 import System::Controls
 
 mv struct CountApp : App {
-	var Text label
+	mv Text label
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -62,7 +62,7 @@ import System
 import System::Controls
 
 mv struct ResizeApp : App {
-	var Text label
+	mv Text label
 	var int resizes = 0
 	var int frames = 0
 
@@ -113,8 +113,8 @@ import System
 import System::Controls
 
 mv struct ProbeApp : App {
-	var Text label
-	var Container grid
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -122,7 +122,7 @@ mv struct ProbeApp : App {
 		self.label.set_text("probe")
 		var Container g = VStack(0)
 		g.add(self.label.handle, 0, 24, 1)
-		self.grid = g
+		self.grid = mv g
 	}
 
 	pub func start = (ref self, ref Window win {}) {

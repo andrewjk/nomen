@@ -702,8 +702,8 @@ var [name, x, y] = p
 To build a _named_ struct, call its constructor. Seed a literal from it with `..` to override fields that have declared defaults, applied after construction:
 
 ```nomen
-struct Circle {
-    var string name
+mv struct Circle {
+    mv string name
     var int center_x
     var int center_y
     var int radius
@@ -871,9 +871,9 @@ mv struct Box {
     var int value
 }
 
-// a mv field — the field's type decides: stores transfer
+// a mv field — owning slots spell `mv`: stores transfer
 mv struct Holder {
-    var Box content
+    mv Box content
 }
 
 // a mv parameter — the caller gives up access with `mv`

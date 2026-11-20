@@ -15,7 +15,7 @@ describe("nullable / mv struct members", () => {
 	test("nullable container member round-trips null and non-null", async () => {
 		const input = `
 mv struct MaybeList {
-	var List<int>? items = null
+	mv List<int>? items = null
 }
 
 var e = MaybeList()
@@ -34,7 +34,7 @@ if m.items == null { Console.write("M NULL\\n") } else { Console.write("direct=\
 	test("nullable container member through a List of structs", async () => {
 		const input = `
 mv struct Box {
-	var List<int>? items = null
+	mv List<int>? items = null
 }
 
 var l = List<int>()

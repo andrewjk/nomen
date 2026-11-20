@@ -35,7 +35,7 @@ pub mv struct StableList<T> {
 	// Directory of chunk-1.. slab addresses (uint64 words, `calloc`'d slabs of
 	// 256 T_SIZE bytes). The directory's slot array may realloc; the slabs it
 	// points at never move.
-	var chunks = Buffer<uint64>()
+	mv chunks = Buffer<uint64>()
 	// A transient VIEW carrier for tail pushes: `push` points it at the
 	// target chunk slab, stores the value through it (deep-copy semantics via
 	// Buffer's specialized `store` — no staging relay, no byte copy), then

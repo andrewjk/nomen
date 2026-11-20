@@ -14,14 +14,14 @@ trait Measured {
 // A `struct` contains simple data and functions
 // A `mv struct` contains owned data (the `string` field)
 mv struct Tile: Measured {
-	var string name
+	mv string name
 	var Shape shape
 	var int count
 
 	// `ref self`: the `self` (this struct) is shared mutably
 	// `mv string name`: the struct takes ownership of the string
 	func rename = (ref self, mv string name) {
-		self.name = name
+		self.name = mv name
 	}
 
 	// A match must cover every case

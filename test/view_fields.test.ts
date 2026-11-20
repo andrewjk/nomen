@@ -136,7 +136,7 @@ pub func main = () {
 			`
 mv struct Mixed {
 	var view string borrowed
-	var string owned
+	mv string owned
 }
 var string doc = "source"
 if doc.length == 6 {

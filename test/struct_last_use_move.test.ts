@@ -19,8 +19,8 @@ const LOOP_DONOR = `
 import System
 
 mv struct Row {
-	var name = ""
-	var tags = List<int>()
+	mv name = ""
+	mv tags = List<int>()
 }
 
 func fill = (int i, out Row) {
@@ -62,7 +62,7 @@ describe("struct move-on-last-use: readback", () => {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -101,7 +101,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -139,12 +139,12 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
 mv struct Holder {
-	var r = Rec()
+	mv r = Rec()
 	var tag = 0
 }
 
@@ -207,7 +207,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -243,7 +243,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var name = ""
+	mv name = ""
 	var a = 0
 }
 
@@ -265,12 +265,12 @@ pub func main = (Init init) {
 import System
 
 mv struct Inner {
-	var text = ""
+	mv text = ""
 }
 
 mv struct Outer {
-	var name = ""
-	var inner = Inner()
+	mv name = ""
+	mv inner = Inner()
 }
 
 pub func main = (Init init) {
@@ -297,7 +297,7 @@ describe("struct move-on-last-use: nested-expression arguments", () => {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -336,7 +336,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -381,7 +381,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -422,7 +422,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -454,7 +454,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -499,7 +499,7 @@ describe("struct move-on-last-use: guards keep the deep copy", () => {
 import System
 
 mv struct Pair {
-	var name = ""
+	mv name = ""
 	var a = 0
 }
 
@@ -523,7 +523,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var name = ""
+	mv name = ""
 	var a = 0
 }
 
@@ -553,7 +553,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var name = ""
+	mv name = ""
 	var a = 0
 }
 
@@ -580,7 +580,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -613,7 +613,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -643,7 +643,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -669,12 +669,12 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
 mv struct Holder {
-	var r = Rec()
+	mv r = Rec()
 	var tag = 0
 }
 
@@ -722,7 +722,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var name = ""
+	mv name = ""
 	var a = 0
 }
 
@@ -820,7 +820,7 @@ describe("struct move-on-last-use: scanner receipt", () => {
 import System
 
 mv struct Pair {
-	var name = ""
+	mv name = ""
 	var a = 0
 }
 

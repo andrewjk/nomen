@@ -641,6 +641,43 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			}
 		}
 
+		// The ownership-spelling rule, fresh side: `mv` marks a TRANSFER — a
+		// fresh value (a literal, a constructor/factory call, a computed
+		// expression) has no owner to surrender, so the marker on its
+		// initializer spells nothing and is rejected (`mv n = "bob"`,
+		// `mv l = List<int>()`). The transfer shapes keep the marker: a bare
+		// variable reads (`mv other = thing`), and a swap-extraction /
+		// destructuring binding (an access RHS — the field the binding takes
+		// is revalidated, its donor moved). Struct/trait FIELDS are exempt:
+		// there `mv` is the slot's ownership DECLARATION (the field
+		// requirement in check_struct_node), never a transfer marker, so
+		// `mv string? text = null` is the required spelling, not a fresh-mv
+		// violation. Func-typed slots are exempt too — the marker there
+		// transfers the closure descriptor.
+		if (
+			declaration === "mv" &&
+			decl.value &&
+			!decl.swap &&
+			!decl.func_params &&
+			decl.type.name !== "func" &&
+			!decl.is_trait_field &&
+			!status.is_mono_body_recheck &&
+			!scope_is_mono_struct &&
+			decl.scope?.node_type !== "struct" &&
+			decl.scope?.node_type !== "trait"
+		) {
+			const value_is_bare_variable =
+				decl.value.node_type === "value" &&
+				/^[A-Za-z_][A-Za-z0-9_]*$/.test((decl.value as ValueNode).value);
+			if (!value_is_bare_variable && decl.value.node_type !== "access") {
+				add_error(
+					status,
+					`'mv' on '${decl.name}' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'`,
+					decl.value.start,
+				);
+			}
+		}
+
 		// View-binding enforcement. By this point decl.type is final (declared or
 		// inferred), and `view` keyword decls have been normalized to `const`.
 		//   - Rule 1: `view hi = expr` requires the value to actually be a view
@@ -763,7 +800,12 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			declaration === "mv" &&
 			!decl.swap &&
 			decl.value?.node_type === "value" &&
-			!(decl.value as ValueNode).is_moved
+			!(decl.value as ValueNode).is_moved &&
+			// A bare VARIABLE initializer is the transfer the prefix spells.
+			// A fresh literal (`mv label = ""` on an owning field) has no
+			// donor — stamping it moved would make every later read of the
+			// literal a use-after-mv.
+			/^[A-Za-z_][A-Za-z0-9_]*$/.test((decl.value as ValueNode).value)
 		) {
 			(decl.value as ValueNode).is_moved = true;
 		}

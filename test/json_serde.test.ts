@@ -12,7 +12,7 @@ import parse_with_imports from "./parse_with_imports";
 test("json serde -- flat struct round-trips through decode + encode", async () => {
 	const input = `
 mv struct Person {
-	var string name = ""
+	mv string name = ""
 	var int age = 0
 	var float score = 0.0
 	var bool active = false
@@ -36,14 +36,14 @@ test("json serde -- nested structs recurse, @rename maps keys, @skip omits field
 	const input = `
 mv struct Address {
 	@rename("street_name")
-	var string street = ""
+	mv string street = ""
 	var int zip = 0
 	@skip
-	var string cache = ""
+	mv string cache = ""
 }
 mv struct Person {
-	var string name = ""
-	var Address address = Address()
+	mv string name = ""
+	mv Address address = Address()
 }
 var p = Person()
 json_decode_into("{\\"name\\":\\"Ada\\",\\"address\\":{\\"street_name\\":\\"Main\\",\\"zip\\":12345,\\"cache\\":\\"ignored\\"}}", ref p)
@@ -62,7 +62,7 @@ Console.write_line(json_encode(ref p))
 test("json serde -- missing keys keep defaults", async () => {
 	const input = `
 mv struct Partial {
-	var string name = "default"
+	mv string name = "default"
 	var int n = 7
 }
 var p = Partial()
@@ -75,7 +75,7 @@ Console.write_line(p.name + " " + p.n.to_string())
 test("json serde -- string escapes round-trip through deserialize/serialize", async () => {
 	const input = `
 mv struct Msg {
-	var string text = ""
+	mv string text = ""
 }
 var m = Msg()
 json_decode_into("{\\"text\\":\\"line1\\\\nline2\\"}", ref m)
@@ -95,8 +95,8 @@ mv struct Inner2 {
 	var int n = 0
 }
 mv struct Outer2 {
-	var Inner2 inner = Inner2()
-	var string name = ""
+	mv Inner2 inner = Inner2()
+	mv string name = ""
 }
 var o = Outer2()
 json_decode_into("{}", ref o)
@@ -109,13 +109,13 @@ test("json serde -- StableList containers decode and encode", async () => {
 	const input = `
 mv struct Item {
 	var n = 0
-	var s = ""
+	mv s = ""
 }
 mv struct Cart {
 	@rename("lineItems")
-	var items = StableList<Item>()
-	var nums = StableList<int>()
-	var labels = StableList<string>()
+	mv items = StableList<Item>()
+	mv nums = StableList<int>()
+	mv labels = StableList<string>()
 }
 var c = Cart()
 json_decode_into("{\\"lineItems\\":[{\\"n\\":1,\\"s\\":\\"a\\"},{\\"n\\":2,\\"s\\":\\"b\\"}],\\"nums\\":[3,4,5],\\"labels\\":[\\"x\\",\\"y\\"]}", ref c)
@@ -132,7 +132,7 @@ Console.write_line(json_encode(ref c))
 test("json serde -- nested StableList containers", async () => {
 	const input = `
 mv struct Grid {
-	var cells = StableList<StableList<float>>()
+	mv cells = StableList<StableList<float>>()
 }
 var g = Grid()
 json_decode_into("{\\"cells\\":[[1.5,2.5],[3.5]]}", ref g)
@@ -160,13 +160,13 @@ test("json serde -- repeated decode REFILLS containers in place (replaces, never
 	const input = `
 mv struct Item {
 	var n = 0
-	var s = ""
+	mv s = ""
 }
 mv struct Cart {
 	@rename("lineItems")
-	var items = StableList<Item>()
-	var nums = StableList<int>()
-	var labels = StableList<string>()
+	mv items = StableList<Item>()
+	mv nums = StableList<int>()
+	mv labels = StableList<string>()
 }
 var c = Cart()
 json_decode_into("{\\"lineItems\\":[{\\"n\\":1,\\"s\\":\\"a\\"},{\\"n\\":2,\\"s\\":\\"b\\"}],\\"nums\\":[3,4,5],\\"labels\\":[\\"x\\",\\"y\\"]}", ref c)
@@ -191,7 +191,7 @@ test("json serde -- repeated decode truncates nested containers (slabs retained)
 	// twice).
 	const input = `
 mv struct Grid {
-	var cells = StableList<StableList<float>>()
+	mv cells = StableList<StableList<float>>()
 }
 var g = Grid()
 json_decode_into("{\\"cells\\":[[1.5,2.5,3.5],[4.5]]}", ref g)
@@ -217,8 +217,8 @@ test("json serde -- encode borrows the value (repeatable, value survives)", asyn
 	// the mirror of `Json.stringify(ref tree, root)`.
 	const input = `
 mv struct Pair2 {
-	var name = ""
-	var nums = StableList<int>()
+	mv name = ""
+	mv nums = StableList<int>()
 }
 var p = Pair2()
 json_decode_into("{\\"name\\":\\"Ada\\",\\"nums\\":[1,2]}", ref p)

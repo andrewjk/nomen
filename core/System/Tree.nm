@@ -8,9 +8,9 @@
  **/
 pub mv struct Tree<T>: Enumerable {
 	var values = Buffer<T>()
-	var lefts = Buffer<int>()
-	var rights = Buffer<int>()
-	var parents = Buffer<int>()
+	mv lefts = Buffer<int>()
+	mv rights = Buffer<int>()
+	mv parents = Buffer<int>()
 	var count = 0
 
 	pub func add = (ref self { lefts, parents, rights, values }, mv T value) {

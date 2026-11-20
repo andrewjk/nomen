@@ -419,9 +419,9 @@ mv struct Dot: Render {
 }
 
 pub mv struct Holder {
-	pub var string output = ""
-	pub var Map<string, int> refs = Map<string, int>()
-	pub var List<Render> renders = List<Render>()
+	pub mv string output = ""
+	pub mv Map<string, int> refs = Map<string, int>()
+	pub mv List<Render> renders = List<Render>()
 
 	pub func add = (self, mv Render r) {
 		self.renders.push(mv r)

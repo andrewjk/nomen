@@ -36,7 +36,7 @@ describe("struct-method string-field assignment: remaining gaps", () => {
 		const input = `import System
 
 pub mv struct Holder {
-	var string current = ""
+	mv string current = ""
 
 	pub func set_it = (ref self, string name) {
 		self.current = name.copy()
@@ -58,7 +58,7 @@ pub func main = () {
 		const input = `import System
 
 pub mv struct Holder {
-	var string current = ""
+	mv string current = ""
 
 	pub func set_it = (ref self, string name) {
 		self.current = name.copy()

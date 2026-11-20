@@ -20,7 +20,7 @@ describe("in-place add/alloc: the take-store siblings", () => {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var int n = 0
 }
 
@@ -121,7 +121,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var int n = 0
 }
 

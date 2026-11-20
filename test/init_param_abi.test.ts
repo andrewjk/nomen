@@ -15,7 +15,7 @@ describe("custom init param ABI", () => {
 import System
 
 mv struct N1 {
-	var string kind
+	mv string kind
 	var int idx
 
 	pub func #init = (ref self, string k, int i) {
@@ -39,8 +39,8 @@ pub func main = (Init init) {
 import System
 
 pub mv struct S2 {
-	pub var string url
-	pub var string title
+	pub mv string url
+	pub mv string title
 
 	pub func #init = (ref self, string u, string t) {
 		self.url = u.copy()
@@ -63,9 +63,9 @@ pub func main = (Init init) {
 import System
 
 pub mv struct P2 {
-	pub var string a
+	pub mv string a
 	pub var int b
-	pub var string c
+	pub mv string c
 
 	pub func #init = (ref self, string x, int k, string y) {
 		self.a = x.copy()

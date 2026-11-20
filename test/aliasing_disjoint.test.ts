@@ -20,7 +20,7 @@ describe("aliasing relaxation for disjoint declared sets", () => {
 import System
 
 mv struct Store {
-	var List<int> items = List<int>()
+	mv List<int> items = List<int>()
 	var int other = 0
 }
 
@@ -48,7 +48,7 @@ pub func main = () {
 import System
 
 mv struct Holder {
-	var List<int> items = List<int>()
+	mv List<int> items = List<int>()
 	var int other = 0
 
 	func poke = (ref self { items }, ref Holder b { other }) {
@@ -136,7 +136,7 @@ pub func main = () {
 import System
 
 mv struct Store {
-	var List<int> items = List<int>()
+	mv List<int> items = List<int>()
 	var int other = 0
 }
 
@@ -162,7 +162,7 @@ pub func main = () {
 		await build_and_check_output(
 			`
 mv struct Store {
-	var List<int> items = List<int>()
+	mv List<int> items = List<int>()
 	var int other = 0
 }
 

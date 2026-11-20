@@ -12,12 +12,12 @@ describe("trait field defaults", () => {
 	test("class and value struct inherit trait default fields", async () => {
 		const input = `
 trait Tagged {
-	var string tag = "trait-default"
+	mv string tag = "trait-default"
 	var int count = 7
 }
 
 mv struct G : Tagged {
-	pub var string own = "own-default"
+	pub mv string own = "own-default"
 }
 
 struct V : Tagged {
@@ -44,7 +44,7 @@ Console.write("\\{v.tag} \\{v.count} \\{v.x}\\n")
 	test("trait-typed receiver string-field write is uniform-heap", async () => {
 		const input = `
 trait Tagged {
-	var string tag = "init"
+	mv string tag = "init"
 }
 
 mv struct G : Tagged {
@@ -70,7 +70,7 @@ Console.write("\\{t.tag}\\n")
 	test("trait-default body reads a field and takes a string param", async () => {
 		const input = `
 trait Named {
-	var string name = "anon"
+	mv string name = "anon"
 	func greet = (self, out string) {
 		return "hi " + self.name
 	}
@@ -88,7 +88,7 @@ Console.write(a.greet())
 	test("trait-default body writes a field through ref self with a param", async () => {
 		const input = `
 trait Named {
-	var string name = "anon"
+	mv string name = "anon"
 	func rename = (ref self, string n) {
 		self.name = n.copy()
 	}
@@ -142,7 +142,7 @@ Console.write(s.report("score:"))
 	test("mixed conformer set: trait-field reassign never frees rodata", async () => {
 		const input = `
 trait Tagged {
-	var string tag = "seed"
+	mv string tag = "seed"
 }
 
 mv struct G : Tagged {
@@ -172,14 +172,14 @@ Console.write(t.tag)
 	test("trait string field on a nested conformer", async () => {
 		const input = `
 trait Holds {
-	var string label = "inner-seed"
+	mv string label = "inner-seed"
 }
 mv struct Inner : Holds {
 	pub func #init = (self) {
 	}
 }
 mv struct Outer {
-	var Inner a
+	mv Inner a
 	pub func #init = (self) {
 		self.a = Inner()
 	}
@@ -200,7 +200,7 @@ Console.write(o.a.label)
 	test("fixed array local of trait conformers destroys every element", async () => {
 		const input = `
 trait Holds {
-	var string label = "seed"
+	mv string label = "seed"
 }
 mv struct Elem : Holds {
 }
@@ -222,7 +222,7 @@ Console.write_line("ok")
 	test("fixed array field of trait conformers destroys every element", async () => {
 		const input = `
 trait Holds {
-	var string label = "seed"
+	mv string label = "seed"
 }
 mv struct Elem : Holds {
 }

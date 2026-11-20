@@ -22,7 +22,7 @@ Console.write("ok")
 	test("construct struct with string param", async () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
 }
 var Person p = Person("Andrew")
 Console.write("\\{p.name}")
@@ -33,7 +33,7 @@ Console.write("\\{p.name}")
 	test("construct struct with default field", async () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   var int age = 0
 }
 var Person p = Person("Bob")
@@ -139,7 +139,7 @@ const dog = Dog("Spot")
 	test("parameters missing", () => {
 		const input = `
 mv struct Dog {
-  var string name
+  mv string name
 }
 const dog = Dog()
 `;
@@ -151,7 +151,7 @@ const dog = Dog()
 	test("param type mismatch", () => {
 		const input = `
 mv struct Dog {
-  var string name
+  mv string name
 }
 const dog = Dog(5)
 `;
@@ -165,7 +165,7 @@ const dog = Dog(5)
 	test("param type mismatch -- unknown value", () => {
 		const input = `
 mv struct Dog {
-  var string name
+  mv string name
 }
 const dog = Dog(z0)
 `;

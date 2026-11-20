@@ -189,7 +189,7 @@ describe("closure captures (mv structs & classes, mv)", () => {
 import System
 
 mv struct Owned {
-	var List<int> data
+	mv List<int> data
 }
 
 pub func main = () {
@@ -231,7 +231,7 @@ pub func main = () {
 		expect(
 			parse_with_imports(`
 mv struct Owned {
-	var List<int> data
+	mv List<int> data
 }
 
 var Owned o = Owned(List<int>())
@@ -272,7 +272,7 @@ pub func main = () {
 import System
 
 mv struct Owned {
-	var List<int> data
+	mv List<int> data
 }
 
 func use_owned = (mv Owned o, out int) {
@@ -362,7 +362,7 @@ trait Show {
 }
 
 	mv struct Dog : Show {
-	var string name
+	mv string name
 
 	func show = (self, out string) => self.name.copy()
 }
@@ -392,7 +392,7 @@ trait Show {
 }
 
 mv struct Note : Show {
-	var string text
+	mv string text
 
 	func show = (self, out string) => self.text.copy()
 }

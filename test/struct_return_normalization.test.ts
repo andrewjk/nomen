@@ -27,7 +27,7 @@ describe("struct return normalization", () => {
 		await run(
 			"rb_basic",
 			`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 
 func make = (out Info) {
 	var i = Info()
@@ -50,7 +50,7 @@ Console.write_line(a.markup)
 		await run(
 			"rb_forward",
 			`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 
 func make = (out Info) {
 	var i = Info()
@@ -77,7 +77,7 @@ Console.write_line(a.markup)
 		// the documented pre-existing status quo. Run with audit off.
 		for (const arch of ["c", "aarch64"] as const) {
 			const input = `
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 var List<Info> xs = List<Info>()
 xs.push(Info())
 var Info a = xs.pop()
@@ -97,7 +97,7 @@ Console.write_line(a.markup)
 		await run(
 			"rb_independent",
 			`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 
 func make = (string m, out Info) {
 	var i = Info()
@@ -120,7 +120,7 @@ Console.write_line(b.markup)
 			`
 mv struct Pair {
 	var int n = 0
-	var string tag = ""
+	mv string tag = ""
 }
 
 func build = (int n, string t, out Pair) {

@@ -16,7 +16,7 @@ describe("mv struct (B1)", () => {
 	test("a declared-mv struct binding moves (runtime)", async () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 func probe = () {
 	var Config c = Config("x")
@@ -31,7 +31,7 @@ probe()
 	test("copying a declared-mv struct binding is an error", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 var Config c = Config("x")
 var Config c2 = c
@@ -50,10 +50,10 @@ var Config c2 = c
 	test("the Copyable verifier rejects a bare struct with a declared-mv field", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 struct Wrapper {
-	var Config c
+	mv Config c
 }
 `;
 		const parsed = parse(input);
@@ -70,7 +70,7 @@ struct Wrapper {
 	test("the declared flag wins over the inferred walk (string-only field still move-only)", () => {
 		const input = `
 mv struct Tag {
-	var string label
+	mv string label
 }
 var Tag t = Tag("a")
 var Tag copy = t
@@ -133,7 +133,7 @@ describe("mv enum (B1a)", () => {
 	test("the Copyable verifier rejects a bare enum with a declared-mv payload", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 enum Holder {
 	case some(Config c)
@@ -154,7 +154,7 @@ enum Holder {
 	test("copying a declared-mv enum binding is an error", () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 mv enum Holder {
 	case some(Config c)

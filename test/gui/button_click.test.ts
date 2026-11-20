@@ -15,9 +15,9 @@ import System
 import System::Controls
 
 mv struct ClickApp : App {
-	var Button btn
-	var Text label
-	var Container grid
+	mv Button btn
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -27,7 +27,7 @@ mv struct ClickApp : App {
 		var Container g = VStack(0)
 		g.add(self.label.handle, 0, 24, 1)
 		g.add(self.btn.handle, 0, 32, 1)
-		self.grid = g
+		self.grid = mv g
 	}
 
 	pub func start = (ref self, ref Window win {}) {

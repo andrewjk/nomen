@@ -33,7 +33,7 @@ Console.write("\\{a.x} \\{a.y} \\{b.x} \\{b.y} \\{c.x} \\{c.y}")
 		const input = `
 mv struct Box {
   pub var int v
-  pub var string tag
+  pub mv string tag
   pub func #init = (ref self, int v) {
     self.v = v
     self.tag = "int"

@@ -28,7 +28,7 @@ mv struct Box {
 }
 
 mv struct Holder {
-    var Box content
+    mv Box content
 }
 
 func take = (mv Box b) {

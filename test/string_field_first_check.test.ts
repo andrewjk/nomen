@@ -18,7 +18,7 @@ describe("first check with direct string fields", () => {
 	test("mv struct with a string field checks clean and lints", () => {
 		const parsed = parse_program(`
 mv struct Person {
-	pub var string name
+	pub mv string name
 }
 
 pub func main = () {
@@ -37,8 +37,8 @@ pub func main = () {
 	test("string + defaulted fields check clean", () => {
 		const parsed = parse_program(`
 mv struct Item {
-	var string label
-	var string tag = "none"
+	mv string label
+	mv string tag = "none"
 	var int weight
 }
 
@@ -55,7 +55,7 @@ pub func main = () {
 	test("a genuine field-copy into an mv parameter is still rejected", () => {
 		const parsed = parse_program(`
 mv struct Group {
-	var List<int> items
+	mv List<int> items
 }
 
 pub func main = () {

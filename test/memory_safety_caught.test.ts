@@ -9,7 +9,7 @@ describe("compiler-caught memory safety", () => {
 	test("class-type fields must use mv", () => {
 		const input = `
 mv struct Inner { var int x }
-mv struct Outer { var Inner child }
+mv struct Outer { mv Inner child }
 var Inner i = Inner(5)
 var Outer o = Outer(i)
 `;

@@ -21,7 +21,7 @@ Console.write("\\{p.age}")
 	test("struct with string field", async () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   var int age = 0
 }
 var Person p = Person("Alice")
@@ -538,7 +538,7 @@ mv struct Person {
 	test("field type mismatch on construction", () => {
 		const input = `
 mv struct Dog {
-  var string name
+  mv string name
 }
 const dog = Dog(5)
 `;

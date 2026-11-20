@@ -24,7 +24,7 @@ test("reflection composes: META.info(T) and #for inside a type-param function", 
 	const body = `
 		mv struct Sample {
 			var count = 0
-			var label = ""
+			mv label = ""
 		}
 		func describe = (type T, out string) {
 			var s = META.info(T).name + "("

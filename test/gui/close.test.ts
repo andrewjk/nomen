@@ -30,8 +30,8 @@ import System
 import System::Controls
 
 mv struct LifecycleApp : App {
-	var Text label
-	var Container grid
+	mv Text label
+	mv Container grid
 	var bool allow_close = false
 	var int frames = 0
 
@@ -40,8 +40,8 @@ mv struct LifecycleApp : App {
 		label.set_text("idle")
 		var Container grid = VStack(8)
 		grid.add(label.handle, 0, 30, 1)
-		self.label = label
-		self.grid = grid
+		self.label = mv label
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

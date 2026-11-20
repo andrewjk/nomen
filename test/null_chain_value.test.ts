@@ -9,7 +9,7 @@ describe("nullable chaining as a value (`?.` v2)", () => {
 	test("a chain initializes a nullable string local on both arms", async () => {
 		const input = `
 mv struct Profile {
-	var string nickname
+	mv string nickname
 }
 
 func find = (int id, out Profile?) {
@@ -103,7 +103,7 @@ Console.write("\\{score_of(2) ?? -1}\\n")
 	test("a chain returns a nullable string", async () => {
 		const input = `
 mv struct Profile {
-	var string nickname
+	mv string nickname
 }
 
 func find = (int id, out Profile?) {
@@ -198,7 +198,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 }
 
 func rec = (int pick, out Rec?) {
@@ -246,7 +246,7 @@ show(q?.score)
 	test("a method-call hop (`p?.greet(...)`) calls only on the non-null path", async () => {
 		const input = `
 mv struct Profile {
-	var string nickname
+	mv string nickname
 	func greet = (self, string w, out string) {
 		return "\\{w} \\{self.nickname}"
 	}

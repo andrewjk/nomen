@@ -8,7 +8,7 @@ describe("#init field completeness", () => {
 	test("class field with no default and no assignment errors", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   var int age
   pub func #init = (ref self) {
     self.age = 42
@@ -24,7 +24,7 @@ mv struct Person {
 	test("all fields assigned is fine", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   var int age
   pub func #init = (ref self, string n, int a) {
     self.name = n
@@ -40,7 +40,7 @@ mv struct Person {
 		const input = `
 mv struct Counter {
   var int count = 0
-  var string label
+  mv string label
   pub func #init = (ref self, string l) {
     self.label = l
   }
@@ -69,7 +69,7 @@ struct Pair {
 	test("assignment inside a conditional branch counts", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   pub func #init = (ref self, int v) {
     if v > 0 {
       self.name = "pos"
@@ -86,7 +86,7 @@ mv struct Person {
 	test("every overload must assign the field", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   pub func #init = (ref self) {
     self.name = "anon"
   }
@@ -103,7 +103,7 @@ mv struct Person {
 	test("a method dispatched on self is followed", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   pub func #init = (ref self) {
     self.setup()
   }
@@ -119,7 +119,7 @@ mv struct Person {
 	test("a method dispatched on self that skips the field is diagnosed", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   pub func #init = (ref self) {
     self.setup()
   }
@@ -189,7 +189,7 @@ func look = (Pair p) {
 	test("a mutable borrow of a mv struct drives ref-self methods", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   func set_name = (ref self) {
     self.name = "x"
   }
@@ -208,7 +208,7 @@ func fill = (ref Person p) {
 	test("a ref param forwards to ref-self methods", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   func set_name = (ref self) {
     self.name = "x"
   }
@@ -269,7 +269,7 @@ mv struct Handle {
 	test("mutually recursive helpers terminate and are diagnosed", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
   func a = (ref self) {
     self.b()
   }
@@ -291,7 +291,7 @@ mv struct Person {
 		const input = `
 mv struct Handler {
   var func () cb
-  var string tag
+  mv string tag
   pub func #init = (ref self) {
     self.cb()
   }

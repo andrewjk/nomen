@@ -22,8 +22,8 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
-	var Box<Inner> spare
+	mv Box<Inner> inner
+	mv Box<Inner> spare
 }
 
 func touch = (${param}) {
@@ -82,7 +82,7 @@ mv struct Inner {
 }
 
 mv struct Item {
-	var Box<Inner> inner
+	mv Box<Inner> inner
 
 	func touch = (ref self {}) {
 		self.inner = mv Box<Inner>(mv Inner())

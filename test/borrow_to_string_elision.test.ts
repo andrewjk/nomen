@@ -195,7 +195,7 @@ func consume = (string s, out int) {
 }
 
 mv struct Box {
-	var string name
+	mv string name
 	pub func show = (self) {
 		Console.write_line(consume(self.name.to_string()).to_string())
 		Console.write_line(self.name)

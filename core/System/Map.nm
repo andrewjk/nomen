@@ -20,8 +20,8 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	var length = 0
 	var keys = Buffer<TK>()
 	var values = Buffer<TV>()
-	var used = Buffer<int>()
-	var hashes = Buffer<int>()
+	mv used = Buffer<int>()
+	mv hashes = Buffer<int>()
 
 	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
 	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).

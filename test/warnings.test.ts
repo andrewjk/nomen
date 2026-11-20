@@ -273,44 +273,44 @@ main()
 	});
 });
 
-describe("warnings — mv on value-struct fields", () => {
+describe("ownership spelling — owning fields require mv", () => {
 	const owning_struct = `
 import System
 
-struct Items {
-	var List<int> values = List<int>()
+mv struct Items {
+	mv values = List<int>()
 }
 
-struct Pair {
-	var string a = "x"
+mv struct Pair {
+	mv a = "x"
 }
 `;
 
-	test("mv on a mv value-struct field warns", () => {
+	test("var on an owning field errors, naming the mv spelling", () => {
 		const input = `
 ${owning_struct}
 struct Holder {
-	pub mv List<int> items = List<int>()
+	pub var items = List<int>()
 }
 `;
-		expect(warning_messages(input)).toContain(
-			"'mv' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
+		const messages = [...warning_messages(input), ...parse_raw(input).errors.map((e) => e.message)];
+		expect(messages).toContain(
+			"field 'items' owns memory — declare it 'mv List<int> items' (plain 'var' is for non-owning types)",
 		);
 	});
 
-	test("var on a mv value-struct field does not warn", () => {
+	test("mv on an owning field is the spelling — no warning, no error", () => {
 		const input = `
 ${owning_struct}
-struct Holder {
-	pub var List<int> items = List<int>()
+mv struct Holder {
+	pub mv items = List<int>()
 }
 `;
-		expect(warning_messages(input)).not.toContain(
-			"'mv' on field 'items' is redundant: 'List<int>' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically",
-		);
+		expect(warning_messages(input)).toEqual([]);
+		expect(parse_raw(input).errors).toEqual([]);
 	});
 
-	test("mv on a mv-typed field warns as redundant (B5)", () => {
+	test("the mv spelling on a value-struct field does not warn (the old redundancy lint is gone)", () => {
 		const input = `
 import System
 
@@ -322,23 +322,26 @@ mv struct Holder {
 	mv Node node = Node(1)
 }
 `;
-		// B5 collapsed the `mv` field spelling: ownership follows the
-		// field's TYPE, so the keyword is dead weight and warns.
+		// The flip inverted the old B5 lint: the mv keyword IS the ownership
+		// declaration now, so it never warns as redundant.
 		expect(
 			warning_messages(input).some((m) => m.includes("'mv' on field 'node' is redundant")),
-		).toBe(true);
+		).toBe(false);
 	});
 
-	test("mv on a plain (non-mv) value-struct field does not warn", () => {
+	test("mv on a plain (non-mv) value-struct field errors", () => {
 		const input = `
 ${owning_struct}
+struct Plain {
+	var int n = 0
+}
 struct Holder {
-	mv Pair pair = Pair()
+	mv Plain plain = Plain()
 }
 `;
-		expect(
-			warning_messages(input).filter((m) => m.includes("'mv' on field 'pair' is redundant")),
-		).toEqual([]);
+		expect(parse_raw(input).errors.map((e) => e.message)).toContain(
+			"mv is only allowed for class, trait, or mv struct types, not 'Plain'",
+		);
 	});
 });
 

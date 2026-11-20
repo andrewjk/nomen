@@ -21,8 +21,8 @@ pub mv struct Inner {
 }
 
 pub mv struct Outer {
-	pub var Inner inner
-	pub var string name
+	pub mv Inner inner
+	pub mv string name
 
 	pub func #init = (self) {
 		self.inner = Inner()
@@ -47,7 +47,7 @@ pub func main = (Init init) {
 import System
 
 pub mv struct Twice {
-	pub var string name = "start"
+	pub mv string name = "start"
 
 	pub func #init = (self) {
 		self.name = "a"

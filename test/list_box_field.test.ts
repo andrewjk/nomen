@@ -15,8 +15,8 @@ mv struct Engine {
 }
 
 mv struct Ship {
-  var Box<Engine> engine
-  var string name
+  mv Box<Engine> engine
+  mv string name
 }
 
 var List<Ship> ships = List<Ship>()
@@ -36,8 +36,8 @@ mv struct Engine {
 }
 
 mv struct Ship {
-  var Box<Engine> engine
-  var string name
+  mv Box<Engine> engine
+  mv string name
 }
 
 var List<Ship> ships = List<Ship>()
@@ -59,7 +59,7 @@ Console.write("\\{check.engine.rpm} \\{check.name}")
 	test("Box<string> element field", async () => {
 		const input = `
 mv struct Config {
-  var Box<string> label
+  mv Box<string> label
   var int weight
 }
 
@@ -82,12 +82,12 @@ mv struct Inner {
 }
 
 mv struct Middle {
-  var Box<Inner> inner
+  mv Box<Inner> inner
 }
 
 mv struct Outer {
-  var Box<Middle> middle
-  var string tag
+  mv Box<Middle> middle
+  mv string tag
 }
 
 var List<Outer> outers = List<Outer>()

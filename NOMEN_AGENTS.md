@@ -271,6 +271,12 @@ storing a bare `string` parameter into a string field needs `.copy()`;
 `xs.push(s)` / `m.set(k, v)` need `mv`/`.copy()`. Literals are fresh values.
 `view string` is the cheap read-only borrow.
 
+Owning slots SPELL their ownership: a field of `string`/`Box`/mv-struct
+type is declared `mv` (`mv string name`), a transfer into it is spelled on
+the store (`self.name = mv owned`), and fresh initializers never take
+`mv` (`self.name = "literal"`, `item = Item()`). Type-param fields
+(`var T value`) stay implicit.
+
 ### Traits
 
 ```nomen

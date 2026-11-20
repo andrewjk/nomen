@@ -8,7 +8,7 @@ describe("memory ref class param", () => {
 import System
 mv struct Node {
 	var int value = 0
-	var Box<Node>? child = null
+	mv Box<Node>? child = null
 }
 
 func set_value = (ref Box<Node> n) {
@@ -34,8 +34,8 @@ pub func main = () {
 import System
 mv struct TreeNode {
 	var int data = 0
-	var Box<TreeNode>? left = null
-	var Box<TreeNode>? right = null
+	mv Box<TreeNode>? left = null
+	mv Box<TreeNode>? right = null
 }
 
 func fill = (ref Box<TreeNode> node) {

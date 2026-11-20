@@ -77,7 +77,7 @@ mv struct Payload {
 	var int v
 }
 mv struct Cell {
-	var Box<Payload> payload
+	mv Box<Payload> payload
 }
 var List<Cell> l = List<Cell>()
 var int x = l.at_or_panic(0).payload.v

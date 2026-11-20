@@ -8,10 +8,10 @@ test("[ .. ctor, overrides ] declaration and factory chaining", async () => {
 import System
 
 mv struct Node {
-    var string node_type = ""
+    mv string node_type = ""
     var int index = 0
     var bool is_block = false
-    var string content = ""
+    mv string content = ""
 }
 
 func new_block = (string t, int i) => [ .. Node(), node_type = t, index = i, is_block = true ]
@@ -66,7 +66,7 @@ test("[ .. mv var, overrides ] transfers ownership", async () => {
 import System
 
 mv struct Node {
-    var string node_type = ""
+    mv string node_type = ""
     var int index = 0
 }
 
@@ -84,7 +84,7 @@ test("base literal error cases", () => {
 import System
 
 mv struct Node {
-    var string node_type = ""
+    mv string node_type = ""
     var int index = 0
 }
 `;
@@ -154,8 +154,8 @@ Console.write_line(m.flags.to_string())
 test("[ .. mv base, override reading destination ]", async () => {
 	const input = `
 mv struct Rec {
-	var string kind
-	var string label = "none"
+	mv string kind
+	mv string label = "none"
 	var int flags = 0
 }
 
@@ -198,8 +198,8 @@ Console.write_line("\\{m.inner.v}:\\{m.flags}")
 test("mv reassignment releases displaced heap string fields", async () => {
 	const input = `
 mv struct Rec {
-	var string kind
-	var string label = "none"
+	mv string kind
+	mv string label = "none"
 	var int flags = 0
 }
 
@@ -218,7 +218,7 @@ test("List-typed field default", async () => {
 	const input = `
 mv struct TreeNode {
 	var int value = 0
-	var List<int> children = List<int>()
+	mv List<int> children = List<int>()
 }
 
 var TreeNode t = TreeNode()

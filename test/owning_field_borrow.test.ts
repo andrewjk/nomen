@@ -17,9 +17,9 @@ mv struct Art {
 	var int v
 }
 mv struct Holder {
-	var Art art
+	mv Art art
 	func set_owned = (ref self, mv Art a) {
-		self.art = a
+		self.art = mv a
 	}
 }
 func test = () {
@@ -41,7 +41,7 @@ mv struct Art {
 	var int v
 }
 mv struct Holder {
-	var Art art
+	mv Art art
 	func reset = (ref self) {
 		self.art = Art(9)
 	}
@@ -65,7 +65,7 @@ mv struct Art {
 	var int v
 }
 mv struct Holder {
-	var Art art
+	mv Art art
 	func set_borrowed = (ref self, Art a) {
 		self.art = a
 	}
@@ -89,7 +89,7 @@ mv struct Art {
 	var int v
 }
 mv struct Holder {
-	var Art art
+	mv Art art
 }
 func make = (int n, out Art) {
 	return Art(n)
@@ -97,7 +97,7 @@ func make = (int n, out Art) {
 func test = () {
 	var Art owned = make(2)
 	var Holder h = Holder(Art(1))
-	h.art = owned
+	h.art = mv owned
 	if h.art.v == 2 {
 		Console.write_line("transferred")
 	}
@@ -114,7 +114,7 @@ mv struct Art {
 	var int v
 }
 mv struct Holder {
-	var Art art
+	mv Art art
 	func set_ref = (ref self, ref Art a) {
 		self.art = a
 	}
@@ -136,7 +136,7 @@ mv struct Box {
 	var int v
 }
 mv struct Holder {
-	var Box? maybe
+	mv Box? maybe
 	func reset = (ref self) {
 		self.maybe = null
 	}

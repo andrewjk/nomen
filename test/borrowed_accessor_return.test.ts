@@ -17,7 +17,7 @@ describe("self-rooted borrowed returns", () => {
 import System
 
 mv struct Node {
-	pub var string name
+	pub mv string name
 
 	pub func #init = (ref self) {
 		self.name = "" + ""
@@ -25,7 +25,7 @@ mv struct Node {
 }
 
 mv struct Nodes {
-	pub var List<Box<Node>> items = List<Box<Node>>()
+	pub mv List<Box<Node>> items = List<Box<Node>>()
 
 	pub func #init = (ref self) {
 	}
@@ -64,7 +64,7 @@ mv struct Cell {
 }
 
 mv struct Holder {
-	pub var Box<Cell> b
+	pub mv Box<Cell> b
 
 	pub func get = (self, out int) {
 		return self.b.v
@@ -88,7 +88,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Node {
-	pub var string name
+	pub mv string name
 
 	pub func #init = (ref self) {
 		self.name = "" + ""
@@ -96,7 +96,7 @@ mv struct Node {
 }
 
 mv struct Host {
-	pub var Box<Node> first
+	pub mv Box<Node> first
 
 	pub func leak = (self, out Box<Node>) {
 		return self.first_inner()

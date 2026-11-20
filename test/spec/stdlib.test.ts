@@ -36,10 +36,10 @@ describe("spec: json serde", () => {
 		const input = `
 @rename("user")
 mv struct Account {
-	var id = ""
+	mv id = ""
 	var active = true
 	@skip
-	var cache = ""
+	mv cache = ""
 }
 
 func round_trip = (string text, out string) {
@@ -57,7 +57,7 @@ describe("spec: generic construction", () => {
 		const input = `
 mv struct Item {
     var n = 0
-    var label = ""
+    mv label = ""
 }
 
 func default_of<T> = (T seed, out T) {

@@ -32,8 +32,8 @@ b = h.c
 		const input = `
 mv struct Box { var int v }
 mv struct Pair {
-    var Box a
-    var Box b
+    mv Box a
+    mv Box b
 }
 var Box stolen = Box(0)
 if true {
@@ -176,7 +176,7 @@ describe("mv-struct member-access copy", () => {
 	test("member-access copy of a mv struct is rejected", () => {
 		const input = `
 struct Pair {
-	var List<int> first = List<int>()
+	mv List<int> first = List<int>()
 }
 func take = (ref Pair p) {
 	var List<int> leak = p.first
@@ -191,7 +191,7 @@ func take = (ref Pair p) {
 	test("member-access copy of a mv struct (Buffer) is rejected", () => {
 		const input = `
 mv struct Holder {
-	var Buffer<int> buf = Buffer<int>()
+	mv Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
 	var Buffer<int> leak = h.buf
@@ -207,7 +207,7 @@ func take = (ref Holder h) {
 		// `mv` alone would leave the field holding a moved-out (invalid) value.
 		const input = `
 mv struct Holder {
-	var Buffer<int> buf = Buffer<int>()
+	mv Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
 	var Buffer<int> leak = mv h.buf
@@ -222,7 +222,7 @@ func take = (ref Holder h) {
 	test("mv out of a field with a swap is allowed", () => {
 		const input = `
 mv struct Holder {
-	var Buffer<int> buf = Buffer<int>()
+	mv Buffer<int> buf = Buffer<int>()
 }
 func take = (ref Holder h) {
 	var Buffer<int> old = mv h.buf swap Buffer<int>()

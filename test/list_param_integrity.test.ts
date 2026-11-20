@@ -54,7 +54,7 @@ struct Pt {
 }
 
 mv struct Rule {
-	pub var string name = "r"
+	pub mv string name = "r"
 }
 
 func sum_pts = (List<Pt> pts, out int) {

@@ -11,17 +11,17 @@ import System
 // prints one checksum over all three shapes.
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int a
 	var int b
 }
 
 mv struct Tree {
-	var nodes = List<Rec>()
+	mv nodes = List<Rec>()
 }
 
 mv struct Boxed {
-	var recs = Box<List<Rec>>(List<Rec>())
+	mv recs = Box<List<Rec>>(List<Rec>())
 }
 
 pub func main = (Init init) {

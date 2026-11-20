@@ -15,7 +15,7 @@ describe("Buffer member in a List element", () => {
 	test("read back owns an independent Buffer", async () => {
 		const input = `
 struct Holder {
-	var buf = Buffer<int>()
+	mv buf = Buffer<int>()
 }
 
 var list = List<Holder>()
@@ -33,8 +33,8 @@ Console.write("cap=\\{loaded.buf.cap}\\n")
 	test("nested List member still deep-copies alongside a Buffer member", async () => {
 		const input = `
 struct Holder {
-	var buf = Buffer<int>()
-	var vals = List<int>()
+	mv buf = Buffer<int>()
+	mv vals = List<int>()
 }
 
 var list = List<Holder>()
@@ -63,7 +63,7 @@ mv struct Payload {
 	var int v
 }
 mv struct Cell {
-	var Box<Payload> payload
+	mv Box<Payload> payload
 }
 var List<Cell> l = List<Cell>()
 l.push(mv Cell(mv Box<Payload>(Payload(5))))
@@ -107,7 +107,7 @@ mv struct Payload {
 	var int v
 }
 mv struct Cell {
-	var Box<Payload> payload
+	mv Box<Payload> payload
 }
 var List<Cell> l = List<Cell>()
 l.push(mv Cell(mv Box<Payload>(Payload(5))))

@@ -70,7 +70,7 @@ Console.write(result)
 		const input = `
 mv struct Named {
   var int id
-  var string name
+  mv string name
 }
 
 var int id = 1
@@ -299,7 +299,7 @@ Console.write("\\{result.value}")
 		const input = `
 mv struct Named {
   var int id
-  var string name
+  mv string name
 }
 
 var int id = 1
@@ -504,7 +504,7 @@ mv struct Box {
 }
 
 mv struct Holder {
-  var Box box
+  mv Box box
 }
 
 func get_value = (Holder h, out int) {
@@ -743,7 +743,7 @@ if i >= 0 && i < names.length {
 		// belongs to the struct (a rodata literal here, which free rejects).
 		const input = `
 mv struct Named {
-	var string name
+	mv string name
 }
 func maybe_render = (Named n, int c, out string) {
 	if c > 0 {

@@ -10,7 +10,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(42))
 var Holder h2 = Holder(mv h1.content swap Box(0))
@@ -25,7 +25,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 func take = (mv Box b) {
 	Console.write("\\{b.value}")
@@ -65,7 +65,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 func take = (mv Box b) {
 }
@@ -85,7 +85,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 func take = (mv Box b) {
 }
@@ -102,7 +102,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))
@@ -130,7 +130,7 @@ Console.write("\\{b}|\\{a}|end")
 	test("mv struct string field mv+swap revalidates the field", async () => {
 		const input = `
 mv struct Person {
-	var string name
+	mv string name
 	var int age
 }
 var p = Person("Ada", 30)
@@ -143,7 +143,7 @@ Console.write("\\{s}|\\{p.name}|\\{p.age}")
 	test("mv-destructuring a string field revalidates the source", async () => {
 		const input = `
 mv struct Person {
-	var string name
+	mv string name
 	var int age
 }
 var p = Person("Ada", 30)

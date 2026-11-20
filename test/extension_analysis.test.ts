@@ -118,7 +118,7 @@ struct Stats {
 
 mv struct Item {
 	var int weight = 0
-	var Box<Stats> stats
+	mv Box<Stats> stats
 }
 
 func rebalance = (ref Item item { stats }) {
@@ -134,7 +134,7 @@ func wildcard = (ref Item item) {
 }
 
 mv struct Holder {
-	var Box<Stats> data
+	mv Box<Stats> data
 
 	pub func poke = (ref self { data }) {
 		self.data = mv Box<Stats>(Stats())

@@ -27,7 +27,7 @@ describe("loop-local owning copy conditionally moved in a branch", () => {
 import System
 
 pub mv struct D {
-	pub var markup = ""
+	pub mv markup = ""
 }
 
 func probe = (ref List<D> delims, string pchar, out bool) {

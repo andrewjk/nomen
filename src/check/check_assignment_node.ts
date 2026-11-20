@@ -888,7 +888,8 @@ export default function check_assignment_node(
 			if (
 				field_is_owning_class &&
 				assign.right_value.node_type === "value" &&
-				!assign.right_value.is_moved
+				!assign.right_value.is_moved &&
+				!assign.swap
 			) {
 				const src_name = (assign.right_value as ValueNode).value;
 				const src_sv = /^[A-Za-z_][A-Za-z0-9_]*$/.test(src_name)
@@ -914,12 +915,21 @@ export default function check_assignment_node(
 							assign.right_value.start,
 						);
 					} else {
-						// An owned local transferred into the field: the store is
-						// a MOVE (the backends suppress the local's cleanup), so
-						// later reads are use-after-mv — mark it here.
-						(assign.right_value as ValueNode).is_moved = true;
-						if (!status.moved_variables) status.moved_variables = new Set();
-						status.moved_variables.add(src_name);
+						// The ownership-spelling rule, store side: an owned local
+						// transferred into the field is a MOVE (the backends
+						// suppress the local's cleanup, so later reads are
+						// use-after-mv) — the transfer must be spelled, matching
+						// the call-site rule a `mv` parameter demands. The bare
+						// store used to move the donor silently; it is now the
+						// error, and `field = mv local` is the spelling. (A swap
+						// store exchanges — the donor is revalidated, not moved —
+						// and a fresh call/literal RHS owns nothing to surrender,
+						// so neither takes the marker.)
+						add_error(
+							status,
+							`storing '${src_name}' into owning field '${field_access.name}' moves it — write '${field_access.name} = mv ${src_name}' to spell the transfer`,
+							assign.right_value.start,
+						);
 					}
 				}
 			}

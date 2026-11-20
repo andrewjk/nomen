@@ -37,8 +37,8 @@ test("the Hashable default dispatches scalars to uint casts, structs to .hash()"
 			var int n
 			var bool flag
 			var char code
-			var string name
-			var Inner inner
+			mv string name
+			mv Inner inner
 		}
 		pub func main = () {
 			var a = Outer(1, true, 'x', "hi", Inner(7))
@@ -59,7 +59,7 @@ import System
 mv struct Token: Hashable {
 	var int kind
 	@hash_ignore
-	var string scratch
+	mv string scratch
 }
 pub func main = () {
 	var a = Token(3, "first")
@@ -79,7 +79,7 @@ pub func main = () {
 test("a non-derivable Stringable field is a per-field error, not a silent skip", () => {
 	const errors = compile_module(`
 		mv struct Holder: Stringable {
-			var items = StableList<int>()
+			mv items = StableList<int>()
 		}
 		func f = () {
 			var h = Holder()

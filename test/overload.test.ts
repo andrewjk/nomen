@@ -7,7 +7,7 @@ describe("function overloading", () => {
 		const input = `
 mv struct Printer {
   var int last_int
-  var string last_str
+  mv string last_str
   pub func print = (ref self, int value) {
     self.last_int = value
   }

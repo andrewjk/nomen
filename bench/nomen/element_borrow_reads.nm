@@ -17,7 +17,7 @@ import System
 // argv; prints one checksum per shape.
 
 mv struct Outer {
-	var tags = List<string>()
+	mv tags = List<string>()
 	var int n = 0
 }
 

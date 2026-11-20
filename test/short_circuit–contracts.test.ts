@@ -24,7 +24,7 @@ test("&& short-circuits: guarded .at in a while condition", async () => {
 import System
 
 mv struct Item {
-	var text = ""
+	mv text = ""
 }
 
 func build = (out List<Box<Item>>) {

@@ -30,7 +30,7 @@ test("owning struct array literal teardown -- audit clean", async () => {
 	// element before freeing the buffer — previously the elements leaked.
 	const input = `
 mv struct Rec {
-	var string name
+	mv string name
 }
 var Array<Rec> rs = [Rec("a"), Rec("b"), Rec("c")]
 Console.write("\\{rs.at_or_panic(1).name} \\{rs.length}")
@@ -45,7 +45,7 @@ test("moved struct array element transfers ownership -- audit clean", async () =
 	// cleanup is skipped, the element teardown frees exactly once.
 	const input = `
 mv struct Rec {
-	var string name
+	mv string name
 }
 var r = Rec("z")
 var Array<Rec> rs = [mv r]
@@ -61,7 +61,7 @@ test("bare owning struct array element read again is rejected", () => {
 	// the donor's own cleanup would both free it.
 	const parsed = parse_with_imports(`
 mv struct Rec {
-	var string name
+	mv string name
 }
 var r = Rec("z")
 var Array<Rec> rs = [r]

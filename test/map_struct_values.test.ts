@@ -56,7 +56,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Config {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -80,7 +80,7 @@ mv struct Point {
 }
 
 mv struct Outer {
-	var Point p
+	mv Point p
 	var int tag
 }
 
@@ -129,13 +129,13 @@ mv struct Mixed {
 	var bool flag
 	var char letter
 	var float ratio
-	var Box<Count>? extra
-	var string label
+	mv Box<Count>? extra
+	mv string label
 	var Color c
 }
 
 mv struct Wrap {
-	var Mixed m
+	mv Mixed m
 }
 
 pub func main = (Init init) {
@@ -171,7 +171,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Holds {
-	var Box<int> b
+	mv Box<int> b
 	var int n
 }
 
@@ -192,7 +192,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Holds {
-	var Box<int> b
+	mv Box<int> b
 	var int n
 }
 
@@ -216,13 +216,13 @@ pub func main = (Init init) {
 import System
 
 mv struct Holds {
-	var Box<int> b
+	mv Box<int> b
 	var int n
 }
 
 mv struct Wrap {
-	var Holds h
-	var string tag
+	mv Holds h
+	mv string tag
 }
 
 pub func main = (Init init) {
@@ -246,9 +246,9 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
-	var tags = List<int>()
+	mv tags = List<int>()
 }
 
 pub func main = (Init init) {

@@ -144,7 +144,7 @@ Console.write("done\\n")
 		const input = `
 mv struct Animal { var char letter }
 mv struct Zoo {
-	var List<Animal> animals = List<Animal>()
+	mv List<Animal> animals = List<Animal>()
 }
 if true {
 	var Zoo z = Zoo()
@@ -162,7 +162,7 @@ Console.write("done\\n")
 		const input = `
 mv struct Animal { var char letter }
 mv struct Zoo {
-	var List<Animal> animals = List<Animal>()
+	mv List<Animal> animals = List<Animal>()
 
 	func #init = (self) {
 		self.animals.push(mv Animal('Z'))

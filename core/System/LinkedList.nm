@@ -8,8 +8,8 @@
  **/
 pub mv struct LinkedList<T>: Enumerable {
 	var values = Buffer<T>()
-	var nexts = Buffer<int>()
-	var prevs = Buffer<int>()
+	mv nexts = Buffer<int>()
+	mv prevs = Buffer<int>()
 	var int head = -1
 	var count = 0
 

@@ -5,8 +5,8 @@ mv struct MerkleNode {
 	var value = 0
 	var has_hash = false
 	var has_value = false
-	var Box<MerkleNode>? left = null
-	var Box<MerkleNode>? right = null
+	mv Box<MerkleNode>? left = null
+	mv Box<MerkleNode>? right = null
 }
 
 func make_merkle = (int depth, out MerkleNode) {

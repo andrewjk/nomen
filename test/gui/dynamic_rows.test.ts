@@ -26,7 +26,7 @@ import System::Controls
 
 // A self-handling row: its own button, its own handler, its own state.
 mv struct MyRow {
-	var Button btn
+	mv Button btn
 	var int count = 0
 
 	pub func #init = (self, Window window) {
@@ -67,9 +67,9 @@ mv struct MyRow {
 }
 
 mv struct RowsApp : App {
-	var List<MyRow> rows = List<MyRow>()
-	var Text label
-	var Container grid
+	mv List<MyRow> rows = List<MyRow>()
+	mv Text label
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -85,7 +85,7 @@ mv struct RowsApp : App {
 		var MyRow b = MyRow(window)
 		b.add_to(ref grid, grid.root_index())
 		self.rows.push(mv b)
-		self.grid = grid
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

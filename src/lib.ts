@@ -38,6 +38,8 @@ export interface LibraryType {
 	path: string;
 	deps: string[];
 	namespace?: string;
+	/** The declaration spells `mv struct`/`mv enum` (see build_library). */
+	is_owning?: boolean;
 }
 
 export function read_library_config(lib_dir: string): LibraryConfig {
@@ -246,7 +248,22 @@ function build_type_map(
 		const parts = rel.split(path.sep);
 		const namespace = parts.length > 1 ? parts[0] : undefined;
 		for (const name of type_names) {
-			types.set(name, { name, source, path: f, deps, namespace });
+			types.set(name, {
+				name,
+				source,
+				path: f,
+				deps,
+				namespace,
+				// The declared-ownership bit: whether this type's declaration
+				// spells `mv struct`/`mv enum`. The generated-slot spelling
+				// rule reads it when a generic instantiation has not been
+				// monomorphized yet (declares_mv_shallow), so an
+				// unregistered `List<string>` element still classifies as
+				// owning from the template's declaration.
+				is_owning: new RegExp(`(^|\\n)\\s*(pub\\s+)?mv\\s+(struct|enum)\\s+${name}([\\s<{])`).test(
+					source,
+				),
+			});
 		}
 		// Index the file's free `pub func`s so user programs can pull the
 		// file in by calling them (see Library.functions). A file with no

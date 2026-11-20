@@ -56,7 +56,7 @@ pub func main = (Init init) {
 
 pub mv struct Node {
 	pub var int v
-	pub var string label
+	pub mv string label
 }
 
 pub func main = (Init init) {

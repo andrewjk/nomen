@@ -14,7 +14,7 @@ describe("borrow-accessor expression-temp carriers", () => {
 	test("reclaims a deep-copied container field of the loaded element", async () => {
 		const input = `
 mv struct Group {
-  var List<int> items = List<int>()
+  mv List<int> items = List<int>()
 }
 var groups = List<Group>()
 var g = Group()
@@ -31,8 +31,8 @@ for i of 0 .. groups.length {
 	test("reclaims the container while leaving the aliased string field alone", async () => {
 		const input = `
 mv struct Person {
-  var string name
-  var List<int> items = List<int>()
+  mv string name
+  mv List<int> items = List<int>()
 }
 var people = List<Person>()
 var p = Person("Ada")
@@ -51,7 +51,7 @@ for i of 0 .. people.length {
 		// mv path — its destroy reclaims the containers recursively.
 		const input = `
 mv struct Group {
-  var List<int> items = List<int>()
+  mv List<int> items = List<int>()
 }
 var groups = List<Group>()
 var g = Group()

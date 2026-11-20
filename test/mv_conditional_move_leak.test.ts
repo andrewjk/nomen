@@ -12,7 +12,7 @@ import build_and_check_output from "./build_and_check_output";
 
 const STRUCT = `
 pub mv struct D {
-	pub var markup = ""
+	pub mv markup = ""
 }
 
 func take = (mv D d, out bool) {

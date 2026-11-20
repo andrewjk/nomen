@@ -16,13 +16,13 @@
  * `next_handle`/`page_handle`) remain for coordinate hit-testing.
  **/
 pub mv struct Pagination {
-	var Button prev
-	var Button next
-	var Button b0
-	var Button b1
-	var Button b2
-	var Button b3
-	var Button b4
+	mv Button prev
+	mv Button next
+	mv Button b0
+	mv Button b1
+	mv Button b2
+	mv Button b3
+	mv Button b4
 	var pages = 1
 	var current = 0
 	// The up-call plumbing: the dispatch id the app enrolled (—1 = none)

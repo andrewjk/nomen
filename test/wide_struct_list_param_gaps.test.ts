@@ -49,7 +49,7 @@ func normalize2 = (string text, out string) {
 
 pub mv struct NS {
 	var side = 0
-	var text = ""
+	mv text = ""
 	var index = 0
 	var length = 0
 	var line = 0

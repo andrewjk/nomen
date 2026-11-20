@@ -17,7 +17,7 @@ import parse_with_imports from "./parse_with_imports";
 test("ref param -- owned string assigned through a field ref (the serde shape)", async () => {
 	const input = `
 mv struct Person {
-	var string name = ""
+	mv string name = ""
 }
 
 func assign_it<T> = (ref T target) {
@@ -136,7 +136,7 @@ Console.write_line(s)
 test("ref param -- ref string plumbing checks clean", () => {
 	const input = `
 mv struct Person {
-	var string name = ""
+	mv string name = ""
 }
 
 func assign_it<T> = (ref T target) {

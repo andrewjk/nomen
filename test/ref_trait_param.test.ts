@@ -18,7 +18,7 @@ trait Speaker {
 }
 
 mv struct Dog: Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) {
 		return "woof"
 	}
@@ -48,7 +48,7 @@ trait Speaker {
 }
 
 mv struct Dog: Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) {
 		return "woof"
 	}
@@ -150,7 +150,7 @@ Console.write(s.speak())`;
 	test("ref mv-struct param reassignment reclaims the displaced instance", async () => {
 		const input = `
 mv struct Dog {
-	var string name = "rex"
+	mv string name = "rex"
 	func speak = (self, out string) {
 		return "woof"
 	}

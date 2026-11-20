@@ -118,7 +118,7 @@ test("generic-callee user-inline splices (JsonTree receipt class)", () => {
 import System
 
 mv struct Keeper {
-	var Buffer<JsonNode> nodes = Buffer<JsonNode>()
+	mv Buffer<JsonNode> nodes = Buffer<JsonNode>()
 
 	pub func #init = (self) {
 		self.nodes.grow(4)

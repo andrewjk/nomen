@@ -15,8 +15,8 @@
  * `handle`).
  **/
 pub mv struct NumberInput {
-	var TextBox box
-	var Stepper step
+	mv TextBox box
+	mv Stepper step
 
 	pub func #init = (self, Window window) {
 		self.box = TextBox(window)

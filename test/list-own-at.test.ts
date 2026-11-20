@@ -75,7 +75,7 @@ mv struct Inner {
 }
 
 mv struct Outer {
-	var Inner inner
+	mv Inner inner
 }
 
 var List<Outer> items = List<Outer>()

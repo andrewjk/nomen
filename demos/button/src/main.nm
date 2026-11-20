@@ -12,8 +12,8 @@ pub func main = () {
 }
 
 mv struct ButtonApp: App {
-	var Button btn
-	var Container grid
+	mv Button btn
+	mv Container grid
 
 	// Create controls in the constructor
 	pub func #init = (self, Window window) {
@@ -33,8 +33,8 @@ mv struct ButtonApp: App {
 			0,
 		)
 		grid.add_spacer_to(grid.root_index(), 1, 1)
-		self.btn = btn
-		self.grid = grid
+		self.btn = mv btn
+		self.grid = mv grid
 	}
 
 	// Add control events in `start`

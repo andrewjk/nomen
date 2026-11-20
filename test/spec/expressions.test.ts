@@ -431,7 +431,7 @@ var v = str.slice(0, 5)
 		const input = `
 pub mv struct UserList: Viewable {
 	var length = 0
-	var Buffer<int> items = Buffer<int>()
+	mv Buffer<int> items = Buffer<int>()
 	pub func slice = (
 		self,
 		int start: start >= 0,

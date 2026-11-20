@@ -24,7 +24,7 @@ mv struct Users: Greetable<User> {
 }
 
 mv struct User {
-	var string name = ""
+	mv string name = ""
 }
 
 func label = (Greetable v, out string) {
@@ -49,7 +49,7 @@ mv struct Users: Greetable<User> {
 }
 
 mv struct User {
-	var string name = ""
+	mv string name = ""
 }
 
 func describe = (Greetable v, out int) {
@@ -74,7 +74,7 @@ mv struct M: Mapper<User, int> {
 }
 
 mv struct User {
-	var string name = ""
+	mv string name = ""
 }
 
 func key_of = (Mapper m, out int) {
@@ -170,7 +170,7 @@ trait Box<T> {
 }
 
 mv struct StrBox: Box<string> {
-	var string item = ""
+	mv string item = ""
 }
 
 func go = (out string) {
@@ -229,7 +229,7 @@ struct IB: Box<int> {
 }
 
 mv struct SB: Box<string> {
-	var string item = ""
+	mv string item = ""
 }
 
 func go = (out int) {
@@ -445,7 +445,7 @@ mv struct Users: Greetable<User, int> {
 }
 
 mv struct User {
-	var string name = ""
+	mv string name = ""
 }
 `;
 		const expected = [

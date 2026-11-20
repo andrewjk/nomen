@@ -29,11 +29,11 @@ import System
 import System::Controls
 
 mv struct MouseInputApp : App {
-	var Text label
-	var Scrollable scroll
-	var Container grid
-	var Container rows
-	var List<CheckBox> owned
+	mv Text label
+	mv Scrollable scroll
+	mv Container grid
+	mv Container rows
+	mv List<CheckBox> owned
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -50,11 +50,11 @@ mv struct MouseInputApp : App {
 		var Container grid = VStack(8)
 		grid.add(label.handle, 0, 30, 1)
 		grid.add(scroll.handle, 0, 0, 1, 1)
-		self.label = label
-		self.scroll = scroll
-		self.rows = rows
-		self.owned = owned
-		self.grid = grid
+		self.label = mv label
+		self.scroll = mv scroll
+		self.rows = mv rows
+		self.owned = mv owned
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

@@ -93,7 +93,7 @@ Console.write_line(json_encode(ref h))
 test("generics -- generic instantiated over a struct holding a container", async () => {
 	const input = `
 mv struct Leaf {
-	var inner = StableList<int>()
+	mv inner = StableList<int>()
 }
 
 mv struct Holder<T> {

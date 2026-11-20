@@ -11,14 +11,14 @@ describe("returning a struct with a nullable string member", () => {
 	test("null and non-null nullable string members round-trip", async () => {
 		const input = `
 mv struct Rule {
-	var name = ""
-	var string? pattern = null
+	mv name = ""
+	mv string? pattern = null
 }
 
 func make_rule = (mv string name, mv string? pattern, out Rule) {
 	var r = Rule()
-	r.name = name
-	r.pattern = pattern
+	r.name = mv name
+	r.pattern = mv pattern
 	return r
 }
 

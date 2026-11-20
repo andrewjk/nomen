@@ -17,7 +17,7 @@ describe("Map member in a List element", () => {
 	test("read back owns an independent Map", async () => {
 		const input = `
 struct Holder {
-	var data = Map<string, int>()
+	mv data = Map<string, int>()
 }
 
 var list = List<Holder>()
@@ -38,7 +38,7 @@ describe("Set member in a List element", () => {
 	test("read back owns an independent Set", async () => {
 		const input = `
 struct Holder {
-	var data = Set<int>()
+	mv data = Set<int>()
 }
 
 var list = List<Holder>()

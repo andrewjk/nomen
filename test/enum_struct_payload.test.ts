@@ -19,7 +19,7 @@ describe("enum struct payload: teardown", () => {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 
@@ -44,7 +44,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 
@@ -72,7 +72,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 
@@ -102,7 +102,7 @@ describe("enum struct payload: deep copies", () => {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 
@@ -131,7 +131,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 
@@ -169,7 +169,7 @@ describe("enum struct payload: emitted code", () => {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 
@@ -209,7 +209,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int id
 }
 

@@ -31,7 +31,7 @@ describe("readme: construction overrides", () => {
 	test("struct constructed and passed to a function", () => {
 		const input = `
 mv struct Circle {
-    var string name
+    mv string name
     var int center_x
     var int center_y
     var int radius
@@ -55,7 +55,7 @@ mv struct Box {
 }
 
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 
 func take = (mv Box b, out int) {

@@ -50,11 +50,11 @@ value:
 
 ```nomen
 mv struct Config {
-    var string name
+    mv string name
 }
 
 mv struct Holder {
-    var Config config   // owned slot: Holder(mv c) transfers
+    mv Config config   // owned slot: Holder(mv c) transfers
     var int scratch     // value type
 }
 ```

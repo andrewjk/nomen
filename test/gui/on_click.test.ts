@@ -28,8 +28,8 @@ import System
 import System::Controls
 
 mv struct ClickApp : App {
-	var Button btn
-	var Text label
+	mv Button btn
+	mv Text label
 	var int frames = 0
 
 	pub func #init = (self, Window window) {

@@ -24,8 +24,8 @@ mv struct TextRule : Rule {
 }
 
 mv struct Holder {
-	pub var List<Rule> rules = List<Rule>()
-	pub var List<string> names = List<string>()
+	pub mv List<Rule> rules = List<Rule>()
+	pub mv List<string> names = List<string>()
 
 	pub func #init = (ref self) {
 	}
@@ -253,8 +253,8 @@ describe("Map with struct values", () => {
 import System
 
 pub mv struct LinkReference {
-	pub var string url = ""
-	pub var string title = ""
+	pub mv string url = ""
+	pub mv string title = ""
 }
 
 pub func main = (Init init) {

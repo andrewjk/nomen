@@ -9,7 +9,7 @@ import { parse_raw } from "./parse_with_imports";
 
 const WIDGET = `
 pub mv struct Widget {
-	var string title = "default"
+	mv string title = "default"
 	pub func set_title = (ref self, string t) {
 		self.title = t.copy()
 	}

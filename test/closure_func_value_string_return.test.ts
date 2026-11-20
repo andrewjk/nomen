@@ -90,7 +90,7 @@ trait Show {
 }
 
 	mv struct Dog : Show {
-	var string name
+	mv string name
 	func show = (self, out string) => self.name.copy()
 }
 

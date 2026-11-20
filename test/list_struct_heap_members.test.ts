@@ -12,9 +12,9 @@ describe("struct with heap-mv members in a List", () => {
 	test("push, read back, scope exit", async () => {
 		const input = `
 mv struct Rule {
-	var name = ""
-	var string? pattern = null
-	var protocols = List<string>()
+	mv name = ""
+	mv string? pattern = null
+	mv protocols = List<string>()
 	var has_protocols = false
 }
 
@@ -49,9 +49,9 @@ Console.write("loaded3 name=\\{loaded3.name} pattern-null=\\{pn}\\n")
 	test("copy() is deep — the copy's List member is independent", async () => {
 		const input = `
 mv struct Rule {
-	var name = ""
-	var string? pattern = null
-	var protocols = List<string>()
+	mv name = ""
+	mv string? pattern = null
+	mv protocols = List<string>()
 	var has_protocols = false
 }
 

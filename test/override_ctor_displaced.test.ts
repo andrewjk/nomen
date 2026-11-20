@@ -18,8 +18,8 @@ describe("override-constructor displaced-copy reclamation", () => {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b
+	mv string a = "de" + "fault"
+	mv string b
 }
 
 func make = (out Pair) {
@@ -44,8 +44,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b
+	mv string a = "de" + "fault"
+	mv string b
 }
 
 pub func main = (Init init) {
@@ -66,8 +66,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Lit {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 pub func main = (Init init) {
@@ -92,8 +92,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 
 	func #init = (self, string s) {
 		self.a = s.copy()
@@ -134,8 +134,8 @@ describe("#init computed-seed ownership", () => {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 
 	func #init = (self, string s) {
 		self.a = s + "!"
@@ -214,8 +214,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b = "bee"
+	mv string a = "de" + "fault"
+	mv string b = "bee"
 
 	func #init = (self, string s) {
 		self.a = s + "!"
@@ -242,8 +242,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a
-	var string b = "bee"
+	mv string a
+	mv string b = "bee"
 
 	func #init = (self, string s) {
 		self.a = s + "!"
@@ -272,8 +272,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b = "bee"
+	mv string a = "default"
+	mv string b = "bee"
 
 	func #init = (self, string s) {
 		self.a = s.copy()
@@ -309,8 +309,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "de" + "fault"
-	var string b = "bee"
+	mv string a = "de" + "fault"
+	mv string b = "bee"
 
 	func #init = (self, string s, bool hot) {
 		if hot {

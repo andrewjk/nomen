@@ -80,7 +80,7 @@ if j >= 0 && j < xs.length {
 		// missing/leaked per-site copy.
 		const input = `
 mv struct Box {
-	var List<int> items = List<int>()
+	mv List<int> items = List<int>()
 }
 
 func make_box = (int seed, out Box) {

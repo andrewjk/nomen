@@ -291,7 +291,7 @@ trait Speaker {
 	func speak = (self, out string)
 }
 mv struct Named : Speaker {
-	pub var string name
+	pub mv string name
 	pub func speak = (self, out string) {
 		return "spoke"
 	}

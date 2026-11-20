@@ -11,7 +11,7 @@ describe("`raw` as an identifier", () => {
 	test("variable, field and parameter named raw", async () => {
 		const input = `
 mv struct Box {
-	var raw = ""
+	mv raw = ""
 }
 
 func use_raw = (int raw, out int) {

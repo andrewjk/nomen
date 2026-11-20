@@ -59,15 +59,15 @@ func add_todo = (
 // (the window grid) and document (the todo stack). The app handles clicks
 // and re-dances the stack when a todo is added or removed.
 mv struct TodoApp: App {
-	var Text title
-	var Scrollable scroll
-	var Window doc
-	var Container todos
-	var List<CheckBox> owned
-	var List<uint64> handles
-	var TextBox input
-	var Button add_btn
-	var Container grid
+	mv Text title
+	mv Scrollable scroll
+	mv Window doc
+	mv Container todos
+	mv List<CheckBox> owned
+	mv List<uint64> handles
+	mv TextBox input
+	mv Button add_btn
+	mv Container grid
 
 	pub func #init = (self, Window window) {
 		const title = Text(window)
@@ -107,15 +107,15 @@ mv struct TodoApp: App {
 		add_todo(ref todos, content, ref owned, ref handles, "Ship it")
 
 		// Move everything into the app's fields.
-		self.title = title
-		self.scroll = scroll
-		self.doc = content
-		self.todos = todos
-		self.owned = owned
-		self.handles = handles
-		self.input = input
-		self.add_btn = add_btn
-		self.grid = grid
+		self.title = mv title
+		self.scroll = mv scroll
+		self.doc = mv content
+		self.todos = mv todos
+		self.owned = mv owned
+		self.handles = mv handles
+		self.input = mv input
+		self.add_btn = mv add_btn
+		self.grid = mv grid
 	}
 
 	// App.start: register the layout roots. The framework lays the root out

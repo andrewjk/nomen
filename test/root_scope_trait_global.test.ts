@@ -32,7 +32,7 @@ pub func main = () {
 import System
 trait Speaker { func speak = (self, out string) }
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
 		Console.write("|destroy:" + self.name)

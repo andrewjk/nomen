@@ -1,5 +1,4 @@
 import add_error from "../add_error.ts";
-import { mono_type_name } from "../build_common/mono_name.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
@@ -18,12 +17,14 @@ import { is_box_type } from "./utils/box.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
 import { bind_comptime_self, expand_struct_member_pragmas } from "./utils/comptime.ts";
 import { display_field_set } from "./utils/field_effects.ts";
+import { slot_requires_mv } from "./utils/mv_rule.ts";
 import {
 	is_class_type,
 	is_owning_struct_type_requiring_move,
 	type_owns_heap,
 } from "./utils/ownership.ts";
 import type_from_value from "./utils/type_from_value.ts";
+import type_name from "./utils/type_name.ts";
 
 function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 	const a_params = a.params.filter((p) => !p.is_self_param);
@@ -332,35 +333,39 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	// fresh constructor arg (`Struct(List<int>())`) transfers implicitly.
 	mark_owning_auto_init_params(struct, status);
 
-	// `mv` on a VALUE-struct field declaration is dead weight: ownership of
-	// mv value-struct fields is derived from the TYPE (the auto-init
-	// stamp above keys on is_owning_struct_type_requiring_move, and the
-	// destroy / displaced-reclaim paths analyse the same type), not the
-	// keyword — warn so the redundant form doesn't re-accumulate. On
-	// CLASS-typed (and trait-typed) fields `mv` IS the ownership
-	// declaration (container owns + destroys the instance, displaced stores
-	// reclaimed, borrow stores rejected) — never warned. Library structs are
-	// exempt like the rest of the lint surface. Classification resolves the
-	// MONOMORPHIZED name: the field's default initializer has been checked
-	// above, so the mono struct is registered (the bare generic template
-	// classifies as non-mv — its destroy/fields are still generic).
-	if (!struct.is_library) {
-		for (const field of struct.fields) {
-			if (field.declaration !== "mv") continue;
-			if (!field.type.name || field.type.is_ref || field.type.is_view) continue;
-			if (field.type.is_nullable) continue;
-			if (is_class_type(field.type.name, status)) continue;
-			if (status.traits.find((t) => t.name === field.type.name)) continue;
-			const mono = new Type(mono_type_name(field.type));
-			if (!is_owning_struct_type_requiring_move(mono, status)) continue;
-			if (!status.warnings) status.warnings = [];
-			status.warnings.push({
-				message: `'mv' on field '${field.name}' is redundant: '${type_display(field.type)}' is a value struct — its ownership is derived from the type, so plain 'var' behaves identically`,
-				start: field.start,
-				line: 0,
-				column: 0,
-			});
-		}
+	// The ownership-spelling rule, field side: an OWNING-typed field (string,
+	// class/trait handle, mv struct — slot_requires_mv) must SPELL `mv`. The
+	// keyword is the ownership declaration — it pairs with the inverted half
+	// of the old lint, which warned the mv form redundant and preferred plain
+	// `var`; the flip makes ownership explicit at every owning slot ("implicit
+	// with type inference, explicit with memory management"). Classification
+	// resolves the MONOMORPHIZED name (the field's default initializer has
+	// been checked above, so the mono struct is registered). Type-param fields
+	// stay implicit (slot_requires_mv — ownership is unknown until
+	// monomorphization), as do borrows, fixed arrays, func-typed and const
+	// fields (a const's value is fixed at its fresh initializer — no transfer
+	// ever spells).
+	for (const field of struct.fields) {
+		if (field.declaration === "mv" || field.declaration === "const") continue;
+		// A monomorphized clone stands down: the template was validated with
+		// its type params in scope, and a substituted `mv T` field whose
+		// concrete binding owns nothing keeps the documented no-op
+		// degradation (Box<int>'s `mv int __value`). The clone re-check (the
+		// mono struct joins root.statements) must not demand mv from fields
+		// whose TEMPLATE spelling was implicit.
+		if (struct.source_type_args?.length) continue;
+		// A `#for`-generated member stands down the same way: the template's
+		// spelling governs, and a per-iteration splice
+		// (`mv #{field.type.name} stored`) cannot re-spell per concrete
+		// field type. The generated TYPE carries spawn_of (its fields don't),
+		// so both are checked.
+		if (struct.spawn_of !== undefined || field.spawn_of !== undefined) continue;
+		if (!slot_requires_mv(field.type, status)) continue;
+		add_error(
+			status,
+			`field '${field.name}' owns memory — declare it 'mv ${type_name(field.type)} ${field.name}' (plain 'var' is for non-owning types)`,
+			field.start,
+		);
 	}
 
 	status.types.push(struct.name);
@@ -699,12 +704,6 @@ function types_match(a: Type, b: Type): boolean {
 		!!a.is_view === !!b.is_view &&
 		!!a.is_array === !!b.is_array
 	);
-}
-
-/** The user-visible spelling of a type (`List<int>`, `Map<string, int>`). */
-function type_display(t: Type): string {
-	if (!t.type_args?.length) return t.name ?? "?";
-	return `${t.name}<${t.type_args.map(type_display).join(", ")}>`;
 }
 
 /**

@@ -15,6 +15,10 @@ export default function check(
 	options?: {
 		allow_internal?: boolean;
 		library_boundary?: number;
+		/** Library types whose declaration spells `mv` (`mv struct List<T>`)
+		 *  — the generated-slot spelling rule consults it while a generic
+		 *  instantiation is still unregistered (declares_mv_shallow). */
+		owning_library_types?: Set<string>;
 		/** Compile target for `#if META.arch` folding. Defaults to the same
 		 *  target build() defaults to (the C backend); callers that build for
 		 *  another target MUST check with the same one — only the checked-in
@@ -47,6 +51,7 @@ export default function check(
 		type_emission_names: new Set(),
 		allow_internal: options?.allow_internal,
 		library_boundary: options?.library_boundary,
+		owning_library_types: options?.owning_library_types,
 		arch: options?.arch ?? "c",
 		platform: options?.platform ?? default_platform(),
 	};

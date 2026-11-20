@@ -15,7 +15,7 @@ import System
 
 @entity
 pub mv struct User {
-	pub var name = ""
+	pub mv name = ""
 	pub var age = 0
 }
 

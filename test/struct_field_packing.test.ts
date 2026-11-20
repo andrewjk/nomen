@@ -189,9 +189,9 @@ describe("packed layout runtime (both backends, audit on)", () => {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var bool hot
-	var List<int> xs
+	mv List<int> xs
 	var bool tag
 }
 

@@ -434,10 +434,10 @@ test()
 	test("nullable string field default / store emits the zero pair on C", () => {
 		const input = `
 mv struct Holder {
-	var string? tag = null
+	mv string? tag = null
 }
 mv struct S {
-	var string? tag = null
+	mv string? tag = null
 }
 func test = () {
 	var Holder h = Holder()
@@ -460,7 +460,7 @@ describe("nullable strings — null as an argument / field default (both backend
 	test("null into string? ctor param (required field)", async () => {
 		const input = `
 mv struct Holder {
-	var string? tag
+	mv string? tag
 }
 func test = () {
 	var Holder h = Holder(null)
@@ -524,7 +524,7 @@ use(3, null, 4)
 	test("null into value struct string? ctor param", async () => {
 		const input = `
 mv struct S {
-	var string? tag
+	mv string? tag
 }
 func test = () {
 	var S s = S(null)
@@ -556,10 +556,10 @@ Console.write_line("done")
 	test("defaulted nullable string field zeroes the pair (class + value struct)", async () => {
 		const input = `
 mv struct Holder {
-	var string? tag = null
+	mv string? tag = null
 }
 mv struct S {
-	var string? tag = null
+	mv string? tag = null
 }
 func test = () {
 	var Holder h = Holder()
@@ -675,7 +675,7 @@ mv struct Box {
     var int v
 }
 mv struct Holder {
-    var Box c
+    mv Box c
 }
 func test = () {
     var Holder? h = Holder(Box(7))
@@ -836,7 +836,7 @@ mv struct Box {
     var int v
 }
 mv struct Holder {
-    var Box c
+    mv Box c
 }
 func test = () {
     var Holder? h = Holder(mv Box(7))
@@ -903,7 +903,7 @@ mv struct Box {
     }
 }
 mv struct Holder {
-    var Box c
+    mv Box c
 }
 func test = () {
     var Holder? h = Holder(mv Box(7))
@@ -980,7 +980,7 @@ mv struct Box {
     }
 }
 mv struct Holder {
-    var Box? maybe
+    mv Box? maybe
 }
 func test = () {
     var Holder h = Holder(null)
@@ -1005,7 +1005,7 @@ mv struct Box {
     }
 }
 mv struct Holder {
-    var Box? maybe
+    mv Box? maybe
 }
 func test = () {
     var Holder h = Holder(Box(7))
@@ -1066,7 +1066,7 @@ mv struct Box {
     }
 }
 mv struct Holder {
-    var Box? maybe
+    mv Box? maybe
 }
 func test = () {
     var Holder h = Holder(null)
@@ -1087,7 +1087,7 @@ mv struct Box {
     }
 }
 mv struct Holder {
-    var Box? maybe
+    mv Box? maybe
 }
 func test = () {
     var Holder h = Holder(Box(5))
@@ -1104,7 +1104,7 @@ describe("nullable base member access (null tracking)", () => {
 	test("member access through a null-initialized nullable field errors", () => {
 		const input = `
 mv struct Inner { var int value }
-mv struct Outer { var Inner? inner }
+mv struct Outer { mv Inner? inner }
 var Outer o = Outer(null)
 Console.write_line(o.inner.value.to_string())
 `;
@@ -1115,7 +1115,7 @@ Console.write_line(o.inner.value.to_string())
 	test("member access through a non-null-initialized nullable field is allowed", async () => {
 		const input = `
 mv struct Inner { var int value }
-mv struct Outer { var Inner? inner }
+mv struct Outer { mv Inner? inner }
 var Outer o = Outer(Inner(5))
 Console.write_line(o.inner.value.to_string())
 `;
@@ -1125,7 +1125,7 @@ Console.write_line(o.inner.value.to_string())
 	test("a != null guard narrows a nullable field base", async () => {
 		const input = `
 mv struct Inner { var int value }
-mv struct Outer { var Inner? inner }
+mv struct Outer { mv Inner? inner }
 var Outer o = Outer(null)
 if o.inner != null {
 	Console.write_line(o.inner.value.to_string())
@@ -1138,7 +1138,7 @@ Console.write_line("done")
 	test("an == null guard clause narrows a nullable field base", async () => {
 		const input = `
 mv struct Inner { var int value }
-mv struct Outer { var Inner? inner }
+mv struct Outer { mv Inner? inner }
 func probe = () {
 	var Outer o = Outer(null)
 	if o.inner == null { return }
@@ -1154,7 +1154,7 @@ Console.write_line("done")
 		const input = `
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 var Node n = Node(1, null)
 Console.write_line(n.next.value.to_string())
@@ -1167,7 +1167,7 @@ Console.write_line(n.next.value.to_string())
 		const input = `
 mv struct Node {
 	var int value
-	var Box<Node>? next
+	mv Box<Node>? next
 }
 var Node n = Node(1, null)
 if n.next != null {

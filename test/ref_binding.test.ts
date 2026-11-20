@@ -113,7 +113,7 @@ mv struct Cell { var int v }
 		const input = `
 mv struct Cell { var int v }
 mv struct Holder {
-	var Box<Cell> c
+	mv Box<Cell> c
 }
 	var Holder h = Holder(mv Box<Cell>(Cell(6)))
 	ref Box<Cell> q = h.c
@@ -155,7 +155,7 @@ mv struct Cell {
 	test("mv transfer of a mv value struct (prefix form)", async () => {
 		const input = `
 mv struct H {
-	var List<int> items
+	mv List<int> items
 }
 	var H p = H(List<int>())
 	p.items.push(42)

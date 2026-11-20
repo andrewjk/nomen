@@ -182,7 +182,7 @@ Console.write("\\{m.describe(State.running(5))} \\{m.describe(State.idle)}")
 	test.skip("struct payload binds at the match (BUGS #9)", async () => {
 		const input = `
 mv struct Config {
-  var string name
+  mv string name
 }
 mv enum Holder {
   case some(Config c)
@@ -201,7 +201,7 @@ match h {
 	test.skip("struct payload from a local variable", async () => {
 		const input = `
 mv struct Config {
-  var string name
+  mv string name
   var int n
 }
 mv enum Wrap {
@@ -222,7 +222,7 @@ match w {
 	test.skip("scalar payload after a struct payload keeps its offset", async () => {
 		const input = `
 mv struct Config {
-  var string name
+  mv string name
 }
 mv enum Wrap {
   case pair(Config c, int n)

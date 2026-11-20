@@ -32,7 +32,7 @@ struct Vec {
 }
 
 mv struct Named {
-	var string name = ""
+	mv string name = ""
 	var int num = 0
 	pub func #init = (ref self, string name, int num) {
 		self.name = name
@@ -119,8 +119,8 @@ pub func main = (Init init) {
 import System
 
 pub mv struct LinkReference {
-	pub var string url = ""
-	pub var string title = ""
+	pub mv string url = ""
+	pub mv string title = ""
 }
 
 pub func main = (Init init) {

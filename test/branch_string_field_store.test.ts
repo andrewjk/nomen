@@ -16,7 +16,7 @@ describe("exclusive-branch string field stores", () => {
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func decorated = (string v, mv out string) {
@@ -53,7 +53,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func decorated = (string v, mv out string) {
@@ -82,7 +82,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var a = ""
+	mv a = ""
 }
 
 func decorated = (string v, mv out string) {

@@ -44,7 +44,7 @@ pub func main = () {
 		const input = `import System
 
 struct Payload {
-	var string name
+	mv string name
 }
 
 func work = (Payload p) {

@@ -273,7 +273,7 @@ import System
 
 pub mv struct Config {
 	pub var int timeout = 0
-	pub var string label = ""
+	pub mv string label = ""
 }
 
 #for field of META.info(Config).fields {

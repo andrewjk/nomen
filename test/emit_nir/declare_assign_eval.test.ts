@@ -19,7 +19,7 @@ import System
 
 mv struct Counter {
     var int count
-    var string label
+    mv string label
 }
 
 func bump = (int by, out int) {

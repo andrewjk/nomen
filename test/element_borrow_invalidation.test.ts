@@ -15,7 +15,7 @@ const PROGRAM = `
 import System
 
 mv struct Rec {
-	var tags = List<string>()
+	mv tags = List<string>()
 	var int id = 0
 }
 

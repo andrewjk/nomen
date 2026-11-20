@@ -65,7 +65,7 @@ pub mv struct Tester {
 	// process still knows whether anything failed overall.
 	var total_failed = 0
 
-	var current = ""
+	mv current = ""
 	var uint64 started = 0
 
 	// Benchmark capture state. `bench`/`bench_n` record the label and sample
@@ -74,7 +74,7 @@ pub mv struct Tester {
 	// function pointer, so the harness measures `bench_fn` itself). `bench_fn`
 	// is reconstructed by the harness from the call site, not stored here.
 	var bench_pending = false
-	var bench_label = ""
+	mv bench_label = ""
 	var bench_samples = 1000
 
 	// (audit) The process's current malloc/free balance — allocations made

@@ -90,7 +90,7 @@ mv struct Box {
 }
 
 mv struct Holder {
-  var Box content
+  mv Box content
 }
 
 func wrap = (mv Box b, out Holder) {
@@ -259,7 +259,7 @@ mv struct Box {
 }
 
 mv struct Holder {
-  var Box content
+  mv Box content
 }
 
 var Holder h = Holder(mv Box(42))
@@ -531,7 +531,7 @@ mv struct Box {
   var int v
 }
 mv struct Holder {
-  var Box c
+  mv Box c
 }
 
 func id = (mv Holder h, out Holder) {

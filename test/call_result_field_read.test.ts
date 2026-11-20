@@ -24,7 +24,7 @@ describe("string field read off a call-result struct", () => {
 import System
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var int n = 0
 }
 

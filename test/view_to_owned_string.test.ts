@@ -69,7 +69,7 @@ test()
 	test("constructor field argument is rejected", () => {
 		const input = `
 mv struct Holder {
-	var string text
+	mv string text
 }
 func test = () {
 	var string text = "alpha bravo"

@@ -23,7 +23,7 @@ import parse_with_imports from "./parse_with_imports";
 
 const HOLDER_PROGRAM = `
 mv struct Holder {
-	var List<string> items = List<string>()
+	mv List<string> items = List<string>()
 }
 
 var List<Holder> xs = List<Holder>()

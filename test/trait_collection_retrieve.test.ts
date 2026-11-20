@@ -19,7 +19,7 @@ describe("Trait-typed retrieval from ClassBuffer<Trait>", () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
 		Console.write("destroying " + self.name)
@@ -47,7 +47,7 @@ Console.write("\\ndone")
 		const input = `
 trait Speaker { func speak = (self, out string) }
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 	func #destroy = (ref self) {
 		Console.write("destroying " + self.name)
@@ -73,11 +73,11 @@ Console.write("\\ndone")
 		const input = `
 trait Speaker { func speak = (self, out string) }
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 mv struct Cat : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 

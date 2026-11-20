@@ -61,7 +61,7 @@ pub func main = (Init init) {
 			"woof meow\ndone\n",
 			`
 pub mv struct Registry {
-	pub var List<Animal> items = List<Animal>()
+	pub mv List<Animal> items = List<Animal>()
 
 	pub func add = (ref self, mv Animal r) {
 		self.items.push(mv r)
@@ -85,7 +85,7 @@ pub func main = (Init init) {
 			"meow\ndone\n",
 			`
 pub mv struct Registry {
-	pub var Map<string, Animal> by_name = Map<string, Animal>()
+	pub mv Map<string, Animal> by_name = Map<string, Animal>()
 
 	pub func add = (ref self, string name, mv Animal r) {
 		self.by_name.set(mv name, mv r)

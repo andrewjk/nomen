@@ -9,7 +9,7 @@
 foreign func calloc = (int count, int size, out uint64)
 
 trait Tagged {
-	var tag = "x"
+	mv tag = "x"
 }
 
 pub struct TaggedItem : Tagged {

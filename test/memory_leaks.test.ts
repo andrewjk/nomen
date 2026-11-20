@@ -36,7 +36,7 @@ Console.write("\\{c}")
 		const input = `
 mv struct Named {
   var int id
-  var string name
+  mv string name
 }
 
 var int id = 1
@@ -97,7 +97,7 @@ Console.write("\\{c.value}")
 		const input = `
 mv struct Named {
   var int id
-  var string name
+  mv string name
 }
 
 var int id = 1
@@ -421,7 +421,7 @@ Console.write("done")
 		// value's heap fields.
 		const input = `
 mv struct Pair {
-	var string name = ""
+	mv string name = ""
 	var int a = 0
 }
 
@@ -439,7 +439,7 @@ Console.write("\\{p.name} \\{p.a}")
 		// spliced from its scope frame, so the copy's heap field leaked).
 		const input = `
 mv struct Pair {
-	var string name = ""
+	mv string name = ""
 	var int a = 0
 }
 

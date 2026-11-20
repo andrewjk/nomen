@@ -672,7 +672,7 @@ test("generics -- T() constructs the bound type (default ctor or scalar zero)", 
 	const input = `
 mv struct Item {
 	var n = 5
-	var s = "seed"
+	mv s = "seed"
 }
 
 func default_of<T> = (T seed, out T) {

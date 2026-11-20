@@ -59,7 +59,7 @@ test("comptime field dispatch folds the int/string arms", () => {
 	const parsed = parse_src(`
 		mv struct Counter {
 			var int n
-			var string label
+			mv string label
 		}
 		func reset_ints = (mv Counter c, mv out Counter) {
 			#for field of META.info(Counter).fields {
@@ -176,7 +176,7 @@ import System
 
 mv struct Sample: Stringable, Equatable, Hashable {
 	var int count
-	var string label
+	mv string label
 }
 
 struct Ints: Hashable {
@@ -266,9 +266,9 @@ test("field.type.args exposes container element types for dispatch", () => {
 			var int n = 0
 		}
 		mv struct Holder {
-			var items = StableList<Item>()
-			var floats = StableList<float>()
-			var name = ""
+			mv items = StableList<Item>()
+			mv floats = StableList<float>()
+			mv name = ""
 		}
 		func probe = () {
 			#for field of META.info(Holder).fields {
@@ -291,7 +291,7 @@ test("field.type.args exposes container element types for dispatch", () => {
 test("field.type.args out of range is an error", () => {
 	const parsed = parse_src(`
 		struct Plain {
-			var name = ""
+			mv name = ""
 		}
 		func probe = () {
 			#for field of META.info(Plain).fields {
@@ -307,7 +307,7 @@ test("field.type.args out of range is an error", () => {
 test("field.type.args needs a comptime index", () => {
 	const parsed = parse_src(`
 		mv struct Holder {
-			var items = StableList<int>()
+			mv items = StableList<int>()
 		}
 		func probe = (int i) {
 			#for field of META.info(Holder).fields {
@@ -326,8 +326,8 @@ test("field.type.args nests recursively — args[0].args[0], .name, .arg_count",
 			var int x = 0
 		}
 		mv struct Nest2 {
-			var grid = StableList<StableList<Leaf2>>()
-			var plain = StableList<float>()
+			mv grid = StableList<StableList<Leaf2>>()
+			mv plain = StableList<float>()
 		}
 		func probe = () {
 			#for field of META.info(Nest2).fields {

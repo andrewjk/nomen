@@ -24,10 +24,10 @@ test("attributes attach to structs and fields and parse all shapes", () => {
 		@sql_table("users")
 		mv pub struct User {
 			@rename("user_name"), @sql_type("VARCHAR")
-			var string user_name
+			mv string user_name
 			var int age
 			@deprecated
-			var string old_field
+			mv string old_field
 		}
 	`);
 	expect(parsed.errors).toEqual([]);
@@ -179,10 +179,10 @@ import System
 @sql_table("users")
 mv pub struct User {
 	@rename("user_name"), @sql_type("VARCHAR")
-	var string user_name
+	mv string user_name
 	var int age
 	@deprecated
-	var string old_field
+	mv string old_field
 }
 
 func keys<T> = (T value, out string) {

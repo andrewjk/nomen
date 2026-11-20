@@ -64,7 +64,7 @@ describe("array/list slice (runtime, both backends)", () => {
 			// fully borrow-checked. (alloc_int records cap so the literal-index
 			// stores verify; push/grow flow-bounds are a separate concern.)
 			pub mv struct Store: Viewable {
-				var Buffer<int> items = Buffer<int>()
+				mv Buffer<int> items = Buffer<int>()
 				pub func fill = (ref self) {
 					self.items.alloc_int(4)
 					self.items.store_int(0, 5)

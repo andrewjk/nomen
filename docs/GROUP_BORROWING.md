@@ -115,7 +115,7 @@ mv struct Data {
 
 mv struct Holder {
 	var int scratch
-	var Box<Data> data
+	mv Box<Data> data
 
 	func poke = (ref self) {
 		self.scratch = self.scratch + 1
@@ -180,7 +180,7 @@ mv struct Entity {
 }
 
 mv struct World {
-	var List<Entity> entities
+	mv List<Entity> entities
 
 	func collision_for = (self, Entity entity, out int) {
 		return entity.hp
@@ -378,7 +378,7 @@ mv struct Entity {
 }
 
 mv struct World {
-	var List<Entity> entities
+	mv List<Entity> entities
 
 	func collision_for = (self, Entity entity, out int) {
 		return entity.hp
@@ -460,8 +460,8 @@ mv struct Engine {
 }
 
 mv struct Ship {
-	var Box<Engine> engine
-	var string name
+	mv Box<Engine> engine
+	mv string name
 
 	func refuel = (ref self, int amount) {
 		self.engine.fuel = self.engine.fuel + amount
@@ -523,7 +523,7 @@ mv struct Entity {
 
 mv struct Level {
 	var Terrain terrain
-	var Map<int, Entity> entities
+	mv Map<int, Entity> entities
 
 	func add_entity = (ref self, mv Entity entity) {
 		self.entities.set(entity.id, mv entity)

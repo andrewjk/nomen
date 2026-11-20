@@ -8,11 +8,11 @@ import System
 
 mv struct LRU {
 	var size = 0
-	var keys = Map<int, int>()
-	var nkeys = Buffer<int>()
-	var nvals = Buffer<int>()
-	var prevs = Buffer<int>()
-	var nexts = Buffer<int>()
+	mv keys = Map<int, int>()
+	mv nkeys = Buffer<int>()
+	mv nvals = Buffer<int>()
+	mv prevs = Buffer<int>()
+	mv nexts = Buffer<int>()
 	var int head = -1
 	var int tail = -1
 	var count = 0

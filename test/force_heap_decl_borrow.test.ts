@@ -29,7 +29,7 @@ describe("force-heap string declarations own their storage", () => {
 	test("borrow-initialized force-heap local is not freed as a borrow", async () => {
 		const input = `
 mv struct Attr {
-	var string value = ""
+	mv string value = ""
 }
 
 mv struct Box {
@@ -68,7 +68,7 @@ Console.write("count=\\{box.items.length} kept=\\{box.items.at_or_panic(0).value
 	test("the assignment-path twin: an unrecorded source never marks the target", async () => {
 		const input = `
 mv struct Attr {
-	var string value = ""
+	mv string value = ""
 }
 
 mv struct Box {

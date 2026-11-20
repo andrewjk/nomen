@@ -361,7 +361,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 func take = (mv Box b) {
 }
@@ -382,7 +382,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Box a = Box(42)
 var Holder h = Holder(mv a)
@@ -435,7 +435,7 @@ mv struct Box {
 }
 mv struct Holder {
 	var int id
-	var Box content
+	mv Box content
 }
 var Box b = Box(99)
 var Holder h = Holder(1, mv b)
@@ -450,7 +450,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box c
+	mv Box c
 }
 var Box a = Box(1)
 var Holder h = Holder(mv Box(2))

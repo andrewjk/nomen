@@ -860,7 +860,7 @@ const n = sum_vals(v)
 	test("mv value-struct stack array to Array param is rejected", () => {
 		const input = `
 struct Person {
-  var string name
+  mv string name
   var int age
 }
 func names = (Array<Person> xs, out string) {
@@ -882,7 +882,7 @@ const s = names(v)
 	test("mv value-struct literal to Array param is rejected", () => {
 		const input = `
 struct Person {
-  var string name
+  mv string name
   var int age
 }
 func names = (Array<Person> xs, out string) {

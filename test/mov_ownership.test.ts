@@ -16,7 +16,7 @@ mv struct Box {
   var int value
 }
 struct Holder {
-  var Box content
+  mv Box content
 }
 `;
 			const parsed = parse(input);
@@ -36,7 +36,7 @@ mv struct Box {
   var int value
 }
 struct Holder {
-  var Box content
+  mv Box content
 }
 `;
 			const parsed = parse(input);
@@ -73,7 +73,7 @@ trait Speaker {
   func say = (out string)
 }
 struct Holder {
-  var Speaker s
+  mv Speaker s
 }
 `;
 			const parsed = parse(input);
@@ -93,7 +93,7 @@ trait Speaker {
   func say = (out string)
 }
 mv struct Holder {
-  var Speaker s
+  mv Speaker s
 }
 `;
 			const parsed = parse(input);
@@ -110,7 +110,7 @@ mv struct Box {
   var int value
 }
 mv struct Holder {
-  var Box content
+  mv Box content
 }
 `;
 			const parsed = parse(input);
@@ -123,7 +123,7 @@ mv struct Box {
   var int value
 }
 mv struct Holder {
-  var Box content
+  mv Box content
 }
 `;
 			const parsed = parse(input);
@@ -136,7 +136,7 @@ mv struct Box {
   var int value
 }
 trait HasBox {
-  var Box content
+  mv Box content
 }
 `;
 			const parsed = parse(input);
@@ -149,7 +149,7 @@ mv struct Box {
   var int value
 }
 trait HasBox {
-  var Box content
+  mv Box content
 }
 `;
 			const parsed = parse(input);
@@ -267,12 +267,20 @@ identity(mv x)
 mv int x = 5
 `;
 			const parsed = parse(input);
+			// Two rules fire: mv is illegal on a non-owning type, and the
+			// initializer is a fresh value no mv could transfer.
 			expect(parsed.errors).toEqual([
 				test_error(
 					input,
 					"mv is only allowed for class, trait, or mv struct types, not 'int'",
 					2,
 					1,
+				),
+				test_error(
+					input,
+					"'mv' on 'x' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'",
+					2,
+					12,
 				),
 			]);
 		});
@@ -351,7 +359,7 @@ b = mv a
 		test("mv binding of a declared mv struct is fine", () => {
 			const input = `
 mv struct Config {
-  var string name
+  mv string name
 }
 var c = Config("x")
 mv c2 = c
@@ -363,11 +371,180 @@ mv c2 = c
 		test("mv field of a declared mv struct type is fine", () => {
 			const input = `
 mv struct Inner {
-  var string tag
+  mv string tag
 }
 mv struct Holder {
   mv Inner inner
 }
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+	});
+
+	// The ownership-spelling requirement (the flip side of the rule above):
+	// an OWNING-typed slot must SPELL `mv`, and a fresh initializer never
+	// takes it. Field declarations, field stores, and bindings each enforce
+	// their half; type-param slots stay implicit.
+	describe("owning slots spell mv (fields, stores, fresh inits)", () => {
+		test("a string field without mv errors, naming the spelling", () => {
+			const input = `
+mv struct Holder {
+  var string name
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"field 'name' owns memory — declare it 'mv string name' (plain 'var' is for non-owning types)",
+					3,
+					3,
+				),
+			]);
+		});
+
+		test("an mv-struct field without mv errors", () => {
+			const input = `
+mv struct Inner {
+  mv string tag
+}
+mv struct Holder {
+  var Inner inner
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"field 'inner' owns memory — declare it 'mv Inner inner' (plain 'var' is for non-owning types)",
+					6,
+					3,
+				),
+			]);
+		});
+
+		test("a value field without mv is fine; with mv it is the parameter rule's error", () => {
+			const input = `
+struct Counter {
+  var int count
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("a type-param field stays implicit (mv optional, never required)", () => {
+			const input = `
+mv struct Box<T> {
+  var T value
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("a field store of an owned local demands mv on the right-hand side", () => {
+			const input = `
+mv struct Inner {
+  mv string tag = "t"
+}
+mv struct Holder {
+  mv Inner inner
+}
+var h = Holder(Inner())
+var i = Inner()
+h.inner = i
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"storing 'i' into owning field 'inner' moves it — write 'inner = mv i' to spell the transfer",
+					10,
+					11,
+				),
+			]);
+		});
+
+		test("the spelled store transfers: a later read is use-after-mv", () => {
+			const input = `
+mv struct Holder {
+  mv string name
+}
+var h = Holder("x")
+var n = "alice"
+h.name = mv n
+var copy = n
+`;
+			const parsed = parse(input);
+			expect(parsed.errors.length).toBeGreaterThan(0);
+			expect(parsed.errors[0].message).toContain("used after mv");
+		});
+
+		test("a fresh store (literal, constructor) never takes mv", () => {
+			const input = `
+mv struct Holder {
+  mv string name
+}
+var h = Holder("x")
+h.name = "alice"
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("mv on a fresh binding initializer errors", () => {
+			const input = `
+mv n = "bob"
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"'mv' on 'n' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'",
+					2,
+					8,
+				),
+			]);
+		});
+
+		test("mv on a fresh constructor initializer errors", () => {
+			const input = `
+mv struct Holder {
+  mv string name
+}
+var h = Holder("x")
+mv h2 = Holder("y")
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([
+				test_error(
+					input,
+					"'mv' on 'h2' transfers nothing — the initializer is a fresh value with no owner to surrender; declare it without 'mv'",
+					6,
+					9,
+				),
+			]);
+		});
+
+		test("mv on a struct field with a fresh initializer is the slot's declaration, not a transfer", () => {
+			const input = `
+mv struct Node {
+  mv string? text = null
+}
+`;
+			const parsed = parse(input);
+			expect(parsed.errors).toEqual([]);
+		});
+
+		test("mv binding from a bare variable is the transfer spelling", () => {
+			const input = `
+mv struct Config {
+  mv string name
+}
+var c = Config("x")
+mv other = c
 `;
 			const parsed = parse(input);
 			expect(parsed.errors).toEqual([]);

@@ -16,7 +16,7 @@ describe("trait-typed local declaration from a match", () => {
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 
@@ -39,7 +39,7 @@ Console.write_line("\\{main_test()}")
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 
@@ -68,7 +68,7 @@ describe("trait-typed local reassignment from a match", () => {
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 
@@ -92,7 +92,7 @@ Console.write_line("\\{main_test()}")
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 
@@ -120,7 +120,7 @@ Console.write_line("\\{main_test()}")
 trait Speaker { func speak = (self, out string) }
 
 mv struct Dog : Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) { return self.name.copy() }
 }
 

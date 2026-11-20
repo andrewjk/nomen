@@ -28,7 +28,7 @@ function build_c(source: string): string {
 
 const PROGRAM = `
 mv struct Rec {
-	var string s
+	mv string s
 	var int x
 }
 var lst = List<string>()

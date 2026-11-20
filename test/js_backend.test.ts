@@ -1304,7 +1304,7 @@ mv struct Cell {
 	pub var int v
 }
 mv struct Holder {
-	pub var Box<Cell> b
+	pub mv Box<Cell> b
 }
 const string a = "abc"
 const string b = "abd"

@@ -217,7 +217,7 @@ describe("in-place push: value-struct elements (sret into the slot)", () => {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -438,7 +438,7 @@ describe("in-place push: constructor arguments (the dominant excluded shape)", (
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -464,7 +464,7 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 	var int child = -1
 }
 
@@ -537,7 +537,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -557,7 +557,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -582,11 +582,11 @@ pub func main = (Init init) {
 import System
 
 mv struct Tagged {
-	var string label
+	mv string label
 	var int n
 
 	func #init = (self, mv string l, int k) {
-		self.label = l
+		self.label = mv l
 		self.n = k * 2
 	}
 }
@@ -606,7 +606,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -639,7 +639,7 @@ pub func main = (Init init) {
 import System
 
 mv struct Rec {
-	var string name
+	mv string name
 	var int n
 }
 
@@ -866,11 +866,11 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 }
 
 mv struct Tree {
-	var nodes = List<Node>()
+	mv nodes = List<Node>()
 
 	func add = (ref self, out int) {
 		self.nodes.push(Node())
@@ -900,7 +900,7 @@ func dup_str = (string s, out string) {
 }
 
 mv struct Log {
-	var lines = List<string>()
+	mv lines = List<string>()
 
 	func record = (ref self, string s) {
 		self.lines.push(dup_str(s))
@@ -931,11 +931,11 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 }
 
 mv struct Tree {
-	var nodes = List<Node>()
+	mv nodes = List<Node>()
 
 	func add = (ref self, out int) {
 		var Node p = Node()
@@ -964,11 +964,11 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 }
 
 mv struct Tree {
-	var nodes = List<Node>()
+	mv nodes = List<Node>()
 }
 
 pub func main = (Init init) {
@@ -992,11 +992,11 @@ func dup_str = (string s, out string) {
 }
 
 mv struct Engine {
-	var events = List<string>()
+	mv events = List<string>()
 }
 
 mv struct App {
-	var engine = Box<Engine>(Engine())
+	mv engine = Box<Engine>(Engine())
 
 	func run = (ref self) {
 		self.engine.events.push(dup_str("e1"))
@@ -1030,7 +1030,7 @@ mv struct Holder<T> {
 }
 
 mv struct Bag {
-	var hold = Holder<string>()
+	mv hold = Holder<string>()
 
 	func add = (ref self, string s) {
 		self.hold.items.push(dup_str(s))
@@ -1056,11 +1056,11 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 }
 
 mv struct Tree {
-	var nodes = List<Node>()
+	mv nodes = List<Node>()
 
 	func add = (ref self, out int) {
 		var Node p = Node()
@@ -1104,11 +1104,11 @@ func dup_str = (string s, out string) {
 }
 
 mv struct Engine {
-	var events = List<string>()
+	mv events = List<string>()
 }
 
 mv struct App {
-	var engine = Box<Engine>(Engine())
+	mv engine = Box<Engine>(Engine())
 
 	func run = (ref self) {
 		self.engine.events.push(dup_str("e1"))
@@ -1147,11 +1147,11 @@ func dup_str = (string s, out string) {
 }
 
 mv struct Engine {
-	var events = List<string>()
+	mv events = List<string>()
 }
 
 mv struct App {
-	var engine = Box<Engine>(Engine())
+	mv engine = Box<Engine>(Engine())
 
 	func run = (ref self) {
 		self.engine.events.push(dup_str("e1"))
@@ -1194,7 +1194,7 @@ func make = (int k, out string) {
 }
 
 mv struct Store {
-	var slots = List<string>()
+	mv slots = List<string>()
 
 	func fill = (ref self) {
 		var int i = 0
@@ -1225,11 +1225,11 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 }
 
 mv struct Tree {
-	var nodes = List<Node>()
+	mv nodes = List<Node>()
 
 	func add = (ref self, out int) {
 		self.nodes.push(Node())
@@ -1270,11 +1270,11 @@ import System
 
 mv struct Node {
 	var kind = 0
-	var text = ""
+	mv text = ""
 }
 
 mv struct Tree {
-	var nodes = List<Node>()
+	mv nodes = List<Node>()
 
 	func add = (ref self, out int) {
 		self.nodes.push(Node())
@@ -1317,7 +1317,7 @@ func make = (int k, out string) {
 }
 
 mv struct Store {
-	var slots = List<string>()
+	mv slots = List<string>()
 
 	func fill = (ref self) {
 		var int i = 0

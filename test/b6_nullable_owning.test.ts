@@ -14,7 +14,7 @@ describe("B6: nullable mv struct keeps the companion flag", () => {
 	test("nullable mv-struct local: null, then a moved value", async () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 func probe = () {
 	var Config? c = null
@@ -31,10 +31,10 @@ Console.write_line("done")
 	test("nullable mv-struct field: stored, read, replaced", async () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 mv struct Wrapper {
-	var Config? c
+	mv Config? c
 }
 func probe = () {
 	var Wrapper w = Wrapper(Config("a"))
@@ -51,7 +51,7 @@ Console.write_line("done")
 	test("function returning a nullable mv struct — both paths", async () => {
 		const input = `
 mv struct Config {
-	var string name
+	mv string name
 }
 func find = (int flag, out Config?) {
 	if flag == 1 {
@@ -97,7 +97,7 @@ Console.write_line("done")
 		const input = `
 mv struct Item {
 	var int value
-	var Box<Item>? next
+	mv Box<Item>? next
 }
 func probe = () {
 	var Item tail = Item(2, null)

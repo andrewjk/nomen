@@ -304,7 +304,7 @@ Console.write("\\{add_base(1)} \\{add_base(2)}")
 	test("lambda moves a mv struct capture", () => {
 		const input = `
 mv struct Owned {
-	var List<int> data
+	mv List<int> data
 }
 var o = Owned(List<int>())
 var func (out int) first = (out int) => o.data.at_or(0, -1)

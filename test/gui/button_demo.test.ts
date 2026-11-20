@@ -16,8 +16,8 @@ const WIN_W = 320
 const WIN_H = 200
 
 mv struct ButtonApp : App {
-	var Button click
-	var Container grid
+	mv Button click
+	mv Container grid
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -26,8 +26,8 @@ mv struct ButtonApp : App {
 		grid.add_spacer_to(grid.root_index(), 1, 1)
 		grid.add_to_kind(grid.root_index(), click.handle, LEN_INTRINSIC, 0, LEN_INTRINSIC, 0, 1, 0, ALIGN_CENTER, 0)
 		grid.add_spacer_to(grid.root_index(), 1, 1)
-		self.click = click
-		self.grid = grid
+		self.click = mv click
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

@@ -61,7 +61,7 @@ Console.write("\\{cfg.timeout}")
 	test("pub struct with pub init", async () => {
 		const input = `
 pub mv struct Widget {
-    var string name
+    mv string name
 
     pub func #init = (self, string name) {
         self.name = name.copy()

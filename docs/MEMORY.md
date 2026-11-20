@@ -222,12 +222,18 @@ The `mv` keyword explicitly transfers ownership. It works in three positions:
 - **assignment**: `b = mv a` — `a`'s value moves into `b`; `a` is invalidated (and `b`'s old value freed first).
 - **declaration**: `mv Box<Token> b = mv a` — same, on initialization.
 
-On FIELD declarations `mv` is dead weight: ownership follows the field's
-TYPE. A mv-typed field is a move-only slot — transfer-on-store, no
-copy-out, swap extraction, displaced stores reclaimed, borrow stores rejected
-— and `mark_owning_auto_init_params` in src/check/check_struct_node.ts
+On FIELD declarations of owning types (`string`, `Box<T>`, mv structs,
+traits) the `mv` keyword is REQUIRED — the slot spells its ownership
+("implicit with type inference, explicit with memory management"). A
+mv-typed field is a move-only slot — transfer-on-store, no copy-out, swap
+extraction, displaced stores reclaimed, borrow stores rejected — and
+`mark_owning_auto_init_params` in src/check/check_struct_node.ts
 auto-stamps the synthesized `#init` param, so `mv items = List<string>()`
-and `var items = List<string>()` behave identically — prefer plain `var`.
+constructs identically — but the spelling is what makes the ownership
+visible. Type-parameter fields (`var T item`) stay implicit: ownership is
+unknown until monomorphization. Field stores of an owned local transfer
+only with the marker (`n.text = mv text`); a fresh initializer (a literal,
+a constructor call) never takes `mv`.
 
 A moved variable may not be used again until it is reassigned (which revalidates it):
 
@@ -282,9 +288,9 @@ nothing and are not reclaimed.
 Generic containers (`List<T>`, `Set<T>`, `Map<K,V>`, `LinkedList<T>`, `Tree<T>`, `Graph<T>`) use **type-erased storage**: all values are stored as 8-byte slots via `Buffer.store_int` / `Buffer.load_int`, regardless of `T`. This works because on aarch64, ints, pointers, and instance references are all 8 bytes.
 
 ```
-pub struct List<T> {
+pub mv struct List<T> {
     var int length = 0
-    var Buffer items = Buffer()
+    mv Buffer items = Buffer()
 
     pub func push = (ref self, mv T value) {
         // ...

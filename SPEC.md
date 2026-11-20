@@ -345,7 +345,7 @@ mv struct Stats {
 
 mv struct Item {
     var int weight
-    var Box<Stats> stats
+    mv Box<Stats> stats
 }
 
 func rebalance = (ref Item item { stats }) {
@@ -500,7 +500,7 @@ scope exit.
 
 ```
 mv struct Config {
-    var string name
+    mv string name
 }
 
 var c = Config("x")
@@ -2036,7 +2036,7 @@ struct with a declared-`mv` field is rejected, naming the fix.
 
 ```
 mv struct Config {
-    var string name
+    mv string name
 }
 
 var c = Config("x")
@@ -2056,17 +2056,18 @@ The same verifier applies to enums: a bare `enum` with a case payload typed a
 declared-`mv` struct must be declared `mv enum` (B1a), and bindings of
 a declared-`mv` enum move instead of copy.
 
-**Fields: the spelling follows the type.** An `mv struct`'s mv-typed
-field (`Box<T>`, another mv struct, a mv enum) is an owned slot —
+**Fields: owning slots spell `mv`.** An owning-typed field (`string`, a
+`Box<T>`, another mv struct, a mv enum, a trait handle) is an owned slot —
 construction and stores transfer (the synthesized `#init` parameter is a
 `mv` param), the field is destroyed with the struct, and a re-assignment
-reclaims the displaced value. The spelling is plain `var` — ownership follows
-the field's TYPE, so no `mv` field keyword exists. A bare `struct` cannot
-hold these fields: the verifier above rejects it, naming the fix.
+reclaims the displaced value. The slot SPELLS its ownership: `mv` is
+required on the declaration — "implicit with type inference, explicit with
+memory management". A bare `struct` cannot hold these fields: the verifier
+above rejects it, naming the fix.
 
 ```
 mv struct Holder {
-    var Dog d        // owned slot: Holder(mv d) transfers, `var` is the spelling
+    mv Dog d        // owned slot: Holder(mv d) transfers, `mv` is the spelling
 }
 ```
 
@@ -2090,7 +2091,7 @@ transparent — the checker rewrites `box.f` to the pointee's `f`.
 ```
 mv struct Node {
     var int value
-    var Box<Node>? next      // the sanctioned pointer field: breaks the cycle
+    mv Box<Node>? next      // the sanctioned pointer field: breaks the cycle
 }
 
 var n = Node(1, null)
@@ -3604,7 +3605,7 @@ future work — the iterable surface is the one above
 ```
 mv struct Counter {
     var int n
-    var string label
+    mv string label
 }
 
 func zero_ints = (mv Counter c, mv out Counter) {
@@ -3802,10 +3803,10 @@ not symbols — nothing resolves them as types or functions.
 @sql_table("users")
 mv pub struct User {
     @rename("user_name"), @sql_type("VARCHAR")
-    var string user_name
+    mv string user_name
     var int age
     @deprecated
-    var string old_field
+    mv string old_field
 }
 ```
 

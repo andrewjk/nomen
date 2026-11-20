@@ -75,7 +75,7 @@ func hash_it = (view string text, out int) {
 }
 
 pub mv struct Item {
-	var text = ""
+	mv text = ""
 }
 
 pub func main = (Init init) {
@@ -241,7 +241,7 @@ pub func main = (Init init) {
 import System
 
 pub mv struct Item {
-	var text = ""
+	mv text = ""
 }
 
 func text_at = (List<Item> xs, int i, out view string) {
@@ -273,7 +273,7 @@ pub func main = (Init init) {
 import System
 
 pub mv struct Item {
-	var text = "hello world"
+	mv text = "hello world"
 }
 
 func text_at = (List<Item> xs, int i, out view string) {

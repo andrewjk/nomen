@@ -14,7 +14,7 @@ describe("class string field literal defaults", () => {
 import System
 
 mv struct Buffer2 {
-	pub var string content = ""
+	pub mv string content = ""
 	pub var bool ready = false
 
 	pub func #init = (ref self) {
@@ -48,7 +48,7 @@ pub func main = (Init init) {
 import System
 
 mv struct LitOnly {
-	pub var string tag = "static-default"
+	pub mv string tag = "static-default"
 
 	pub func #init = (ref self) {
 	}

@@ -10,7 +10,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("nested write through a class-typed field", () => {
 	test("string literal assigned into a mv-class field", async () => {
 		const input = `
-mv struct Inner { var s = "" }
+mv struct Inner { mv s = "" }
 mv struct A { mv x = Inner() }
 
 var a = A()
@@ -24,7 +24,7 @@ Console.write_line(a.x.s)
 	// the scope-exit destroy frees it.
 	test("heap string assigned into a mv-class field", async () => {
 		const input = `
-mv struct Inner { var s = "" }
+mv struct Inner { mv s = "" }
 mv struct A { mv x = Inner() }
 
 var a = A()
@@ -48,7 +48,7 @@ Console.write_line(a.x.n.to_string())
 
 	test("string field two class hops deep", async () => {
 		const input = `
-mv struct Deep { var s = "" }
+mv struct Deep { mv s = "" }
 mv struct Mid { mv d = Deep() }
 mv struct A { mv m = Mid() }
 

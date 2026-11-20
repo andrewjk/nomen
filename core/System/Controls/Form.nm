@@ -13,11 +13,11 @@
  * Hit-test the row controls through their own handles, as everywhere else.
  **/
 pub mv struct Form {
-	var GroupBox box
-	var Text l0
-	var Text l1
-	var Text l2
-	var Text l3
+	mv GroupBox box
+	mv Text l0
+	mv Text l1
+	mv Text l2
+	mv Text l3
 	var rows = 0
 	var int rows_stack = -1
 

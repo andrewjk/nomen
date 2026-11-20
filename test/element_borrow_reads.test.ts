@@ -33,12 +33,12 @@ function build_c(source: string): string {
 
 const STRUCTS = `
 mv struct Rec {
-	var tags = List<string>()
+	mv tags = List<string>()
 	var int id = 0
 }
 
 mv struct Outer {
-	var items = List<string>()
+	mv items = List<string>()
 	var int n = 0
 }
 `;

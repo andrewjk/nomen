@@ -12,7 +12,7 @@ describe("borrowed field-read string locals", () => {
 	test("kept across continue and returned", async () => {
 		const input = `
 mv struct Attr {
-	var string value = ""
+	mv string value = ""
 }
 
 func read_kept = (ref Attr a, out string) {

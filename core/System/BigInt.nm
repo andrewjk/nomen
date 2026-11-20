@@ -17,7 +17,7 @@ const TOOM3_MIN_LIMBS = 600
 pub mv struct BigInt {
 	var sign = 0
 	var len = 0
-	var digits = Buffer<int>()
+	mv digits = Buffer<int>()
 
 	pub func #init = (ref self {}) {
 	}

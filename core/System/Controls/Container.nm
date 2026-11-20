@@ -359,57 +359,57 @@ pub func native_frame = (uint64 handle, out string) {
  * a `Control`-taking function, stored in a `ClassBuffer<Control>`, etc.).
  **/
 pub mv struct Container: Control {
-	var kinds = Buffer<int>()
+	mv kinds = Buffer<int>()
 	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
 	// kind is one of LEN_* (auto/fixed/percent/fill); the value is the pixel
 	// count for `fixed` or the percent numerator for `percent` (0 otherwise).
 	// The legacy int-based `add`/`add_to` translate `w`/`h` into these pairs
 	// (non-zero → fixed, 0 → auto); `add_len`/`add_to_len` store any case.
-	var w_kinds = Buffer<int>()
-	var w_vals = Buffer<int>()
-	var h_kinds = Buffer<int>()
-	var h_vals = Buffer<int>()
-	var gaps = Buffer<int>() // container spacing
-	var pars = Buffer<int>() // parent index, encoded as parent + 1 (0 = root)
-	var spans = Buffer<int>() // grid column span
-	var cols = Buffer<int>() // grid column count (on grid nodes)
-	var handles = Buffer<int>() // leaf native handle (0 = none/container)
-	var pads = Buffer<int>() // per-node inset (padding) for Block
-	var grows = Buffer<int>() // flex weight: absorbs surplus on the main axis
-	var shrinks = Buffer<int>() // flex weight: absorbs deficit on the main axis
-	var aligns = Buffer<int>() // cross-axis alignment (ALIGN_*)
+	mv w_kinds = Buffer<int>()
+	mv w_vals = Buffer<int>()
+	mv h_kinds = Buffer<int>()
+	mv h_vals = Buffer<int>()
+	mv gaps = Buffer<int>() // container spacing
+	mv pars = Buffer<int>() // parent index, encoded as parent + 1 (0 = root)
+	mv spans = Buffer<int>() // grid column span
+	mv cols = Buffer<int>() // grid column count (on grid nodes)
+	mv handles = Buffer<int>() // leaf native handle (0 = none/container)
+	mv pads = Buffer<int>() // per-node inset (padding) for Block
+	mv grows = Buffer<int>() // flex weight: absorbs surplus on the main axis
+	mv shrinks = Buffer<int>() // flex weight: absorbs deficit on the main axis
+	mv aligns = Buffer<int>() // cross-axis alignment (ALIGN_*)
 	// Per-node dirty flag for incremental relayout: a dirty node (and its
 	// descendants) is re-measured on the next `compute`/`layout`; a clean node
 	// returns its cached size. `mark_dirty` sets a node, walks up to the root
 	// (ancestors must re-flow) and down through descendants (their constraints
 	// may change), so a clean node always has unchanged constraints.
-	var dirty = Buffer<int>()
+	mv dirty = Buffer<int>()
 	// How many times a node's `measure` body actually ran — purely for tests
 	// that want to observe which subtrees were re-measured.
-	var measured_count = Buffer<int>()
-	var rx = Buffer<int>()
-	var ry = Buffer<int>()
-	var rw = Buffer<int>()
-	var rh = Buffer<int>()
+	mv measured_count = Buffer<int>()
+	mv rx = Buffer<int>()
+	mv ry = Buffer<int>()
+	mv rw = Buffer<int>()
+	mv rh = Buffer<int>()
 	// Previously-applied frame per node (leaf only), used by the dirty-rect
 	// tracker: a leaf enters the dirty list only when its resolved frame
 	// differs from this baseline. Initialised to -1 so the first layout marks
 	// every leaf dirty.
-	var prx = Buffer<int>()
-	var pry = Buffer<int>()
-	var prw = Buffer<int>()
-	var prh = Buffer<int>()
+	mv prx = Buffer<int>()
+	mv pry = Buffer<int>()
+	mv prw = Buffer<int>()
+	mv prh = Buffer<int>()
 	// The constraints each node's cached size was measured under (the
 	// measure_node cache gate). A clean node re-uses its cached size only
 	// when the constraints are unchanged — otherwise a standalone
 	// `measure(bc)` after an external resize answered with the PREVIOUS
 	// constraint's width (the page-scroll shrink-per-resize bug).
-	var mw = Buffer<int>()
-	var mh = Buffer<int>()
+	mv mw = Buffer<int>()
+	mv mh = Buffer<int>()
 	// Dirty-rect list: the node indices (leaves) whose frame changed in the
 	// most recent `compute`/`layout`, in the order discovered. `dirty_count`
 	// / `dirty_rect` expose it; `apply` repaints only these.
-	var dirty_idx = Buffer<int>()
+	mv dirty_idx = Buffer<int>()
 	var dirty_n = 0
 	var root = 0
 	var count = 0

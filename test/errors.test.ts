@@ -1899,7 +1899,7 @@ Console.write("\\{describe("/bad")}\\n")
 	test("a nested-match arm yielding a mv-struct field reaches the caller", async () => {
 		const input = `
 mv struct Data {
-	var string body
+	mv string body
 }
 
 mv error FetchError {
@@ -2123,7 +2123,7 @@ describe("nullable chaining (`?.`)", () => {
 	test("a missed chain falls back through `??`", async () => {
 		const input = `
 mv struct Profile {
-	var string nickname
+	mv string nickname
 }
 
 func find = (int id, out Profile?) {

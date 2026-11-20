@@ -20,7 +20,7 @@ import System
 // Owning (string field): declaring a local of this type registers a
 // _mv_owns_<name> flag in the method's frame.
 mv struct Bag {
-	var label = ""
+	mv label = ""
 }
 
 // Needs a destroy walk (the user #destroy) but is NOT owning, so a local of

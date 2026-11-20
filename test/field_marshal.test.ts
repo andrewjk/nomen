@@ -212,7 +212,7 @@ test("string-field write defers its base past the strdup/free dance", () => {
 import System
 
 pub mv struct Panel {
-  var string title = ""
+  mv string title = ""
   pub func set_title = (ref self, string t) {
     self.title = t.copy()
   }
@@ -268,9 +268,9 @@ test("string-field ownership behavioral: literal, heap, literal overwrites", asy
 	await build_and_check_output(
 		`
 pub mv struct Panel {
-  var string title = ""
+  mv string title = ""
   pub func set_title = (ref self, mv string t) {
-    self.title = t
+    self.title = mv t
   }
   pub func set_title_heap = (ref self) {
     self.title = 42.to_string()

@@ -17,7 +17,7 @@ import System
 import System::Controls
 
 mv struct ClickApp : App {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -52,7 +52,7 @@ import System
 import System::Controls
 
 mv struct ClickApp : App {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -87,7 +87,7 @@ import System
 import System::Controls
 
 mv struct ClickApp : App {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -118,7 +118,7 @@ import System
 import System::Controls
 
 mv struct NotAnApp {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -148,8 +148,8 @@ import System
 import System::Controls
 
 mv struct MyPager {
-	var Button prev
-	var Button next
+	mv Button prev
+	mv Button next
 	var int page = 0
 
 	pub func #init = (self, Window window) {
@@ -161,7 +161,7 @@ mv struct MyPager {
 }
 
 mv struct PagerApp : App {
-	var MyPager pager
+	mv MyPager pager
 
 	pub func #init = (self, Window window) {
 		self.pager = MyPager(window)
@@ -185,7 +185,7 @@ import System
 import System::Controls
 
 mv struct Leaf {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -194,7 +194,7 @@ mv struct Leaf {
 }
 
 mv struct Middle {
-	var Leaf leaf
+	mv Leaf leaf
 
 	pub func #init = (self, Window window) {
 		self.leaf = Leaf(window)
@@ -202,7 +202,7 @@ mv struct Middle {
 }
 
 mv struct ChainApp : App {
-	var Middle middle
+	mv Middle middle
 
 	pub func #init = (self, Window window) {
 		self.middle = Middle(window)
@@ -228,7 +228,7 @@ import System
 import System::Controls
 
 mv struct MyPager {
-	var Button next
+	mv Button next
 	var int page = 0
 	var int page_change_id = -1
 	var bool page_change_pending = false
@@ -250,7 +250,7 @@ mv struct MyPager {
 }
 
 mv struct PagerApp : App {
-	var MyPager pager
+	mv MyPager pager
 
 	pub func #init = (self, Window window) {
 		self.pager = MyPager(window)
@@ -283,7 +283,7 @@ import System
 import System::Controls
 
 mv struct MyBox {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -291,7 +291,7 @@ mv struct MyBox {
 }
 
 mv struct BoxApp : App {
-	var MyBox box
+	mv MyBox box
 
 	pub func #init = (self, Window window) {
 		self.box = MyBox(window)
@@ -321,7 +321,7 @@ import System
 import System::Controls
 
 mv struct Leaf {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -332,7 +332,7 @@ mv struct Leaf {
 }
 
 mv struct Wrapper {
-	var Leaf leaf
+	mv Leaf leaf
 	var int seen = 0
 
 	pub func #init = (self, Window window) {
@@ -345,7 +345,7 @@ mv struct Wrapper {
 }
 
 mv struct ChainApp : App {
-	var Wrapper wrapper
+	mv Wrapper wrapper
 
 	pub func #init = (self, Window window) {
 		self.wrapper = Wrapper(window)
@@ -371,7 +371,7 @@ import System
 import System::Controls
 
 mv struct MyPager {
-	var Button next
+	mv Button next
 
 	pub func #init = (self, Window window) {
 		self.next = Button(window, ">")
@@ -382,7 +382,7 @@ mv struct MyPager {
 }
 
 mv struct PagerApp : App {
-	var MyPager pager
+	mv MyPager pager
 
 	pub func #init = (self, Window window) {
 		self.pager = MyPager(window)
@@ -419,7 +419,7 @@ import System
 import System::Controls
 
 mv struct ClickApp : App {
-	var Button btn
+	mv Button btn
 
 	pub func #init = (self, Window window) {
 		self.btn = Button(window, "Go")
@@ -471,8 +471,8 @@ import System
 import System::Controls
 
 mv struct MyPager : Control {
-	var Button prev
-	var Button next
+	mv Button prev
+	mv Button next
 	var int page = 0
 	var int page_change_id = -1
 	var bool page_change_pending = false
@@ -512,7 +512,7 @@ mv struct MyPager : Control {
 }
 
 mv struct PagerApp : App {
-	var MyPager pager
+	mv MyPager pager
 
 	pub func #init = (self, Window window) {
 		self.pager = MyPager(window)
@@ -562,9 +562,9 @@ mv struct VoiceButton {
 }
 
 mv struct VoiceApp : App {
-	var VoiceButton mic
-	var Text status
-	var Container grid
+	mv VoiceButton mic
+	mv Text status
+	mv Container grid
 	var int heard = 0
 	var int frames = 0
 
@@ -573,7 +573,7 @@ mv struct VoiceApp : App {
 		self.status = Text(window)
 		var Container grid = VStack(8)
 		grid.add(self.status.handle, 0, 24, 1)
-		self.grid = grid
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

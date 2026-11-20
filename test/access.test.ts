@@ -21,7 +21,7 @@ Console.write("\\{p.age}")
 	test("getting string field", async () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
 }
 var Person p = Person("Alice")
 Console.write("\\{p.name}")
@@ -173,7 +173,7 @@ describe("access errors", () => {
 	test("type mismatch getting field", () => {
 		const input = `
 mv struct Person {
-  var string name
+  mv string name
 }
 var Person p = Person("")
 var int x = p.name

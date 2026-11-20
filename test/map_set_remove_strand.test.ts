@@ -16,7 +16,7 @@ describe("map/set remove strand (no-shift reclaim)", () => {
 	test("owning-struct value survives remove + colliding re-insert", async () => {
 		const input = `
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -54,7 +54,7 @@ Console.write("\\{m.has(9)}")
 	test("shift path still moves owning entries wholesale", async () => {
 		const input = `
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -76,7 +76,7 @@ Console.write("\\{m.length} \\{got.name}")
 	test("remove-then-destroy stays leak-clean", async () => {
 		const input = `
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var n = 0
 }
 
@@ -143,7 +143,7 @@ Console.write("\\{s.length}")
 		const input = `
 mv struct Rec: Hashable, Equatable {
 	var int key
-	var string name
+	mv string name
 }
 
 var Set<Rec> s = Set<Rec>()
@@ -166,7 +166,7 @@ Console.write("\\{s.length} \\{s.has(Rec(1, "k\\{1}"))} \\{s.has(Rec(2, "k\\{2}"
 		const input = `
 mv struct Rec: Hashable, Equatable {
 	var int key
-	var string name
+	mv string name
 }
 
 var m = Map<Rec, int>()

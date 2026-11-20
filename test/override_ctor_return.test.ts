@@ -18,8 +18,8 @@ describe("override-constructor return normalization", () => {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func make_pair = (string seed, out Pair) {
@@ -41,8 +41,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func fresh = (out string) {
@@ -67,8 +67,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func make_pair = (string seed, out Pair) {
@@ -90,8 +90,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func make_base = (string seed, out Pair) {
@@ -118,8 +118,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func make_base = (string seed, out Pair) {
@@ -146,8 +146,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func make_pair = (string seed, out Pair) {
@@ -168,8 +168,8 @@ pub func main = (Init init) {
 import System
 
 mv struct Pair {
-	var string a = "default"
-	var string b
+	mv string a = "default"
+	mv string b
 }
 
 func make_pair = (string seed, out Pair) {

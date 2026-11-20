@@ -9,7 +9,7 @@ import System
 // One source builds on both the pre- and post-change compiler. n from argv.
 
 mv struct Rec {
-	var name = ""
+	mv name = ""
 	var int n = 0
 }
 

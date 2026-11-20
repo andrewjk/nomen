@@ -22,7 +22,7 @@ describe("pass-by-value struct args", () => {
 	test("callee reads through the const borrow; caller unaffected, no leak", async () => {
 		await run_c(
 			`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 
 func fill = (Info p) {
 	Console.write_line("callee sees: " + p.markup)
@@ -49,12 +49,12 @@ if a.markup == pre {
 		// The mv-local-write shape re-homes the struct into a local; the
 		// write stays callee-local and the teardown frees the field at exit.
 		const input = `
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 
 func fill = (mv Info p) {
 	var local = mv p
 	var string w = "written"
-	local.markup = w
+	local.markup = mv w
 	Console.write_line("callee sees: " + local.markup)
 }
 
@@ -84,7 +84,7 @@ Console.write_line("caller done")
 		// reclaim rides the `(*p)` destroy walk instead of the `p->` record
 		// frees the pre-B1 shape emitted.)
 		const parsed = parse_with_imports(`
-mv struct Pair { var int n = 0  var string tag = "" }
+mv struct Pair { var int n = 0  mv string tag = "" }
 func next = (mv Pair p, out Pair) {
 	var q = Pair()
 	q.n = p.n + 1
@@ -114,11 +114,11 @@ Console.write_line(p.tag)
 		// the callee scope, whose exit drops the record — the documented
 		// ref-param leak (bounded per write), so audit is off here.
 		const input = `
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 
 func fill = (ref Info p) {
 	var string w = "via-ref"
-	p.markup = w
+	p.markup = mv w
 }
 
 var Info a = Info()
@@ -137,7 +137,7 @@ Console.write_line(a.markup)
 describe("pass-by-value checker rules", () => {
 	test("read-only callees no longer error", () => {
 		const parsed = parse_with_imports(`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func use = (Info p) {
 	Console.write_line(p.markup)
 }
@@ -151,7 +151,7 @@ use(a)
 		// B1 full cutover / B3: a bare mv-struct parameter is read-only —
 		// mutation of the caller's storage must be spelled `ref`.
 		const parsed = parse_with_imports(`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func fill = (Info p) {
 	p.markup = "changed"
 }
@@ -173,7 +173,7 @@ describe("borrowed mv-struct param transfer rejection", () => {
 	test("mv into a local const (the container-push staging shape)", () => {
 		const parsed = parse_with_imports(`
 mv struct Delimiter {
-	pub var markup = ""
+	pub mv markup = ""
 	pub var start = 0
 	pub var length = 0
 }
@@ -191,7 +191,7 @@ set_at(ref delimiters, 0, d)
 
 	test("mv with a swap (the swap revalidates the callee's copy, not the caller's)", () => {
 		const parsed = parse_with_imports(`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func steal = (ref List<Info> list, Info p) {
 	const Info slot = mv p swap Info()
 	list.push(mv slot)
@@ -206,7 +206,7 @@ steal(ref list, a)
 
 	test("by-value return of the bare param", () => {
 		const parsed = parse_with_imports(`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func passthrough = (Info p, out Info) {
 	return p
 }
@@ -220,7 +220,7 @@ Console.write_line(e.markup)
 
 	test("mv into an owning container parameter", () => {
 		const parsed = parse_with_imports(`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func consume = (ref List<Info> list, Info p) {
 	list.push(mv p)
 }
@@ -234,7 +234,7 @@ consume(ref list, a)
 
 	test("assignment transfer into a local", () => {
 		const parsed = parse_with_imports(`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func steal = (Info p) {
 	var local = Info()
 	local = mv p
@@ -250,7 +250,7 @@ steal(a)
 	test("declaring the parameter mv (with mv at the call site) is the sanctioned spelling", async () => {
 		await run_c(
 			`
-mv struct Info { var markup = "" }
+mv struct Info { mv markup = "" }
 func stage = (ref List<Info> list, mv Info p) {
 	list.push(mv p)
 }

@@ -18,11 +18,11 @@ import System
 import System::Controls
 
 mv struct PaneApp : App {
-	var SplitView split
-	var Window pane_win
-	var Container pane_grid
-	var Text label
-	var Container stack
+	mv SplitView split
+	mv Window pane_win
+	mv Container pane_grid
+	mv Text label
+	mv Container stack
 	var int frames = 0
 
 	pub func #init = (self, Window window) {
@@ -39,11 +39,11 @@ mv struct PaneApp : App {
 		// Locals are used up before the moves into fields (mv — every use
 		// after an assignment is an error), and the label moves too: its
 		// scope-exit #destroy would release the live view otherwise.
-		self.split = split
-		self.pane_win = left
-		self.pane_grid = pane_grid
-		self.label = label
-		self.stack = stack
+		self.split = mv split
+		self.pane_win = mv left
+		self.pane_grid = mv pane_grid
+		self.label = mv label
+		self.stack = mv stack
 	}
 
 	pub func start = (ref self, ref Window win {}) {

@@ -189,7 +189,7 @@ mv struct Stats {
 
 mv struct Item {
     var int weight
-    var Box<Stats> stats
+    mv Box<Stats> stats
 }
 
 func rebalance = (ref Item item { stats }) {
@@ -229,7 +229,7 @@ mv struct Stats {
 }
 
 mv struct Item {
-    var Box<Stats> stats
+    mv Box<Stats> stats
 }
 
 func bad = (ref Item item {}) {
@@ -286,7 +286,7 @@ mv struct Stats {
 
 mv struct Item {
     var int weight
-    var Box<Stats> stats
+    mv Box<Stats> stats
 }
 
 func touch = (ref Item item, int by) {
@@ -315,7 +315,7 @@ trait Holderish {
 }
 
 mv struct H: Holderish {
-    var Box<Stats> stats
+    mv Box<Stats> stats
 
     func rebalance = (ref self { stats }) {
         self.stats = mv Box<Stats>(mv Stats(0))
@@ -336,7 +336,7 @@ trait Holderish {
 }
 
 mv struct H: Holderish {
-    var Box<Stats> stats
+    mv Box<Stats> stats
     var int weight
 
     func rebalance = (ref self { stats, weight }) {

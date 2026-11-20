@@ -20,7 +20,7 @@ mv struct Ship {
 }
 
 mv struct Fleet {
-	var List<Ship> ships = List<Ship>()
+	mv List<Ship> ships = List<Ship>()
 }
 
 pub func main = () {

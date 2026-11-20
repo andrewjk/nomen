@@ -225,7 +225,7 @@ Console.write("\\{w} \\{d}")
 		// mv (the synthesized `mv ... swap ""` revalidates the field).
 		const input = `
 mv struct Person {
-	var string name
+	mv string name
 	var int age
 }
 var p = Person("Ada", 30)

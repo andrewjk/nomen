@@ -26,7 +26,7 @@ function src(body: string): string {
 	return `
 import System
 
-mv struct Attr { var string value = "" }
+mv struct Attr { mv string value = "" }
 mv struct Box  { mv List<Attr> items }
 
 ${body}
@@ -103,8 +103,8 @@ pub func main = () {
 	test("mixed param (container + string field) is fully reclaimed", async () => {
 		const input = src(`
 mv struct Tagged {
-	var List<Attr> items
-	var string label = ""
+	mv List<Attr> items
+	mv string label = ""
 }
 
 func keep = (mv Tagged t, mv out string) {

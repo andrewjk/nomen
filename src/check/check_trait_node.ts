@@ -4,8 +4,10 @@ import check_declaration_node from "./check_declaration_node.ts";
 import check_function_node from "./check_function_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import { bind_comptime_self, expand_struct_member_pragmas } from "./utils/comptime.ts";
+import { slot_requires_mv } from "./utils/mv_rule.ts";
 import { is_class_type } from "./utils/ownership.ts";
 import { uses_comptime_self } from "./utils/trait_defaults.ts";
+import type_name from "./utils/type_name.ts";
 
 export default function check_trait_node(trait: TraitNode, status: CheckStatus) {
 	// Stage 3: expand the body's `#for` member loops before the members are
@@ -33,8 +35,29 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 	status.type_params.push(...trait.type_params);
 
 	for (let decl of trait.fields) {
+		// The ownership-spelling rules key on this: a trait field's `mv` is
+		// the slot's declaration, never a transfer marker, so the
+		// fresh-init rule in check_declaration_node must exempt it. (The
+		// field's `scope` stays unset — the access check's visibility
+		// leniency for trait fields depends on it.)
+		decl.is_trait_field = true;
 		if (decl.declaration === "var" && decl.type.name && is_class_type(decl.type.name, status)) {
 			add_error(status, `class-type fields must use 'mv', not 'var'`, decl.start);
+		}
+		// The ownership-spelling rule (mirrors check_struct_node's field
+		// walk): an OWNING-typed trait field spells `mv` — conformers
+		// inherit the slot, so the declaration is where ownership is
+		// explicit. Type-param fields stay implicit.
+		if (
+			decl.declaration !== "mv" &&
+			decl.declaration !== "const" &&
+			slot_requires_mv(decl.type, status)
+		) {
+			add_error(
+				status,
+				`field '${decl.name}' owns memory — declare it 'mv ${type_name(decl.type)} ${decl.name}' (plain 'var' is for non-owning types)`,
+				decl.start,
+			);
 		}
 		check_declaration_node(decl, status);
 	}

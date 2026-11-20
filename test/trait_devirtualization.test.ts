@@ -29,7 +29,7 @@ trait Speaker {
 }
 
 mv struct Dog: Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) {
 		return "woof"
 	}
@@ -306,7 +306,7 @@ trait Speaker {
 	func speak = (self, out string)
 }
 mv struct Dog: Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) {
 		return "woof"
 	}
@@ -348,7 +348,7 @@ trait Speaker {
 	func speak = (self, out string)
 }
 mv struct Dog: Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) {
 		return "woof"
 	}
@@ -375,7 +375,7 @@ trait Speaker {
 	func speak = (self, out string)
 }
 mv struct Dog: Speaker {
-	var string name
+	mv string name
 	func speak = (self, out string) {
 		return "woof"
 	}

@@ -20,9 +20,9 @@ import System
 import System::Controls
 
 mv struct FocusApp : App {
-	var TextBox field_a
-	var TextBox field_b
-	var Container grid
+	mv TextBox field_a
+	mv TextBox field_b
+	mv Container grid
 	var int focus_a = 0
 	var int blur_a = 0
 	var int focus_b = 0
@@ -35,7 +35,7 @@ mv struct FocusApp : App {
 		var Container grid = VStack(8)
 		grid.add(self.field_a.handle, 0, 24, 1)
 		grid.add(self.field_b.handle, 0, 24, 1)
-		self.grid = grid
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {
@@ -119,8 +119,8 @@ import System
 import System::Controls
 
 mv struct InputApp : App {
-	var TextBox field
-	var Container grid
+	mv TextBox field
+	mv Container grid
 	var int changes = 0
 	var int frames = 0
 
@@ -128,7 +128,7 @@ mv struct InputApp : App {
 		self.field = TextBox(window)
 		var Container grid = VStack(8)
 		grid.add(self.field.handle, 0, 24, 1)
-		self.grid = grid
+		self.grid = mv grid
 	}
 
 	pub func start = (ref self, ref Window win {}) {

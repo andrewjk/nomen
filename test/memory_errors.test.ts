@@ -90,7 +90,7 @@ mv struct Cell {
 	var int value
 }
 mv struct Holder {
-	var Box<Cell> content
+	mv Box<Cell> content
 }
 var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(42))))
 ref Box<Holder> h2 = h1
@@ -106,7 +106,7 @@ mv struct Cell {
 	var int value
 }
 mv struct Holder {
-	var Box<Cell> content
+	mv Box<Cell> content
 }
 var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(42))))
 var Box<Holder> h2 = h1
@@ -124,7 +124,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(1))
 var Holder h2 = Holder(mv Box(2))
@@ -141,7 +141,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h1 = Holder(mv Box(42))
 var Holder h2 = Holder(mv h1.content)
@@ -157,7 +157,7 @@ mv struct Box {
 	var int value
 }
 mv struct Holder {
-	var Box content
+	mv Box content
 }
 var Holder h = Holder(mv Box(42))
 Console.write("\\{h.content.value}")
@@ -171,7 +171,7 @@ mv struct Cell {
 	var int value
 }
 mv struct Holder {
-	var Box<Cell> content
+	mv Box<Cell> content
 }
 var Box<Holder> h1 = Box<Holder>(Holder(mv Box<Cell>(Cell(1))))
 var Box<Holder> h2 = h1
