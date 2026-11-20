@@ -2056,11 +2056,15 @@ The same verifier applies to enums: a bare `enum` with a case payload typed a
 declared-`mv` struct must be declared `mv enum` (B1a), and bindings of
 a declared-`mv` enum move instead of copy.
 
-**Fields: owning slots spell `mv`.** An owning-typed field (`string`, a
-`Box<T>`, another mv struct, a mv enum, a trait handle) is an owned slot —
+**Fields: slots that receive moves spell `mv`.** `mv` marks a slot an owned
+value can move into — the slot's transfer protocol, not its ownership.
+Ownership is the type's business: the field is destroyed with the struct and
+a re-assignment reclaims the displaced value whether or not `mv` is written,
+which is why a `const` may own and a `view` may borrow and neither spells
+`mv` — no move ever lands in them. Owning scalar slots (`string`, a
+`Box<T>`, another mv struct, a mv enum, a trait handle) do receive moves —
 construction and stores transfer (the synthesized `#init` parameter is a
-`mv` param), the field is destroyed with the struct, and a re-assignment
-reclaims the displaced value. The slot SPELLS its ownership: `mv` is
+`mv` param), borrow stores are rejected — so they spell it: `mv` is
 required on the declaration — "implicit with type inference, explicit with
 memory management". A bare `struct` cannot hold these fields: the verifier
 above rejects it, naming the fix.

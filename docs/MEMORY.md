@@ -222,18 +222,20 @@ The `mv` keyword explicitly transfers ownership. It works in three positions:
 - **assignment**: `b = mv a` — `a`'s value moves into `b`; `a` is invalidated (and `b`'s old value freed first).
 - **declaration**: `mv Box<Token> b = mv a` — same, on initialization.
 
-On FIELD declarations of owning types (`string`, `Box<T>`, mv structs,
-traits) the `mv` keyword is REQUIRED — the slot spells its ownership
-("implicit with type inference, explicit with memory management"). A
-mv-typed field is a move-only slot — transfer-on-store, no copy-out, swap
-extraction, displaced stores reclaimed, borrow stores rejected — and
+`mv` marks a slot an owned value can move into. Ownership itself is the
+type's business — a `var` or `const` slot can own (the destroy reclaims
+whatever the type owns, keyword or not), and a `view` borrows; none of
+those spell `mv`, because no move ever lands in them. Owning scalar slots
+(`string`, `Box<T>`, mv structs, traits) do receive moves — transfer-on-store,
+no copy-out, swap extraction, displaced stores reclaimed, borrow stores
+rejected — so they spell `mv` on the declaration ("implicit with type
+inference, explicit with memory management"), and
 `mark_owning_auto_init_params` in src/check/check_struct_node.ts
-auto-stamps the synthesized `#init` param, so `mv items = List<string>()`
-constructs identically — but the spelling is what makes the ownership
-visible. Type-parameter fields (`var T item`) stay implicit: ownership is
-unknown until monomorphization. Field stores of an owned local transfer
-only with the marker (`n.text = mv text`); a fresh initializer (a literal,
-a constructor call) never takes `mv`.
+auto-stamps the synthesized `#init` param. Type-parameter fields
+(`var T item`) stay implicit: ownership is unknown until monomorphization.
+Field stores of an owned local transfer only with the marker
+(`n.text = mv text`); a fresh initializer (a literal, a constructor call)
+never takes `mv`.
 
 A moved variable may not be used again until it is reassigned (which revalidates it):
 
