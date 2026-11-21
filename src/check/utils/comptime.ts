@@ -1113,6 +1113,28 @@ function rewrite(
 		return node;
 	}
 
+	// Comptime string interpolation (the evaluator's expression form):
+	// `"decode_\{field.name}"` parses as the runtime
+	// `_string_interpolate_N` call; when the rewritten pattern and parts
+	// are all comptime literals the call folds to ONE literal — composing
+	// with the `+` fold above (an interpolated string concatenates as a
+	// literal) and with comptime `if` conditions (a folded condition kills
+	// the dead arm). Format specs and runtime operands keep the runtime
+	// call (evaluate_comptime refused it), and the generic descent below
+	// has already-staged params to re-walk harmlessly.
+	if (node.node_type === "func_call") {
+		const call = node as FunctionCallNode;
+		if (/^_string_interpolate_\d+$/.test(call.name)) {
+			for (let i = 0; i < call.params.length; i++) {
+				call.params[i] = rewrite(call.params[i], false, bindings, status);
+			}
+			const folded = evaluate_comptime(call);
+			if (folded && folded.kind === "string") {
+				return comptime_string(node.start, folded.value);
+			}
+		}
+	}
+
 	// Comptime-constant `if` folding happens at statement level
 	// (rewrite_statement); here we only descend. Statement lists keep
 	// statement position for their elements so `field.set` stays legal
@@ -1947,6 +1969,23 @@ export function rewrite_meta_name_chains(
 				}
 			}
 		}
+		// Comptime string interpolation, in ANY statement position (mirrors
+		// the META chains above): a fully-literal `_string_interpolate_N`
+		// call folds to one literal before the statement walk. A runtime
+		// operand (or a format spec) leaves the call untouched —
+		// evaluate_comptime refuses it.
+		if (
+			n.node_type === "func_call" &&
+			/^_string_interpolate_\d+$/.test((n as FunctionCallNode).name)
+		) {
+			const call = n as FunctionCallNode;
+			call.params = call.params.map((p) => visit(p));
+			const folded = evaluate_comptime(call);
+			if (folded && folded.kind === "string") {
+				return comptime_string(n.start, folded.value);
+			}
+			return n;
+		}
 		for (const key in n) {
 			if (key === "parent" || key === "scope") continue;
 			const value = (n as unknown as Record<string, unknown>)[key];
@@ -1988,10 +2027,69 @@ export function rewrite_meta_name_chains(
 	fold_list(statements);
 }
 
-function evaluate_comptime(node: BaseNode | undefined): ComptimeValue | undefined {
+/** Strip the parser's `.to_string()` interpolation wrapper (and groups):
+ *  `\{expr}` parses as `expr.to_string()` unless expr already ends in
+ *  `.to_string()`. Returns the wrapped expression. */
+function unwrap_to_string(node: BaseNode): BaseNode {
+	let n = unwrap_grouped(node);
+	while (
+		n.node_type === "access" &&
+		(n as AccessNode).access.node_type === "access_func" &&
+		((n as AccessNode).access as AccessFunctionCallNode).name === "to_string"
+	) {
+		n = unwrap_grouped((n as AccessNode).target);
+	}
+	return n;
+}
+
+/** The literal text of a comptime value: a string itself, an int or bool
+ *  as its literal text (matching what `.to_string()` produces at
+ *  runtime). Kinds with no comptime form refuse. */
+function comptime_text(v: ComptimeValue): string | undefined {
+	if (v.kind === "string") return v.value;
+	if (v.kind === "int") return String(v.value);
+	if (v.kind === "bool") return v.value ? "true" : "false";
+	return undefined;
+}
+
+export function evaluate_comptime(node: BaseNode | undefined): ComptimeValue | undefined {
 	if (!node) return undefined;
 	const n = unwrap_grouped(node);
 	switch (n.node_type) {
+		case "func_call": {
+			// Comptime string interpolation — the restricted evaluator's
+			// core: `"decode_\{field.name}"` parses as the runtime
+			// `_string_interpolate_N` call, and when the pattern and every
+			// part fold to comptime literals (strings; int/bool values as
+			// their literal text) the call folds to ONE string. A format
+			// spec (`\{i:08x}`) or any runtime operand leaves the call
+			// unfolded — the runtime interpolation owns those.
+			const call = n as FunctionCallNode;
+			if (!/^_string_interpolate_\d+$/.test(call.name)) return undefined;
+			if (call.format_specs?.length || call.params.length === 0) return undefined;
+			const pattern = evaluate_comptime(call.params[0]);
+			if (!pattern || pattern.kind !== "string") return undefined;
+			const parts: string[] = [];
+			for (let i = 1; i < call.params.length; i++) {
+				const v = evaluate_comptime(unwrap_to_string(call.params[i]));
+				if (!v) return undefined;
+				const text = comptime_text(v);
+				if (text === undefined) return undefined;
+				parts.push(text);
+			}
+			// The pattern's `%s` slots are one per `\{}` (the parser's
+			// spelling); a mismatch means this isn't the parser's shape —
+			// refuse rather than guess.
+			if (pattern.value.split("%s").length - 1 !== parts.length) return undefined;
+			let out = "";
+			let rest = pattern.value;
+			for (const part of parts) {
+				const at = rest.indexOf("%s");
+				out += rest.substring(0, at) + part;
+				rest = rest.substring(at + 2);
+			}
+			return { kind: "string", value: out + rest };
+		}
 		case "value": {
 			const text = (n as ValueNode).value;
 			if (text === "true") return { kind: "bool", value: true };

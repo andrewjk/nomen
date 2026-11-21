@@ -685,10 +685,6 @@ TODOs carried over from the retired working notes `COMPTIME_PLAN.md` and
 `COMPTIME_PLAN_2.md`, now folded into [`docs/COMPTIME.md`](./docs/COMPTIME.md)
 and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON.md).
 
-- **Comptime string interpolation** — `"decode_\{T.name}"` does not fold;
-  comptime strings today combine only via literal `+` and `#{...}` name
-  templates. `#error` takes a single literal message. Needs a restricted
-  comptime string evaluator over literals (and perhaps `META` values).
 - **Type-level `#if` conditions** — conditions are limited to
   `META.arch`/`META.platform` because the fold runs before gather, so
   `#if META.info(T).field_count > 0` (or `META.is_struct(T)`) cannot

@@ -194,6 +194,32 @@ test("a live #error fails the compile with its message", () => {
 	expect(errors.some((e) => e.message === "Feature X requires a license header")).toBe(true);
 });
 
+test("an #error message can be a comptime interpolated string", () => {
+	const body = `
+		struct Point {
+			var int x = 0
+		}
+		func probe = () {
+			#for field of META.info(Point).fields {
+				#error "field \\{field.name} is not allowed here"
+			}
+		}
+	`;
+	const errors = compile_module(body);
+	expect(errors.length).toBe(1);
+	expect(errors[0].message).toBe("field x is not allowed here");
+});
+
+test("an #error message that cannot fold is a compile error", () => {
+	const body = `
+		func probe = (string name) {
+			#error "bad \\{name}"
+		}
+	`;
+	const errors = compile_module(body);
+	expect(errors.some((e) => e.message.includes("must fold to a comptime string"))).toBe(true);
+});
+
 test("META.info(T).field_count is a comptime int", () => {
 	const body = `
 		struct Point {

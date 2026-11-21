@@ -23,6 +23,15 @@ import BaseNode from "./BaseNode.ts";
 export default class PragmaErrorNode extends BaseNode {
 	message: string;
 
+	/**
+	 * An interpolated/composed message — `#error "missing \{field.name}"`.
+	 * The plain-literal form keeps `message` only; this carries the
+	 * expression, folded through the comptime string evaluator at check
+	 * time (check_node's pragma_error case) after the `#for` expansion's
+	 * rewrite has folded any bindings into it.
+	 */
+	message_expr?: BaseNode;
+
 	constructor(start: number, message: string) {
 		super("pragma_error", start);
 		this.message = message;

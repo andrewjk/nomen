@@ -3318,6 +3318,19 @@ body, or inside a selected arm:
 #error "Feature X requires a license header"
 ```
 
+The message can also be a comptime interpolated string — `\{...}` parts
+fold like any comptime string, which is how reflection loops point at the
+member that tripped the rule:
+
+```
+#for field of META.info(Point).fields {
+    #error "field \{field.name} is not allowed here"
+}
+```
+
+A message that does not fold to a comptime string (a runtime operand) is
+a compile error.
+
 ### Compile-Time Reflection (`#for` over `META.info(T).fields`)
 
 `#for` unrolls a body once per field of a struct, at compile time. The
@@ -3336,7 +3349,10 @@ func describe<T> = (T value, out string) {
 ```
 
 - `field.name` — the field's name as a comptime string (usable in
-  expressions; comptime string `+` folds literals eagerly).
+  expressions; comptime string `+` folds literals eagerly, and string
+  interpolation `"tag_\{field.name}"` folds the same way — every `\{...}`
+  part must itself be a comptime value, so a runtime operand keeps the
+  runtime interpolation and a format spec (`\{i:08x}`) is never folded).
 - `META.info(T).field_count` — the number of fields the loop iterates, as
   a comptime int (usable in expressions and comptime conditions).
 

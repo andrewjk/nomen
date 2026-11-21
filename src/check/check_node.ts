@@ -63,6 +63,7 @@ import check_unsafe_block_node from "./check_unsafe_block_node.ts";
 import check_value_node from "./check_value_node.ts";
 import check_while_loop_node from "./check_while_loop_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { evaluate_comptime, rewrite_meta_name_chains } from "./utils/comptime.ts";
 
 export default function check_node(node: BaseNode, status: CheckStatus): boolean {
 	let result = true;
@@ -231,11 +232,23 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			// User compile-error directive (`#error "message"`): a live one
 			// always fails the compile. Dead `#if` arms are folded away
 			// before any checking, so a gated `#error` never reaches here.
-			add_error(
-				status,
-				(node as import("../nodes/PragmaErrorNode.ts").default).message,
-				node.start,
-			);
+			const pragma = node as import("../nodes/PragmaErrorNode.ts").default;
+			let message = pragma.message;
+			if (pragma.message_expr) {
+				// An interpolated/composed message (`"missing \{field.name}"`)
+				// folds through the comptime string evaluator — META chains
+				// first (file scope has no per-block pass to fold them), then
+				// the literal walk; a `#for` expansion already folded any
+				// bindings into the expression before this ran.
+				rewrite_meta_name_chains([pragma.message_expr], status);
+				const folded = evaluate_comptime(pragma.message_expr);
+				if (!folded || folded.kind !== "string") {
+					add_error(status, "'#error' message must fold to a comptime string", node.start);
+					break;
+				}
+				message = folded.value;
+			}
+			add_error(status, message, node.start);
 			break;
 		}
 		case "enum_case_decl": {

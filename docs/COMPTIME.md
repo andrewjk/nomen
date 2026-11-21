@@ -247,8 +247,8 @@ This document supersedes the retired working notes `COMPTIME_PLAN.md` and
 1. `#if`/`#switch` as real nodes — fold before checking, only the live arm
    checked; declaration and body scope.
 2. `#for` + `META.info(T).fields` + `field.get/set` — reflection loops,
-   deferred through generics, comptime string `+` folding, derived methods
-   re-expressed as `#for` (R9 acceptance).
+   deferred through generics, comptime string `+`/interpolation folding,
+   derived methods re-expressed as `#for` (R9 acceptance).
 3. Attributes (`@Name(...)` / `@flag`) surfaced through `META`/`field`.
 4. `type T` comptime type parameters composing with reflection.
 5. `#raw` unification into `#if META.arch` (the `#arch:`/`#platform:` tags
@@ -268,8 +268,7 @@ This document supersedes the retired working notes `COMPTIME_PLAN.md` and
 ## Known Limits
 
 Recorded in [`FOLLOWUP.md`](../FOLLOWUP.md) ("Comptime residuals" and
-"Declaration/type generation (stage 6)"): no comptime string
-interpolation, `#if` conditions limited to
+"Declaration/type generation (stage 6)"): `#if` conditions limited to
 `META.arch`/`META.platform` (no type-level conditions), single-literal
 attributes, no deep payload splices for generated enum cases, no nested
 `#for` composition inside a generated type body, no trait-conformer

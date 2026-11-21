@@ -27,6 +27,7 @@ import NestedBlockNode from "./NestedBlockNode.ts";
 import OperationNode from "./OperationNode.ts";
 import PanicNode from "./PanicNode.ts";
 import ParameterNode from "./ParameterNode.ts";
+import PragmaErrorNode from "./PragmaErrorNode.ts";
 import PragmaForNode from "./PragmaForNode.ts";
 import PragmaIfNode from "./PragmaIfNode.ts";
 import RangeNode from "./RangeNode.ts";
@@ -638,6 +639,16 @@ export default function clone_node(node: BaseNode): BaseNode {
 				condition: b.condition ? clone_node(b.condition) : null,
 				block: new NestedBlockNode(b.block.start, (b.block.statements ?? []).map(clone_node)),
 			}));
+			return c;
+		}
+		case "pragma_error": {
+			// `#error "message"` — the message EXPRESSION (an interpolated
+			// comptime string) must deep-copy per `#for` iteration: the
+			// rewrite folds each iteration's bindings into it in place, so
+			// a shared subtree would pin the first iteration's values.
+			const n = node as PragmaErrorNode;
+			const c = new PragmaErrorNode(n.start, n.message);
+			if (n.message_expr) c.message_expr = clone_node(n.message_expr);
 			return c;
 		}
 		case "pragma_for": {
