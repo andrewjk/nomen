@@ -12,25 +12,28 @@ import consume from "./utils/consume.ts";
 import get_index from "./utils/get_index.ts";
 import peek_current from "./utils/peek_current.ts";
 import peek_next from "./utils/peek_next.ts";
+import private_retired_error from "./utils/private_retired_error.ts";
 
 export default function parse_visibility(
 	visibility: "pub" | "private" | "internal",
 	status: ParseStatus,
 ) {
-	// Declarations, funcs, structs and traits can have their visibility controlled
-	// Visibility options are `pub`, `private`, and `internal`
-	// `pub` is visible within the parent's scope (e.g. file, foler)
-	// `private` is visible within the scope (e.g. function, file) only
-	// `internal` is visible within the declaring module/library only
-	// Declarations, funcs, structs and traits have `private` visibility by default
-	// Struct fields have `pub` visibility by default
+	// Visibility is two-valued: `pub` (everywhere) and `internal` (this
+	// library). An unmarked declaration is already the tightest scope — a
+	// file-scoped root declaration — so `private` retired (it named the
+	// default): using it is one clear error, then the declaration continues
+	// unmarked (no cascade). Struct, enum and extend members default `pub`;
+	// trait members are exported with their contract.
+	if (visibility === "private") {
+		private_retired_error(status);
+	}
 	const next = peek_next(status);
 	switch (next) {
 		case "const":
 		case "var":
 		case "view":
 		case "ref": {
-			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
+			if (visibility === "internal" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait fields cannot be ${visibility}`, get_index(status));
 				consume(status);
 			} else {
@@ -54,7 +57,7 @@ export default function parse_visibility(
 				}
 				break;
 			}
-			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
+			if (visibility === "internal" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait fields cannot be ${visibility}`, get_index(status));
 				consume(status);
 			} else {
@@ -117,7 +120,7 @@ export default function parse_visibility(
 			break;
 		}
 		case "func": {
-			if (visibility !== "pub" && status.stack.at(-1)?.node_type === "trait") {
+			if (visibility === "internal" && status.stack.at(-1)?.node_type === "trait") {
 				add_error(status, `Trait functions cannot be ${visibility}`, get_index(status));
 				consume(status);
 			} else {

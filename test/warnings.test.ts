@@ -134,7 +134,7 @@ main()
 import System
 struct Counter {
 	var int count = 0
-	private func unused = () {
+	internal func unused = () {
 		Console.write("nope")
 	}
 }

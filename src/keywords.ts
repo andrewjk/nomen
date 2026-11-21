@@ -5,6 +5,9 @@
  */
 export const KEYWORDS = new Set([
 	"pub",
+	// Retired (2026-11-21) but kept a keyword so `private var x = 5` lexes
+	// for the parser's dedicated retirement error instead of being read as a
+	// declaration named `private`.
 	"private",
 	"internal",
 	"readonly",

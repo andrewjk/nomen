@@ -3,6 +3,14 @@ import { expect, describe, test } from "vite-plus/test";
 import parse from "../src/parse";
 import test_error from "./test_error";
 
+// Visibility is two-valued: `pub` (everywhere) and `internal` (this
+// library). An unmarked declaration is already the tightest scope (the
+// declaring file at the top level), so `private` retired — using it is a
+// dedicated error, and the declaration continues as the unmarked form (one
+// error, no cascade).
+const RETIRED =
+	"'private' has retired — an unmarked declaration is already the tightest scope: drop the keyword, or spell `internal` (this library) or `pub` (everywhere)";
+
 describe("visibility errors", () => {
 	test("invalid target", () => {
 		const input = `
@@ -22,67 +30,72 @@ pub if true {
 		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("accessing private fields from outside struct", () => {
-		const input = `
-mv struct Person {
-  private mv string name
-  private func greet = () {}
-}
-var Person x = Person()
-x.name = "Andrew"
-x.greet()
-`;
-		const expected = [
-			test_error(input, "Can't access private field: name", 7, 3),
-			test_error(input, "Can't access private function: greet", 8, 3),
-		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
-	});
-
-	test("private fields in trait", () => {
-		const input = `
-trait Person {
-  private var string name
-  private func greet = () {}
-}
-`;
-		const expected = [
-			test_error(input, "Trait fields cannot be private", 3, 3),
-			test_error(input, "Trait functions cannot be private", 4, 3),
-		];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
-	});
-
-	test("private fields accessible from own struct methods", () => {
+	test("`private` has retired on a struct field", () => {
 		const input = `
 struct Counter {
   private var int count = 0
-  func increment = (ref self) {
-    self.count = self.count + 1
-  }
-  func get = (self, out int) {
-    return self.count
+}
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([test_error(input, RETIRED, 3, 3)]);
+	});
+
+	test("`private` has retired on a struct method", () => {
+		const input = `
+struct Foo {
+  private func secret = (out int) {
+    return 42
   }
 }
 `;
 		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
+		expect(parsed.errors).toEqual([test_error(input, RETIRED, 3, 3)]);
 	});
 
-	test("private file-level function accessible from same file", () => {
+	test("`private` has retired on root declarations", () => {
 		const input = `
 private func helper = (out int) {
   return 42
 }
-var int x = helper()
 `;
 		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
+		expect(parsed.errors).toEqual([test_error(input, RETIRED, 2, 1)]);
 	});
 
-	test("private file-level struct accessible from same file", () => {
+	test("`private` has retired on every type declaration form", () => {
+		const input = `
+private struct Point {
+  var int x = 0
+}
+private enum Color {
+  case Red
+}
+private bitset Flags {
+  case Read
+}
+private trait Named {
+  func name = (self, out string)
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages.filter((m) => m === RETIRED).length).toBe(4);
+	});
+
+	test("`mv private struct` reports the retired keyword once, no cascade", () => {
+		const input = `
+mv private struct Point {
+  var int x = 0
+}
+var Point p = Point()
+`;
+		const parsed = parse(input);
+		// One error, at the keyword token (one past `mv`), and the
+		// declaration still parses — no follow-on diagnostics.
+		expect(parsed.errors).toEqual([test_error(input, RETIRED, 2, 4)]);
+	});
+
+	test("retirement does not cascade: the declaration still checks", () => {
 		const input = `
 private struct Point {
   var int x = 0
@@ -90,119 +103,47 @@ private struct Point {
 }
 var Point p = Point()
 p.x = 10
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("private file-level enum accessible from same file", () => {
-		const input = `
-private enum Color {
-  case Red
-  case Green
-  case Blue
-}
-var Color c = Color.Red
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("private file-level bitset accessible from same file", () => {
-		const input = `
-private bitset Flags {
-  case Read
-  case Write
-  case Execute
-}
-var Flags f = Flags.Read
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("pub struct fields accessible from outside", () => {
-		const input = `
-struct Point {
-  pub var int x = 0
-  pub var int y = 0
-}
-var Point p = Point()
-p.x = 10
 p.y = 20
 `;
 		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
+		expect(parsed.errors).toEqual([test_error(input, RETIRED, 2, 1)]);
 	});
 
-	test("pub function accessible from outside", () => {
+	test("`internal` in a trait is still rejected (a contract member is exported)", () => {
 		const input = `
-pub func add = (int a, int b, out int) {
-  return a + b
+trait Person {
+  internal var string name
+  internal func greet = () {}
 }
-var int result = add(1, 2)
 `;
+		const expected = [
+			test_error(input, "Trait fields cannot be internal", 3, 3),
+			test_error(input, "Trait functions cannot be internal", 4, 3),
+		];
 		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
+		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("private function not accessible from outside struct", () => {
+	test("trait members are exported with their contract", () => {
 		const input = `
-struct Foo {
-  private func secret = (out int) {
-    return 42
+trait Person {
+  mv string name = "anon"
+  func greet = (self, out string) {
+    return self.name
   }
 }
-var Foo f = Foo()
-f.secret()
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([
-			test_error(input, "Can't access private function: secret", 8, 3),
-		]);
-	});
-
-	test("private field on different struct not accessible", () => {
-		const input = `
-struct Outer {
-  private var int value = 0
+mv struct Alice: Person {
 }
-struct Inner {
-  var Outer outer
-  func doStuff = (ref self) {
-    self.outer.value = 5
-  }
-}
+var a = Alice()
+a.name = mv "alice"
 `;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([test_error(input, "Can't access private field: value", 8, 16)]);
-	});
-
-	test("private function in function scope", () => {
-		const input = `
-func main = () {
-  private func local = (out int) {
-    return 10
-  }
-  var int x = local()
-}
-`;
+		// Bare trait members default `pub` (no private-default leniency);
+		// the conformer's inherited field is reassignable from outside.
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("private const accessible within same block", () => {
-		const input = `
-func main = () {
-  private const int MAX = 100
-  var int x = MAX
-}
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("default visibility - struct members are pub by default", () => {
+	test("bare struct members are pub by default", () => {
 		const input = `
 struct Point {
   var int x = 0
@@ -216,7 +157,7 @@ p.y = 20
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("default visibility - file-level items are private by default", () => {
+	test("bare root declarations are file-scoped by default", () => {
 		const input = `
 struct Helper {
   var int value = 0
@@ -226,20 +167,29 @@ func useHelper = () {
 }
 `;
 		const parsed = parse(input);
-		// Both are file-level private, but accessible from same file
+		// An unmarked root declaration is accessible from its own file.
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("mixed visibility - pub and private fields", () => {
+	test("`internal` items are visible within the program", () => {
+		const input = `
+internal struct Cache {
+  var int slots = 0
+}
+var Cache c = Cache()
+c.slots = 4
+`;
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual([]);
+	});
+
+	test("pub and internal mix with bare members", () => {
 		const input = `
 mv struct User {
   pub mv string name
-  private var int age = 0
+  var int age = 0
   pub func getName = (self, out string) {
     return self.name
-  }
-  private func getAge = (self, out int) {
-    return self.age
   }
 }
 var User u = User("Alice")
@@ -247,77 +197,8 @@ u.getName()
 u.age
 `;
 		const parsed = parse(input);
-		expect(parsed.errors).toEqual([test_error(input, "Can't access private field: age", 14, 3)]);
-	});
-
-	test("pub struct constructor accessible from same file", () => {
-		const input = `
-pub struct Point {
-  var int x = 0
-}
-var Point p = Point()
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("struct method accessing private field via self parameter", () => {
-		const input = `
-struct Foo {
-  private var int x = 0
-  func setX = (ref self, int val) {
-    self.x = val
-  }
-  func getX = (self, out int) {
-    return self.x
-  }
-}
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("multiple private items in same struct", () => {
-		const input = `
-mv struct Widget {
-  private var int id = 0
-  private mv string label = ""
-  private func reset = (ref self) {
-    self.id = 0
-    self.label = ""
-  }
-  func getId = (self, out int) {
-    return self.id
-  }
-}
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("pub struct accessible from different function in same file", () => {
-		const input = `
-pub struct Container {
-  var int value = 0
-}
-func create = (out Container) {
-  return Container()
-}
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("private field accessible from method on same struct", () => {
-		const input = `
-struct Counter {
-  private var int count = 0
-  func decrement = (ref self) {
-    self.count = self.count - 1
-  }
-}
-`;
-		const parsed = parse(input);
+		// Every member is exported: `pub` is the implicit member default, so
+		// the mix parses and the access installs.
 		expect(parsed.errors).toEqual([]);
 	});
 });

@@ -8,9 +8,15 @@ function node_is_library(node: BaseNode | undefined): boolean {
 /**
  * Check if an item is visible from the current access scope.
  * - If item is pub, it's visible everywhere
- * - If item is internal, it's visible only within the declaring module/library
- *   (the access is trusted when both sides sit on the same side of the System
- *   library boundary — or when `allow_internal` opts a build into trusted mode)
+ * - If item is internal, it's visible only within the declaring library —
+ *   the compilation UNIT, not a namespace. Namespaces are the import path
+ *   (`import System::Text`), not a visibility boundary: the System library is
+ *   one concatenated unit, so its `internal` helpers are reachable from every
+ *   namespace in it (Buffer's slab accessors, called from Text and Controls),
+ *   while a consumer program — the other side of the boundary — sees only
+ *   `pub`. The access is trusted when both sides sit on the same side of the
+ *   System library boundary — or when `allow_internal` opts a build into
+ *   trusted mode
  * - If item is private, it's visible only within its declaring scope
  *   or descendant scopes (checked by walking the stack)
  */

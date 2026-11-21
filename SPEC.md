@@ -413,7 +413,7 @@ pub struct Point {
 }
 ```
 
-Structs are constructed by calling the struct name as a function. A `#init` function is auto-generated with parameters for all non-private fields that don't have default values:
+Structs are constructed by calling the struct name as a function. A `#init` function is auto-generated with parameters for every field that has no default value:
 
 ```
 const point = Point(5, 10)
@@ -2004,7 +2004,7 @@ for the branch value (see [Let and Arrow Shorthand](#let-and-arrow-shorthand)).
 Structs group related data and behavior. Fields are declared with `var` (or
 `const` for compile-time-known values) and methods are declared as functions
 whose first parameter is `self`. A `#init` function is auto-generated from the
-non-private fields that have no default value, so a struct can be constructed by
+fields that have no default value, so a struct can be constructed by
 calling its name as a function:
 
 ```
@@ -3059,8 +3059,24 @@ const result = Math.power(2, 10)
 ## Visibility Modifiers
 
 - `pub`: Public (accessible from the parent scope)
-- `internal`: Internal (accessible only within the declaring module/library)
-- `private`: Private (accessible only within the same struct or scope)
+- `internal`: Internal (accessible only within the declaring library)
+
+Visibility tracks the **compilation unit**, not the naming tree: `internal`
+means the whole declaring library — one unit, every namespace in it — while a
+consumer (a program outside that library) sees only `pub`. Namespaces are the
+**import path**, not a visibility boundary: `import System::Text` pulls and
+qualifies `System::Text`'s names, and grants no visibility a `pub` declaration
+doesn't already have (the same way one Go package's files share a single
+unexported scope, or one C# assembly's namespaces share `internal`). Inside
+the library, an `internal` helper is reachable from any of its namespaces —
+that is where the System library's low-level slab accessors live.
+
+An unmarked declaration is already the tightest scope — file-scoped at the
+top level — so `pub` and `internal` are the explicit spellings for anything
+wider. Struct, enum and extend members default `pub`; trait members are
+exported with their contract (an `internal` trait member is rejected).
+`private` has retired: writing it is a compile error pointing at the
+unmarked spelling.
 
 `readonly` is a separate field-write modifier, not a visibility: it leaves the
 field readable at its declared visibility but restricts assignment to the

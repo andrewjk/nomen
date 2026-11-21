@@ -50,6 +50,7 @@ import get_index from "./utils/get_index.ts";
 import parse_attributes, { attributes_target_allowed } from "./utils/parse_attributes.ts";
 import parse_enum_case_decl from "./utils/parse_enum_case_decl.ts";
 import peek_current from "./utils/peek_current.ts";
+import private_retired_error from "./utils/private_retired_error.ts";
 
 export default function parse_statement(status: ParseStatus) {
 	while (true) {
@@ -105,6 +106,12 @@ export default function parse_statement(status: ParseStatus) {
 					if (kind === "pub" || kind === "private" || kind === "internal") {
 						const kind2 = status.tokens[status.i + 2]?.value;
 						if (kind2 === "struct" || kind2 === "enum" || kind2 === "error") {
+							if (kind === "private") {
+								// `mv private struct` — the retired keyword is one
+								// token after `mv`; report there, then continue as
+								// the unmarked form.
+								private_retired_error(status, status.tokens[status.i + 1].i);
+							}
 							consume(status); // mv
 							consume(status); // visibility
 							if (kind2 === "struct") {

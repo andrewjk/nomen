@@ -49,9 +49,9 @@ describe("source_map sibling resolution", () => {
 		expect(analysis.defs.some((d) => d.name === "Point" && d.kind === "struct")).toBe(true);
 	});
 
-	test("a user file sees private file-level items declared in a sibling file", () => {
+	test("a user file sees unmarked file-level items declared in a sibling file", () => {
 		setup();
-		// The compiler concatenates a folder at build time, so private
+		// The compiler concatenates a folder at build time, so unmarked
 		// file-level declarations are visible across siblings — the editor
 		// source map reproduces that.
 		write("mod/a.nm", "func helper = (out int) {\n    return 42\n}\n");

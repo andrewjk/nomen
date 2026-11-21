@@ -134,9 +134,16 @@ const y = x + 1     // Error: 'x' is null
 
 ### Visibility
 
-`pub` exports. `internal` is visible only within the declaring library/module
-(the System library uses it to hide implementation details). Everything else is
-private to its declaring scope.
+`pub` exports. `internal` is visible only within the declaring library — the
+compilation unit, not a namespace: the System library is one unit, so its
+`internal` helpers are reachable from every namespace in it, while consumers
+see only `pub`. Namespaces are the import path (`import System::Text`), not a
+visibility boundary; an import never grants visibility.
+
+An unmarked declaration is already the tightest scope — file-scoped at the top
+level — so `private` retired: writing it is an error pointing at the unmarked
+form. Struct members default `pub`; trait members are exported with their
+contract.
 
 `readonly` is a field-write modifier, not a visibility: the field reads at its
 declared visibility but can only be assigned inside its declaring struct (and
