@@ -58,6 +58,23 @@ export async function build_and_check_bench(name: string, expected: string) {
 	}
 }
 
+// Like build_and_check_bench, but runs the program with command-line
+// arguments (e.g. a benchmark size argument). `args` is part of the output
+// cache key via check_output.
+export async function build_and_check_bench_args(name: string, expected: string, args: string[]) {
+	const source = read_bench(name);
+	for (const arch of ["aarch64", "c"] as const) {
+		// Per-target parse (stage 5: raw arms fold at check time).
+		const parsed = parse(source, lib, undefined, { allow_internal: true, arch });
+		expect(parsed.errors).toEqual([]);
+		const { result, check_opts } = await bench_options(parsed, arch);
+		await check_output(`${name}_${args.join("_")}_${arch}`, result, expected, {
+			...check_opts,
+			args,
+		});
+	}
+}
+
 // Like build_and_check_bench, but stages one or more input files into the
 // executable's working directory first. `files` maps a project-relative source
 // path to the relative path the binary expects (relative to its CWD).

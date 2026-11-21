@@ -78,6 +78,93 @@ func pow10 = (int exp, ref BigInt result, ref BigInt tmp, ref BigInt scratch) {
 	sq_base.digits.destroy()
 }
 
+// Append the decimal digits of x to the chunk buffer at slots
+// [digit_count, digit_count + span), low 18-digit chunk first — the same
+// layout the old repeated-divide-by-10^18 loop produced, so the trim and
+// print walk below is unchanged. Divide-and-conquer radix conversion (the
+// strategy math/big and ibig use inside their decimal to_string, whose
+// output this replaces): split x at a power of 10^18 whose limb count is
+// at most half of x's, recurse into the low half then the high half. That
+// turns the O(len^2) pass of single-limb divisions — a latency-bound
+// serial chain, since each remainder feeds the next division — into a
+// handful of balanced Knuth-D divmods.
+//
+// `span` is the exact number of 18-digit slots this subtree covers. The
+// split powers sit on chunk boundaries (10^(18*2^h) spans exactly 2^h
+// chunks), so each leaf writes its own span with zero fill above its own
+// magnitude — those slots are real zero digits of the number — and the
+// root's upper-bound padding at the very top is trimmed afterwards, like
+// the old loop's final partial chunk.
+func append_digits = (
+	ref BigInt x { digits },
+	int span,
+	ref Buffer<int> chunks,
+	ref int digit_count,
+) {
+	// Base case: short value — straight single-limb divmod chain by 10^18,
+	// storing 18 digits per chunk (zero-padded on top), low chunk first,
+	// then zero-fill the span's remaining slots.
+	if x.len <= 7 {
+		var one = BigInt()
+		one.set_int(1)
+		var q18 = BigInt()
+		q18.set_u64(1000000000000000000)
+		var d1 = BigInt()
+		var d2 = BigInt()
+		var written = 0
+		while x.cmp(one) >= 0 && written < span {
+			d1.div_to(x, q18, ref d2)
+			var uint64 chunk = d2.get(0)
+			var c = 0
+			while c < 18; c += 1 {
+				const int idx = digit_count + c
+				if idx >= 0 && idx < chunks.cap {
+					chunks.store_int(idx, (chunk % 10) as int)
+				}
+				chunk = chunk / 10
+			}
+			digit_count = digit_count + 18
+			written += 1
+			x.copy_from(d1)
+		}
+		while written < span; written += 1 {
+			var c = 0
+			while c < 18; c += 1 {
+				const int idx = digit_count + c
+				if idx >= 0 && idx < chunks.cap {
+					chunks.store_int(idx, 0)
+				}
+			}
+			digit_count = digit_count + 18
+		}
+		return
+	}
+
+	// Split power: the largest 10^(18*2^h) whose limb count is at most half
+	// of x's, so both halves are strictly smaller than x and the quotient is
+	// never zero. Squaring doubles the limb count, so the loop squares only
+	// while the current rung is at most a QUARTER of x — checking halves
+	// before squaring lets the squared rung reach x.len limbs, where the
+	// divisor can exceed x itself (quotient 0, the low half stops shrinking
+	// and the recursion never terminates). The chunk span doubles alongside.
+	var p = BigInt()
+	p.set_u64(1000000000000000000)
+	var pt = BigInt()
+	var ps = BigInt()
+	var int span_low = 1
+	while p.len * 4 <= x.len {
+		pt.mul_to(p, p, ref ps)
+		p.copy_from(pt)
+		span_low = span_low + span_low
+	}
+	var hi = BigInt()
+	var lo = BigInt()
+	hi.div_to(x, p, ref lo)
+	// The buffer is low-chunk-first, so the low half's slots come first.
+	append_digits(ref lo, span_low, ref chunks, ref digit_count)
+	append_digits(ref hi, span - span_low, ref chunks, ref digit_count)
+}
+
 pub func main = (Init init) {
 	var n = 27
 	if init.argc > 1 {
@@ -107,36 +194,21 @@ pub func main = (Init init) {
 	var div_rem = BigInt()
 	answer.div_to(numerator, q, ref div_rem)
 
-	// Extract digits from answer using in-place bulk divmod by 10^18. The
-	// digit buffer is sized from n: ceil(n / 18) chunks, plus one spare
-	// chunk for the trailing partial group. (A fixed 5020 here silently
-	// dropped stores past its capacity and printed a mid-number slice at
-	// benchmark sizes; the verifier can't relate the store index to the
-	// allocation, so each store still carries its explicit guard.)
-	var one = BigInt()
-	one.set_int(1)
+	// Extract digits with a divide-and-conquer radix conversion (see
+	// append_digits). The chunk buffer keeps the old layout — 18 digits per
+	// chunk, low chunk first, sized from n. The root span is an upper bound
+	// derived from the limb count (each limb holds < 10^19.3 digits, so 20
+	// per limb plus slack never under-counts); the recursion writes exactly
+	// that many slots and the trim drops the padding at the top.
 	var work = BigInt()
 	work.copy_from(answer)
-	const int digit_cap = (n + 17) / 18 * 18 + 18
+	const int span_root = (work.len * 20) / 18 + 4
+	const int digit_cap = span_root * 18 + 18
 	var digits = Buffer<int>()
 	digits.alloc_int(digit_cap)
 	var digit_count = 0
-	var q_e18 = BigInt()
-	q_e18.set_u64(1000000000000000000)
 
-	while work.cmp(one) >= 0 {
-		work.div_to(work, q_e18, ref div_rem)
-		var uint64 chunk = div_rem.get(0)
-		var c = 0
-		while c < 18; c += 1 {
-			const int idx = digit_count + c
-			if idx >= 0 && idx < digits.cap {
-				digits.store_int(idx, (chunk % 10) as int)
-			}
-			chunk = chunk / 10
-		}
-		digit_count = digit_count + 18
-	}
+	append_digits(ref work, span_root, ref digits, ref digit_count)
 
 	// Trim spurious leading zeros introduced by the final bulk chunk. The
 	// extraction above ends with digit_count <= digit_cap, but the verifier

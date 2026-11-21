@@ -53,6 +53,9 @@ export default async function check_output(
 		arch?: "c" | "aarch64" | "js";
 		audit?: boolean;
 		provideStdin?: string;
+		/** Command-line arguments passed to the program under test (argv[1..]).
+		 *  Part of the output cache key. */
+		args?: string[];
 		/** Link the precompiled system object (C-backend split). The caller
 		 *  builds a user-only TU (emit_mode "user"); System code comes from the
 		 *  one object built once in the globalSetup. */
@@ -94,8 +97,11 @@ export default async function check_output(
 		let stdout: string;
 		let stderr = "";
 		try {
+			const arg_suffix = (options.args ?? []).map((a) => ` "${a}"`).join("");
 			const run_cmd =
-				options.provideStdin !== undefined ? `node main.mjs < input.txt` : `node main.mjs`;
+				options.provideStdin !== undefined
+					? `node main.mjs${arg_suffix} < input.txt`
+					: `node main.mjs${arg_suffix}`;
 			const run = await execPromise(run_cmd, {
 				cwd: rundir,
 				maxBuffer: 10 * 1024 * 1024,
@@ -313,6 +319,8 @@ export default async function check_output(
 	let failed = false;
 	try {
 		let run_cmd = `"${outfile}"`;
+		const arg_suffix = (options.args ?? []).map((a) => ` "${a}"`).join("");
+		run_cmd += arg_suffix;
 		if (options.provideStdin !== undefined) {
 			const inputfile = path.join(rundir, "input.txt");
 			fs.writeFileSync(inputfile, options.provideStdin);
@@ -346,11 +354,14 @@ export default async function check_output(
 
 function compute_cache_key(
 	code: string,
-	options: { arch?: string; audit?: boolean; provideStdin?: string },
+	options: { arch?: string; audit?: boolean; provideStdin?: string; args?: string[] },
 ): string {
 	const parts = [code];
 	if (options.arch) {
 		parts.push(`arch:${options.arch}`);
+	}
+	if (options.args !== undefined) {
+		parts.push(`args:${options.args.join(" ")}`);
 	}
 	if (options.audit) {
 		const audit_runtime = path.join(".", "src", "audit_runtime.c");

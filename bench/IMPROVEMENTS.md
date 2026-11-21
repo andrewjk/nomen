@@ -771,6 +771,38 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     reflog, pre-amend parent) if mul_to ever gets fast enough to pull the
     crossover back into practical range.
 
+49. **edigits — divide-and-conquer radix conversion** (`bench/nomen/edigits.nm`,
+    `test/check_output.ts`, `test/bench/helpers.ts`, `test/bench/edigits.test.ts`):
+    the digit-extraction loop divided the answer by 10^18 repeatedly — ~len²/2
+    single-limb divisions whose dependency chain is latency-bound on aarch64
+    (each remainder feeds the next division), the single biggest phase at the
+    benchmark sizes (27.7 ms of 62 at n=50000). It is replaced by the
+    divide-and-conquer radix conversion `math/big` and `ibig` use inside their
+    decimal `to_string` — the very calls the references' output rides: split x
+    at a power of 10^18 whose limb count is at most half of x's (a `p.len * 4
+<= x.len` guard — squaring doubles the limb count, so checking halves
+    before squaring lets the squared rung reach `x.len` limbs, where the
+    divisor can exceed x, the quotient hits 0 and the recursion never
+    terminates), recurse low half then high half, base case at ≤ 7 limbs rides
+    the old single-limb chain. Each recursion node writes its exact positional
+    18-digit-chunk span into the same low-chunk-first buffer the old loop
+    produced (split powers sit on chunk boundaries, so between-leaf zero fill
+    is the number's real digits; the root's upper-bound padding is trimmed by
+    the existing trim walk). Output byte-identical to the previous
+    implementation at 23 sizes (1 → 200000) on both backends, and digit-for-
+    digit with the Go reference. Measured min-of-11: n=20000 aarch64 14.2 →
+    11.6 ms (1.22×), C 9.5 → 8.9 ms; n=50000 aarch64 61.9 → 43.8 ms (1.41×),
+    C 38.9 → 34.4 ms (1.13×); n=200000 aarch64 791 → 502 ms (1.58×), C 525 →
+    453 ms (1.16×) — the win grows with n as the quadratic term it removes
+    dominates. Supporting test changes: `check_output` grew an `args` option
+    (argv pass-through, part of the output cache key), `build_and_check_bench_args`
+    exposes it, and the edigits test gained a full 500-digit golden run (n=500
+    recurses four split levels deep and covers interior-leaf span padding;
+    the default n=27 only exercises the base case). The remaining profile is
+    Knuth-D — the D&C splits themselves are quadratic, so the next asymptotic
+    step needs fast division, which is gated on mul_to's constant factor (see
+    item 48's Newton-Raphson measurements).
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -1269,11 +1301,13 @@ pixels per group like the references (previously one pixel per call).
   2-lane groups with loop machinery; a straight-line lane-group shape needs
   the value-level lane allocator (FOLLOWUP.md).
 
-### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms — ~2–3× off Rust)
+### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms → 7.6 / 34 ms — within ~2× of Rust)
 
 Computes _e_ to `n` digits via BigInt, then prints. Previously Nomen's _worst_
 ratio (~245×); within ~15× after the product-tree algorithm; now ~2–3× off
-Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point).
+Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point),
+and ~1.4× faster still at the large tier since the D&C radix conversion
+(item 49) removed the quadratic digit-extraction pass.
 Item 46 fixed a silent wrong-output bug at benchmark sizes (the fixed 5020
 digit buffer dropped chunks past its capacity — the printed digits at
 n=20000/50000 were a mid-number slice, not the first digits of e); output is
@@ -1315,6 +1349,10 @@ the references' writers).
   and single-`StringBuilder`-write output (buffered like the references).
   Output now digit-for-digit identical to Go at n=20000 on both backends;
   time flat-to-better while printing 10× the digits.
+- ✓ **[source] DONE (item 49):** Divide-and-conquer radix conversion for the
+  digit output — the same decimal-to-string strategy `math/big` and `ibig`
+  use internally, replacing the O(len²) repeated divide-by-10^18 pass.
+  1.41× aarch64 / 1.13× C at n=50000, growing with n.
 - `Math.log(fk)` is used in `test_k` for the initial binary search — that's
   fine, it's O(log) calls. No fix needed there.
 
