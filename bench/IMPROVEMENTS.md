@@ -803,6 +803,40 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     step needs fast division, which is gated on mul_to's constant factor (see
     item 48's Newton-Raphson measurements).
 
+50. **BigInt — Knuth-D inner-loop restructure** (`core/System/BigInt.nm`,
+    `test/bigint_divrem_invariants.test.ts`): the per-digit cost of
+    `div_to`'s Knuth-D loop dropped from two full n-limb multiply passes plus
+    a subtract pass to ONE multiply pass (aarch64/js) or a single fused pass
+    (C). Three changes: (a) the q_hat correction loop materializes
+    `q_hat * v` on every tested candidate — when the loop settles, the
+    buffer IS the D4 product, so the old code's second full multiply (D4
+    step 1) is deleted and the correction's top-limb carry takes the
+    product's (n+1)th slot; (b) the loop-invariant `v[n-1]` hoisted out of
+    the digit loop and the compare reuses the already-read `u[j+n]`; (c) per
+    compile target — the C backend replaces the whole correction machinery
+    with the Hacker's Delight two-limb refinement (`q_hat * v[n-2] >
+(r_hat:u_mid)`, one multiply, ≤2 decrements) and a single FUSED
+    multiply-subtract pass riding the borrow chain, with the D5 add-back as
+    the deferred correction, while aarch64/js keep the two-pass shape
+    (measured: the fused body's wider live set spills against the aarch64
+    register-promotion pool — 39.7 → 50.2 ms — while clang -O2 keeps it
+    unspilled and wins). The refinement needs `r_hat`, the 2/1 division's
+    remainder, which only exists unsaturated — and a digit at the cap can
+    push the fused borrow chain to 2^64 — so C falls back to the full shape
+    when `u_hi >= v_n1-1` (at most one digit per division, selected under
+    `#if META.arch` with plain Nomen in both arms, so js rides the aarch64
+    shape). The fused path's borrow bound is proven from the guard:
+    `u_hi <= v_n1-2` ⇒ `q_hat <= B-3` ⇒ `sub <= B-2`. Correctness is pinned
+    by a new differential invariant test — 27 deterministic limb-pattern
+    corners (saturated first digits, top-limb-1 divisors, interior 0/FF
+    limbs, exact divisions, r = b-1, a<b, a==b) checked against the
+    structural identities `b*q + r == a` and `r < b` on both backends.
+    Outputs byte-identical everywhere. Measured min-of-11: edigits n=50000
+    aarch64 61.6 → 39.6 ms (1.56×), C 38.9 → 24.0 ms (1.62×); n=200000
+    aarch64 790 → 445 ms (1.78×), C 525 → 265 ms (1.98×); pidigits n=4000
+    aarch64 −6%, C −16% (its spigot divisors are multi-limb). The
+    single-limb divisor path is untouched.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -1301,13 +1335,14 @@ pixels per group like the references (previously one pixel per call).
   2-lane groups with loop machinery; a straight-line lane-group shape needs
   the value-level lane allocator (FOLLOWUP.md).
 
-### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms → 7.6 / 34 ms — within ~2× of Rust)
+### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms → 6.9 / 24 ms — within ~2× of Rust)
 
 Computes _e_ to `n` digits via BigInt, then prints. Previously Nomen's _worst_
 ratio (~245×); within ~15× after the product-tree algorithm; now ~2–3× off
 Rust (9 ms vs ~4 ms at n=5000, both dwarfed by the 734 ms starting point),
-and ~1.4× faster still at the large tier since the D&C radix conversion
-(item 49) removed the quadratic digit-extraction pass.
+and faster still at the large tiers since the D&C radix conversion (item 49)
+removed the quadratic digit-extraction pass and the Knuth-D restructure
+(item 50) cut the per-digit division cost.
 Item 46 fixed a silent wrong-output bug at benchmark sizes (the fixed 5020
 digit buffer dropped chunks past its capacity — the printed digits at
 n=20000/50000 were a mid-number slice, not the first digits of e); output is
@@ -1353,6 +1388,11 @@ the references' writers).
   digit output — the same decimal-to-string strategy `math/big` and `ibig`
   use internally, replacing the O(len²) repeated divide-by-10^18 pass.
   1.41× aarch64 / 1.13× C at n=50000, growing with n.
+- ✓ **[stdlib] DONE (item 50):** Knuth-D inner-loop restructure — one
+  product per quotient digit (the correction loop's product reused for D4),
+  loop-invariant `v[n-1]`, and a per-target D4 shape (fused multiply-subtract
+  with the Hacker's Delight refinement on C; the two-pass shape on
+  aarch64/js). 1.56× aarch64 / 1.62× C at n=50000, 1.78×/1.98× at n=200000.
 - `Math.log(fk)` is used in `test_k` for the initial binary search — that's
   fine, it's O(log) calls. No fix needed there.
 

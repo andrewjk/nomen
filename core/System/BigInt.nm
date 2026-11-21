@@ -1094,21 +1094,54 @@ pub mv struct BigInt {
 
 		// D2. Main loop: for j = m down to 0
 		self.ensure(m + 2)
+		// v's top two limbs and the normalization shift are loop-invariant —
+		// hoist them out of the digit loop (v_n2 feeds the q_hat refinement).
+		const uint64 v_n1 = remainder.digits.load_int(n - 1) as uint64
+		const uint64 v_n2 = remainder.digits.load_int(n - 2) as uint64
 		var int j = m
 		while j >= 0; j -= 1 {
 			// D3. Calculate q_hat
 			const uint64 u_hi = remainder.digits.load_int(wd_off + j + n) as uint64
 			const uint64 u_lo = remainder.digits.load_int(wd_off + j + n - 1) as uint64
-			const uint64 v_n1 = remainder.digits.load_int(n - 1) as uint64
 
 			var uint64 q_hat = self.div128(u_hi, u_lo, v_n1)
 
-			// q_hat correction: try q_hat, decrement if too large
-			if n >= 2 {
+			// Two D4 shapes per digit, selected per compile target:
+			//
+			// - FULL (aarch64/js, and C's rare saturated digits): the
+			//   full-product correction loop — every tested q_hat candidate
+			//   materializes q_hat * v, so when the loop settles the buffer
+			//   holds the D4 product (top limb in hv_carry) and the subtract
+			//   pass consumes it without a second multiply. Two tight
+			//   n-limb passes; each body fits the aarch64 register-promotion
+			//   pool. Measured faster than the fused shape on this codegen
+			//   (the fused body's wider live set spills).
+			// - FUSED (C backend only): a two-limb q_hat refinement (one
+			//   multiply — the classic Hacker's Delight test `q_hat * v[n-2] >
+			//   (r_hat:u_mid)`, at most two decrements for a normalized
+			//   divisor) replaces the product compare entirely, then one
+			//   fused multiply-subtract pass rides the borrow chain, with the
+			//   D5 add-back as the deferred correction. clang -O2 keeps the
+			//   wider body unspilled, and the saved passes are pure win.
+			//
+			// The refinement needs r_hat, the 2/1 division's remainder — only
+			// derivable when div128 did NOT saturate (u_hi < v_n1). And a
+			// digit at the cap can push the fused borrow chain to 2^64
+			// (sub = hi(q*v)+1 with q_hat = B-1). So C falls back to the full
+			// shape when u_hi >= v_n1-1 — at most one digit per division.
+			var int need_add_back = 0
+			var int use_full = 1
+			#if META.arch == "c" {
+				if u_hi < v_n1 - 1 {
+					use_full = 0
+				}
+			}
+			if use_full == 1 {
+				var uint64 hv_carry = 0
 				var try_count = 0
 				while try_count < 3 {
 					// compute q_hat * v and compare with u[j+n..j]
-					var uint64 hv_carry = 0
+					hv_carry = 0
 					var pi = 0
 					while pi < n; pi += 1 {
 						const uint64 vv = remainder.digits.load_int(pi) as uint64
@@ -1122,18 +1155,18 @@ pub mv struct BigInt {
 						remainder.digits.store_int(wd_off + u_len + 1 + pi, p_lo as int)
 					}
 
-					// Compare hv_carry with u[j+n]
-					const uint64 u_at_jn = remainder.digits.load_int(wd_off + j + n) as uint64
-					if hv_carry > u_at_jn {
+					// Compare hv_carry with u[j+n] — the limb u_hi was read
+					// from, and nothing has written it since.
+					if hv_carry > u_hi {
 						q_hat -= 1
 						try_count += 1
 						continue
 					}
-					if hv_carry < u_at_jn {
+					if hv_carry < u_hi {
 						break
 					}
 
-					// hv_carry == u_at_jn, compare lower limbs
+					// hv_carry == u[j+n], compare lower limbs
 					var int cmp_i = n - 1
 					var q_too_big = 0
 					while cmp_i >= 0 {
@@ -1155,48 +1188,94 @@ pub mv struct BigInt {
 					}
 					break
 				}
+				// The product's (n+1)th limb, then subtract its n+1 limbs.
+				remainder.digits.store_int(wd_off + u_len + 1 + n, hv_carry as int)
+				var uint64 sub_borrow = 0
+				var si2 = 0
+				while si2 <= n; si2 += 1 {
+					const uint64 u_val = remainder.digits.load_int(wd_off + j + si2) as uint64
+					const uint64 p_val = remainder.digits.load_int(wd_off + u_len + 1 + si2) as uint64
+					const uint64 diff = u_val - p_val
+					var borrow1 = 0
+					if diff > u_val {
+						borrow1 = 1
+					}
+					const uint64 diff2 = diff - sub_borrow
+					var borrow2 = 0
+					if diff2 > diff {
+						borrow2 = 1
+					}
+					sub_borrow = (borrow1 + borrow2) as uint64
+					remainder.digits.store_int(wd_off + j + si2, diff2 as int)
+				}
+				if sub_borrow != 0 {
+					need_add_back = 1
+					q_hat -= 1
+				}
+			} else {
+				// Refine q_hat with the two-limb test. r_hat is the 2/1
+				// division's remainder — exact here because div128 did not
+				// saturate (u_hi < v_n1 on this path).
+				var uint64 r_hat = u_lo - q_hat * v_n1
+				var int refine = 0
+				while refine < 2; refine += 1 {
+					const uint64 pl = q_hat * v_n2
+					const uint64 ph = self.mul_wide_hi(q_hat, v_n2)
+					const uint64 u_mid = remainder.digits.load_int(wd_off + j + n - 2) as uint64
+					var int too_big = 0
+					if ph > r_hat {
+						too_big = 1
+					}
+					if ph == r_hat && pl > u_mid {
+						too_big = 1
+					}
+					if too_big == 0 {
+						break
+					}
+					q_hat -= 1
+					const uint64 r2 = r_hat + v_n1
+					if r2 < r_hat {
+						break
+					}
+					r_hat = r2
+				}
+
+				// D4. Fused multiply-subtract: u[j..j+n-1] -= q_hat * v in
+				// one pass, the accumulated high parts riding the borrow
+				// chain. Sound without overflow: this path's q_hat is at
+				// most B-2 (u_hi <= v_n1-2 above), hi(q*v) <= q_hat-1, so
+				// every accumulated borrow stays below 2^64.
+				var uint64 sub = 0
+				var mi = 0
+				while mi < n; mi += 1 {
+					const uint64 vv = remainder.digits.load_int(mi) as uint64
+					const uint64 ul = remainder.digits.load_int(wd_off + j + mi) as uint64
+					const uint64 pl = q_hat * vv
+					const uint64 ph = self.mul_wide_hi(q_hat, vv)
+					const uint64 t = pl + sub
+					var uint64 th = ph
+					if t < pl {
+						th += 1
+					}
+					const uint64 diff = ul - t
+					var uint64 nb = 0
+					if diff > ul {
+						nb = 1
+					}
+					sub = th + nb
+					remainder.digits.store_int(wd_off + j + mi, diff as int)
+				}
+				const uint64 u_top = remainder.digits.load_int(wd_off + j + n) as uint64
+				remainder.digits.store_int(wd_off + j + n, (u_top - sub) as int)
+				if sub > u_top {
+					need_add_back = 1
+					q_hat -= 1
+				}
 			}
 
-			// D4. Multiply and subtract: u[j+n..j] -= q_hat * v
-			// Step 1: Compute q_hat * v into scratch[0..n]
-			var uint64 mul_carry = 0
-			var mi = 0
-			while mi < n; mi += 1 {
-				const uint64 vv = remainder.digits.load_int(mi) as uint64
-				const uint64 lo_prod = q_hat * vv
-				const uint64 hi_prod = self.mul_wide_hi(q_hat, vv)
-				const uint64 prod = lo_prod + mul_carry
-				mul_carry = hi_prod
-				if prod < lo_prod {
-					mul_carry += 1
-				}
-				remainder.digits.store_int(wd_off + u_len + 1 + mi, prod as int)
-			}
-			remainder.digits.store_int(wd_off + u_len + 1 + n, mul_carry as int)
-
-			// Step 2: Subtract prod[0..n] from u[j..j+n]
-			var uint64 sub_borrow = 0
-			var si2 = 0
-			while si2 <= n; si2 += 1 {
-				const uint64 u_val = remainder.digits.load_int(wd_off + j + si2) as uint64
-				const uint64 p_val = remainder.digits.load_int(wd_off + u_len + 1 + si2) as uint64
-				const uint64 diff = u_val - p_val
-				var borrow1 = 0
-				if diff > u_val {
-					borrow1 = 1
-				}
-				const uint64 diff2 = diff - sub_borrow
-				var borrow2 = 0
-				if diff2 > diff {
-					borrow2 = 1
-				}
-				sub_borrow = (borrow1 + borrow2) as uint64
-				remainder.digits.store_int(wd_off + j + si2, diff2 as int)
-			}
-
-			// D5. Test remainder - if borrow was nonzero (negative result), add back
-			if sub_borrow != 0 {
-				q_hat -= 1
+			// D5. Test remainder - if the result went negative, q_hat was one
+			// too large: add v back and propagate the carry into u[j+n..].
+			if need_add_back != 0 {
 				var uint64 add_carry = 0
 				var ai = 0
 				while ai < n; ai += 1 {
