@@ -152,7 +152,14 @@ export default function build_while_loop_node(
 					statements: node.statements,
 					update: node.update,
 				},
-				{ call_free, int_ext: call_free && !vector },
+				{
+					call_free,
+					// Enclosing-loop arms (the resident wrapper's j-loop, the
+					// block loop around it) pass vector=null but their bodies
+					// contain the vector kernel's x11-x15 pins — the published
+					// clobber set gates their bracket pool off.
+					int_ext: call_free && !vector && !(status.vector_scratch_loops?.has(node) ?? false),
+				},
 			),
 		);
 		// Field-pair SLP (ASM_PLAN_4): a pair hosting v8 (the NEON

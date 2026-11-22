@@ -227,6 +227,31 @@ function evaluate_operation(
 								return true;
 							}
 						}
+						// Literal loop bound + pinned length: `while l < 8`
+						// records the exclusive literal upper bound "8"; a
+						// `zi.cap == 8` equality guard pins the target path's
+						// length (`known_length`, recorded on the base). The
+						// numeric comparison discharges the constraint — the
+						// resident-kernel kernel loop's shape (`while l < 8`
+						// guarding `zi.load_float(l)` under `zi.cap == 8`).
+						// Exclusive bounds (op `<`) satisfy `bound ≤ known`;
+						// inclusive ones need `bound + 1 ≤ known`. No
+						// decl_depth/is_param gate: the literal bound is a
+						// numeric fact copied from the caller's real variable
+						// at THIS call site — the string-collision hazard the
+						// includes-check's gate guards against cannot express
+						// itself as a numeral.
+						if (target_str.includes(".")) {
+							const lit = left_decl.upper_bound_exprs.find((e) => /^\d+$/.test(e));
+							if (lit !== undefined) {
+								const base = target_str.split(".")[0];
+								const target_decl = status.values.findLast((v) => v.name === base);
+								const known = target_decl?.known_length;
+								if (known !== undefined && Number(lit) + (op.op === "<=" ? 1 : 0) <= known) {
+									return true;
+								}
+							}
+						}
 						// Symbolic: a tighter stored bound (e.g. `len - 5`) implies a
 						// looser target (e.g. `len - 1`).
 						if (left_decl.upper_bound_exprs.some((u) => upper_implies(u, target_str!))) {

@@ -39,8 +39,12 @@ import build_while_loop_node from "./build_while_loop_node.ts";
 import { cset_lowering_enabled } from "./cset_lower.ts";
 import { flag_form_enabled } from "./flag_form.ts";
 import { apply_forward_use, cset_flag_is_write_only, prepare_nir_forwarding } from "./forward.ts";
-import { neon_vectorization_enabled } from "./neon_emit.ts";
-import { plan_vector_for, plan_vector_loop } from "./neon_plan.ts";
+import {
+	emit_resident_epilogue,
+	emit_resident_preheader,
+	neon_vectorization_enabled,
+} from "./neon_emit.ts";
+import { plan_vector_for, plan_vector_loop, plan_resident_kernel } from "./neon_plan.ts";
 import { region_pool_enter, region_pool_exit } from "./region_pool.ts";
 import { slp_pair_enabled, try_emit_slp_pair } from "./slp_pair.ts";
 import { plan_full_unroll } from "./unroll.ts";
@@ -141,13 +145,35 @@ function emit_stmt_dispatch(
 				build_if_else_node(child as IfElseNode, status, nstmt);
 				return 1;
 			case "while": {
+				// Resident-kernel wrapper (value-level lane allocator): the
+				// enclosing loop's shape (scalar prologue + exactly one lane
+				// loop with a literal full-width bound) takes the carried-
+				// buffer form — v-registers across iterations, one load-group
+				// in the preheader and one store-group after the loop. The
+				// inner loop's plan is built HERE and handed to the inner
+				// dispatch through the pending stash.
+				const resident = neon_vectorization_enabled()
+					? plan_resident_kernel(nstmt, index, ctx.stmts, status)
+					: null;
+				if (resident) {
+					emit_resident_preheader(resident.plan, status);
+					status.pending_resident_plan = { node: resident.inner_node, plan: resident.plan };
+					build_while_loop_node(child as WhileLoopNode, status, nstmt, null, null);
+					status.pending_resident_plan = undefined;
+					emit_resident_epilogue(resident.plan, status);
+					return 1;
+				}
 				// NEON vectorization + full-unroll planning ride exactly this
 				// dispatch point: the plans need the NIR list (init check +
 				// post-loop reads), which only exists under an active cursor.
 				// Null plans leave emission byte-identical to the scalar loop.
-				const neon_plan = neon_vectorization_enabled()
-					? plan_vector_loop(nstmt, index, ctx.stmts, status)
-					: null;
+				let neon_plan: ReturnType<typeof plan_vector_loop> = null;
+				if (status.pending_resident_plan && status.pending_resident_plan.node === child) {
+					neon_plan = status.pending_resident_plan.plan;
+					status.pending_resident_plan = undefined;
+				} else if (neon_vectorization_enabled()) {
+					neon_plan = plan_vector_loop(nstmt, index, ctx.stmts, status);
+				}
 				const unroll_plan = plan_full_unroll(nstmt, index, ctx.stmts, status.induction_const);
 				// Region-scoped pool claims (ASM_PLAN_5): borrow a pool
 				// register whose function-wide occupants are dead in this

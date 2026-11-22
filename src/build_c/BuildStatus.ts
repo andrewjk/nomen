@@ -651,6 +651,23 @@ export default interface BuildStatus {
 	 *  (RHS reads of the target need the old value until the final fused
 	 *  instruction, which reads its sources before writing). */
 	float_dest_hint?: string;
+	/** Resident-kernel handoff (value-level lane allocator): the enclosing
+	 *  loop's wrapper pre-planned the INNER lane loop and stashed its plan
+	 *  keyed by the inner loop's AST node. The inner loop's vectorization
+	 *  dispatch consumes the stash (instead of re-planning) so the carried
+	 *  buffers ride v-registers across the enclosing loop's iterations. */
+	pending_resident_plan?: {
+		node: import("../nodes/BaseNode.js").default;
+		plan: import("../build_aarch64/neon_plan.js").NeonPlan;
+	};
+	/** Loops whose bodies (transitively) contain a vector-plannable loop —
+	 *  their bracket promotions must keep off the NEON pin pool x11-x15
+	 *  (the pins are live across the whole body). Computed once per
+	 *  function at allocation time; see neon_plan.collect_vector_scratch_loops. */
+	vector_scratch_loops?: Set<import("../nodes/BaseNode.js").default>;
+	/** The function hosts a resident kernel — the allocator excludes the
+	 *  ext pool (the kernel's pins live across its enclosing loop). */
+	has_resident_kernel?: boolean;
 	/** Destination hint, integer side (ASM_PLAN_2 tranche F): when set to a
 	 *  promoted x-register, the ROOT integer operation of an assignment or
 	 *  declaration initializer emits directly into it instead of x0 +

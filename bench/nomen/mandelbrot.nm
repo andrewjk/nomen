@@ -9,86 +9,200 @@ import System
 // (= zr^2 - zi^2) so the kernel touches four buffers, not five; the
 // arithmetic is bit-identical to the scalar tr/ti form (same rounded
 // products, subtracted/added in the same order).
-//
-// The lane loops are bounded by `lanes`, a local hoisted from `zi.cap` —
-// a runtime trip count. That matters on both backends: clang only
-// vectorizes these loops when the bound isn't a compile-time 8 (a literal
-// 8 group body only ever reaches unroll+SLP, which declines this shape),
-// and the aarch64 codegen reads a local bound from a register instead of
-// reloading the cap field every iteration.
 func mbrot8 = (ref Buffer<float> zr, ref Buffer<float> zi, ref Buffer<float> d, ref Buffer<float> cr, float ci, out int) {
-	// Every lane buffer is sized to 8 by the caller, but that fact doesn't
-	// propagate through `ref` parameters — relate the caps once so each
-	// inner loop's `l < zi.cap` bound discharges every access constraint
-	// (`l < zi.cap <= X.cap`).
-	if zi.cap <= zr.cap && zi.cap <= d.cap && zi.cap <= cr.cap {
+	#if META.arch == "aarch64" {
+		// Every lane buffer is sized to 8 by the caller (the accu math
+		// assumes it) — but neither fact propagates through `ref`
+		// parameters. The ==8 equality guards pin the caps (`known_length`):
+		// the literal-bound kernel loop discharges its access constraints
+		// against them, and the resident-kernel planner can prove the peel
+		// covers the full width — the lane state then lives in v-registers
+		// across the whole j-loop (no per-iteration memory round trip), and
+		// memory resyncs once at the j-loop's boundary for the scalar
+		// consumers (the escape check below).
+		if zi.cap == 8 && zr.cap == 8 && d.cap == 8 && cr.cap == 8 {
+			var l = 0
+			while l < 8; l += 1 {
+				zr.store_float(l, 0.0)
+			}
+			l = 0
+			while l < 8; l += 1 {
+				zi.store_float(l, 0.0)
+			}
+			l = 0
+			while l < 8; l += 1 {
+				d.store_float(l, 0.0)
+			}
+			var block = 0
+			while block < 10; block += 1 {
+				var j = 0
+				while j < 5; j += 1 {
+					// One fused lane loop: all three updates per lane, in the
+					// references' order (zi needs the pre-update zr). Lanes are
+					// independent, so the fused form is bit-identical to the
+					// split per-array loops. Loads are spelled inline so the
+					// body stays within the vectorizer's temp budget; the
+					// literal bound is what the resident planner pins the
+					// register residency to.
+					l = 0
+					while l < 8; l += 1 {
+						const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
+						const float zr1 = d.load_float(l) + cr.load_float(l)
+						zi.store_float(l, zi1)
+						zr.store_float(l, zr1)
+						d.store_float(l, zr1 * zr1 - zi1 * zi1)
+					}
+				}
+				// every lane's |z|^2 escaped the radius-2 disk? A min-reduction
+				// (instead of an early-break scan) keeps the loop vectorizable on
+				// the C backend; aarch64 rides the scalar loop either way. The
+				// 1e30 seed can never mask an inside lane (|z|^2 <= 4 there), and
+				// an escaped lane's |z|^2 only grows (or reaches inf/NaN, which
+				// fail the `<` compare and stay "escaped").
+				var float min_s = 1000000000000000000000000000000.0
+				l = 0
+				while l < 8; l += 1 {
+					const float s = zr.load_float(l) * zr.load_float(l) + zi.load_float(l) * zi.load_float(l)
+					if s < min_s {
+						min_s = s
+					}
+				}
+				if min_s > 4.0 {
+					return 0
+				}
+			}
+			var accu = 0
+			l = 0
+			while l < 8; l += 1 {
+				const float z2 = zr.load_float(l) * zr.load_float(l)
+				if z2 + zi.load_float(l) * zi.load_float(l) <= 4.0 {
+					accu = accu + (128 >> l)
+				}
+			}
+			return accu
+		}
+		// Misshapen buffers (cap != 8): the pre-resident <=-guarded lanes
+		// loops — never taken by the caller, kept for behavior preservation.
+		if zi.cap <= zr.cap && zi.cap <= d.cap && zi.cap <= cr.cap {
+			var int lanes = zi.cap
+			var l = 0
+			while l < zr.cap; l += 1 {
+				zr.store_float(l, 0.0)
+			}
+			l = 0
+			while l < zi.cap; l += 1 {
+				zi.store_float(l, 0.0)
+			}
+			l = 0
+			while l < d.cap; l += 1 {
+				d.store_float(l, 0.0)
+			}
+			var block = 0
+			while block < 10; block += 1 {
+				var j = 0
+				while j < 5; j += 1 {
+					l = 0
+					while l < lanes; l += 1 {
+						const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
+						const float zr1 = d.load_float(l) + cr.load_float(l)
+						zi.store_float(l, zi1)
+						zr.store_float(l, zr1)
+						d.store_float(l, zr1 * zr1 - zi1 * zi1)
+					}
+				}
+				var float min_s = 1000000000000000000000000000000.0
+				l = 0
+				while l < lanes; l += 1 {
+					const float s = zr.load_float(l) * zr.load_float(l) + zi.load_float(l) * zi.load_float(l)
+					if s < min_s {
+						min_s = s
+					}
+				}
+				if min_s > 4.0 {
+					return 0
+				}
+			}
+			var accu = 0
+			l = 0
+			while l < lanes; l += 1 {
+				const float z2 = zr.load_float(l) * zr.load_float(l)
+				if z2 + zi.load_float(l) * zi.load_float(l) <= 4.0 {
+					accu = accu + (128 >> l)
+				}
+			}
+			return accu
+		}
+		return 0
+	} else {
 		// Hoist the lane count once: a local lets the loop condition read a
 		// register instead of reloading the cap field every iteration (the
 		// aarch64 codegen doesn't hoist loop-invariant bound expressions),
 		// while the C backend still sees a runtime trip count — clang only
 		// vectorizes these loops when the bound isn't a compile-time 8.
-		var int lanes = zi.cap
-		var l = 0
-		while l < zr.cap; l += 1 {
-			zr.store_float(l, 0.0)
-		}
-		l = 0
-		while l < zi.cap; l += 1 {
-			zi.store_float(l, 0.0)
-		}
-		l = 0
-		while l < d.cap; l += 1 {
-			d.store_float(l, 0.0)
-		}
-		var block = 0
-		while block < 10; block += 1 {
-			var j = 0
-			while j < 5; j += 1 {
-				// One fused lane loop: all three updates per lane, in the
-				// references' order (zi needs the pre-update zr). Lanes are
-				// independent, so the fused form is bit-identical to the
-				// split per-array loops and gives the C backend a single
-				// vectorizable loop instead of three (one loop-carried
-				// overhead instead of three). Loads are spelled inline so
-				// the body stays within the vectorizer's temp budget.
+		if zi.cap <= zr.cap && zi.cap <= d.cap && zi.cap <= cr.cap {
+			var int lanes = zi.cap
+			var l = 0
+			while l < zr.cap; l += 1 {
+				zr.store_float(l, 0.0)
+			}
+			l = 0
+			while l < zi.cap; l += 1 {
+				zi.store_float(l, 0.0)
+			}
+			l = 0
+			while l < d.cap; l += 1 {
+				d.store_float(l, 0.0)
+			}
+			var block = 0
+			while block < 10; block += 1 {
+				var j = 0
+				while j < 5; j += 1 {
+					// One fused lane loop: all three updates per lane, in the
+					// references' order (zi needs the pre-update zr). Lanes are
+					// independent, so the fused form is bit-identical to the
+					// split per-array loops and gives the C backend a single
+					// vectorizable loop instead of three (one loop-carried
+					// overhead instead of three). Loads are spelled inline so
+					// the body stays within the vectorizer's temp budget.
+					l = 0
+					while l < lanes; l += 1 {
+						const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
+						const float zr1 = d.load_float(l) + cr.load_float(l)
+						zi.store_float(l, zi1)
+						zr.store_float(l, zr1)
+						d.store_float(l, zr1 * zr1 - zi1 * zi1)
+					}
+				}
+				// every lane's |z|^2 escaped the radius-2 disk? A min-reduction
+				// (instead of an early-break scan) keeps the loop vectorizable on
+				// the C backend; aarch64 rides the scalar loop either way. The
+				// 1e30 seed can never mask an inside lane (|z|^2 <= 4 there), and
+				// an escaped lane's |z|^2 only grows (or reaches inf/NaN, which
+				// fail the `<` compare and stay "escaped").
+				var float min_s = 1000000000000000000000000000000.0
 				l = 0
 				while l < lanes; l += 1 {
-					const float zi1 = (zr.load_float(l) + zr.load_float(l)) * zi.load_float(l) + ci
-					const float zr1 = d.load_float(l) + cr.load_float(l)
-					zi.store_float(l, zi1)
-					zr.store_float(l, zr1)
-					d.store_float(l, zr1 * zr1 - zi1 * zi1)
+					const float s = zr.load_float(l) * zr.load_float(l) + zi.load_float(l) * zi.load_float(l)
+					if s < min_s {
+						min_s = s
+					}
+				}
+				if min_s > 4.0 {
+					return 0
 				}
 			}
-			// every lane's |z|^2 escaped the radius-2 disk? A min-reduction
-			// (instead of an early-break scan) keeps the loop vectorizable on
-			// the C backend; aarch64 rides the scalar loop either way. The
-			// 1e30 seed can never mask an inside lane (|z|^2 <= 4 there), and
-			// an escaped lane's |z|^2 only grows (or reaches inf/NaN, which
-			// fail the `<` compare and stay "escaped").
-			var float min_s = 1000000000000000000000000000000.0
+			var accu = 0
 			l = 0
 			while l < lanes; l += 1 {
-				const float s = zr.load_float(l) * zr.load_float(l) + zi.load_float(l) * zi.load_float(l)
-				if s < min_s {
-					min_s = s
+				const float z2 = zr.load_float(l) * zr.load_float(l)
+				if z2 + zi.load_float(l) * zi.load_float(l) <= 4.0 {
+					accu = accu + (128 >> l)
 				}
 			}
-			if min_s > 4.0 {
-				return 0
-			}
+			return accu
 		}
-		var accu = 0
-		l = 0
-		while l < lanes; l += 1 {
-			const float z2 = zr.load_float(l) * zr.load_float(l)
-			if z2 + zi.load_float(l) * zi.load_float(l) <= 4.0 {
-				accu = accu + (128 >> l)
-			}
-		}
-		return accu
+		return 0
 	}
-	return 0
 }
 
 pub func main = (Init init) {

@@ -21,6 +21,7 @@ import build_foreign from "./build_foreign.ts";
 import { check_c_fallback } from "./build_raw_node.ts";
 import { nir_emission_enabled } from "./emit_nir.ts";
 import { prepare_nir_forwarding } from "./forward.ts";
+import { collect_vector_scratch_loops, has_resident_kernel } from "./neon_plan.ts";
 import { publish_slp_pairs } from "./slp_pair.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free } from "./utils/audit.ts";
@@ -641,10 +642,21 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	// expressions verbatim: byte-identical output.
 	let fn_allocs: Map<string, string> | undefined;
 	let fn_callee_saved: Set<string> | undefined;
+	// Vector-scratch clobber set (value-level lane allocator): loops whose
+	// bodies contain a vector-plannable loop — their bracket promotions must
+	// keep off the NEON pin pool (x11-x15). Published on status for the
+	// loop builders' promotion decisions (see build_while_loop_node).
+	if (plan_nir) {
+		status.vector_scratch_loops = collect_vector_scratch_loops(plan_nir.body, status);
+		status.has_resident_kernel = has_resident_kernel(plan_nir.body, status);
+	}
 	if (nir) {
 		if (nir_regalloc_enabled()) {
 			// status rides along for the field-pair SLP hint scan (ASM_PLAN_4).
-			const plan = plan_nir_registers(node, plan_nir!, { status });
+			const plan = plan_nir_registers(node, plan_nir!, {
+				status,
+				exclude_ext_pool: status.has_resident_kernel === true,
+			});
 			// Stage 3: split plain-name bindings (live from function entry —
 			// the prologue initializes params into them) from decl-site
 			// bindings (the emitter binds those at each declare site, so

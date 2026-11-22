@@ -413,6 +413,16 @@ function emit_peel_expr(
 			const key = `${e.buffer} ${e.shift} ${group}`;
 			const hit = cse.get(key);
 			if (hit) return hit;
+			// Resident kernel: a carried buffer's group value lives in its
+			// v-register (loaded once in the enclosing loop's preheader) —
+			// the load is a register read.
+			if (plan.resident && e.shift === 0) {
+				const carried = plan.resident.find((r) => r.buffer === e.buffer);
+				if (carried) {
+					cse.set(key, carried.vregs[group]);
+					return carried.vregs[group];
+				}
+			}
 			const base = shifted_regs.get(`${e.buffer} ${e.shift}`) ?? buffer_regs.get(e.buffer) ?? "x11";
 			emit_asm(status, `ldr q${target.slice(1)}, [${base}, #${group * 16}]\n`);
 			cse.set(key, target);
@@ -558,6 +568,14 @@ function emit_neon_peel(
 				defs,
 				new Map(),
 			);
+			// Resident kernel: the store moves the computed group value into
+			// the carried buffer's v-register (memory resyncs at the
+			// enclosing loop's boundary).
+			const carried = plan.resident?.find((c) => c.buffer === lane.buffer);
+			if (carried) {
+				emit_asm(status, `mov ${carried.vregs[g]}.16b, ${r}.16b\n`);
+				continue;
+			}
 			emit_asm(status, `str q${r.slice(1)}, [${reg}, #${g * 16}]\n`);
 		}
 	}
@@ -807,4 +825,47 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 
 	status.float_result_in_d0 = saved_d0;
 	return true;
+}
+
+/**
+ * Resident-kernel boundary sync (see plan_resident_kernel): the enclosing
+ * loop's preheader loads every carried buffer's state into its v-registers
+ * (using the identical pointer-pin sequence the vector emission uses, so
+ * the addresses match), and the epilogue stores the registers back once
+ * the enclosing loop has finished — the buffer's scalar consumers after
+ * the loop (mandelbrot's escape check) read memory.
+ */
+export function emit_resident_preheader(plan: NeonPlan, status: BuildStatus): void {
+	if (!plan.resident || plan.resident.length === 0) return;
+	const buffer_regs = new Map<string, string>();
+	plan.buffers.forEach((b, i) => {
+		emit_buffer_struct_addr(b.node, status);
+		const reg = BUFFER_PTR_REGS[i] ?? "x11";
+		emit_asm(status, `ldr ${reg}, [x9, #8]\n`);
+		buffer_regs.set(b.name, reg);
+	});
+	for (const c of plan.resident) {
+		const base = buffer_regs.get(c.buffer) ?? "x11";
+		for (let g = 0; g < 4; g++) {
+			// 128-bit loads encode as the q-form (v16's q alias).
+			emit_asm(status, `ldr q${c.vregs[g].slice(1)}, [${base}, #${g * 16}]\n`);
+		}
+	}
+}
+
+export function emit_resident_epilogue(plan: NeonPlan, status: BuildStatus): void {
+	if (!plan.resident || plan.resident.length === 0) return;
+	const buffer_regs = new Map<string, string>();
+	plan.buffers.forEach((b, i) => {
+		emit_buffer_struct_addr(b.node, status);
+		const reg = BUFFER_PTR_REGS[i] ?? "x11";
+		emit_asm(status, `ldr ${reg}, [x9, #8]\n`);
+		buffer_regs.set(b.name, reg);
+	});
+	for (const c of plan.resident) {
+		const base = buffer_regs.get(c.buffer) ?? "x11";
+		for (let g = 0; g < 4; g++) {
+			emit_asm(status, `str q${c.vregs[g].slice(1)}, [${base}, #${g * 16}]\n`);
+		}
+	}
 }

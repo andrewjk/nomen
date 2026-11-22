@@ -303,6 +303,232 @@ export interface NeonPlan {
 	 *  (their temp_defs are skipped; their cells are freed for the temps
 	 *  that are actually shared). */
 	readonly peel_inline: readonly string[];
+	/** Resident-kernel mode (value-level lane allocator, tranche 1): set
+	 *  only when `plan_resident_kernel` wraps this plan inside a fixed-shape
+	 *  enclosing loop over a LITERAL bound equal to the peel's width. The
+	 *  carried buffers' values then live in the listed v-registers across
+	 *  every enclosing-loop iteration — the peel's loads of them read the
+	 *  registers, its stores move cells into them, and the wrapper emits
+	 *  one load-group in the preheader and one store-group after the loop
+	 *  (memory is coherent only at the enclosing loop's boundary). */
+	readonly resident?: readonly NeonResidentCarried[];
+}
+
+/** One loop-carried buffer of a resident kernel: 4 v-registers (one per
+ *  peel group) holding the buffer's whole 8-lane state. */
+export interface NeonResidentCarried {
+	readonly buffer: string;
+	readonly vregs: readonly [string, string, string, string];
+}
+
+/**
+ * Resident-kernel planning (value-level lane allocator, tranche 1) — the
+ * mandelbrot update kernel's shape: an enclosing loop whose body is scalar
+ * statements plus exactly ONE lane loop that (a) vectorizes with the peel
+ * covering its full literal width, (b) has no reductions and no shifted
+ * reads, and (c) both loads and stores the same Buffers (zr/zi/d) at the
+ * bare induction. Those buffers' state is then held in v-registers across
+ * every enclosing-loop iteration — the peel stops reading and writing
+ * memory for them entirely, and memory is resynced once at the enclosing
+ * loop's boundary (for its scalar consumers: the escape check).
+ *
+ * The literal-width requirement is what makes this sound without a
+ * fallback: the peel covers every element, so the register state IS the
+ * state — there is no memory-based tail racing the registers. Sources
+ * provide the literal via `#if META.arch` (the C backend keeps its
+ * runtime-bound loop, which clang vectorizes only un-literal).
+ */
+export function plan_resident_kernel(
+	jstmt: NirStmt & { kind: "while" },
+	index: number,
+	list: readonly NirStmt[],
+	status: BuildStatus,
+): { plan: NeonPlan; inner_node: BaseNode } | null {
+	// The enclosing loop's body: scalar statements (no Buffer method calls —
+	// their loads/stores would race the register state) plus exactly ONE
+	// while — the lane kernel.
+	let inner: (NirStmt & { kind: "while" }) | null = null;
+	let inner_index = -1;
+	for (let i = 0; i < jstmt.body.length; i++) {
+		const s = jstmt.body[i];
+		if (s.kind === "while") {
+			if (inner !== null) return null; // two nested loops: not this shape
+			inner = s;
+			inner_index = i;
+			continue;
+		}
+		if (s.kind !== "assign" && s.kind !== "declare" && s.kind !== "eval") return null;
+		if (expr_has_method_call(s)) return null;
+	}
+	if (inner === null) return null;
+
+	const inner_plan = plan_vector_loop(inner, inner_index, jstmt.body, status);
+	if (!inner_plan) return null;
+	if (inner_plan.peel <= 0) return null;
+	if (inner_plan.max_shift !== 0) return null;
+	if (inner_plan.reductions.length !== 0) return null;
+
+	// The bound must be the LITERAL equal to the peel's full width — the
+	// soundness anchor: the peel computes every element, so the registers
+	// hold the complete state and no memory tail races them.
+	const groups = inner_plan.peel;
+	const width = groups * inner_plan.elem.group_elems;
+	const v = (inner_plan.bound_node as ValueNode | undefined)?.value;
+	if (typeof v !== "string" || !INT_LIT_RE.test(v) || BigInt(v) !== BigInt(width)) {
+		return null;
+	}
+
+	// Carried buffers: stored exactly once each and loaded at the bare
+	// induction. Read-only buffers (cr) stay memory-loaded; write-only
+	// buffers would be fine but have no kernel use — require both.
+	const store_counts = new Map<string, number>();
+	for (const lane of inner_plan.lanes) {
+		if (lane.kind === "store") {
+			store_counts.set(lane.buffer, (store_counts.get(lane.buffer) ?? 0) + 1);
+		}
+	}
+	const loaded = new Set<string>();
+	const visit = (e: NeonLaneExpr): void => {
+		if (e.k === "load") loaded.add(e.buffer);
+		else if (e.k === "op") {
+			visit(e.left);
+			visit(e.right);
+		}
+	};
+	for (const lane of inner_plan.lanes) {
+		if (lane.kind === "store") visit(lane.value);
+		else if (lane.kind === "temp_def") visit(lane.value);
+	}
+	const carried: NeonResidentCarried[] = [];
+	let slot = 16;
+	for (const [buffer, count] of store_counts) {
+		if (count !== 1) return null; // multi-store: the group mapping is ambiguous
+		if (!loaded.has(buffer)) continue; // not carried (read-only or write-only)
+		if (slot + 4 > 32) return null; // v-pool exhausted
+		carried.push({
+			buffer,
+			vregs: [`v${slot}`, `v${slot + 1}`, `v${slot + 2}`, `v${slot + 3}`],
+		});
+		slot += 4;
+	}
+	if (carried.length === 0) return null;
+	return { plan: { ...inner_plan, resident: carried }, inner_node: inner.node };
+}
+
+/** Whether ANY while loop in the body resident-plans (see
+ *  plan_resident_kernel). The allocator consults this to exclude the ext
+ *  pool: the kernel's pin registers (x12-x15) are live across the whole
+ *  enclosing loop, where ext-pool share proofs are vacuous. */
+export function has_resident_kernel(body: readonly NirStmt[], status: BuildStatus): boolean {
+	let found = false;
+	const walk = (list: readonly NirStmt[]): void => {
+		for (let i = 0; i < list.length; i++) {
+			const s = list[i];
+			if (s.kind === "while" && !found) {
+				if (plan_resident_kernel(s, i, list, status) !== null) {
+					found = true;
+					return;
+				}
+				walk(s.body);
+			} else if (s.kind === "if") {
+				walk(s.then_branch);
+				walk(s.else_branch);
+			} else if (s.kind === "block" || s.kind === "nested_func" || s.kind === "async_block") {
+				walk(s.body);
+			}
+		}
+	};
+	walk(body);
+	return found;
+}
+
+/**
+ * Loops whose bodies (transitively) contain a vector-plannable loop. The
+ * NEON emission pins buffer pointers in x11-x15 and counters in x9/x10/x14
+ * for the whole body, so THESE loops' bracket promotions must not claim the
+ * int caller-saved pool (x12-x15) — the pins would clobber the bracketed
+ * registers mid-iteration (the mandelbrot receipt: the j-loop's induction
+ * bracketed into x13, the resident kernel's d-pointer pin clobbered it
+ * every iteration, and the kernel exited after one iteration). Published
+ * for build_while_loop_node's promotion decision, which happens BEFORE the
+ * body builds — decision-time-available where the per-loop plan is not.
+ */
+export function collect_vector_scratch_loops(
+	body: readonly NirStmt[],
+	status: BuildStatus,
+): Set<BaseNode> {
+	const out = new Set<BaseNode>();
+	const walk = (list: readonly NirStmt[]): boolean => {
+		let any = false;
+		for (let i = 0; i < list.length; i++) {
+			const s = list[i];
+			if (s.kind === "while") {
+				if (plan_vector_loop(s, i, list, status) !== null) {
+					out.add(s.node);
+					any = true;
+				}
+				if (walk(s.body)) any = true;
+			} else if (s.kind === "for") {
+				if (
+					s.list?.kind === "binary" &&
+					(s.list.node as RangeNode).node_type === "range" &&
+					plan_vector_for(s, i, list, status) !== null
+				) {
+					out.add(s.node);
+					any = true;
+				}
+				if (walk(s.body)) any = true;
+			} else if (s.kind === "if") {
+				if (walk(s.then_branch)) any = true;
+				if (walk(s.else_branch)) any = true;
+			} else if (s.kind === "switch_match") {
+				for (const a of s.arms) if (walk(a.branch)) any = true;
+				if (s.otherwise && walk(s.otherwise)) any = true;
+			} else if (s.kind === "block" || s.kind === "async_block" || s.kind === "nested_func") {
+				if (walk(s.body)) any = true;
+			}
+		}
+		return any;
+	};
+	walk(body);
+	return out;
+}
+
+/** Any Buffer method call inside a statement's expressions (conservative:
+ *  ANY method or plain call at all — the resident shape's surrounding
+ *  statements are scalar initialization like `l = 0`). */
+function expr_has_method_call(s: NirStmt): boolean {
+	const hit = (e: NirExpr | null | undefined): boolean => {
+		if (!e) return false;
+		switch (e.kind) {
+			case "method_call":
+			case "call":
+			case "spawn":
+				return true;
+			case "binary":
+				return hit(e.left) || hit(e.right);
+			case "wrap":
+				return hit(e.inner);
+			case "path":
+				return hit(e.receiver);
+			case "flow":
+				return (
+					(e.scrutinee ? hit(e.scrutinee) : false) ||
+					e.arms.some((a) => a.branch.some(expr_has_method_call)) ||
+					(e.otherwise?.some(expr_has_method_call) ?? false)
+				);
+			default:
+				return false;
+		}
+	};
+	if (s.kind === "assign") {
+		return hit(s.target) || hit(s.rhs) || (s.swap ? hit(s.swap) : false);
+	}
+	if (s.kind === "eval") return hit(s.expr);
+	if (s.kind === "declare") {
+		return hit(s.decl.init) || (s.decl.swap ? hit(s.decl.swap) : false);
+	}
+	return false;
 }
 
 // Literal shapes — mirrored exactly from build_float_operand's accepted

@@ -393,6 +393,14 @@ export interface NirRegisterPlanOptions {
 	/** Parameter names never to promote (e.g. a method's `self`, which the
 	 *  method ABI parks in x19/x20 with its own conventions). */
 	exclude_params?: Set<string>;
+	/** The function hosts a RESIDENT kernel (value-level lane allocator):
+	 *  the kernel's preheader/peel pins buffer pointers in x12-x15 across
+	 *  its whole enclosing loop, where an ext-pool allocation's
+	 *  interference share proof is vacuous (the pins' live range has no
+	 *  textual overlap with the kernel temps). Exclude the ext pool —
+	 *  contained temporaries fall back to frame slots; the vector path
+	 *  keeps them in its own v-cell registers. */
+	exclude_ext_pool?: boolean;
 }
 
 interface RangeAnalysis {
@@ -877,7 +885,9 @@ export function analyze_ranges(cfg: FunctionCfg, status?: BuildStatus): RangeAna
 	const dominance = analyze_dominance(cfg);
 	const loops = analyze_loops(cfg, dominance);
 	for (const loop of loops.loops) {
-		for (const v of liveness.live_in[loop.header]) facts_of(v).loop_blocked = true;
+		for (const v of liveness.live_in[loop.header]) {
+			facts_of(v).loop_blocked = true;
+		}
 	}
 	return {
 		facts,
@@ -929,6 +939,7 @@ export function plan_nir_registers(
 	nir: NirFunction,
 	options?: NirRegisterPlanOptions,
 ): NirRegisterPlan {
+	const exclude_ext_pool = options?.exclude_ext_pool === true;
 	const allocs = new Map<string, string>();
 	const callee_saved = new Set<string>();
 	const pinned = new Set<string>();
@@ -1163,7 +1174,7 @@ export function plan_nir_registers(
 		const f = facts.get(c.name);
 		if (!f) continue;
 		const pinned_name = param_names.has(c.name);
-		const caller_eligible = !pinned_name && !f.crosses_call && !f.loop_blocked;
+		const caller_eligible = !pinned_name && !f.crosses_call && !f.loop_blocked && !exclude_ext_pool;
 		if (c.caller_only && !caller_eligible) continue;
 		// Caller-saved first (no prologue cost, keeps callee regs for loops
 		// and Buffer caches), then callee-saved. Every non-caller_only int
@@ -1275,6 +1286,19 @@ export function plan_nir_registers(
 		 *  the resolution below passes them through with the pins. */
 		inds: { reg: string; name: string; type_name: string; dead: string[] }[];
 	}[] = [];
+	// Resident-kernel pin reservation (value-level lane allocator): the
+	// kernel's preheader and per-group pins hold buffer POINTERS in
+	// x11/x12/x13/x15 across its whole enclosing loop. Occupy them with
+	// sentinel bindings so every downstream claim system — the region pool's
+	// occupancy/borrow scan and the emit-side bracket's used-set — refuses
+	// them (a bracket "share proof" against the kernel temps' contained
+	// ranges is vacuous where the pins are live).
+	if (exclude_ext_pool) {
+		allocs.set("__neon_pin_0", "x11");
+		allocs.set("__neon_pin_1", "x12");
+		allocs.set("__neon_pin_2", "x13");
+		allocs.set("__neon_pin_3", "x15");
+	}
 	if (region_pool_enabled()) {
 		const reg_occupants = new Map<string, string[]>();
 		for (const [name, reg] of allocs) {

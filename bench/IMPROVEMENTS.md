@@ -871,6 +871,45 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     shape is the value-level lane allocator (FOLLOWUP.md), not scalar
     cleanup.
 
+52. **Value-level lane allocator — resident kernels** (`src/build_aarch64/neon_plan.ts`,
+    `neon_emit.ts`, `emit_nir.ts`, `build_while_loop_node.ts`,
+    `nir_regalloc.ts`, `check/utils/flow_bounds.ts`,
+    `check/utils/evaluate_const_condition.ts`, `bench/nomen/mandelbrot.nm`):
+    the mandelbrot update kernel's lane state (zr/zi/d) now lives in
+    v-registers across the ENTIRE j-loop (10 blocks × 5 iterations), with no
+    per-iteration memory round trip — the references' straight-line 8×f64
+    shape at last. `plan_resident_kernel` recognizes the enclosing loop's
+    shape (scalar prologue + exactly one lane loop with a LITERAL full-width
+    bound, no reductions/shifted reads, buffers both loaded and stored once
+    each) and attaches the carried buffers to v16-v27; the peel's loads of
+    them become register reads, its stores `mov v.16b` writes; the wrapper
+    emits one load-group in the preheader and one store-group after the loop
+    (scalar consumers — the escape check — read memory). The literal-width
+    requirement is the soundness anchor: the peel covers every element, so
+    registers ARE the state and no memory tail races them. The aarch64 source
+    uses `#if META.arch` to spell the bound as 8 (the C backend keeps its
+    runtime-bound loop — clang vectorizes only un-literal) with `cap == 8`
+    equality guards; the checker gained literal-bound-vs-pinned-length
+    discharge (`where l < 8` + `zi.cap == 8` proves `l < zi.cap`) and
+    `.cap` joins the known-length family.
+    **Register discipline** (the two-day receipt): the kernel pins buffer
+    pointers in x11/x12/x13/x15 across the whole loop, where every existing
+    claim system's share proof is vacuous — (a) enclosing loops' emit-side
+    brackets bracketed the induction into x13 (the pin clobbered it; the
+    kernel exited after one iteration — a wrong-image checksum), fixed by
+    publishing a vector-scratch-clobber loop set (`collect_vector_scratch_loops`,
+    decision-time-available) that gates `int_ext` off for every loop whose
+    body transitively contains a vector plan; (b) the region pool borrowed
+    the ext registers for its own receiver pins/induction bindings once the
+    kernel temps left the ext pool, fixed by reserving x11/x12/x13/x15 with
+    sentinel plan allocations (`__neon_pin_*`); (c) satisfied by excluding
+    the ext pool for resident-kernel functions (`exclude_ext_pool`), so
+    contained temps fall to frame slots (the vector path keeps them in
+    v-cells — zero hot-path cost). Measured min-of-9: mandelbrot aarch64
+    n=1000 33.2 → 22.6 ms (−32%), n=2000 115.8 → 77.8 ms (−33%); C neutral
+    (94.1 → 93.7); outputs byte-identical at n=200/400/1000/2000/4000 on
+    both backends.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -1367,12 +1406,14 @@ pixels per group like the references (previously one pixel per call).
 - ✓ **[codegen] DONE (item 51):** Duplicate-FPR-load CSE + single-arm float
   conditional-select (`fcsel`) — the escape check's duplicated loads and
   branchy select. −9% (aarch64); C unchanged (clang already did both).
+- ✓ **[codegen] DONE (item 52):** Value-level lane allocator — the lane
+  state lives in v16-v27 across the whole j-loop (preheader load-group,
+  epilogue store-group; zero per-iteration memory traffic). −32/−33%.
 - **Remaining gap:** Zig/Rust run 14.4/45.5 ms (8×f64 straight-line SIMD with
-  4 `.2d` registers per op). The planner's elementwise-loop model emits
-  2-lane groups with loop machinery; a straight-line lane-group shape needs
-  the value-level lane allocator (FOLLOWUP.md). The escape check is now
-  ~14% of the kernel; vectorizing it would need a float-min reduction shape
-  whose `fmin` chain is exact only up to the ±0-sign rule — gated work.
+  4 `.2d` registers per op) — the resident shape is Nomen's version now; the
+  residual is the escape check (~14% of the kernel, scalar min-reduction —
+  an `fmin` vectorization would need the ±0-sign caveat, gated work) and
+  the per-block preheader/epilogue sync.
 
 ### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms → 6.9 / 24 ms — within ~2× of Rust)
 

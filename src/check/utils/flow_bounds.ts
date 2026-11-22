@@ -406,7 +406,11 @@ function extract_equality_length(
 		const access = left as AccessNode;
 		if (access.access.node_type !== "access_field") continue;
 		const length_field = (access.access as AccessFieldNode).name;
-		if (length_field !== "length" && length_field !== "count") continue;
+		// `cap` joins the family: Buffer capacity equality (`zi.cap == 8`)
+		// pins the exact cap so a literal-bound loop (`while l < 8`)
+		// discharges Buffer index contracts against it (numeric_interval's
+		// literal-vs-pinned-length composition).
+		if (length_field !== "length" && length_field !== "count" && length_field !== "cap") continue;
 		if (access.target.node_type !== "value") continue;
 		const target = (access.target as ValueNode).value;
 		if (right.node_type !== "value") continue;
@@ -1132,7 +1136,7 @@ export function collect_return_length(node: BaseNode): string | undefined {
 			const access = len_side as AccessNode;
 			if (access.access.node_type !== "access_field") continue;
 			const length_field = (access.access as AccessFieldNode).name;
-			if (length_field !== "length" && length_field !== "count") continue;
+			if (length_field !== "length" && length_field !== "count" && length_field !== "cap") continue;
 			if (val_side.node_type !== "value") continue;
 			if (!/^[+-]?\d+$/.test((val_side as ValueNode).value)) continue;
 			result = (val_side as ValueNode).value;
