@@ -291,6 +291,10 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	addp: { shapes: [["f", "f"]] },
 	addv: { shapes: [["f", "f"]] },
 	fcmp: { shapes: [["f", "f"]], setsFlags: true },
+	// FCSEL: float conditional select (the single-arm float if-diamond the
+	// asm_load_cse pass lowers `fcmp + b.<cc> + fmov` into — flag-reading,
+	// FPR form).
+	fcsel: { shapes: [["f", "f", "f", "c"]], readsFlags: true },
 	fsqrt: { shapes: [["f", "f"]] },
 	// SCVTF: integer→float. Both forms are emitted: x-source (scvtf d0, x0)
 	// and the in-place d-source bit-form (fmov d0, x0; scvtf d0, d0).

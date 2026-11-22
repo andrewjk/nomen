@@ -837,6 +837,40 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     aarch64 −6%, C −16% (its spigot divisors are multi-limb). The
     single-limb divisor path is untouched.
 
+51. **aarch64 — duplicate-FPR-load CSE + float conditional-select**
+    (`src/build_aarch64/asm_load_cse.ts`, `test/asm_load_cse.test.ts`): two
+    straight-line peephole passes over the lifted assembly, motivated by the
+    mandelbrot escape check — the scalar min-reduction
+    (`s = zr² + zi²; if s < min_s { min_s = s }`) emitted FOUR loads for two
+    (the duplicated `zr.load_float(l)` / `zi.load_float(l)` operands had no
+    CSE off the item-47 peel path) and a branchy `fcmp + b.<cc> + fmov`
+    select. **Duplicate-FPR-load elimination**: a `ldr dN/sN/qN, <mem>` whose
+    <mem> was already loaded into a still-valid register is deleted (same
+    destination) or rewritten to a width-appropriate register move (fmov
+    d/s; the 128-bit `mov vN.16b` alias for q). Records die on labels (join
+    provenance), calls (heap may be written + caller-saved clobber), any
+    non-frame store (aliasing — [x29]/[sp] slots are call-private and keep
+    records), and any def of the holding register, its width siblings, or
+    any address register in the key — with d/s/q/v operands
+    family-normalized (`fmul v0.2d, …` writes v0, stale-dating a q0/d0/s0
+    record; the slp-pair corpus caught the first draft missing this).
+    Records key on the load WIDTH (an s-load does not satisfy a d-load).
+    **Float conditional-select conversion**: `fcmp fA, fB` + `b.<cc> L` +
+    exactly one `fmov dC, dD` + `L:` lowers to `fcsel dC, dD, dC, <!cc>` —
+    semantics-identical to the branch (a NaN compare takes the false arm
+    both ways; ±0 compare as equal both ways), branchless, and only when L
+    has no other reference in the function (a join would bypass the select).
+    A wrong-value regression on the slp-pair corpus (a `fmul v0.2d` between
+    the duplicate loads whose v0 write the first draft's register-kill
+    missed) is pinned by the existing slp-pair binary test — the suite held.
+    Measured min-of-9 (aarch64; C unchanged — clang already CSE'd and
+    if-converted its own output): mandelbrot n=1000 31.2 → 28.5 ms (−8.7%),
+    n=2000 113.7 → 103.4 ms (−9.1%); spectral-norm and nbody byte-identical
+    and perf-neutral. The escape check's kernel share fell ~25% → ~14% —
+    the remaining mandelbrot gap to the references' straight-line 8×f64
+    shape is the value-level lane allocator (FOLLOWUP.md), not scalar
+    cleanup.
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot
@@ -1330,10 +1364,15 @@ pixels per group like the references (previously one pixel per call).
   preheader scalar splats + 4-buffer plans + multi-store bodies. Without it
   the vector loops were net-neutral (55 ms); with it the aarch64 kernel beats
   its scalar baseline 1.4×.
+- ✓ **[codegen] DONE (item 51):** Duplicate-FPR-load CSE + single-arm float
+  conditional-select (`fcsel`) — the escape check's duplicated loads and
+  branchy select. −9% (aarch64); C unchanged (clang already did both).
 - **Remaining gap:** Zig/Rust run 14.4/45.5 ms (8×f64 straight-line SIMD with
   4 `.2d` registers per op). The planner's elementwise-loop model emits
   2-lane groups with loop machinery; a straight-line lane-group shape needs
-  the value-level lane allocator (FOLLOWUP.md).
+  the value-level lane allocator (FOLLOWUP.md). The escape check is now
+  ~14% of the kernel; vectorizing it would need a float-min reduction shape
+  whose `fmin` chain is exact only up to the ±0-sign rule — gated work.
 
 ### edigits (125 / 734 ms → 8.5 / 39 ms → 9 ms → 6.9 / 24 ms — within ~2× of Rust)
 

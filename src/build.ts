@@ -5,6 +5,10 @@ import { expand_large_mov_immediates } from "./build_aarch64/asm_expand_mov.ts";
 import { fold_64bit_arithmetic } from "./build_aarch64/asm_fold64.ts";
 import { convert_loop_invariant_branches } from "./build_aarch64/asm_if_convert.ts";
 import { rewrite_large_frame_offsets } from "./build_aarch64/asm_large_frame.ts";
+import {
+	convert_float_selects,
+	eliminate_duplicate_fpr_loads,
+} from "./build_aarch64/asm_load_cse.ts";
 import { promote_loop_slots } from "./build_aarch64/asm_loop_promote.ts";
 import {
 	eliminate_dead_copy_moves,
@@ -622,6 +626,13 @@ export default function build(
 		// protocol's `fmov xN, dM … fmov dK, xN` crossings into direct
 		// d↔d moves (see asm_opt.ts). Same unconditional/validated contract.
 		status.code = run_float_forwarding(status.code);
+		// Duplicate-FPR-load elimination + single-arm float conditional-select
+		// conversion (see asm_load_cse.ts) — the scalar min-reduction idiom's
+		// duplicated `buf.load_float(l)` operands had no CSE off the peel
+		// path, and its `if s < acc` select was a branchy fcmp+branch+fmov.
+		// Straight-line, label- and store-invalidated, validated below.
+		status.code = eliminate_duplicate_fpr_loads(status.code);
+		status.code = convert_float_selects(status.code);
 		// Dead copy-mv elimination — prunes `mov xD, xS` whose
 		// destination is never read (the x0 value protocol's staging
 		// leftovers, e.g. the `.at()` contract marker when the following
