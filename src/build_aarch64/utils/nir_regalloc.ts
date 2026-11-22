@@ -1297,7 +1297,8 @@ export function plan_nir_registers(
 		allocs.set("__neon_pin_0", "x11");
 		allocs.set("__neon_pin_1", "x12");
 		allocs.set("__neon_pin_2", "x13");
-		allocs.set("__neon_pin_3", "x15");
+		allocs.set("__neon_pin_3", "x14"); // second-group vector index
+		allocs.set("__neon_pin_4", "x15");
 	}
 	if (region_pool_enabled()) {
 		const reg_occupants = new Map<string, string[]>();

@@ -910,6 +910,31 @@ lanes = zi.cap`) — a runtime trip count, which is what clang's loop
     (94.1 → 93.7); outputs byte-identical at n=200/400/1000/2000/4000 on
     both backends.
 
+53. **aarch64 — exact min/max NEON reductions** (`src/build_aarch64/neon_plan.ts`,
+    `neon_emit.ts`, `asm_ir.ts`): the mandelbrot escape check's scalar
+    min-reduction (`s = zr² + zi²; if s < min_s { min_s = s }`) now
+    vectorizes WITHOUT the fast_math opt-in: `plan_common` recognizes the
+    `if (e < acc) { acc = e }` (and `>`) shape and emits an FMINNM/FMAXNM
+    vector accumulate plus a scalar minNum horizontal combine. Exactness:
+    minNum suppresses NaN operands exactly like the scalar compare chain
+    skips them, and the two forms can differ only in the SIGN of a zero
+    result — unobservable when every post-loop read of the accumulator sits
+    inside a comparison (IEEE compares treat ±0 as equal). That gate
+    (`post_loop_uses_comparisons_only` over the NIR after the loop) is what
+    admits the shape unconditionally; the reassociating `+`/`*` reductions
+    keep their fast_math gate. The IR contract gained `fminnm`/`fmaxnm`.
+    Measured (interleaved min-of-9 vs the resident-only build): mandelbrot
+    n=1000 22.7 → 20.0 ms (+11.8%), n=2000 82.2 → 80.0 ms (+2.7%) — the
+    large-n share is smaller because boundary groups run more kernel blocks
+    per escape check. Outputs byte-identical at n=200/500/1000/2000/4000.
+    A hang caught in review was a register collision (a bracket-promoted
+    loop counter in x14, the vector emission's second-group index) — x14
+    joined the resident pin reservation (`__neon_pin_3`). Remaining residual
+    (recorded for later): hoisting the per-block register/memory sync to
+    once per group needs the escape reduction to read carried v-registers,
+    which in turn needs peel support for reductions (a runtime group index
+    cannot select a v-register).
+
 ### Known issues
 
 **Float register allocation overhead in call-heavy benchmarks.** mandelbrot

@@ -256,7 +256,7 @@ export type NeonLaneStmt =
 			readonly kind: "reduction";
 			/** The accumulator (a float local defined before the loop). */
 			readonly name: string;
-			readonly op: "+" | "*";
+			readonly op: "+" | "*" | "min" | "max";
 			readonly operand: NeonLaneExpr;
 	  };
 
@@ -267,7 +267,7 @@ export type NeonLaneStmt =
  *  `fast_math` opt-in. */
 export interface NeonReduction {
 	readonly name: string;
-	readonly op: "+" | "*";
+	readonly op: "+" | "*" | "min" | "max";
 	readonly operand: NeonLaneExpr;
 	/** The accumulator's init expression (loaded + splatted at vector entry). */
 	readonly init_node: BaseNode;
@@ -1140,6 +1140,136 @@ function extract_bound(
  * escape checks. `bound_name` (when the bound is a leaf) must come out of
  * the pre-pass loop-invariant; `elem` must have been pinned by some access.
  */
+
+/** Min/max reduction shape: `if (e < acc) { acc = e }` (or `>`) with both
+ *  sides plain float leaves and an empty else arm — the scalar min/max
+ *  chain the references' `absz.iter().all(...)` compiles to. */
+function min_max_candidate(
+	s: NirStmt & { kind: "if" },
+): { name: string; op: "min" | "max"; operand: NirExpr } | null {
+	if (s.kind !== "if" || s.else_branch.length !== 0) return null;
+	if (s.cond.kind !== "binary") return null;
+	const cond = s.cond.node as OperationNode;
+	if (cond.op !== "<" && cond.op !== ">") return null;
+	const acc_side = cond.op === "<" ? s.cond.right : s.cond.left;
+	const e_side = cond.op === "<" ? s.cond.left : s.cond.right;
+	if (acc_side.kind !== "leaf" || !acc_side.name) return null;
+	if (e_side.kind !== "leaf" || !e_side.name) return null;
+	if (s.then_branch.length !== 1) return null;
+	const only = s.then_branch[0];
+	if (only.kind !== "assign" || only.operator !== null || only.swap) return null;
+	if (only.target.kind !== "leaf" || only.target.name !== acc_side.name) return null;
+	if (only.rhs.kind !== "leaf" || only.rhs.name !== e_side.name) return null;
+	return { name: acc_side.name, op: cond.op === "<" ? "min" : "max", operand: e_side };
+}
+
+/** Exactness gate for min/max reductions: every post-loop read of the
+ *  accumulator must sit inside a comparison expression (IEEE compares treat
+ *  ±0 as equal, so the vector form's possible zero-sign difference is
+ *  unobservable; NaN operands are skipped identically by both forms). */
+function post_loop_uses_comparisons_only(
+	list: readonly NirStmt[],
+	index: number,
+	name: string,
+): boolean {
+	const COMPARE = new Set(["<", "<=", ">", ">=", "==", "!="]);
+	let ok = true;
+	const reads = (e: NirExpr | null | undefined, in_cmp: boolean): void => {
+		if (!ok || !e) return;
+		switch (e.kind) {
+			case "leaf":
+				if (e.name === name && !in_cmp) ok = false;
+				return;
+			case "binary": {
+				const inner = COMPARE.has((e.node as OperationNode).op) ? true : in_cmp;
+				reads(e.left, inner);
+				reads(e.right, inner);
+				return;
+			}
+			case "wrap":
+				reads(e.inner, in_cmp);
+				return;
+			case "call":
+				for (const a of e.facts.args) reads(a, false);
+				return;
+			case "method_call":
+				reads(e.receiver, in_cmp);
+				for (const a of e.facts.args) reads(a, false);
+				return;
+			case "path":
+				reads(e.receiver, in_cmp);
+				return;
+			case "flow":
+				if (e.scrutinee) reads(e.scrutinee, false);
+				for (const arm of e.arms) {
+					if (arm.condition) reads(arm.condition, false);
+					stmts(arm.branch);
+				}
+				if (e.otherwise) stmts(e.otherwise);
+				return;
+			case "spawn":
+				reads(e.call, false);
+				return;
+			default:
+				return;
+		}
+	};
+	const stmts = (body: readonly NirStmt[]): void => {
+		for (const s of body) {
+			if (!ok) return;
+			switch (s.kind) {
+				case "declare":
+					reads(s.decl.init, false);
+					if (s.decl.swap) reads(s.decl.swap, false);
+					break;
+				case "assign":
+					reads(s.target, false);
+					reads(s.rhs, false);
+					if (s.swap) reads(s.swap, false);
+					break;
+				case "eval":
+					reads(s.expr, false);
+					break;
+				case "if":
+					reads(s.cond, false);
+					stmts(s.then_branch);
+					stmts(s.else_branch);
+					break;
+				case "while":
+					reads(s.cond, false);
+					stmts(s.body);
+					if (s.update) stmts([s.update]);
+					break;
+				case "for":
+					if (s.list) reads(s.list, false);
+					stmts(s.body);
+					if (s.update) stmts([s.update]);
+					break;
+				case "switch_match":
+					if (s.scrutinee) reads(s.scrutinee, false);
+					for (const a of s.arms) {
+						if (a.condition) reads(a.condition, false);
+						stmts(a.branch);
+					}
+					if (s.otherwise) stmts(s.otherwise);
+					break;
+				case "return":
+					reads(s.value, false);
+					break;
+				case "block":
+				case "async_block":
+				case "nested_func":
+					stmts(s.body);
+					break;
+				default:
+					break;
+			}
+		}
+	};
+	stmts(list.slice(index + 1));
+	return ok;
+}
+
 function plan_common(
 	lanes_raw: readonly NirStmt[],
 	bound_node: BaseNode,
@@ -1157,6 +1287,12 @@ function plan_common(
 	const reduction_candidates = new Map<
 		string,
 		{ op: "+" | "*"; operand: NirExpr; cls: ElemClass | null }
+	>();
+	/** Min/max accumulators (`if e < acc { acc = e }`) — exact without
+	 *  fast_math under the comparison-only-use gate (see the pre-pass). */
+	const minmax_candidates = new Map<
+		string,
+		{ name: string; op: "min" | "max"; operand: NirExpr }
 	>();
 	// Def pre-pass: every lane statement shape + def name. Hoisted call-arg
 	// temps attached to an eval store count as defs (they become lane temps).
@@ -1197,6 +1333,31 @@ function plan_common(
 			if (defs.has(s.target.name)) return null;
 			defs.add(s.target.name);
 			continue;
+		}
+		if (s.kind === "if") {
+			// Min/max reduction shape: `if (e < acc) { acc = e }` (or `>`),
+			// e a float lane leaf, acc a float local defined before the
+			// loop. The scalar chain keeps the first operand on equal
+			// (±0) compares and skips NaN operands; the vector form's
+			// FMINNM/FMAXNM matches on values and NaN, and can differ only
+			// in the SIGN OF A ZERO result — unobservable when every
+			// post-loop use of the accumulator is a comparison (IEEE
+			// compares treat ±0 as equal). That gate makes this shape
+			// bit-exact WITHOUT the fast_math opt-in.
+			const mm = min_max_candidate(s);
+			if (mm) {
+				if (!float_type_of_name(mm.name, status)) return null;
+				if (status.function_param_regs?.has(mm.name)) return null; // local only
+				if (defs.has(mm.name)) return null; // one def only
+				if (reduction_candidates.has(mm.name) || minmax_candidates.has(mm.name)) {
+					return null;
+				}
+				if (!post_loop_uses_comparisons_only(list, index, mm.name)) return null;
+				defs.add(mm.name);
+				minmax_candidates.set(mm.name, mm);
+				continue;
+			}
+			return null;
 		}
 		if (s.kind === "eval") {
 			const e = s.expr;
@@ -1245,7 +1406,7 @@ function plan_common(
 	// Accumulators must be stable from their nearest def to loop entry; keep
 	// the init expression (splat at vector entry).
 	const reduction_inits = new Map<string, BaseNode>();
-	for (const name of reduction_candidates.keys()) {
+	for (const name of [...reduction_candidates.keys(), ...minmax_candidates.keys()]) {
 		const scan = scan_init(list, index, name);
 		if (!scan.ok || !scan.init_node) return null;
 		reduction_inits.set(name, scan.init_node);
@@ -1264,7 +1425,7 @@ function plan_common(
 		max_depth: 0,
 		elem: null,
 		temp_classes: new Map(),
-		reductions: new Set(reduction_candidates.keys()),
+		reductions: new Set([...reduction_candidates.keys(), ...minmax_candidates.keys()]),
 	};
 	const reductions: NeonReduction[] = [];
 	for (const s of lanes_raw) {
@@ -1279,6 +1440,22 @@ function plan_common(
 			walk.defed_so_far.add(s.decl.name);
 			walk.temps.push(s.decl.name);
 			walk.lanes.push({ kind: "temp_def", name: s.decl.name, value });
+			continue;
+		}
+		if (s.kind === "if") {
+			const mm = min_max_candidate(s);
+			if (!mm || !minmax_candidates.has(mm.name)) return null;
+			const operand = lane_expr(mm.operand, walk, induction, status, 0);
+			if (!operand) return null;
+			walk.temp_classes.set(mm.name, "float");
+			walk.defed_so_far.add(mm.name);
+			reductions.push({
+				name: mm.name,
+				op: mm.op,
+				operand,
+				init_node: reduction_inits.get(mm.name)!,
+			});
+			walk.lanes.push({ kind: "reduction", name: mm.name, op: mm.op, operand });
 			continue;
 		}
 		if (s.kind === "assign") {

@@ -602,7 +602,20 @@ function emit_lane_stmt(
 		// fadd/fmul; integer `+` rides `add` (wrap-exact).
 		emit_lane_expr(lane.operand, status, plan, buffer_regs, shifted_regs, idx, 0, "v0", splats);
 		const acc = acc_regs.get(lane.name) ?? "v2";
-		const mn = lane.op === "+" ? (plan.elem.float ? "fadd" : "add") : "fmul";
+		// Min/max ride FMINNM/FMAXNM (minNum semantics: NaN operands are
+		// suppressed exactly like the scalar `<`/`>` compare skips them);
+		// the ±0-sign difference is unobservable under the planner's
+		// comparison-only-use gate.
+		const mn =
+			lane.op === "min"
+				? "fminnm"
+				: lane.op === "max"
+					? "fmaxnm"
+					: lane.op === "+"
+						? plan.elem.float
+							? "fadd"
+							: "add"
+						: "fmul";
 		emit_asm(
 			status,
 			`${mn} ${acc}.${plan.elem.arr}, ${acc}.${plan.elem.arr}, v0.${plan.elem.arr}\n`,
@@ -803,6 +816,14 @@ export function emit_neon_vector_loop(plan: NeonPlan, status: BuildStatus): bool
 		if (plan.elem.float) {
 			if (r.op === "+") {
 				emit_asm(status, `faddp d0, ${reg}.2d\n`);
+			} else if (r.op === "min" || r.op === "max") {
+				// Scalar minNum/maxNum across the two lanes — one rounding-free
+				// combine (no accumulation order to preserve). The scalar
+				// two-source form takes scalar registers, so the high lane
+				// moves into a scratch d first.
+				const mn = r.op === "min" ? "fminnm" : "fmaxnm";
+				emit_asm(status, `mov d1, ${reg}.d[1]\n`);
+				emit_asm(status, `${mn} d0, d${reg.slice(1)}, d1\n`);
 			} else {
 				emit_asm(status, `fmul d0, ${reg}.d[0], ${reg}.d[1]\n`);
 			}

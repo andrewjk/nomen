@@ -270,6 +270,10 @@ export const MNEMONICS: Record<string, MnemonicSig> = {
 	neg: { shapes: [["r", "r"]] },
 	fneg: { shapes: [["f", "f"]] },
 	fadd: { shapes: [["f", "f", "f"]] },
+	// Min/max reductions (the exact min/max shape's vector accumulate and
+	// its scalar horizontal combine — minNum semantics, fpr operands only).
+	fminnm: { shapes: [["f", "f", "f"]] },
+	fmaxnm: { shapes: [["f", "f", "f"]] },
 	fsub: { shapes: [["f", "f", "f"]] },
 	fmul: { shapes: [["f", "f", "f"]] },
 	fdiv: { shapes: [["f", "f", "f"]] },
