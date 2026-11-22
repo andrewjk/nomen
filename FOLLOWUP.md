@@ -696,3 +696,82 @@ and the comparison in [`docs/COMPTIME_COMPARISON.md`](./docs/COMPTIME_COMPARISON
   worked; it works now, so structured/named attribute arguments and a
   multi-value query surface are the next step for ORM/CLI-grade
   configuration.
+
+## Resident-region extension (value-level lane allocator, phase 2)
+
+**Attempted, reverted, designed-to-completion-minus-one-bug** (2026-11-22).
+Goal: hoist the resident kernel's register/memory sync from once per block
+iteration to once per `mbrot8` call — the remaining ~5-8% of the
+mandelbrot residual. The committed state (item 52/53) syncs per block
+because the escape check reads zr/zi from memory; feeding the escape check
+from the carried v-registers requires the sync at the block-loop boundary.
+
+What was built and reverted: `plan_resident_region` (wraps the enclosing
+loop: preheader load-group before, store-group after; the inner kernel and
+escape-reduce loops consume carried v-registers via a pending-plan stash),
+`plan_resident_reduce` (a load-only min/max loop over carried buffers with
+a literal full-width bound), and `emit_resident_reduce` (a straight-line
+register-fed reduce that reuses `emit_peel_expr`'s carried-load hook).
+Reverted because the classification has a hole and the fallback was wrong:
+
+1. **Kernel/reduce misclassification**: `plan_resident_kernel` treats any
+   single inner while as "the kernel" — but the escape check (a load-only
+   min/max loop) ALSO plans (`plan_vector_loop` accepts the new min/max
+   shape), comes back with `resident` undefined (no stores → no carried
+   buffers), and the region then misfiles the J-LOOP as the reduce
+   candidate. Fix design: classify the inner loop by its SHAPE — the
+   kernel's inner loop must contain a STORE of a carried buffer; the
+   reduce's must be store-free with all loads carried — before
+   registering either.
+2. **The fallback was unsound, not merely slow**: with the region
+   declined, the kernel ran the memory-based peel and the escape read
+   memory — that pairing is correct — but the escape's own min/max VECTOR
+   reduction (which plans fine standalone) and the kernel's peel interleave
+   with the region-less bracket promotions in ways the current discipline
+   does not model (the all-255 receipt). The region must be all-or-nothing
+   per enclosing loop, and the enclosing loop's `int_ext` gate must fire
+   from the clobber set BEFORE the body builds (the
+   `collect_vector_scratch_loops` mechanism, which landed and works).
+3. **Build-order coupling**: `collect_vector_scratch_loops` and
+   `has_resident_kernel` must run on the SAME NIR tree the emitter walks
+   (`plan_nir`, not `nir.body` — the emission cursor may replace the body
+   list). The landed `int_ext` gate works because both sides agree; the
+   region's inner-loop pending stash keyed on AST-node identity also
+   agreed in traces, but the classification hole (item 1) masked the
+   verification.
+
+Recovery path: reimplement `plan_resident_region` with shape-first
+classification (store-carrying inner loop = kernel; load-only min/max =
+reduce), keep the comparison-only exactness gate for the reduce, reserve
+x11/x12/x13/x15 (+x14, the second-group index) with sentinel plan
+allocations when a resident kernel exists (`exclude_ext_pool` — landed and
+working), and gate every enclosing loop's `int_ext` off the published
+clobber set (landed and working). Expected: ~5-8% mandelbrot (the per-block
+24-op sync), on top of the landed −32/−33%.
+
+**Update (2026-11-23, round 2)**: the region was re-implemented with
+shape-first classification and reached a *working, correct, green* state —
+the region fires at the block loop, the kernel rides v16-v27, and the
+escape check emits as a straight-line register-fed min/max reduce. The
+classification fix that made it work: `plan_resident_kernel` refuses
+store-free inner loops (a store-free loop is a reduce, never a kernel), and
+the region classifies every child while by shape before registering (an
+enclosing loop hosting the kernel span classifies as the kernel span even
+though its body contains another while). Two encode fixes also landed
+en route: element extraction is `mov dN, vM.d[1]` (fmov has no vector
+element form) and `fminnm`/`fmaxnm` joined the IR contract.
+
+**Result: perf-neutral (+4.8% @ n=1000, −2.4% @ n=2000, interleaved) —
+reverted.** The region emits its sync at the region boundary, but an inner
+region ALSO fires at the j-loop (both loops classify as regions), so the
+per-block sync remains — the nested double-sync eats the escape
+vectorization win. The remaining work is region-composition discipline:
+`in_resident_region` must suppress the inner region entirely (the gate
+exists but the inner kernel/reduce wrapping still fires through the
+pending-stash path), and the outer region's sync must then be the only one.
+With that, the expected win is the escape vectorization (~+10%) plus the
+per-group sync hoist (~+5%). The scaffolding (region/reduce planners, the
+comparison-only exactness gate, the clobber set, the sentinels, the .cap
+discharge) is correct and green — recovery is straightforward from this
+note plus the round-1 analysis below.
+
