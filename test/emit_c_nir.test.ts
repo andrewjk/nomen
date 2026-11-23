@@ -155,7 +155,8 @@ var int x = 500
 switch {
     case x > 100 -> Console.write("big")
     case x > 10 -> Console.write("medium")
-} else -> Console.write("small")
+	case _ -> Console.write("small")
+}
 `);
 });
 
@@ -199,7 +200,8 @@ func describe = (Shape s) {
     match s {
         case .circle(r) -> Console.write("\\{3 * r}")
         case .unit -> Console.write("1")
-    } else -> Console.write("0")
+    	case _ -> Console.write("0")
+    }
 }
 
 func make = (int r, out Shape) {
@@ -243,9 +245,10 @@ func apply = (Op op, int seed, out int) {
         case .sub {
             acc = acc - 1
         }
-    } else {
+    	case _ {
             acc = 0
         }
+    }
     return acc
 }
 Console.write("\\{apply(Op.add, 10)} \\{apply(Op.sub, 10)}")
@@ -265,10 +268,12 @@ func pick = (int x, out string) {
     var string s = "?"
     match x {
         case 1 -> s = "one"
-    } else -> s = "many"
+    	case _ -> s = "many"
+    }
     switch {
         case x > 10 -> s = "big"
-    } else -> s = "small"
+    	case _ -> s = "small"
+    }
     return s
 }
 Console.write("\\{pick(1)} \\{pick(50)}")
@@ -663,9 +668,10 @@ func area_of = (MyShape s, out int) {
         case .unit {
             area = 1
         }
-    } else {
+    	case _ {
             area = 0
         }
+    }
     return area
 }
 
@@ -760,12 +766,14 @@ func classify = (int v, out int) {
     var int kind = match v {
         case 0 -> 100
         case 1 -> 200
-    } else -> 300
+    	case _ -> 300
+    }
     var int bump = if kind > 150 -> 5
                    else -> 1
     var int wrap = switch {
         case kind == 100 -> 7
-    } else -> 9
+    	case _ -> 9
+    }
     return kind + bump + wrap
 }
 Console.write("\\{classify(0)} \\{classify(1)} \\{classify(9)}")

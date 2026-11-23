@@ -252,8 +252,9 @@ switch {
 	case n < 0 {
 		take(mv a)
 	}
-} else {
-	take(mv a)
+	case _ {
+		take(mv a)
+	}
 }
 Console.write("\\{a.value}")
 `;

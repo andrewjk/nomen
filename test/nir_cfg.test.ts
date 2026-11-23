@@ -213,7 +213,8 @@ pub func sw = (int c, out int) {
     match c {
         case 1 { return 1 }
         case 2 { return 2 }
-    } else { return 3 }
+    	case _ { return 3 }
+    }
 }
 `,
 		"sw",
@@ -411,7 +412,8 @@ test("value-position flow folds arm reads into the flat statement's facts", () =
 pub func flow_facts = (int q, out int) {
     var int k = match 1 {
         case 1 -> q
-    } else -> 0
+    	case _ -> 0
+    }
     return k
 }
 `,

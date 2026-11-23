@@ -24,7 +24,8 @@ func main_test = (out int) {
 	var Speaker s = match 1 {
 		case 0 -> Dog("A")
 		case 1 -> Dog("B")
-	} else -> Dog("C")
+		case _ -> Dog("C")
+	}
 	Console.write_line(s.speak())
 	return 0
 }
@@ -51,7 +52,8 @@ func main_test = (out int) {
 	var Speaker s = match 1 {
 		case 0 -> mk("A")
 		case 1 -> mk("B")
-	} else -> mk("C")
+		case _ -> mk("C")
+	}
 	Console.write_line(s.speak())
 	return 0
 }
@@ -77,7 +79,8 @@ func main_test = (out int) {
 	s = match 1 {
 		case 0 -> Dog("A")
 		case 1 -> Dog("B")
-	} else -> Dog("C")
+		case _ -> Dog("C")
+	}
 	Console.write_line(s.speak())
 	return 0
 }
@@ -105,7 +108,8 @@ func main_test = (out int) {
 	s = match 1 {
 		case 0 -> mk("A")
 		case 1 -> mk("B")
-	} else -> mk("C")
+		case _ -> mk("C")
+	}
 	Console.write_line(s.speak())
 	return 0
 }
@@ -131,7 +135,8 @@ func main_test = (out int) {
 		s = match i % 2 {
 			case 0 -> Dog("even")
 			case 1 -> Dog("odd")
-		} else -> Dog("?")
+			case _ -> Dog("?")
+		}
 		i += 1
 	}
 	Console.write_line(s.speak())

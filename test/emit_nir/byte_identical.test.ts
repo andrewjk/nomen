@@ -185,7 +185,8 @@ func nested_flow = (int n, out int) {
                     j = j + 1
                 }
             }
-    } else -> acc = acc + 1
+    	case _ -> acc = acc + 1
+    }
         }
     return acc
 }
@@ -282,7 +283,8 @@ func describe = (int x, out string) {
     match x {
         case 1 -> label = "one"
         case 2 -> label = "two"
-    } else -> label = "many"
+    	case _ -> label = "many"
+    }
     return label
 }
 Console.write("\\{describe(1)} \\{describe(5)}")
@@ -409,7 +411,8 @@ func size_of = (int x, out string) {
     switch {
         case x > 100 -> s = "big"
         case x > 10 -> s = "medium"
-    } else -> s = "small"
+    	case _ -> s = "small"
+    }
     return s
 }
 Console.write("\\{size_of(500)} \\{size_of(3)}")
@@ -429,12 +432,14 @@ func classify = (int v, out int) {
     var int kind = match v {
         case 0 -> 100
         case 1 -> 200
-    } else -> 300
+    	case _ -> 300
+    }
     var int bump = if kind > 150 -> 5
                    else -> 1
     var int wrap = switch {
         case kind == 100 -> 7
-    } else -> 9
+    	case _ -> 9
+    }
     return kind + bump + wrap
 }
 Console.write("\\{classify(0)} \\{classify(1)} \\{classify(9)}")

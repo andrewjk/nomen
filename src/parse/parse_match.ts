@@ -31,6 +31,24 @@ export default function parse_match(status: ParseStatus): MatchNode {
 	status.stack.push(match_node);
 
 	while (accept("case", status)) {
+		// `case _` is the catch-all arm — parsed into `else_branch` so the
+		// checker and builders see the same node shape they always have. It
+		// must be the last arm and appear at most once (both were syntactically
+		// guaranteed by the old outside-the-braces spelling).
+		if (peek_current(status) === "_") {
+			const catchall_start = get_index(status);
+			accept("_", status);
+			const branch = parse_match_branch(status);
+			if (match_node.else_branch) {
+				add_error(status, "Only one 'case _' arm is allowed", catchall_start);
+			} else if (branch) {
+				match_node.else_branch = branch;
+			}
+			if (peek_current(status) === "case") {
+				add_error(status, "'case _' must be the last arm", get_index(status));
+			}
+			continue;
+		}
 		const pattern = parse_match_case_pattern(status);
 		const branch = parse_match_branch(status);
 		if (branch) {
@@ -42,10 +60,9 @@ export default function parse_match(status: ParseStatus): MatchNode {
 		}
 	}
 	if (peek_current(status) === "else") {
-		// The old inside-the-braces spelling — point at the new form.
 		add_error(
 			status,
-			`match else arms sit outside the case braces: 'match x { cases } else { ... }'`,
+			`'else' is not a match arm — the catch-all is 'case _ -> ...'`,
 			get_index(status),
 		);
 	}
@@ -54,13 +71,16 @@ export default function parse_match(status: ParseStatus): MatchNode {
 
 	status.stack.pop();
 
-	// The `else` arm sits OUTSIDE the case braces — `else` terminates the
-	// construct at the top level, exactly like if/else.
-	if (accept("else", status)) {
-		const else_branch = parse_match_branch(status);
-		if (else_branch) {
-			match_node.else_branch = else_branch;
-		}
+	if (peek_current(status) === "else") {
+		// The removed `match x { cases } else { ... }` spelling — the catch-all
+		// lives inside the braces as `case _`.
+		add_error(
+			status,
+			`match arms live inside the braces — the catch-all is 'case _ -> ...'`,
+			get_index(status),
+		);
+		accept("else", status);
+		parse_match_branch(status);
 	}
 
 	return match_node;

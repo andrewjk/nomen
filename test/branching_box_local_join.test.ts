@@ -19,7 +19,8 @@ func main_test = (out int) {
 	b = match 1 {
 		case 0 -> Box<Node>(mv Node(10))
 		case 1 -> Box<Node>(mv Node(20))
-	} else -> Box<Node>(mv Node(0))
+		case _ -> Box<Node>(mv Node(0))
+	}
 	return b.value
 }
 
@@ -41,7 +42,8 @@ func main_test = (out int) {
 		b = match i % 2 {
 			case 0 -> Box<Node>(mv Node(i))
 			case 1 -> Box<Node>(mv Node(i + 1))
-		} else -> Box<Node>(mv Node(0))
+			case _ -> Box<Node>(mv Node(0))
+		}
 		i += 1
 	}
 	return b.value

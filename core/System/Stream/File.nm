@@ -56,8 +56,9 @@ pub struct File {
 			case err == 17 {
 				return FileError.already_exists
 			}
-		} else {
+			case _ {
 			return FileError.other
+		}
 		}
 	}
 

@@ -280,9 +280,10 @@ func commit = (ref Pair pair, string raw, int mode) {
 		case mode == 0 {
 			pair.a = decorated(raw)
 		}
-	} else {
+		case _ {
 			pair.a = raw.copy()
 		}
+	}
 }
 
 pub func main = (Init init) {

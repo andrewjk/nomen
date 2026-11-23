@@ -76,7 +76,8 @@ which evaluates cases in order and runs the first true one.
 switch {
 	case moved { ... }
 	case is_ins { ... }
-} else { ... }
+	case _ { ... }
+}
 ```
 
 Independent conditions that can all fire stay as separate `if`s.

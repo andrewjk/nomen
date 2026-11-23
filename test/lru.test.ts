@@ -78,13 +78,14 @@ pub func main = () {
 					}
 					lru.set(n0, n0)
 				}
-			} else {
+				case _ {
 					if order_len >= 0 && order_len < order.cap {
 						order.store_int(order_len, n0)
 					}
 					order_len = order_len + 1
 					lru.set(n0, n0)
 				}
+			}
 		}
 
 		rng1_state = (1103515245 * rng1_state + 12345) % 2147483648

@@ -20,7 +20,7 @@ pub func main = (Init init) {
 			case i == 1 {
 				result.set(i, b)
 			}
-			else {
+			case _ {
 				sum = a + b
 				a = b
 				b = sum

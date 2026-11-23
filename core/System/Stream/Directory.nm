@@ -28,8 +28,9 @@ pub struct Directory {
 			case err == 66 {
 				return DirectoryError.not_empty
 			}
-		} else {
+			case _ {
 			return DirectoryError.other
+		}
 		}
 	}
 

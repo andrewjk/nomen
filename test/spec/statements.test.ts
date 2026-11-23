@@ -48,7 +48,8 @@ var x = 1
 switch {
     case x > 0 -> Console.write("positive")
     case x < 0 -> Console.write("negative")
-} else -> Console.write("zero")
+	case _ -> Console.write("zero")
+}
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -72,7 +73,8 @@ var x = 1
 const result = match x {
     case 1 -> "one"
     case 2 -> "two"
-} else -> "other"
+	case _ -> "other"
+}
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -178,7 +180,8 @@ enum Result {
 const result = Result.fail(10)
 const message = match result {
     case .fail(code) -> "error \\{code}"
-} else -> "unknown"
+	case _ -> "unknown"
+}
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
@@ -426,7 +429,8 @@ var x = 5
 const size = switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-} else -> "small"
+	case _ -> "small"
+}
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -643,11 +647,13 @@ var x = 5
 const label = match x {
     case 1 -> "one"
     case 2 -> "two"
-} else -> "other"
+	case _ -> "other"
+}
 const size = switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-} else -> "small"
+	case _ -> "small"
+}
 const verdict = if x > 0 -> "yes"
                 else -> "no"
 `;

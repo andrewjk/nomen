@@ -152,7 +152,7 @@ export default function check_switch_node(switch_node: SwitchNode, status: Check
 	if (!switch_node.else_branch) {
 		const parent = status.stack.at(-1);
 		if (parent && (parent.node_type === "declare" || parent.node_type === "assign")) {
-			add_error(status, "Switch expression must have an else branch", switch_node.start);
+			add_error(status, "Switch expression must have a 'case _' arm", switch_node.start);
 		}
 	}
 }

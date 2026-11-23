@@ -63,8 +63,9 @@ pub func main = (Init init) {
 		while i < n; i += 1 {
 			match lf.at_or_panic(i) {
 				case .small(id) { total = total + id }
-			} else {
+				case _ {
 				total = total + 0
+			}
 			}
 		}
 	}

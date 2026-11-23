@@ -34,7 +34,8 @@ match Directory.list("dir_no_such_xyz_123") {
 	case .fail(e) {
 		match e {
 			case .not_found -> Console.write("empty")
-		} else -> Console.write("other")
+			case _ -> Console.write("other")
+		}
 	}
 }
 `;

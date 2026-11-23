@@ -18,7 +18,8 @@ func main_test = (out int) {
 	n = match 1 {
 		case 0 -> a
 		case 1 -> b
-	} else -> null
+		case _ -> null
+	}
 	return n ?? -1
 }
 
@@ -35,7 +36,8 @@ func main_test = (out int) {
 	n = match 1 {
 		case 0 -> a
 		case 1 -> null
-	} else -> a
+		case _ -> a
+	}
 	return n ?? -1
 }
 
@@ -57,7 +59,8 @@ func main_test = (out int) {
 	p = match 1 {
 		case 0 -> q
 		case 1 -> null
-	} else -> Point(9, 9)
+		case _ -> Point(9, 9)
+	}
 	if p == null {
 		return -1
 	}
@@ -86,7 +89,8 @@ func main_test = (out int) {
 	h.pt = match 1 {
 		case 0 -> q
 		case 1 -> q
-	} else -> null
+		case _ -> null
+	}
 	if h.pt == null {
 		return -1
 	}
@@ -110,7 +114,8 @@ func main_test = (out int) {
 	c.ink = match 1 {
 		case 0 -> v
 		case 1 -> null
-	} else -> v
+		case _ -> v
+	}
 	return c.ink ?? -1
 }
 

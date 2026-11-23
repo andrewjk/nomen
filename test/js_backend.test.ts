@@ -298,7 +298,8 @@ var int x = 3
 match x {
 	case 1 -> Console.write("one")
 	case 2 -> Console.write("two")
-} else -> Console.write("other")
+	case _ -> Console.write("other")
+}
 Console.write("\\n")
 `,
 			"other\n",
@@ -313,7 +314,8 @@ var int x = 2
 const string label = match x {
 	case 1 -> "one"
 	case 2 -> "two"
-} else -> "many"
+	case _ -> "many"
+}
 Console.write("\\{label}\\n")
 `,
 			"two\n",
@@ -332,8 +334,9 @@ switch {
 	case x == 2 {
 		Console.write("two")
 	}
-} else {
-	Console.write("other")
+	case _ {
+		Console.write("other")
+	}
 }
 Console.write("\\n")
 `,
@@ -346,7 +349,8 @@ var int x = 1
 const string label = switch {
 	case x == 1 -> "one"
 	case x == 2 -> "two"
-} else -> "many"
+	case _ -> "many"
+}
 Console.write("\\{label}\\n")
 `,
 			"one\n",

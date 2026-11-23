@@ -48,8 +48,9 @@ pub struct Http {
 			case err == 3 {
 				return HttpError.connect
 			}
-		} else {
+			case _ {
 			return HttpError.other
+		}
 		}
 	}
 

@@ -1984,7 +1984,7 @@ does not expose `Text` or `Controls` names, however the reference is spelled.
 ### Method/Function Calls as Expressions
 
 `match`, `switch`, and `if`/`else` can all be used as expressions (assigned to
-a `const`/`var` or returned). When used as an expression, the `else` branch is
+a `const`/`var` or returned). When used as an expression, a `case _` arm is
 required for `match` (on non-exhaustive types) and `switch`, and the branch
 types must be compatible:
 
@@ -1992,14 +1992,16 @@ types must be compatible:
 const label = match x {
     case 1 -> "one"
     case 2 -> "two"
-} else -> "other"
+    case _ -> "other"
+}
 ```
 
 ```
 const size = switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-} else -> "small"
+    case _ -> "small"
+}
 ```
 
 ```
@@ -2233,7 +2235,7 @@ const result = if x > 0 -> "positive"
 switch {
     case x > 0 -> Console.write("positive")
     case x < 0 -> Console.write("negative")
-    else -> Console.write("zero")
+    case _ -> Console.write("zero")
 }
 ```
 
@@ -2252,10 +2254,11 @@ Match compares a value against cases:
 const result = match x {
     case 1 -> "one"
     case 2 -> "two"
-} else -> "other"
+    case _ -> "other"
+}
 ```
 
-Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. The `else` branch is required when using `match` as an expression value. As with `if`/`else`, the `else` arm sits OUTSIDE the case braces — `else` terminates the construct at the top level.
+Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. A `case _` arm is required when using `match` as an expression value. The catch-all must be the last arm and appear at most once.
 
 Match with enums (using shorthand syntax):
 
@@ -2276,7 +2279,7 @@ match direction {
 }
 ```
 
-Enum case values can use either shorthand (`.north`) or full form (`Direction.north`). Matches on enums without an `else` branch must be exhaustive — all enum cases must be covered, or a compile error is produced.
+Enum case values can use either shorthand (`.north`) or full form (`Direction.north`). Matches on enums without a `case _` arm must be exhaustive — all enum cases must be covered, or a compile error is produced.
 
 Match with bools:
 
@@ -2287,7 +2290,7 @@ match flag {
 }
 ```
 
-Match on `bool` without an `else` branch must cover both `true` and `false`. Match on `int` and other types does not require exhaustiveness — an `else` branch is optional.
+Match on `bool` without a `case _` arm must cover both `true` and `false`. Match on `int` and other types does not require exhaustiveness — a `case _` arm is optional.
 
 Match with enums and associated data:
 
@@ -2311,10 +2314,11 @@ Switch evaluates independent boolean conditions:
 switch {
     case x > 100 -> "big"
     case x > 10 -> "medium"
-} else -> "small"
+    case _ -> "small"
+}
 ```
 
-Unlike `match`, each `case` has its own boolean condition. The `else` branch is required when using `switch` as an expression value.
+Unlike `match`, each `case` has its own boolean condition. A `case _` arm is required when using `switch` as an expression value.
 
 ### While Loop
 

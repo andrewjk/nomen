@@ -96,7 +96,8 @@ pub func main = () {
 	s = t.copy()
 	var label = switch {
 		case true -> t
-	} else -> "z"
+		case _ -> "z"
+	}
 	Console.write_line(label)
 }
 `);

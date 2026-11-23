@@ -40,8 +40,9 @@ pub struct Json {
 				case code == 13 {
 					sb.append_string("\x5cr")
 				}
-			} else {
+				case _ {
 				sb.append_char(c)
+			}
 			}
 		}
 		sb.append_char('"')
@@ -89,8 +90,9 @@ pub struct Json {
 						case ec == 92 {
 							sb.append_string("\x5c")
 						}
-					} else {
+						case _ {
 						sb.append_char(e)
+					}
 					}
 				}
 			} else {
@@ -178,8 +180,9 @@ func json_parse_string = (string s, ref int pos, int len, ref JsonTree tree { no
 				case ec == 92 {
 					sb.append_string("\x5c")
 				}
-			} else {
+				case _ {
 				sb.append_char(e)
+			}
 			}
 			i += 1
 		}
@@ -227,9 +230,10 @@ func json_parse_literal = (string s, ref int pos, int len, ref JsonTree tree { n
 			tree.set_kind(n, 6)
 			adv = 5
 		}
-	} else {
+		case _ {
 		tree.set_kind(n, 0)
 		adv = 4
+	}
 	}
 	pos = i + adv
 	return n
@@ -720,8 +724,9 @@ func json_append_quoted = (ref StringBuilder sb {}, string value) {
 			case code == 13 {
 				sb.append_string("\x5cr")
 			}
-		} else {
+			case _ {
 			sb.append_char(c)
+		}
 		}
 	}
 	sb.append_char('"')

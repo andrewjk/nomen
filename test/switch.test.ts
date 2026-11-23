@@ -93,9 +93,10 @@ switch {
 	case x > 20 {
 		Console.write("big")
 	}
-} else {
+	case _ {
 		Console.write("small")
 	}
+}
 `;
 		await build_and_check_output(input, "switch_else", "small");
 	});
@@ -107,7 +108,8 @@ const y = switch {
 	case x > 9 -> "big"
 	case x > 5 -> "medium"
 	case x > 0 -> "small"
-} else -> "nothing"
+	case _ -> "nothing"
+}
 Console.write(y)
 `;
 		await build_and_check_output(input, "switch_expression", "big");
@@ -120,7 +122,8 @@ const y = switch {
 	case x > 9 -> "big"
 	case x > 5 -> "medium"
 	case x > 0 -> "small"
-} else -> "nothing"
+	case _ -> "nothing"
+}
 Console.write(y)
 `;
 		await build_and_check_output(input, "switch_expression_else", "nothing");
@@ -136,14 +139,16 @@ var int x = 42
 const y = switch {
 	case x > 100 -> "huge"
 	case x > 10 -> "big \\{x}"
-} else -> "small"
+	case _ -> "small"
+}
 Console.write(y)
 Console.write("\\n")
 x = 7
 const z = switch {
 	case x > 100 -> "huge"
 	case x > 10 -> "big \\{x}"
-} else -> "small"
+	case _ -> "small"
+}
 Console.write(z)
 Console.write("\\n")
 `;
@@ -207,9 +212,10 @@ switch {
 	case x > 3 && x < 7 {
 		result = 1
 	}
-} else {
+	case _ {
 		result = 0
 	}
+}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "switch_logical", "1");
@@ -226,13 +232,15 @@ switch {
 			case y > 5 {
 				result = 1
 			}
-		} else {
+			case _ {
 				result = 2
 			}
+		}
 	}
-} else {
+	case _ {
 		result = 0
 	}
+}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "switch_nested", "2");
@@ -244,7 +252,8 @@ const x = 7
 const y = switch {
 	case x > 9 -> 1
 	case x > 5 -> 2
-} else -> 3
+	case _ -> 3
+}
 Console.write("\\{y}")
 `;
 		await build_and_check_output(input, "switch_int_expression", "2");
@@ -261,9 +270,10 @@ for i of 0..5 {
 		case i == 3 {
 			result = result + 20
 		}
-	} else {
+		case _ {
 			result = result + 1
 		}
+	}
 }
 Console.write("\\{result}")
 `;
@@ -278,9 +288,10 @@ switch {
 	case !true {
 		result = 1
 	}
-} else {
+	case _ {
 		result = 2
 	}
+}
 Console.write("\\{result}")
 `;
 		await build_and_check_output(input, "switch_negation", "2");
@@ -304,9 +315,10 @@ pub func main = (Init init) {
 		case is_hi(mode) && mode.contains("i;") == false {
 			Console.write("one")
 		}
-	} else {
+		case _ {
 			Console.write("other")
 		}
+	}
 }
 `;
 		await build_and_check_output(input, "switch_case_view_adapter", "one", true);

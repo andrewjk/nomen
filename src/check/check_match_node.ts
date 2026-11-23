@@ -278,7 +278,7 @@ function check_exhaustiveness(
 		return;
 	}
 
-	add_error(status, `Non-exhaustive match: missing else branch`, match_node.start);
+	add_error(status, `Non-exhaustive match: missing cases — add a 'case _' arm`, match_node.start);
 }
 
 function matchCaseHasParams(match_case: {

@@ -59,12 +59,14 @@ pub func main = (Init init) {
 	var Option<Animal> o = Option.some(mv d)
 	var int n = match o {
 		case .some(a) -> a.legs()
-	} else -> 0
+		case _ -> 0
+	}
 	Console.write_line(n.to_string())
 	var Option<Animal> e = Option<Animal>.none
 	var int m = match e {
 		case .some(a) -> a.legs()
-	} else -> 0
+		case _ -> 0
+	}
 	Console.write_line(m.to_string())
 }
 `;
@@ -97,12 +99,14 @@ pub func main = (Init init) {
 	var Option<Animal> o = Option.some(Dog(4))
 	var int n = match o {
 		case .some(a) -> a.legs()
-	} else -> 0
+		case _ -> 0
+	}
 	Console.write_line(n.to_string())
 	var Option<Animal> p = Option<Animal>.some(Dog(9))
 	var int m = match p {
 		case .some(a) -> a.legs()
-	} else -> 0
+		case _ -> 0
+	}
 	Console.write_line(m.to_string())
 }
 `;
@@ -133,11 +137,13 @@ pub func main = (Init init) {
 	var Option<Counter> o = Option.some(mv t)
 	Console.write_line(match o {
 		case .some(a) -> a.count().to_string()
-	} else -> "0")
+		case _ -> "0"
+	})
 	var Option<Counter> p = Option.some(Tally("yo"))
 	Console.write_line(match p {
 		case .some(a) -> a.count().to_string()
-	} else -> "0")
+		case _ -> "0"
+	})
 }
 `;
 		await build_and_check_output(input, "generic_enum_trait_str_payload", "3\n3", true);
@@ -165,7 +171,8 @@ pub func main = (Init init) {
 	var Option<Speaker> o = Option.some(mv n)
 	Console.write_line(match o {
 		case .some(a) -> a.speak()
-	} else -> "?")
+		case _ -> "?"
+	})
 }
 `;
 		await build_and_check_output(input, "generic_enum_trait_str_return_match", "spoke", true);

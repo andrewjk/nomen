@@ -184,9 +184,10 @@ switch {
 	case i < 5 {
 		i = 100
 	}
-} else {
+	case _ {
 		i = 0
 	}
+}
 Console.write("\\{arr.at(i)}")
 `;
 		const parsed = parse_with_imports(input);
