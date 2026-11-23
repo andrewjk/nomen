@@ -74,7 +74,17 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			break;
 		}
 		case "struct": {
-			check_struct_node(node as StructNode, status);
+			// Type-level checks carry the declaring type as the accessor
+			// scope: field types, defaults and method signatures resolve
+			// their namespace through it (docs/SCOPING.md) — the checker's
+			// stack carries only roots during these checks.
+			const prev_scope = status.current_scope_decl;
+			status.current_scope_decl = node;
+			try {
+				check_struct_node(node as StructNode, status);
+			} finally {
+				status.current_scope_decl = prev_scope;
+			}
 			break;
 		}
 		case "extend": {
@@ -85,15 +95,33 @@ export default function check_node(node: BaseNode, status: CheckStatus): boolean
 			break;
 		}
 		case "trait": {
-			check_trait_node(node as TraitNode, status);
+			const prev_scope = status.current_scope_decl;
+			status.current_scope_decl = node;
+			try {
+				check_trait_node(node as TraitNode, status);
+			} finally {
+				status.current_scope_decl = prev_scope;
+			}
 			break;
 		}
 		case "enum": {
-			check_enum_node(node as EnumNode, status);
+			const prev_scope = status.current_scope_decl;
+			status.current_scope_decl = node;
+			try {
+				check_enum_node(node as EnumNode, status);
+			} finally {
+				status.current_scope_decl = prev_scope;
+			}
 			break;
 		}
 		case "bitset": {
-			check_bitset_node(node as BitsetNode, status);
+			const prev_scope = status.current_scope_decl;
+			status.current_scope_decl = node;
+			try {
+				check_bitset_node(node as BitsetNode, status);
+			} finally {
+				status.current_scope_decl = prev_scope;
+			}
 			break;
 		}
 		case "func": {

@@ -104,6 +104,11 @@ function bind_default_clone(
 	// The trait default is private (trait functions default to private);
 	// as a struct method it must be callable like any other method.
 	cloned.visibility = "pub";
+	// The specialization belongs to the CONFORMER's namespace: the derived
+	// body resolves the struct's own fields and types, which live in the
+	// struct's namespace, not the trait's (docs/SCOPING.md).
+	cloned.namespace = struct.namespace;
+	cloned.file_id = struct.file_id;
 	cloned.type_params = [];
 	cloned.is_generic = false;
 	cloned.return_type = substitute_type(cloned.return_type, substitution);

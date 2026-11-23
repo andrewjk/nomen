@@ -252,10 +252,9 @@ function add_source(
 			.filter((s: string) => s.length > 0);
 		if (!segments.length) return "";
 		const rel = segments.join("/");
-		// A trailing segment may name a namespace directory (`import Types`
-		// for `./Types/*.nm`) rather than a module file — inline every file
-		// in it, mirroring how `import System` pulls a whole namespace and
-		// how a folder is itself a module (see gather_module_siblings).
+		// The import LINE stays in the source: the parser records per-file
+		// imports and computes what each one grants for visibility gating
+		// (docs/SCOPING.md). Only the target's files are inlined here.
 		let is_dir = false;
 		const dir_path = path.resolve(folder_path, rel);
 		try {
@@ -276,7 +275,7 @@ function add_source(
 			try {
 				names = fs.readdirSync(dir_path);
 			} catch {
-				return "";
+				return match;
 			}
 			for (const name of names.sort()) {
 				if (!name.endsWith(".nm")) continue;
@@ -285,7 +284,7 @@ function add_source(
 					add_source(folder_path, import_file_path, inputs, lib_path, visited);
 				}
 			}
-			return "";
+			return match;
 		}
 		const import_file_path = `./${rel}.nm`;
 		const target = path.resolve(folder_path, import_file_path);
@@ -296,7 +295,7 @@ function add_source(
 		if (!inputs.has(import_file_path)) {
 			add_source(folder_path, import_file_path, inputs, lib_path, visited);
 		}
-		return "";
+		return match;
 	});
 
 	inputs.set(file_path, source);

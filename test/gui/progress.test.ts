@@ -44,6 +44,7 @@ pub func main = () {
 
 	test("Progress conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

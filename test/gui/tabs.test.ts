@@ -81,6 +81,7 @@ pub func main = () {
 
 	test("Tabs conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

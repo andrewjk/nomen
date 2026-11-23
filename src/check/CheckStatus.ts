@@ -373,6 +373,15 @@ export default interface CheckStatus {
 	current_function?: FunctionNode;
 
 	/**
+	 * The struct/trait/enum/bitset whose members are currently being checked
+	 * (docs/SCOPING.md): field types, defaults and method signatures resolve
+	 * their accessor namespace through it, because the checker's scope stack
+	 * carries only roots during type-level checks. Set/restored by
+	 * check_struct_node (and the trait/enum/bitset checks).
+	 */
+	current_scope_decl?: BaseNode;
+
+	/**
 	 * Undeclared field mutations recorded while checking (FIELD_EFFECTS.md):
 	 * writes and mutator calls through an un-annotated `ref` parameter.
 	 * Shared by reference through clones so records made inside branch
@@ -380,4 +389,26 @@ export default interface CheckStatus {
 	 * warning carrying a field-set quick fix.
 	 */
 	ref_param_writes?: import("./utils/field_effects.ts").RefParamWrites;
+
+	/**
+	 * Namespace per file id (docs/SCOPING.md) — RootNode.file_namespaces,
+	 * stamped by parse from the `// file://` markers. Undefined for inline
+	 * parses without markers: every declaration then shares namespace `""`
+	 * and the pre-scoping (everything visible) behavior applies.
+	 */
+	file_namespaces?: string[];
+
+	/**
+	 * Granted namespaces per file id (docs/SCOPING.md), built from the
+	 * stamped import declarations (`import System::Controls` grants
+	 * `"System::Controls"`).
+	 */
+	namespace_imports?: Map<number, Set<string>>;
+
+	/**
+	 * Scope-gate errors already reported (`name@namespace` keys), so the
+	 * same invisible name resolved through several paths (annotation,
+	 * constructor, generic re-check) reports once instead of cascading.
+	 */
+	reported_scope_errors?: Set<string>;
 }

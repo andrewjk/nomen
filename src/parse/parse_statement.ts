@@ -62,6 +62,14 @@ export default function parse_statement(status: ParseStatus) {
 		// First check for a keyword (var, if, switch, etc), then check for a
 		// following operator (=, +, etc)
 		switch (value) {
+			case "file_marker": {
+				// A `// file://` boundary injected by the joiner/library
+				// builder (docs/SCOPING.md). parse() builds the file table
+				// from the token stream before parsing; here it just needs to
+				// step over the marker so the next statement parses.
+				consume(status);
+				break;
+			}
 			case "import": {
 				parse_import(status);
 				break;

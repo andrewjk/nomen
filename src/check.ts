@@ -56,6 +56,28 @@ export default function check(
 		platform: options?.platform ?? default_platform(),
 	};
 
+	// Namespace scoping (docs/SCOPING.md): parse stamped declarations with
+	// file ids and namespaces; build the per-file import grants the
+	// visibility gates consult. Absent for inline parses — everything then
+	// shares the empty namespace.
+	const root_node = root as import("./nodes/RootNode.ts").default;
+	if (root_node.file_namespaces) {
+		status.file_namespaces = root_node.file_namespaces;
+		const imports = new Map<number, Set<string>>();
+		for (const imp of root_node.imports) {
+			if (!imp.granted_namespace) continue;
+			const id = imp.file_id ?? 0;
+			let set = imports.get(id);
+			if (!set) {
+				set = new Set();
+				imports.set(id, set);
+			}
+			set.add(imp.granted_namespace);
+		}
+		status.namespace_imports = imports;
+	}
+	status.reported_scope_errors = new Set();
+
 	// Compile-time conditionals first (docs/COMPTIME.md stage 1):
 	// splice every `#if` into its target-selected statements so every pass
 	// below — the emission-label name counter (a dead arm's duplicate name

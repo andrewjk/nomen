@@ -40,6 +40,7 @@ pub func main = () {
 
 	test("Sheet conforms to the Control trait (through a Control receiver)", () => {
 		const input = `
+import System
 import System::Controls
 
 func framed = (Control c, out string) {

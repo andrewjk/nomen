@@ -83,6 +83,8 @@ describe("ownership: heap array temp on the return path", () => {
 	// `List<Inner>` elements were built by moving `Array<string>` elements
 	// into a `List<string>` field.
 	const helper = `
+import System
+
 pub mv struct Inner {
 	pub mv protocols = List<string>()
 }

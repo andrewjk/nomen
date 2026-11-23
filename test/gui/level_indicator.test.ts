@@ -42,6 +42,7 @@ pub func main = () {
 
 	test("LevelIndicator conforms to the Control trait (measure / intrinsic_size)", () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

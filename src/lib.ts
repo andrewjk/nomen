@@ -320,7 +320,10 @@ export function resolve_types(needed: Set<string>, types: Map<string, LibraryTyp
 		resolved.add(name);
 		if (!pushed.has(entry.source)) {
 			pushed.add(entry.source);
-			result.push(entry.source);
+			// Precede each appended file with a `// file://` marker so the
+			// parser attributes its declarations to the file — and namespace
+			// — they came from (docs/SCOPING.md).
+			result.push(`// file://${entry.path}\n${entry.source}`);
 		}
 	}
 
@@ -354,7 +357,10 @@ export function build_library(lib_dir: string): Library {
 	const file_texts = new Map<string, string>(
 		all_files.map((f) => [f, inline_library_embeds(f, fs.readFileSync(f, "utf8"))]),
 	);
-	const source = all_files.map((f) => file_texts.get(f)).join("\n");
+	// Each file is preceded by a `// file://` marker (matching the joiner's
+	// user-source markers) so the parser can attribute declarations to the
+	// file — and namespace — they came from (docs/SCOPING.md).
+	const source = all_files.map((f) => `// file://${f}\n${file_texts.get(f)}`).join("\n");
 	const { types, functions } = build_type_map(all_files, lib_dir, file_texts);
 
 	const namespaces = new Map<string, Set<string>>();
@@ -425,6 +431,34 @@ export function library_path_prefixes(library: Library): Set<string> {
 		const rel = path.relative(system_root, entry.path);
 		if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
 		const parts = rel.replace(/\.nm$/, "").split(path.sep);
+		for (let i = 1; i <= parts.length; i++) {
+			const joined = parts.slice(0, i).join("/");
+			prefixes.add(joined);
+			prefixes.add(`System/${joined}`);
+		}
+	}
+	return prefixes;
+}
+
+/**
+ * Directory-only prefixes of the library layout (`Controls`,
+ * `Controls/Geometry`, ... and their `System/`-rooted forms) — the
+ * *namespaces* that exist, as opposed to module-file names. A qualified
+ * reference (`Controls::Geometry::Size`) collapses to the longest directory
+ * prefix (`Controls`) because a namespace's visibility boundary is its
+ * directory (docs/SCOPING.md).
+ */
+export function library_dir_prefixes(library: Library): Set<string> {
+	const prefixes = new Set<string>();
+	const system_root = path.resolve(library.dir, "System");
+	for (const entry of library.types.values()) {
+		const rel = path.dirname(path.relative(system_root, entry.path));
+		if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
+		if (rel === "" || rel === ".") {
+			prefixes.add("");
+			continue;
+		}
+		const parts = rel.split(path.sep);
 		for (let i = 1; i <= parts.length; i++) {
 			const joined = parts.slice(0, i).join("/");
 			prefixes.add(joined);

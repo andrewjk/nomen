@@ -38,6 +38,7 @@ test("collect_test_files returns [] for a missing folder", () => {
 
 test("extract_test_functions finds pub func (ref Tester t) declarations", () => {
 	const src = `
+		import System
 		import System::Test
 		func helper = () {}
 		pub func test_add = (ref Tester t) { t.expect(true, "") }

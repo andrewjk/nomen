@@ -11,6 +11,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
+import built_in_types from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -69,6 +70,7 @@ import {
 	parse_interp_name,
 } from "./utils/interp_arg_kinds.ts";
 import is_visible from "./utils/is_visible.ts";
+import { accessor_context, decl_is_builtin_scoped, decl_namespace } from "./utils/namespaces.ts";
 import {
 	borrowed_param_transfer_error,
 	enclosing_function_param,
@@ -334,40 +336,65 @@ export default function check_function_call(
 	// design (see set_resolved_function).
 	set_resolved_function(node, func);
 	lint_regex_entry_pattern(node, func, status);
-	const access_scope = status.stack.at(-1)!;
 
-	// For init functions, check the struct's visibility
-	if (func.name === "#init") {
-		const struct_name = target_type?.name || func.return_type.name;
-		const struct = status.structs.find((s) => s.name === struct_name);
-		if (
-			struct &&
-			struct.visibility !== "pub" &&
-			!is_visible(
-				struct.scope,
-				struct.visibility,
-				access_scope,
-				status.stack,
-				!!struct.is_library,
-				!!status.allow_internal,
-			)
-		) {
-			add_error(status, `Can't access ${struct.visibility} function: ${node.name}`, node.start);
-			return false;
+	// Scope gate (docs/SCOPING.md): the calling file must reach the callee's
+	// namespace — its own, an ancestor (parent namespaces are accessible), or
+	// an import. `internal` functions resolve only from that namespace or its
+	// descendants; unmarked functions only from the namespace itself.
+	// Trusted (`allow_internal`) builds keep pre-scoping access to library
+	// internals.
+	if (!status.allow_internal && !status.is_mono_body_recheck) {
+		// A monomorphized body's substituted calls were gated at the call
+		// site — the generated body itself is compiler glue.
+		const ctx = accessor_context(status);
+		if (ctx) {
+			const { ns: accessor_ns, imports } = ctx;
+			const report = (vis: "pub" | "private" | "internal", decl_ns: string, name: string) => {
+				const key = `${name}@${accessor_ns}`;
+				if (!status.reported_scope_errors?.has(key)) {
+					status.reported_scope_errors?.add(key);
+					if (vis === "pub") {
+						add_error(status, `Namespace ${decl_ns} is not imported: ${name}`, node.start);
+					} else {
+						add_error(status, `Can't access ${vis} function: ${name}`, node.start);
+					}
+				}
+				return false;
+			};
+			if (func.name === "#init") {
+				// Constructing a struct checks the STRUCT's visibility: `Foo()`
+				// names the type as much as the constructor.
+				const struct_name = target_type?.name || func.return_type.name;
+				const struct = status.structs.find((s) => s.name === struct_name);
+				const struct_ns = struct ? decl_namespace(struct) : undefined;
+				const struct_vis = (struct?.visibility ?? "pub") as "pub" | "private" | "internal";
+				if (
+					struct &&
+					struct_ns !== undefined &&
+					!is_visible(struct_ns, struct_vis, accessor_ns, imports) &&
+					!status.reported_scope_errors?.has(`${struct_name}@${accessor_ns}`)
+				) {
+					return report(struct_vis, struct_ns, node.name);
+				}
+			} else {
+				const func_ns = decl_namespace(func);
+				const func_vis = (func.visibility ?? "pub") as "pub" | "private" | "internal";
+				// Built-in scalar methods (int/string's to_string, the string
+				// operators, ...) are language surface — string interpolation
+				// desugars to `to_string` calls — never namespace-gated. The
+				// receiver is the owner when the callee's own scope is not yet
+				// assigned.
+				const receiver_builtin = !!target_type && built_in_types.includes(target_type.name);
+				if (
+					func_ns !== undefined &&
+					!decl_is_builtin_scoped(func) &&
+					!receiver_builtin &&
+					!is_visible(func_ns, func_vis, accessor_ns, imports)
+				) {
+					return report(func_vis, func_ns, node.name);
+				}
+			}
 		}
-	} else if (
-		func.visibility !== "pub" &&
-		!is_visible(
-			func.scope,
-			func.visibility,
-			access_scope,
-			status.stack,
-			!!func.is_library,
-			!!status.allow_internal,
-		)
-	) {
-		add_error(status, `Can't access ${func.visibility} function: ${node.name}`, node.start);
-		return false;
 	}
 
 	node.type = func.return_type;

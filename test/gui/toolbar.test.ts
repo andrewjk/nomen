@@ -40,6 +40,7 @@ pub func main = () {
 
 	test("Toolbar is window chrome (measure reports 0x0)", () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

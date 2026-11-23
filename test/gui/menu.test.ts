@@ -47,6 +47,7 @@ pub func main = () {
 
 	test("Menu is not a laid-out control (measure reports 0x0)", () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

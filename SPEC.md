@@ -1955,18 +1955,24 @@ validates) where the name comes from:
 
 ```
 import System
+import System::Text
+import System::Controls
 
 const ok = Text::Regex.test("a+b", "aaab")
-const size = System::Controls::Geometry::Size()
+const size = Controls::Geometry::Size()
 ```
 
 A `::` path always names an entity — a type, a free function, or a value.
 Member and method access stays with `.` (`Text::Regex.test(...)`, not
 `Text::Regex::test(...)`).
 
-Every segment before the last must be a namespace of an imported library (or
-the path must start with `System`); `Control::Button` (note the missing `s`)
-is a compile error: `Unknown namespace: Control`.
+A qualified reference is visible only when the referencing file can reach the
+name's namespace — its own namespace, an ancestor of it, or an import
+(see [Visibility Modifiers](#visibility-modifiers)). `import System` alone
+does not expose `Text` or `Controls` names, however the reference is spelled.
+Every segment before the last must also be a real namespace or module path of
+the library; `Control::Button` (note the missing `s`) is a compile error:
+`Namespace Control::Button is not imported`.
 
 ### Method/Function Calls as Expressions
 
@@ -3058,25 +3064,45 @@ const result = Math.power(2, 10)
 
 ## Visibility Modifiers
 
-- `pub`: Public (accessible from the parent scope)
-- `internal`: Internal (accessible only within the declaring library)
+- `pub`: Public (reachable wherever its namespace is reachable)
+- `internal`: Internal (accessible only within the declaring namespace and
+  its descendants)
+- an unmarked declaration: the tightest scope — visible only within its own
+  namespace
 
-Visibility tracks the **compilation unit**, not the naming tree: `internal`
-means the whole declaring library — one unit, every namespace in it — while a
-consumer (a program outside that library) sees only `pub`. Namespaces are the
-**import path**, not a visibility boundary: `import System::Text` pulls and
-qualifies `System::Text`'s names, and grants no visibility a `pub` declaration
-doesn't already have (the same way one Go package's files share a single
-unexported scope, or one C# assembly's namespaces share `internal`). Inside
-the library, an `internal` helper is reachable from any of its namespaces —
-that is where the System library's low-level slab accessors live.
+Visibility tracks **namespaces**. A namespace is a `::`-joined directory
+path: `System`, `System::Controls` for library files; the entry-relative
+directory (`Blah`, `Blah::Sub`) for a program's own folders. Three rules
+govern every access:
 
-An unmarked declaration is already the tightest scope — file-scoped at the
-top level — so `pub` and `internal` are the explicit spellings for anything
-wider. Struct, enum and extend members default `pub`; trait members are
-exported with their contract (an `internal` trait member is rejected).
-`private` has retired: writing it is a compile error pointing at the
-unmarked spelling.
+1. **Reachability.** A name is reachable from code in namespace `A` when the
+   name's namespace is `A` itself, an **ancestor** of `A` (parent namespaces
+   are accessible without an import), or a namespace `A`'s file **imports**.
+   `import System` grants only `System`'s own names — never its
+   descendants': reaching `Controls` names requires `import System::Controls`.
+2. **`internal` narrows to the namespace tree.** An `internal` declaration is
+   callable only from its own namespace and its descendants. A child
+   namespace sees its parents' internals (`System::Controls` calling
+   `Buffer`'s slab accessors); a sibling or an outside consumer does not,
+   even when the namespace is imported. This is what keeps the System
+   library's low-level internals reserved for the library while every `pub`
+   surface works for consumers.
+3. **Unmarked closes the door.** An unmarked top-level declaration is
+   visible only within its own namespace — not to ancestors, not through
+   imports. It is the spelling for module-private helpers (`fold_pattern` in
+   `Text::Regex`, a container's file-local scratch type).
+
+The built-in scalar types — `int`, `uint`, the sized ints, floats, `char`,
+`string`, `bool`, `func` — are language surface, not library surface: their
+names, their operators, and their members (`to_string`) work in every
+namespace. Everything else in `System` (`Console`, `Buffer`, `Size`, ...)
+follows the rules above.
+
+Struct, enum and extend members default `pub` — value-record fields are the
+language's primary surface, and a trait member is exported with its contract
+(an `internal` trait member is rejected). `private` has retired as a keyword
+(writing it is a compile error pointing at the unmarked spelling); it
+survives only as the internal name of the unmarked visibility.
 
 `readonly` is a separate field-write modifier, not a visibility: it leaves the
 field readable at its declared visibility but restricts assignment to the

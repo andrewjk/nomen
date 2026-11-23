@@ -4,14 +4,16 @@ import path from "node:path";
 import add_error from "./add_error.ts";
 import check from "./check.ts";
 import { collect_spawned_starts } from "./check/utils/comptime.ts";
+import { ns_is_ancestor_or_self } from "./check/utils/namespaces.ts";
 import { attach_doc_comments } from "./doc_comments.ts";
-import { library_path_prefixes, type Library } from "./lib.ts";
+import { library_dir_prefixes, library_path_prefixes, type Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
 import parse_statement from "./parse/parse_statement.ts";
 import type ParseStatus from "./parse/ParseStatus.ts";
 import tokenize from "./tokenize.ts";
 import type CompileError from "./types/CompileError.ts";
 import type ParseResult from "./types/ParseResult.ts";
+import type Token from "./types/Token.ts";
 
 export default function parse(
 	source: string,
@@ -43,6 +45,11 @@ export default function parse(
 
 	const tokens = tokenize(source);
 
+	// The file table (docs/SCOPING.md): index 0 is the entry context; every
+	// `// file://` marker in the source opens the next file. Declarations are
+	// stamped with their file's id and namespace after parsing.
+	const table = build_file_table(tokens, library, file_path);
+
 	const root = new RootNode();
 
 	const status: ParseStatus = {
@@ -66,12 +73,6 @@ export default function parse(
 
 	parse_statement(status);
 
-	// Qualified references (`Controls::Button`) flatten to bare names during
-	// parsing; validate their namespace prefixes against the library index.
-	if (library && status.qualified_paths.length) {
-		validate_qualified_paths(status, library_path_prefixes(library));
-	}
-
 	// Attach `/** ... **/` doc comments to the declarations they precede, so
 	// downstream tools (doc generation, editor hovers) can reach them.
 	attach_doc_comments(root, source);
@@ -81,6 +82,20 @@ export default function parse(
 	// while still requiring user code to satisfy (or guard) index constraints.
 	if (library) {
 		mark_library_nodes(root, user_source_length);
+	}
+
+	// Attribute every declaration to its file and namespace, and compute what
+	// each import grants — BEFORE validating qualified paths, whose coverage
+	// checks consult the stamped imports (docs/SCOPING.md).
+	const imports_by_file = stamp_file_namespaces(root, table, library, file_path);
+	root.file_paths = table.paths;
+	root.file_namespaces = table.namespaces;
+
+	// Qualified references (`Controls::Button`) flatten to bare names during
+	// parsing; validate their namespace prefixes against the library index and
+	// against what the referencing file can see.
+	if (status.qualified_paths.length) {
+		validate_qualified_paths(status, library, table, imports_by_file);
 	}
 
 	// No point type checking if the syntax is busted
@@ -112,20 +127,292 @@ export default function parse(
 }
 
 /**
- * Validate the namespace prefixes of qualified references recorded while
- * parsing (`Controls::Button`, `System::Text::Regex`). The AST keeps only the
- * bare final name — the compilation unit resolves names flat — so this is the
- * only place a mistyped path (`Control::Button`) can be caught: the segments
- * before the last must name a real namespace/module path of an imported
- * library. Imports are exempt (they may name files elsewhere).
+ * The compilation's file table (docs/SCOPING.md): index 0 is the entry
+ * context; one further entry per `// file://` marker in the source. The
+ * parser stamps declarations with their file id and namespace; the checker
+ * reads the same table off the RootNode.
  */
-function validate_qualified_paths(status: ParseStatus, prefixes: Set<string>): void {
-	for (const ref of status.qualified_paths) {
-		const prefix = ref.segments.slice(0, -1).join("/");
-		if (!prefixes.has(prefix)) {
-			add_error(status, `Unknown namespace: ${ref.segments[0]}`, ref.start);
+interface FileTable {
+	paths: string[];
+	namespaces: string[];
+	/** Source offsets where each marked file begins, in ascending order. */
+	marker_starts: { start: number; id: number }[];
+}
+
+/** The file id a source offset belongs to (last marker at-or-before it). */
+function file_id_at(table: FileTable, start: number): number {
+	let id = 0;
+	for (const marker of table.marker_starts) {
+		if (marker.start <= start) id = marker.id;
+		else break;
+	}
+	return id;
+}
+
+/**
+ * The namespace of a directory (docs/SCOPING.md): `"System"`,
+ * `"System::Controls"`, ... for directories under the library's `System/`
+ * root; the entry-relative directory path (`""`, `"Blah"`, `"Blah::Sub"`)
+ * for program files; `".."` for anything gathered from outside the entry's
+ * directory tree.
+ */
+function derive_dir_namespace(
+	dir: string,
+	library: Library | undefined,
+	entry_dir?: string,
+): string {
+	if (library) {
+		const system_root = path.resolve(library.dir, "System");
+		const rel = path.relative(system_root, dir);
+		if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
+			const parts = rel === "" ? [] : rel.split(path.sep);
+			return ["System", ...parts].join("::");
 		}
 	}
+	if (!entry_dir) return "";
+	const rel = path.relative(entry_dir, dir);
+	if (rel.startsWith("..") || path.isAbsolute(rel)) return "..";
+	const parts = rel === "" ? [] : rel.split(path.sep);
+	return parts.join("::");
+}
+
+function build_file_table(
+	tokens: Token[],
+	library: Library | undefined,
+	file_path?: string,
+): FileTable {
+	const entry_dir = file_path ? path.dirname(path.resolve(file_path)) : undefined;
+	const table: FileTable = {
+		paths: [file_path ? path.resolve(file_path) : ""],
+		namespaces: [entry_dir ? derive_dir_namespace(entry_dir, library, entry_dir) : ""],
+		marker_starts: [],
+	};
+	for (const token of tokens) {
+		if (token.value !== "file_marker" || !token.file) continue;
+		const id = table.paths.length;
+		table.paths.push(token.file);
+		table.namespaces.push(derive_dir_namespace(path.dirname(token.file), library, entry_dir));
+		table.marker_starts.push({ start: token.i, id });
+	}
+	return table;
+}
+
+/**
+ * What an import grants (docs/SCOPING.md): the namespace of its resolved
+ * target's directory. `import System` grants `"System"`; `import
+ * System::Controls` grants `"System::Controls"`; a module-file import
+ * (`import System::Text::Regex`) grants the file's directory namespace
+ * (`"System::Text"`). Imports never grant a namespace's descendants.
+ */
+function import_granted_namespace(
+	name: string,
+	owner_path: string,
+	library: Library | undefined,
+	entry_dir?: string,
+): string {
+	const segments = name.split("::").filter((s) => s.length > 0);
+	if (!segments.length) return "";
+	// `System`-rooted imports resolve against the library layout regardless
+	// of who imports them — there is exactly one library, and inline parses
+	// (no file path) still need the correct grant.
+	if (library && segments[0] === "System") {
+		const system_root = path.resolve(library.dir, "System");
+		const base = segments.slice(1);
+		if (!base.length) return "System";
+		const dir = path.resolve(system_root, ...base);
+		if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+			return derive_dir_namespace(dir, library, entry_dir);
+		}
+		const file = `${dir}.nm`;
+		if (fs.existsSync(file)) {
+			return derive_dir_namespace(path.dirname(file), library, entry_dir);
+		}
+		// Unknown path — validate_import_path already reported the typo.
+		return name;
+	}
+	const owner_in_library = !!library && owner_path !== "" && is_within(owner_path, library.dir);
+	if (library && owner_in_library) {
+		// A library file's plain import (`import Task`) resolves against the
+		// library's System root — directory or module file.
+		const system_root = path.resolve(library.dir, "System");
+		const dir = path.resolve(system_root, ...segments);
+		if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+			return derive_dir_namespace(dir, library, entry_dir);
+		}
+		const file = `${dir}.nm`;
+		if (fs.existsSync(file)) {
+			return derive_dir_namespace(path.dirname(file), library, entry_dir);
+		}
+		return name;
+	}
+	if (entry_dir) {
+		const base = path.resolve(entry_dir, ...segments);
+		if (fs.existsSync(base) && fs.statSync(base).isDirectory()) {
+			return derive_dir_namespace(base, library, entry_dir);
+		}
+		const file = `${base}.nm`;
+		if (fs.existsSync(file)) {
+			return derive_dir_namespace(path.dirname(file), library, entry_dir);
+		}
+	}
+	// Unresolvable from here (the joiner inlines these files elsewhere) —
+	// grant the spelled path as its own namespace.
+	return segments.join("::");
+}
+
+const STAMPED_NODE_TYPES = new Set([
+	"func",
+	"struct",
+	"trait",
+	"enum",
+	"bitset",
+	"declare",
+	"extend",
+	"import",
+]);
+
+/**
+ * Stamp every declaration with its file id and namespace (docs/SCOPING.md),
+ * and record what each import grants per owning file. Runs after parsing,
+ * before qualified-path validation — whose coverage checks consult the
+ * stamped imports.
+ */
+function stamp_file_namespaces(
+	root: RootNode,
+	table: FileTable,
+	library: Library | undefined,
+	file_path?: string,
+): Map<number, Set<string>> {
+	const entry_dir = file_path ? path.dirname(path.resolve(file_path)) : undefined;
+	function is_node(value: unknown): boolean {
+		return (
+			!!value &&
+			typeof value === "object" &&
+			typeof (value as { node_type?: unknown }).node_type === "string"
+		);
+	}
+	function walk(node: any): void {
+		if (!node || typeof node !== "object") return;
+		if (Array.isArray(node)) {
+			for (const child of node) walk(child);
+			return;
+		}
+		if (STAMPED_NODE_TYPES.has(node.node_type)) {
+			const id = file_id_at(table, node.start);
+			node.file_id = id;
+			node.namespace = table.namespaces[id] ?? "";
+		}
+		for (const key of Object.keys(node)) {
+			if (key === "parent" || key === "scope") continue;
+			const value = node[key];
+			if (Array.isArray(value)) {
+				for (const item of value) if (is_node(item)) walk(item);
+			} else if (is_node(value)) {
+				walk(value);
+			}
+		}
+	}
+	// The root is the entry context (file 0): checks that run with only the
+	// root on the stack — signature checks before a function is pushed —
+	// must resolve to the entry namespace and its imports, not the
+	// empty-namespace fallback.
+	root.namespace = table.namespaces[0] ?? "";
+	root.file_id = 0;
+	walk(root);
+
+	const imports_by_file = new Map<number, Set<string>>();
+	for (const imp of root.imports) {
+		const id = imp.file_id ?? 0;
+		imp.granted_namespace = import_granted_namespace(
+			imp.name,
+			table.paths[id] ?? "",
+			library,
+			entry_dir,
+		);
+		let set = imports_by_file.get(id);
+		if (!set) {
+			set = new Set();
+			imports_by_file.set(id, set);
+		}
+		set.add(imp.granted_namespace);
+	}
+	return imports_by_file;
+}
+
+/**
+ * Validate the namespace prefixes of qualified references recorded while
+ * parsing (`Controls::Button`, `System::Text::Regex`). Two checks per
+ * reference: the prefix must exist (a mistyped path (`Control::Button`)
+ * would otherwise silently resolve nothing), and the referencing file must
+ * be able to SEE the namespace — its own namespace chain (ancestors) or its
+ * imports (docs/SCOPING.md).
+ */
+function validate_qualified_paths(
+	status: ParseStatus,
+	library: Library | undefined,
+	table: FileTable,
+	imports_by_file: Map<number, Set<string>>,
+): void {
+	if (!library) return;
+	const path_prefixes = library_path_prefixes(library);
+	const dir_prefixes = library_dir_prefixes(library);
+	for (const ref of status.qualified_paths) {
+		const prefix_segments = ref.segments.slice(0, -1);
+		if (!prefix_segments.length) continue;
+		const ns = qualified_prefix_namespace(
+			prefix_segments,
+			library,
+			path_prefixes,
+			dir_prefixes,
+			status,
+			ref.start,
+		);
+		if (ns === undefined) continue;
+		const file_id = file_id_at(table, ref.start);
+		const accessor_ns = table.namespaces[file_id] ?? "";
+		if (ns_is_ancestor_or_self(ns, accessor_ns)) continue;
+		if (imports_by_file.get(file_id)?.has(ns)) continue;
+		add_error(status, `Namespace ${ns} is not imported`, ref.start);
+	}
+}
+
+/**
+ * The namespace a qualified reference's prefix names: the longest DIRECTORY
+ * prefix when the path is library-rooted — a namespace's visibility boundary
+ * is its directory, so `Controls::Geometry::Size` names `System::Controls` —
+ * or the spelled path for the program's own namespaces. Returns undefined
+ * when a library-rooted path doesn't exist in the layout (a typo); the
+ * `Unknown namespace` error has been reported in that case.
+ */
+function qualified_prefix_namespace(
+	segments: string[],
+	library: Library,
+	path_prefixes: Set<string>,
+	dir_prefixes: Set<string>,
+	status: ParseStatus,
+	start: number,
+): string | undefined {
+	const lib_rooted = segments[0] === "System" || dir_prefixes.has(segments[0]);
+	if (lib_rooted) {
+		const rel = segments[0] === "System" ? segments.slice(1).join("/") : segments.join("/");
+		if (rel !== "" && !path_prefixes.has(rel) && !path_prefixes.has(`System/${rel}`)) {
+			add_error(status, `Unknown namespace: ${segments[0]}`, start);
+			return undefined;
+		}
+		// Collapse to the longest directory prefix.
+		for (let take = segments.length; take >= 1; take--) {
+			const cand = segments.slice(0, take).join("/");
+			const rel_cand = cand.startsWith("System/") ? cand.slice("System/".length) : cand;
+			if (take === 1 && (cand === "System" || rel_cand === "")) return "System";
+			if (dir_prefixes.has(rel_cand)) {
+				const parts = rel_cand === "" ? [] : rel_cand.split("/");
+				return ["System", ...parts].join("::");
+			}
+		}
+		return "System";
+	}
+	// The program's own namespace tree, spelled as-is.
+	return segments.join("::");
 }
 
 function mark_library_nodes(root: RootNode, boundary: number): void {
@@ -459,7 +746,11 @@ function resolve_types_with_deps(
 		// push it only once to avoid duplicate definitions.
 		if (!pushed.has(entry.source)) {
 			pushed.add(entry.source);
-			result.push(entry.source);
+			// Precede each appended file with a `// file://` marker (matching
+			// the joiner and the library builder) so the parser attributes its
+			// declarations to the file — and namespace — they came from
+			// (docs/SCOPING.md).
+			result.push(`// file://${entry.path}\n${entry.source}`);
 		}
 	}
 

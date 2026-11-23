@@ -3,9 +3,12 @@ import {
 	is_nullable_flagged_type,
 	is_nullable_scalar_name,
 } from "../../build_common/nullable_scalar.ts";
+import built_in_types from "../../built_in_types.ts";
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { resolve_case_enum_type } from "./case_enum.ts";
+import is_visible from "./is_visible.ts";
+import { accessor_context, decl_namespace } from "./namespaces.ts";
 import resolve_declared_type from "./resolve_declared_type.ts";
 import type_name from "./type_name.ts";
 
@@ -90,25 +93,49 @@ export default function check_type_exists(type: Type, status: CheckStatus, start
 	// build keys its flat type table by that emission name).
 	const declared = resolve_declared_type(type.name, status);
 	if (declared) {
-		// Visibility gate for type NAMES (not just constructor/field access).
-		// An `internal` type may be named only from library code: a reference
-		// at/after the library boundary, an enclosing library declaration, or
-		// a trusted (`allow_internal`) build. User code naming an internal
-		// library type is rejected. `private`/nested visibility is already
-		// enforced by resolve_declared_type's emission-scope walk.
-		const decl = declared as { visibility?: string; is_library?: boolean };
-		// Only gate references that carry a real source offset. Synthesized
-		// references (an auto-generated `#init`'s return type, etc.) have no
-		// offset and belong to the same unit as their declaration, so they are
-		// always allowed.
+		// Visibility gate for type NAMES (not just constructor/field access)
+		// (docs/SCOPING.md): the referencing file must reach the declaring
+		// namespace — its own, an ancestor, or an import; `internal` types
+		// may only be named from that namespace or its descendants; unmarked
+		// types only from the namespace itself. Synthesized references (an
+		// auto-generated `#init`'s return type, etc.) carry no source offset
+		// and always pass, and trusted (`allow_internal`) builds keep
+		// pre-scoping access to library internals.
 		const has_source_offset = typeof start === "number" && start > 0;
-		if (decl.visibility === "internal" && has_source_offset) {
-			const access_is_library =
-				start >= (status.library_boundary ?? Number.POSITIVE_INFINITY) ||
-				status.stack.some((n) => !!(n as { is_library?: boolean }).is_library) ||
-				!!status.allow_internal;
-			if (!!decl.is_library !== access_is_library) {
-				add_error(status, `Type '${type.name}' is internal to the System library`, start);
+		// Compiler-synthesized types (tuples, anonymous structs) belong to no
+		// namespace — never gate them (the name-prefix idiom used across the
+		// checker, e.g. copy_synthesis).
+		const is_synthesized = type.name.startsWith("_Tuple_") || type.name.startsWith("_Anon_");
+		const is_builtin = built_in_types.includes(type.name);
+		const ctx =
+			has_source_offset &&
+			!is_synthesized &&
+			!is_builtin &&
+			!status.allow_internal &&
+			// A monomorphized body's substituted type arguments were gated at
+			// the call site — the generated body itself is compiler glue.
+			!status.is_mono_body_recheck
+				? accessor_context(status)
+				: undefined;
+		if (ctx) {
+			const decl_ns = decl_namespace(declared);
+			const vis = ((declared as { visibility?: string }).visibility ?? "pub") as
+				| "pub"
+				| "private"
+				| "internal";
+			const { ns: accessor_ns, imports } = ctx;
+			const key = `${type.name}@${accessor_ns}`;
+			if (
+				decl_ns !== undefined &&
+				!status.reported_scope_errors?.has(key) &&
+				!is_visible(decl_ns, vis, accessor_ns, imports)
+			) {
+				status.reported_scope_errors?.add(key);
+				if (vis === "pub") {
+					add_error(status, `Namespace ${decl_ns} is not imported: ${type.name}`, start);
+				} else {
+					add_error(status, `Can't access ${vis} type: ${type.name}`, start);
+				}
 				return false;
 			}
 		}

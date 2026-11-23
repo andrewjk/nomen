@@ -270,7 +270,29 @@ function canonical_program(): string {
 			decls.push(`\tvar Map<${k},${v}> _map_${k}_${v} = Map<${k},${v}>()`);
 	}
 
-	const source = `import System\npub func main = () {\n${decls.join("\n")}\n}\n`;
+	// The program names types from every non-GUI namespace, so it must import
+	// each of them (docs/SCOPING.md): `import System` alone grants only the
+	// System root's own names — Stream/Text types need their namespace
+	// imports, exactly like any other consumer.
+	const namespaces = new Set<string>();
+	const system_root = path.resolve(lib.dir, "System");
+	for (const [, entry] of lib.types.entries() as [string, { path?: string }][]) {
+		if (String(entry.path).includes("Controls")) continue;
+		const rel = path.dirname(path.relative(system_root, String(entry.path)));
+		if (rel && rel !== "." && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+			namespaces.add(rel.split(path.sep).join("::"));
+		}
+	}
+	const imports = [
+		"System",
+		...Array.from(namespaces)
+			.sort()
+			.map((ns) => `System::${ns}`),
+	]
+		.map((n) => `import ${n}`)
+		.join("\n");
+
+	const source = `${imports}\npub func main = () {\n${decls.join("\n")}\n}\n`;
 	return source;
 }
 

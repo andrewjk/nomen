@@ -48,6 +48,10 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 function build_auto_init(struct: StructNode): FunctionNode {
 	const func = new FunctionNode(-1, struct.visibility, "#init", new Type(struct.name));
 	func.is_synthesized_init = true;
+	// The synthesized init belongs to the struct's namespace/file: a
+	// mono's namespace resolves through it (docs/SCOPING.md).
+	func.namespace = struct.namespace;
+	func.file_id = struct.file_id;
 	func.params = struct.fields
 		.filter((f) => f.visibility !== "private" && !f.value)
 		.map((f) => {

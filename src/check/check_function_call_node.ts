@@ -691,6 +691,10 @@ export function monomorphize(
 		);
 	}
 	mono_struct.is_library = generic_struct.is_library;
+	// Namespace stamps ride the mono: visibility gates resolve the mono's
+	// declaring namespace through its template's (docs/SCOPING.md).
+	mono_struct.namespace = generic_struct.namespace;
+	mono_struct.file_id = generic_struct.file_id;
 	// Trait conformance args ride along, substituted (`class Thread<T> :
 	// Spawnable<T>` monomorphizes to `Thread_uint64 : Spawnable_uint64`).
 	// Without this the mono clone's trait_args are empty and the conformance
@@ -990,6 +994,10 @@ export function monomorphize(
 			allow_internal: status.allow_internal,
 			arch: status.arch,
 			library_boundary: status.library_boundary,
+			// Namespace scoping facts are program-wide (docs/SCOPING.md).
+			file_namespaces: status.file_namespaces,
+			namespace_imports: status.namespace_imports,
+			reported_scope_errors: status.reported_scope_errors,
 			is_mono_body_recheck: true,
 			comptime_type_bindings: mono_type_bindings,
 		};
@@ -1066,6 +1074,10 @@ export function monomorphize(
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
 		arch: status.arch,
+		// Namespace scoping facts are program-wide (docs/SCOPING.md).
+		file_namespaces: status.file_namespaces,
+		namespace_imports: status.namespace_imports,
+		reported_scope_errors: status.reported_scope_errors,
 		is_mono_body_recheck: true,
 		comptime_type_bindings: mono_type_bindings,
 	};
@@ -1262,6 +1274,12 @@ export function synthesize_generic_trait_defaults(struct: StructNode, status: Ch
 			// The later `func.scope = struct` assignment in check_struct_node
 			// would otherwise gate a private trait-clone to struct-local scope.
 			cloned.visibility = "pub";
+			// The specialization belongs to the CONFORMER's namespace now: the
+			// derived body resolves the struct's own fields and types, which
+			// live in the struct's namespace, not the trait's
+			// (docs/SCOPING.md).
+			cloned.namespace = struct.namespace;
+			cloned.file_id = struct.file_id;
 			cloned.return_type = substitute_type(cloned.return_type, substitution);
 			for (const param of cloned.params) {
 				param.type = substitute_type(param.type, substitution);
@@ -3587,6 +3605,10 @@ function specialize_function(
 		// user function's cloned body is checked here with a fresh status.
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
+		// Namespace scoping facts are program-wide (docs/SCOPING.md).
+		file_namespaces: status.file_namespaces,
+		namespace_imports: status.namespace_imports,
+		reported_scope_errors: status.reported_scope_errors,
 		is_mono_body_recheck: true,
 		arch: status.arch,
 		comptime_type_bindings: function_type_bindings,

@@ -182,6 +182,31 @@ export default function tokenize(input: string, preserve_source = false): Token[
 						status.i = k;
 					}
 				} else if (value === "/" && input[status.i + 1] === "/") {
+					// A file marker (`// file://<abs path>`) at the start of a
+					// line: the joiner and the library builder inject one
+					// before each concatenated file's source, and the parser
+					// attributes every declaration to the file — and
+					// namespace — it came from (docs/SCOPING.md). Emit a
+					// marker token carrying the path instead of dropping the
+					// comment. The formatter (preserve_source) keeps it a
+					// plain comment.
+					if (
+						!preserve_source &&
+						(status.i === 0 || input[status.i - 1] === "\n") &&
+						input.startsWith("// file://", status.i)
+					) {
+						const path_start = status.i + "// file://".length;
+						let line_end = input.indexOf("\n", path_start);
+						if (line_end === -1) line_end = input.length;
+						status.tokens.push({
+							value: "file_marker",
+							i: status.i,
+							file: input.substring(path_start, line_end).trim(),
+						});
+						status.i = line_end - 1;
+						status.start = line_end;
+						continue;
+					}
 					// It's a one-line comment -- process until the newline
 					let end = consume_comment(input, status);
 					if (!preserve_source) {

@@ -5,6 +5,7 @@ import { compile_module } from "./_helpers.ts";
 describe("readme: GUI", () => {
 	test("window, text, and show", () => {
 		const input = `
+import System
 import System::Controls
 
 pub func main = () {

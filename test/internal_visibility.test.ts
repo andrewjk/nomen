@@ -8,9 +8,16 @@ import type CompileError from "../src/types/CompileError";
 
 /**
  * A tiny in-memory library used to exercise `internal` across the
- * user/library boundary. `Widget` is `pub` so user code can construct it and
- * reach the members whose own visibility is under test; `lib_helper` and
- * `use_internals` exercise free functions.
+ * namespace boundary (docs/SCOPING.md). The library's files live under a
+ * `<dir>/System/` root so the parse stamps them into the `System`
+ * namespace — the user program (namespace "") sees only `pub`.
+ */
+const TEST_LIB_DIR = path.resolve("/nonexistent-test-library");
+
+/**
+ * `Widget` is `pub` so user code can construct it and reach the members
+ * whose own visibility is under test; `lib_helper` and `use_internals`
+ * exercise free functions.
  */
 const LIB_SOURCE = `pub struct Widget {
 	internal var int secret = 0
@@ -28,13 +35,29 @@ const library = {
 	name: "Test",
 	source: LIB_SOURCE,
 	types: new Map([
-		["Widget", { name: "Widget", source: LIB_SOURCE, path: "Test/Widget.nm", deps: [] }],
+		[
+			"Widget",
+			{
+				name: "Widget",
+				source: LIB_SOURCE,
+				path: path.join(TEST_LIB_DIR, "System", "Widget.nm"),
+				deps: [],
+			},
+		],
 	]),
 	functions: new Map([
-		["lib_helper", { name: "lib_helper", source: LIB_SOURCE, path: "Test/Widget.nm", deps: [] }],
+		[
+			"lib_helper",
+			{
+				name: "lib_helper",
+				source: LIB_SOURCE,
+				path: path.join(TEST_LIB_DIR, "System", "Widget.nm"),
+				deps: [],
+			},
+		],
 	]),
 	namespaces: new Map<string, Set<string>>(),
-	dir: path.resolve("/nonexistent-test-library"),
+	dir: TEST_LIB_DIR,
 };
 
 /**
@@ -53,16 +76,29 @@ const hidden_library = {
 	name: "Hidden",
 	source: HIDDEN_SOURCE,
 	types: new Map([
-		["Hidden", { name: "Hidden", source: HIDDEN_SOURCE, path: "Test/Hidden.nm", deps: [] }],
+		[
+			"Hidden",
+			{
+				name: "Hidden",
+				source: HIDDEN_SOURCE,
+				path: path.join(TEST_LIB_DIR, "System", "Hidden.nm"),
+				deps: [],
+			},
+		],
 	]),
 	functions: new Map([
 		[
 			"make_hidden",
-			{ name: "make_hidden", source: HIDDEN_SOURCE, path: "Test/Hidden.nm", deps: [] },
+			{
+				name: "make_hidden",
+				source: HIDDEN_SOURCE,
+				path: path.join(TEST_LIB_DIR, "System", "Hidden.nm"),
+				deps: [],
+			},
 		],
 	]),
 	namespaces: new Map<string, Set<string>>(),
-	dir: path.resolve("/nonexistent-hidden-library"),
+	dir: TEST_LIB_DIR,
 };
 
 /** Build the expected error by locating `needle` in `source`. */
@@ -166,9 +202,7 @@ pub func main = () {
 }
 `;
 		const errors = parse(input, hidden_library).errors;
-		expect(
-			errors.some((e) => e.message === "Type 'Hidden' is internal to the System library"),
-		).toBe(true);
+		expect(errors.some((e) => e.message === "Can't access internal type: Hidden")).toBe(true);
 	});
 
 	test("library code may name its own internal type", () => {

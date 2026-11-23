@@ -131,6 +131,12 @@ export default function clone_status(status: CheckStatus): CheckStatus {
 		// Trusted-internal opt-in: a build-wide flag, inherited by every clone.
 		allow_internal: status.allow_internal,
 		library_boundary: status.library_boundary,
+		// Namespace scoping (docs/SCOPING.md): the file table and per-file
+		// import grants are read-only program-wide facts — shared by
+		// reference — and gate-error dedupe is program-wide too.
+		file_namespaces: status.file_namespaces,
+		namespace_imports: status.namespace_imports,
+		reported_scope_errors: status.reported_scope_errors,
 		// Memory-model context flags: a cloned function/block body must keep
 		// the same flow context (mono re-check / variadic-arg seeding) and
 		// the shared destructure-temp provenance set.

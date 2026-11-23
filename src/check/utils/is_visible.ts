@@ -1,44 +1,42 @@
-import type BaseNode from "../../nodes/BaseNode.ts";
-
-/** Whether a node was declared in the appended System library source. */
-function node_is_library(node: BaseNode | undefined): boolean {
-	return !!(node as { is_library?: boolean } | undefined)?.is_library;
-}
+import { ns_is_ancestor_or_self } from "./namespaces.ts";
 
 /**
- * Check if an item is visible from the current access scope.
- * - If item is pub, it's visible everywhere
- * - If item is internal, it's visible only within the declaring library —
- *   the compilation UNIT, not a namespace. Namespaces are the import path
- *   (`import System::Text`), not a visibility boundary: the System library is
- *   one concatenated unit, so its `internal` helpers are reachable from every
- *   namespace in it (Buffer's slab accessors, called from Text and Controls),
- *   while a consumer program — the other side of the boundary — sees only
- *   `pub`. The access is trusted when both sides sit on the same side of the
- *   System library boundary — or when `allow_internal` opts a build into
- *   trusted mode
- * - If item is private, it's visible only within its declaring scope
- *   or descendant scopes (checked by walking the stack)
+ * Check if an item is visible from the current access scope
+ * (docs/SCOPING.md). Visibility tracks NAMESPACES:
+ *
+ * - `pub` — reachable wherever the namespace is reachable: the accessor's
+ *   own namespace, an ancestor of it (parent namespaces are accessible
+ *   without an import), or a namespace the accessor's file imports.
+ * - `internal` — additionally only within the declaring namespace and its
+ *   DESCENDANTS: a child namespace sees its parents' internals
+ *   (`System::Controls` calling `Buffer`'s slab accessors), but a sibling
+ *   or an outside consumer does not, even when the namespace is imported.
+ * - unmarked (spelled `"private"` — the retired keyword survives only as
+ *   this visibility value) — the declaring namespace ONLY: the tightest
+ *   scope. Not even ancestors see it.
+ *
+ * Declarations without a stamped namespace (inline parses with no
+ * `// file://` markers) all share the empty namespace and stay visible to
+ * each other, preserving pre-scoping behavior for tests and tooling.
  */
 export default function is_visible(
-	declaring_scope: BaseNode | undefined,
+	declaring_namespace: string | undefined,
 	visibility: "pub" | "private" | "internal",
-	access_scope: BaseNode,
-	stack: BaseNode[],
-	declaring_is_library = false,
-	allow_internal = false,
+	accessor_namespace: string | undefined,
+	accessor_imports?: Set<string>,
 ): boolean {
-	if (visibility === "pub") return true;
+	if (declaring_namespace === undefined || accessor_namespace === undefined) return true;
+	if (visibility === "private") {
+		// Unmarked: own namespace, nothing else.
+		return declaring_namespace === accessor_namespace;
+	}
 	if (visibility === "internal") {
-		if (allow_internal) return true;
-		const access_is_library = stack.some((node) => node_is_library(node));
-		return declaring_is_library === access_is_library;
+		// Declaring namespace and its descendants only — imports don't help.
+		return ns_is_ancestor_or_self(declaring_namespace, accessor_namespace);
 	}
-	if (!declaring_scope) return true;
-	// Private: access_scope must be declaring_scope or a descendant
-	for (const node of stack) {
-		if (node === declaring_scope) return true;
-		if ((node as any).scope === declaring_scope) return true;
-	}
-	return access_scope === declaring_scope;
+	// pub: the namespace reachability gate.
+	return (
+		ns_is_ancestor_or_self(declaring_namespace, accessor_namespace) ||
+		(accessor_imports?.has(declaring_namespace) ?? false)
+	);
 }

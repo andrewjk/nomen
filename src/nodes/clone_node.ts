@@ -78,6 +78,15 @@ export function clone_type(type: Type): Type {
 	return t;
 }
 
+/** Namespace stamps ride every declaration clone (docs/SCOPING.md). */
+function copy_namespace_stamps(
+	c: { namespace?: string; file_id?: number },
+	n: { namespace?: string; file_id?: number },
+): void {
+	c.namespace = n.namespace;
+	c.file_id = n.file_id;
+}
+
 export default function clone_node(node: BaseNode): BaseNode {
 	switch (node.node_type) {
 		case "value": {
@@ -484,6 +493,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			// the clone (type generation re-resolves per iteration).
 			c.comptime_name = n.comptime_name;
 			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
+			copy_namespace_stamps(c, n);
 			return c;
 		}
 		case "func": {
@@ -519,6 +529,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			// cloned body must not be mistaken for a user-written one).
 			c.comptime_name = n.comptime_name;
 			c.is_synthesized_init = n.is_synthesized_init;
+			copy_namespace_stamps(c, n);
 			return c;
 		}
 		case "param": {
@@ -567,6 +578,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.comptime_name = n.comptime_name;
 			c.allocations = n.allocations?.map(clone_node);
 			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
+			copy_namespace_stamps(c, n);
 			return c;
 		}
 		case "enum_case_decl": {
@@ -584,6 +596,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			const c = new BitsetNode(n.start, n.visibility, n.name, n.cases.slice());
 			c.checked = n.checked;
 			c.allocations = n.allocations?.map(clone_node);
+			copy_namespace_stamps(c, n);
 			return c;
 		}
 		case "root": {
@@ -593,6 +606,9 @@ export default function clone_node(node: BaseNode): BaseNode {
 				n.statements.map(clone_node),
 			);
 			c.allocations = n.allocations?.map(clone_node);
+			// The file table rides a root clone (docs/SCOPING.md).
+			c.file_paths = n.file_paths;
+			c.file_namespaces = n.file_namespaces;
 			return c;
 		}
 		case "trait": {
@@ -608,6 +624,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.type_params = n.type_params.slice();
 			c.comptime_name = n.comptime_name;
 			c.member_pragmas = n.member_pragmas?.map(clone_node) as BaseNode[] | undefined;
+			copy_namespace_stamps(c, n);
 			return c;
 		}
 		case "extend": {
@@ -624,6 +641,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.trait_args = n.trait_args.map((args) => args?.map(clone_type));
 			c.scope = n.scope;
 			c.comptime_name = n.comptime_name;
+			copy_namespace_stamps(c, n);
 			return c;
 		}
 		case "pragma_if": {

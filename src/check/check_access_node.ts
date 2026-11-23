@@ -1,6 +1,7 @@
 import add_error from "../add_error.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
+import built_in_types from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
@@ -44,6 +45,7 @@ import {
 } from "./utils/function_overload.ts";
 import { try_check_handler_registration } from "./utils/handlers.ts";
 import is_visible from "./utils/is_visible.ts";
+import { accessor_context, decl_is_builtin_scoped, decl_namespace } from "./utils/namespaces.ts";
 import {
 	is_class_type,
 	is_owning_ref_type,
@@ -574,62 +576,80 @@ function check_access_field_node(
 		}
 	}
 	if (field) {
-		const access_scope = status.stack.at(-1)!;
-		if (
-			field.visibility !== "pub" &&
-			!is_visible(
-				field.scope,
-				field.visibility,
-				access_scope,
-				status.stack,
-				!!field.is_library,
-				!!status.allow_internal,
-			)
-		) {
-			add_error(status, `Can't access ${field.visibility} field: ${node.name}`, node.start);
-			return false;
-		} else {
-			node.type = field.type;
-			// Materialization can be deferred for a receiver whose type args
-			// are themselves generic (`Box<Buffer<T>>` inside a generic body —
-			// the nested arg defers the mono), leaving `field.type` as the
-			// DECLARED bare param (`Box.__value: T`). Substitute the
-			// receiver's type argument so the through-box access resolves
-			// against the argument's type, exactly as the mono'd struct's
-			// field would have.
-			if (struct?.is_generic && target_type.type_args?.length === struct.type_params.length) {
-				const param_index = struct.type_params.indexOf(node.type.name);
-				if (param_index >= 0) {
-					node.type = target_type.type_args[param_index];
+		// Scope gate (docs/SCOPING.md): the accessing file must reach the
+		// field's namespace — its own, an ancestor, or an import;
+		// `internal` fields (Buffer's slab pointer, StringBuilder's capacity
+		// plumbing) only from that namespace or its descendants; unmarked
+		// fields only from the namespace itself. A field's declaring
+		// namespace is its struct's (`field.scope`); a monomorphized field
+		// clone resolves through its mono struct (whose namespace rides the
+		// template's). Trusted (`allow_internal`) builds keep pre-scoping
+		// access.
+		const field_struct = status.structs.findLast((s) => s.name === target_type.name);
+		const field_ns = decl_namespace(field.scope) ?? decl_namespace(field_struct);
+		const field_vis = (field.visibility ?? "pub") as "pub" | "private" | "internal";
+		// Built-in scalar fields are language surface — never gated.
+		const field_builtin =
+			decl_is_builtin_scoped(field) ||
+			(!!field_struct && built_in_types.includes((field_struct as { name?: string }).name ?? ""));
+		const field_ctx =
+			!status.allow_internal &&
+			!status.is_mono_body_recheck &&
+			field_ns !== undefined &&
+			!field_builtin
+				? accessor_context(status)
+				: undefined;
+		if (field_ctx) {
+			const { ns: accessor_ns, imports } = field_ctx;
+			if (!is_visible(field_ns, field_vis, accessor_ns, imports)) {
+				if (field_vis === "pub") {
+					add_error(status, `Namespace ${field_ns} is not imported: ${node.name}`, node.start);
+				} else {
+					add_error(status, `Can't access ${field_vis} field: ${node.name}`, node.start);
 				}
+				return false;
 			}
-			// Reading through a const-ref base keeps the const: `w.__value`
-			// on a `Box<T>` binding extracted from a const source is itself a
-			// const reference (the box-transparent rewrite routes through
-			// this field read), so the mutating-dispatch and field-write
-			// const checks see it downstream.
-			if (!node.type.is_const_ref && target.node_type === "value") {
-				const base = status.values.findLast((v) => v.name === (target as ValueNode).value);
-				if (base?.type?.is_const_ref) {
-					node.type.is_const_ref = true;
-				}
+		}
+		node.type = field.type;
+		// Materialization can be deferred for a receiver whose type args
+		// are themselves generic (`Box<Buffer<T>>` inside a generic body —
+		// the nested arg defers the mono), leaving `field.type` as the
+		// DECLARED bare param (`Box.__value: T`). Substitute the
+		// receiver's type argument so the through-box access resolves
+		// against the argument's type, exactly as the mono'd struct's
+		// field would have.
+		if (struct?.is_generic && target_type.type_args?.length === struct.type_params.length) {
+			const param_index = struct.type_params.indexOf(node.type.name);
+			if (param_index >= 0) {
+				node.type = target_type.type_args[param_index];
 			}
-			// A `view T` field read whose struct's source was mutated since the
-			// field was stored (`doc = …` after `line.text = doc.slice(…)`) is
-			// a dangling borrow — reject the read. Writing over the field (the
-			// assignment target path) is exempt: that re-points it. The field
-			// name narrows to the precise poison tier: a sibling field sourced
-			// from an untouched variable stays readable.
-			if (field.type.is_view && target.node_type === "value" && !status.is_assignment_target) {
-				const root = (target as ValueNode).value;
-				if (view_fields_invalidated(root, status, node.name)) {
-					add_error(
-						status,
-						`view field '${node.name}' was invalidated by a mutation of its source; re-fetch it after the mutation`,
-						node.start,
-					);
-					return false;
-				}
+		}
+		// Reading through a const-ref base keeps the const: `w.__value`
+		// on a `Box<T>` binding extracted from a const source is itself a
+		// const reference (the box-transparent rewrite routes through
+		// this field read), so the mutating-dispatch and field-write
+		// const checks see it downstream.
+		if (!node.type.is_const_ref && target.node_type === "value") {
+			const base = status.values.findLast((v) => v.name === (target as ValueNode).value);
+			if (base?.type?.is_const_ref) {
+				node.type.is_const_ref = true;
+			}
+		}
+		// A `view T` field read whose struct's source was mutated since the
+		// field was stored (`doc = …` after `line.text = doc.slice(…)`) is
+		// a dangling borrow — reject the read. Writing over the field (the
+		// assignment target path) is exempt: that re-points it. The field
+		// name narrows to the precise poison tier: a sibling field sourced
+		// from an untouched variable stays readable.
+		if (field.type.is_view && target.node_type === "value" && !status.is_assignment_target) {
+			const root = (target as ValueNode).value;
+			if (view_fields_invalidated(root, status, node.name)) {
+				add_error(
+					status,
+					`view field '${node.name}' was invalidated by a mutation of its source; re-fetch it after the mutation`,
+					node.start,
+				);
+				return false;
 			}
 		}
 	} else {

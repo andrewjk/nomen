@@ -500,6 +500,13 @@ function gather_declarations(
 					names.structs.add(struct.name);
 					assign_type_label(struct, block, status);
 					struct.scope = status.stack.at(-1) || block;
+					// Methods carry their owner from gather time (not first
+					// check): a call resolved before the struct's own check
+					// — user code precedes the library in the unit — needs
+					// `func.scope` for namespace scoping (docs/SCOPING.md).
+					for (const func of struct.functions) {
+						if (!func.scope) func.scope = struct;
+					}
 					struct.is_generic = struct.type_params.length > 0;
 					stamp_box_wrapper_representation(struct);
 					// Strip parallel-length clauses from every method's params

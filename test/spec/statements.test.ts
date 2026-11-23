@@ -660,9 +660,11 @@ describe("spec: qualified references", () => {
 	test("namespace-qualified type and method references", () => {
 		const input = `
 import System
+import System::Text
+import System::Controls
 
 const ok = Text::Regex.test("a+b", "aaab")
-const size = System::Controls::Geometry::Size()
+const size = Controls::Geometry::Size()
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
@@ -673,7 +675,7 @@ const size = System::Controls::Geometry::Size()
 const size = Control::Geometry::Size()
 `;
 		expect(parse(input, core).errors).toEqual([
-			test_error(input, "Unknown namespace: Control", 3, 14),
+			test_error(input, "Namespace Control::Geometry is not imported", 3, 14),
 		]);
 	});
 });

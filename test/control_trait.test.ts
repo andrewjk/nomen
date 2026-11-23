@@ -18,6 +18,7 @@ describe("Control trait (Phase 6)", () => {
 		{ timeout: 60000 },
 		async () => {
 			const input = `
+import System
 import System::Controls::Control
 import System::Controls::Geometry
 
@@ -76,6 +77,7 @@ pub func main = () {
 	// directly, never through the trait). Tracked as a compiler follow-up.
 	test("Container dispatches measure through a Control receiver", { timeout: 60000 }, async () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

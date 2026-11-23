@@ -56,6 +56,7 @@ pub func main = () {
 
 	test("Separator/GroupBox conform to the Control trait", () => {
 		const input = `
+import System
 import System::Controls
 
 func measured = (Control c, out string) {

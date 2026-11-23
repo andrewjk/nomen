@@ -37,6 +37,25 @@ export default class BaseNode {
 	 */
 	attrs?: import("../types/AttributeMeta.ts").default[];
 
+	/**
+	 * The namespace this declaration belongs to (docs/SCOPING.md):
+	 * `"System"` / `"System::Controls"` for library files, the
+	 * entry-relative directory path (`"Blah"`, `"Blah::Sub"`, `".."` for a
+	 * file gathered from the parent directory, `""` for the entry folder)
+	 * for program files. Stamped by parse from the `// file://` markers.
+	 * Visibility is checked against this — `pub` needs the namespace
+	 * imported (or an ancestor), `internal` needs it to be an ancestor-or-
+	 * self, an unmarked declaration is visible only within its own
+	 * namespace.
+	 */
+	namespace?: string;
+
+	/**
+	 * Index into RootNode.file_paths / file_namespaces for the file this
+	 * declaration came from. Stamped by parse alongside `namespace`.
+	 */
+	file_id?: number;
+
 	constructor(node_type: NodeType, start: number) {
 		this.node_type = node_type;
 		this.start = start;

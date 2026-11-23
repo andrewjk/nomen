@@ -134,16 +134,21 @@ const y = x + 1     // Error: 'x' is null
 
 ### Visibility
 
-`pub` exports. `internal` is visible only within the declaring library — the
-compilation unit, not a namespace: the System library is one unit, so its
-`internal` helpers are reachable from every namespace in it, while consumers
-see only `pub`. Namespaces are the import path (`import System::Text`), not a
-visibility boundary; an import never grants visibility.
+`pub` exports. Visibility tracks **namespaces** (docs/SCOPING.md):
 
-An unmarked declaration is already the tightest scope — file-scoped at the top
-level — so `private` retired: writing it is an error pointing at the unmarked
-form. Struct members default `pub`; trait members are exported with their
-contract.
+- `pub` — reachable wherever its namespace is: the accessor's own namespace,
+  an ancestor of it (parents are accessible without an import), or a
+  namespace the file imports. `import System` grants only `System`'s own
+  names — `Controls` names need `import System::Controls`.
+- `internal` — only within the declaring namespace and its descendants. A
+  child namespace sees its parents' internals (`System::Controls` calling
+  `Buffer`'s slab accessors); siblings and consumers do not, even when
+  imported.
+- unmarked — the tightest scope: visible only within its own namespace.
+  `private` retired as a keyword: writing it is an error pointing at the
+  unmarked form.
+
+Struct members default `pub`; trait members are exported with their contract.
 
 `readonly` is a field-write modifier, not a visibility: the field reads at its
 declared visibility but can only be assigned inside its declaring struct (and

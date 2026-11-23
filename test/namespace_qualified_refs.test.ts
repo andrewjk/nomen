@@ -8,8 +8,8 @@ import trim_test_build from "./trim_test_build";
 
 const core = get_library(import.meta.dirname.replace(/\/?test$/, "/core"));
 
-function module_of(body: string): string {
-	return `import System\npub func main = () {\n${body}\n}\n`;
+function module_of(body: string, imports = "System"): string {
+	return `${imports}\npub func main = () {\n${body}\n}\n`;
 }
 
 describe("namespace imports", () => {
@@ -74,14 +74,21 @@ import types::CharChange
 
 describe("qualified references", () => {
 	test("qualified constructor builds the same code as the bare name", () => {
+		const imports = "import System\nimport System::Controls";
 		const qualified = parse(
-			module_of(`var Controls::Geometry::Size s = System::Controls::Geometry::Size()
-\tConsole.write("\\{s.width} \\{s.height}")`),
+			module_of(
+				`var Controls::Geometry::Size s = Controls::Geometry::Size()
+	\tConsole.write("\\{s.width} \\{s.height}")`,
+				imports,
+			),
 			core,
 		);
 		const bare = parse(
-			module_of(`var Size s = Size()
-\tConsole.write("\\{s.width} \\{s.height}")`),
+			module_of(
+				`var Size s = Size()
+	\tConsole.write("\\{s.width} \\{s.height}")`,
+				imports,
+			),
 			core,
 		);
 		expect(qualified.errors).toEqual([]);
@@ -92,14 +99,24 @@ describe("qualified references", () => {
 	});
 
 	test("qualified type-level method call compiles", () => {
-		const input = module_of(`const ok = Text::Regex.test("a+b", "aaab")
-\tConsole.write("\\{ok}")`);
+		const input = module_of(
+			`const ok = Text::Regex.test("a+b", "aaab")
+	\tConsole.write("\\{ok}")`,
+			"import System\nimport System::Text",
+		);
 		expect(parse(input, core).errors).toEqual([]);
 	});
 
-	test("qualified reference without a namespace import resolves by bare name", () => {
+	test("qualified reference without a namespace import is gated", () => {
+		// docs/SCOPING.md: `import System` grants only System's own names —
+		// `Text::Regex` needs `import System::Text` (or System::Text::Regex),
+		// however the reference is spelled. Both the annotation and the
+		// constructor report.
 		const input = module_of(`var Text::Regex r = Text::Regex()`);
-		expect(parse(input, core).errors).toEqual([]);
+		const errors = parse(input, core).errors;
+		expect(errors.length).toBe(2);
+		expect(errors[0].message).toBe("Namespace System::Text is not imported");
+		expect(errors[1].message).toBe("Namespace System::Text is not imported");
 	});
 });
 
@@ -107,19 +124,22 @@ describe("qualified reference errors", () => {
 	test("unknown namespace prefix", () => {
 		const input = module_of(`var Size s = Control::Geometry::Size()`);
 		expect(parse(input, core).errors).toEqual([
-			test_error(input, "Unknown namespace: Control", 3, 14),
+			test_error(input, "Namespace Control::Geometry is not imported", 3, 14),
 		]);
 	});
 
 	test("typo'd root namespace", () => {
 		const input = module_of(`var Size s = Systm::Controls::Geometry::Size()`);
 		expect(parse(input, core).errors).toEqual([
-			test_error(input, "Unknown namespace: Systm", 3, 14),
+			test_error(input, "Namespace Systm::Controls::Geometry is not imported", 3, 14),
 		]);
 	});
 
 	test("unknown qualified name still reports the bare name", () => {
-		const input = module_of(`var Size s = Controls::Geometry::Siz()`);
+		const input = module_of(
+			`var Size s = Controls::Geometry::Siz()`,
+			"import System\nimport System::Controls",
+		);
 		const errors = parse(input, core).errors;
 		expect(errors.length).toBe(1);
 		expect(errors[0].message).toContain("Function not found: Siz");
