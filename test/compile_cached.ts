@@ -42,7 +42,7 @@ export function compile_cached(
 		extra: opts.extra,
 		folder,
 		parse: (source, o) => (opts.raw ? parse_raw(source) : parse_with_imports(source, o as never)),
-		build,
+		build: (root, options) => build(root as never, options as never),
 	});
 }
 

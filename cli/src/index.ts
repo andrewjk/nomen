@@ -128,9 +128,10 @@ try {
 		for (const file of files) {
 			let source = fs.readFileSync(file, "utf8");
 			const lib_dir = resolve_lib(file);
-			const library = get_library(lib_dir);
+			// Without a resolvable System library the spelling pass has nothing
+			// to check against — run it lib-less; the layout pass is unaffected.
 			const spellings = apply_ownership_spellings(source, {
-				lib: library,
+				lib: lib_dir ? get_library(lib_dir) : undefined,
 				file: path.resolve(file),
 			});
 			if (spellings.changed) {

@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";

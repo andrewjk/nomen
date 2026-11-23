@@ -42,7 +42,6 @@ import {
 	expr_to_string,
 	record_fresh_list_length,
 } from "./utils/flow_bounds.ts";
-import materialize_type from "./utils/materialize_type.ts";
 import { mv_type_error } from "./utils/mv_rule.ts";
 import {
 	borrowed_param_transfer_error,

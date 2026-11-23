@@ -36,12 +36,14 @@ function apply_first_quick_fix(
 		allow_internal: true,
 		allow_user_raw: true,
 	});
+	const signature = edited
+		.split("\n")
+		.find((l) => l.includes(needle))
+		?.trim();
+	expect(signature, `the edited source lost the line containing ${needle}`).toBeDefined();
 	return {
 		fix,
-		signature: edited
-			.split("\n")
-			.find((l) => l.includes(needle))
-			?.trim(),
+		signature: signature!,
 		errors: second.errors.map((e) => e.message),
 	};
 }

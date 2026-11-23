@@ -1,4 +1,4 @@
-import { expect, describe, test } from "vite-plus/test";
+import { describe, test } from "vite-plus/test";
 
 import { run_cached } from "./compile_cached";
 

@@ -121,7 +121,7 @@ async function main(): Promise<void> {
 			} else {
 				failures++;
 				console.error(`FAIL  ${name}: backends disagree on stdout`);
-				const first_diff = [...out_a64].findIndex((ch, i) => ch !== out_c[i]);
+				const first_diff = out_a64.split("").findIndex((ch, i) => ch !== out_c[i]);
 				console.error(`      first difference at byte ${first_diff}`);
 			}
 		} catch (error) {

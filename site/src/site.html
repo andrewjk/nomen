@@ -8,9 +8,7 @@
 			// wins. The nav's toggle flips this class and persists the choice.
 			(() => {
 				const stored = localStorage.getItem("theme");
-				if (
-					stored ? stored === "light" : matchMedia("(prefers-color-scheme: light)").matches
-				) {
+				if (stored ? stored === "light" : matchMedia("(prefers-color-scheme: light)").matches) {
 					document.documentElement.classList.add("light");
 				}
 			})();

@@ -56,5 +56,6 @@ export function apply_ownership_spellings(
 			}
 		}
 	}
-	return { code, changed: true, rounds };
+	// Fell through: the 12-round cap was hit with fixes still firing.
+	return { code, changed: true, rounds: 12 };
 }

@@ -750,7 +750,7 @@ clobber set (landed and working). Expected: ~5-8% mandelbrot (the per-block
 24-op sync), on top of the landed −32/−33%.
 
 **Update (2026-11-23, round 2)**: the region was re-implemented with
-shape-first classification and reached a *working, correct, green* state —
+shape-first classification and reached a _working, correct, green_ state —
 the region fires at the block loop, the kernel rides v16-v27, and the
 escape check emits as a straight-line register-fed min/max reduce. The
 classification fix that made it work: `plan_resident_kernel` refuses
@@ -769,8 +769,8 @@ vectorization win. The remaining work is region-composition discipline:
 `in_resident_region` must suppress the inner region entirely (the gate
 exists but the inner kernel/reduce wrapping still fires through the
 pending-stash path), and the outer region's sync must then be the only one.
-With that, the expected win is the escape vectorization (~+10%) plus the
-per-group sync hoist (~+5%). The scaffolding (region/reduce planners, the
+With that, the expected win is the escape vectorization (~~+10%) plus the
+per-group sync hoist (~~+5%). The scaffolding (region/reduce planners, the
 comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.

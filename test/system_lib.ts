@@ -277,9 +277,9 @@ function canonical_program(): string {
 	// imports, exactly like any other consumer.
 	const namespaces = new Set<string>();
 	const system_root = path.resolve(lib.dir, "System");
-	for (const [, entry] of lib.types.entries() as [string, { path?: string }][]) {
-		if (String(entry.path).includes("Controls")) continue;
-		const rel = path.dirname(path.relative(system_root, String(entry.path)));
+	for (const [, entry] of lib.types) {
+		if (entry.path.includes("Controls")) continue;
+		const rel = path.dirname(path.relative(system_root, entry.path));
 		if (rel && rel !== "." && !rel.startsWith("..") && !path.isAbsolute(rel)) {
 			namespaces.add(rel.split(path.sep).join("::"));
 		}

@@ -32,7 +32,7 @@ function compile_aarch64(source: string): string {
 		folder: path.resolve("test", "out", "neon_vector_cache"),
 		extra: neon_vectorization_enabled() ? "neon:on" : "neon:off",
 		parse: (s) => parse_raw(s, { arch: "aarch64" }),
-		build,
+		build: (root, options) => build(root as never, options as never),
 	});
 	if (!cached) throw new Error("cached_compile failed");
 	expect(cached.parse_errors).toEqual([]);

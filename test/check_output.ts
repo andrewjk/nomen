@@ -336,8 +336,8 @@ export default async function check_output(
 	for (const entry of fs.readdirSync(folder)) {
 		stage_entry(path.join(folder, entry), entry, 0);
 	}
-	let stdout: string;
-	let stderr: string;
+	let stdout = "";
+	let stderr = "";
 	let failed = false;
 	try {
 		// `ulimit -c 0`: an aborted test binary (the must-start / double-start
@@ -362,11 +362,11 @@ export default async function check_output(
 		// expected failures must not litter tracked directories.
 		const err = error as { stdout?: string; stderr?: string; message?: string };
 		if (process.env.NOMEN_TEST_DUMP_FAILURES === "1") {
-		const log = [
-			`--- stdout ---\n${(err.stdout ?? stdout ?? "").slice(0, 200_000)}`,
-			`--- stderr ---\n${(err.stderr ?? stderr ?? "").slice(0, 200_000)}`,
-			`--- message ---\n${err.message ?? ""}`,
-		].join("\n");
+			const log = [
+				`--- stdout ---\n${(err.stdout ?? stdout ?? "").slice(0, 200_000)}`,
+				`--- stderr ---\n${(err.stderr ?? stderr ?? "").slice(0, 200_000)}`,
+				`--- message ---\n${err.message ?? ""}`,
+			].join("\n");
 			try {
 				fs.writeFileSync(path.join(folder, "failure.log"), log);
 			} catch {}
