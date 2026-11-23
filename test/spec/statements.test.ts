@@ -607,22 +607,32 @@ const b = if x > 0 let "yes"
 });
 
 describe("spec: panic", () => {
-	test("panic with and without parens", () => {
+	test("panic takes a parenthesized message", () => {
 		const input = `
-panic "something went wrong"
-panic("with parens")
+panic("something went wrong")
 `;
 		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("panic without parens is an error", () => {
+		const errors = compile_main(`panic "something went wrong"`);
+		expect(errors.length).toBeGreaterThan(0);
+		expect(errors.some((e) => e.message.includes("Expected ( after panic"))).toBe(true);
 	});
 });
 
 describe("spec: todo", () => {
-	test("todo with and without parens", () => {
+	test("todo takes a parenthesized message", () => {
 		const input = `
-todo "not implemented yet"
-todo("with parens")
+todo("not implemented yet")
 `;
 		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("todo without parens is an error", () => {
+		const errors = compile_main(`todo "not implemented yet"`);
+		expect(errors.length).toBeGreaterThan(0);
+		expect(errors.some((e) => e.message.includes("Expected ( after todo"))).toBe(true);
 	});
 });
 

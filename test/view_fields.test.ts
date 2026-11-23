@@ -559,7 +559,7 @@ struct Line {
 	var view string text
 }
 func make = (out Line) {
-	todo "unimplemented"
+	todo("unimplemented")
 }
 pub func main = () {
 	Console.write("x")

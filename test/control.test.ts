@@ -285,7 +285,11 @@ func add = (out int) {
   panic
 }
 `;
-		const expected = [test_error(input, "Expected a panic message", 4, 1)];
+		const expected = [
+			test_error(input, "Expected ( after panic", 4, 1),
+			test_error(input, "Expected a panic message", 4, 1),
+			test_error(input, "Expected ) after panic message", 4, 1),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});
@@ -296,7 +300,11 @@ func add = (out int) {
   todo
 }
 `;
-		const expected = [test_error(input, "Expected a todo message", 4, 1)];
+		const expected = [
+			test_error(input, "Expected ( after todo", 4, 1),
+			test_error(input, "Expected a todo message", 4, 1),
+			test_error(input, "Expected ) after todo message", 4, 1),
+		];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

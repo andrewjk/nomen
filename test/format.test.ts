@@ -96,8 +96,6 @@ test("keeps namespace paths tight", () => {
 test("binds panic and todo tightly to their parens", () => {
 	expect(format('panic ( "key not found" )\n')).toBe('panic("key not found")\n');
 	expect(format('todo ( "not done" )\n')).toBe('todo("not done")\n');
-	// The paren-less forms are untouched.
-	expect(format('panic "no parens"\n')).toBe('panic "no parens"\n');
 	// Control-flow keywords keep their space.
 	expect(format("func f = () {\n\tif ( x ) { return }\n}\n")).toBe(
 		"func f = () {\n\tif (x) { return }\n}\n",

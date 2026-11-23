@@ -2445,8 +2445,7 @@ const result = if x > 0 let "yes"
 ### Panic
 
 ```
-panic "something went wrong"
-panic("with parens")
+panic("something went wrong")
 ```
 
 Terminates the program with the given message.
@@ -2454,8 +2453,7 @@ Terminates the program with the given message.
 ### Todo
 
 ```
-todo "not implemented yet"
-todo("with parens")
+todo("not implemented yet")
 ```
 
 Marks unimplemented code. Prints the message and exits at runtime. Satisfies return requirements so code containing `todo` type-checks correctly.
