@@ -22,3 +22,4 @@ test/out/**/*.build.json
 # Warm-run cache markers / identities (test/build_cache.ts)
 test/out/**/*.ok
 test/out/neon_vector_cache/
+test/out/system_lib/**/*.state

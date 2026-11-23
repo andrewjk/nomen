@@ -15,6 +15,7 @@
 		"build": "vp pack",
 		"dev": "vp pack --watch",
 		"test": "vp test",
+		"bench:matrix": "tsx bench/verify_matrix.ts",
 		"check": "vp check",
 		"format": "vp check --fix",
 		"prepare": "vp config",

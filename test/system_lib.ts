@@ -9,6 +9,7 @@ import built_in_types from "../src/built_in_types";
 import { build_library, get_library } from "../src/lib";
 import RootNode from "../src/nodes/RootNode";
 import parse from "../src/parse";
+import { compiler_source_hash } from "./build_cache";
 import { postprocess_macos } from "./postprocess";
 
 const execPromise = util.promisify(exec);
@@ -303,6 +304,59 @@ function hash_of(...parts: string[]): string {
 }
 
 /**
+ * Content hash of the harness files that shape the prebuilt system TU (the
+ * canonical program builder, the postprocessor, and this module's build
+ * logic). Compiler sources are hashed separately; the library is hashed by
+ * `current_lib_source_hash`. Together these are the build's INPUTS — a
+ * matching hash means the recorded objects are current and the canonical
+ * program does not need to be built at all.
+ */
+let prebuild_harness_hash_cache: string | null = null;
+function prebuild_harness_hash(): string {
+	if (prebuild_harness_hash_cache !== null) return prebuild_harness_hash_cache;
+	const here = import.meta.dirname;
+	const files = ["system_lib.ts", "system_lib_worker.ts", "postprocess.ts"].map((f) =>
+		path.join(here, f),
+	);
+	const h = crypto.createHash("sha256");
+	for (const f of files) {
+		h.update(path.basename(f));
+		try {
+			h.update(fs.readFileSync(f));
+		} catch {
+			h.update("<missing>");
+		}
+	}
+	prebuild_harness_hash_cache = h.digest("hex").slice(0, 16);
+	return prebuild_harness_hash_cache;
+}
+
+interface PrebuildState {
+	input_hash: string;
+	/** The aarch64 build produced a companion object that must be linked. */
+	companion?: boolean;
+}
+
+function state_path(paths: ReturnType<typeof system_paths>): string {
+	return `${paths.hash}.state`;
+}
+
+function read_state(paths: ReturnType<typeof system_paths>): PrebuildState | undefined {
+	try {
+		return JSON.parse(fs.readFileSync(state_path(paths), "utf8")) as PrebuildState;
+	} catch {
+		return undefined;
+	}
+}
+
+function write_state(paths: ReturnType<typeof system_paths>, state: PrebuildState): void {
+	const target = state_path(paths);
+	const tmp = `${target}.tmp.${process.pid}.${crypto.randomBytes(4).toString("hex")}`;
+	fs.writeFileSync(tmp, JSON.stringify(state));
+	fs.renameSync(tmp, target);
+}
+
+/**
  * Parse + check the canonical program on a fresh AST. Cheap defensive
  * isolation: `build()` no longer mutates the AST it's given (allocations are
  * deduped via `status.emitted_allocations` instead of cleared, and the
@@ -330,12 +384,21 @@ function parse_canonical(source: string, arch: string): RootNode {
  * anything (re)built. Idempotent and parallel-safe (atomic temp-then-rename).
  */
 export async function ensure_system_lib(audit = true): Promise<boolean> {
-	const source = canonical_program();
 	const lib_source_hash = current_lib_source_hash();
-	let rebuilt = false;
 	const c_paths = system_paths("c", audit);
 	const a64_paths = system_paths("aarch64", audit);
 
+	// FAST PATH: the build's inputs are unchanged and both objects (plus the
+	// derived name indexes) are current — skip parsing/checking/codegen of the
+	// canonical program entirely. That build used to run on every suite
+	// invocation just to recompute the output hash (~7s per backend/variant).
+	const input_hash = hash_of(
+		lib_source_hash,
+		compiler_source_hash(),
+		prebuild_harness_hash(),
+		process.platform,
+		String(audit),
+	);
 	// Write the object's library-source marker (atomic temp-then-rename — a
 	// test worker may read it for the freshness gate at any moment).
 	const write_libhash = (paths: ReturnType<typeof system_paths>): void => {
@@ -343,15 +406,38 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 		fs.writeFileSync(tmp, lib_source_hash);
 		fs.renameSync(tmp, paths.libhash);
 	};
-	// A WARM object was proven current by its .hash (which hashes the library
-	// source), so blessing its marker is safe; on a cold build the marker is
-	// written only after the object lands. A failed build leaves the previous
-	// marker — stale on a library edit, so the freshness gate (system_lib_fresh)
-	// stops pairing the old object with fresh user TUs.
+	// A WARM object was proven current by its recorded input hash, so blessing
+	// its marker is safe; on a cold build the marker is written only after the
+	// object lands. A failed build leaves the previous marker — stale on a
+	// library edit, so the freshness gate (system_lib_fresh) stops pairing the
+	// old object with fresh user TUs.
 	const ensure_libhash = (paths: ReturnType<typeof system_paths>): void => {
 		const present = fs.existsSync(paths.libhash) ? fs.readFileSync(paths.libhash, "utf8") : "";
 		if (present !== lib_source_hash) write_libhash(paths);
 	};
+
+	const c_state = read_state(c_paths);
+	const a64_state = read_state(a64_paths);
+	const c_current =
+		c_state?.input_hash === input_hash &&
+		fs.existsSync(c_paths.obj) &&
+		fs.existsSync(c_paths.h) &&
+		fs.existsSync(SYSTEM_NAMES) &&
+		object_hash_matches("c", audit);
+	const a64_current =
+		a64_state?.input_hash === input_hash &&
+		fs.existsSync(a64_paths.obj) &&
+		// A build that produced a companion must still have it (the user link
+		// silently skips a missing companion).
+		(!a64_state.companion || fs.existsSync(a64_paths.companion!)) &&
+		fs.existsSync(SYSTEM_NAMES_A64) &&
+		object_hash_matches("aarch64", audit);
+	if (c_current) ensure_libhash(c_paths);
+	if (a64_current) ensure_libhash(a64_paths);
+	if (c_current && a64_current) return false;
+
+	const source = canonical_program();
+	let rebuilt = false;
 
 	// ---------- C backend ----------
 	const built_c = build(parse_canonical(source, "c"), { arch: "c", audit, emit_mode: "system" });
@@ -391,6 +477,9 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 		// restored alongside the tracked markers).
 		object_hash_matches("c", audit);
 	if (c_warm) {
+		// Record the input hash so the next invocation can take the fast path
+		// without building the canonical program at all.
+		write_state(c_paths, { input_hash });
 		ensure_libhash(c_paths);
 	} else {
 		// The system TU's code does `#include "main.h"`, so stage its headers there.
@@ -402,6 +491,7 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 			await execPromise(`clang -c ${c_paths.src} -o ${tmp}`, { maxBuffer: 10 * 1024 * 1024 });
 			fs.renameSync(tmp, c_paths.obj);
 			fs.writeFileSync(c_paths.hash, c_hash);
+			write_state(c_paths, { input_hash });
 			write_objhash("c", audit);
 			ensure_libhash(c_paths);
 			rebuilt = true;
@@ -455,6 +545,10 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 		// build inputs, not the compiled bytes on disk.
 		object_hash_matches("aarch64", audit);
 	if (a64_warm) {
+		write_state(a64_paths, {
+			input_hash,
+			companion: fs.existsSync(a64_paths.companion),
+		});
 		ensure_libhash(a64_paths);
 	} else {
 		fs.writeFileSync(a64_paths.src, a64_asm);
@@ -474,6 +568,10 @@ export async function ensure_system_lib(audit = true): Promise<boolean> {
 			}
 			fs.renameSync(tmp, a64_paths.obj);
 			fs.writeFileSync(a64_paths.hash, a64_hash);
+			write_state(a64_paths, {
+				input_hash,
+				companion: a64_companion.trim().length > 0,
+			});
 			write_objhash("aarch64", audit);
 			ensure_libhash(a64_paths);
 			rebuilt = true;

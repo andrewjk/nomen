@@ -810,11 +810,37 @@ replays everything from disk. Wired into:
 - the byte-identity harnesses (`emit_nir/_helpers`, `emit_c_nir`,
   `emit_nir/benchmark_corpus`) via pass markers — the two-arm comparison is
   deterministic for an unchanged compiler/library;
-- `bench_matrix` (the two-backend output equality is a pass marker);
 - `check_output`'s JS arm now caches stdout like the native arms.
 
-Measured: cold-ish warm run 583s → fully warm **218s** (tests summed
-3,744s → 958s). The remaining floor is per-test-FILE module loading of the
+`test/bench_matrix.test.ts` moved out of the suite to
+`bench/verify_matrix.ts` (`npm run bench:matrix`): the suite's
+`test/bench/*` tests already run each bench on both backends against the
+same expected output (the identity property), while the script keeps the
+larger benchmark.sh sizes/argument shapes available out of band.
+
+Small-file consolidation (2026-11-23): the 21 uniform `test/emit_nir/*`
+byte-identity files merged into `test/emit_nir/byte_identical.test.ts`, and
+the 14 `test/bench/*` files into `test/bench/bench_corpus.test.ts`
+(25 file loads saved; test names unchanged).
+
+**GUI `system.o` — decided against.** The prebuilt object cannot serve GUI
+programs: the canonical system program deliberately excludes Controls, and
+`emit_mode "user"` omits library-marked code, so a split GUI link drops
+Controls in *neither* TU (undefined `nomen_layout_thunk`,
+`nomen_select_push/take`, …). A GUI-capable object needs a canonical
+program that includes Controls (ObjC + its companion-C) and a C-system
+companion object (the prebuild has no C companion). With the build cache,
+all 53 GUI test files sum to ~164s (~20s wall warm), so the remaining
+payoff does not justify that machinery.
+
+The vitest globalSetup also gained a fast path: it used to parse+check+
+build the canonical System program on EVERY invocation just to recompute
+the output hash (~13s per run). It now compares a recorded input hash
+(compiler + library + harness + audit + platform) first and skips the
+build entirely — a trivial test file's startup went 13s → 2.5s.
+
+Measured: cold-ish warm run 583s → fully warm **~220-250s** (tests summed
+3,744s → ~1,000s). The remaining floor is per-test-FILE module loading of the
 compiler (~590s summed across 8 vitest workers ≈ 74s wall) plus tests that
 must inspect ASTs or run bespoke fixtures (`system_lib_fresh`,
 `test_harness`, extension/source-map tests).

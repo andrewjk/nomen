@@ -21,6 +21,14 @@ import { current_lib_source_hash } from "./system_lib";
  *   split-TU build.
  */
 
+/**
+ * Bump whenever the harness's build semantics change (the split decision,
+ * the key's dimensions) so previously written entries cannot replay under
+ * different rules. Compiler/library hashes cover the compiler; this covers
+ * the HARNESS.
+ */
+const CACHE_VERSION = "3";
+
 let compiler_hash: string | null = null;
 
 /** Content hash of every compiler source file under `src/`. */
@@ -93,6 +101,7 @@ export function build_cache_key(parts: {
 			extra: parts.extra ?? "",
 		}),
 	);
+	h.update(CACHE_VERSION);
 	h.update(compiler_source_hash());
 	h.update(current_lib_source_hash());
 	return h.digest("hex").slice(0, 24);
