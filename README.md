@@ -54,7 +54,7 @@ cd my_program
 nomen run
 
 # or
-nomen --in path/to/program.nm
+nomen run --in path/to/program.nm
 ```
 
 Target a specific backend:
@@ -77,7 +77,7 @@ pub func main = () {
 
 ## Command-Line Interface
 
-The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`, `test`, `docs` and `lib-path`. Top-level options:
+The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`, `test`, `docs` and `lib-path`.
 
 | Command       | Description                                                                                          |
 | ------------- | ---------------------------------------------------------------------------------------------------- |
@@ -90,6 +90,8 @@ The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`,
 | `docs`        | generates a folder of documentation from code comments                                               |
 | `lib-path`    | prints the path to the bundled `System` library                                                      |
 
+Options:
+
 | Option            | Alias | Description                                                                          |
 | ----------------- | ----- | ------------------------------------------------------------------------------------ |
 | `--in <path>`     | `-i`  | Input `.nm` file or folder (auto-discovered if omitted).                             |
@@ -101,13 +103,17 @@ The `nomen` CLI has several commands: `init`, `run`, `build`, `check`, `format`,
 | `--lib <path>`    | `-l`  | Path to the `System` library directory.                                              |
 | `--audit`         |       | Enable memory auditing of the generated program.                                     |
 | `--audit-runtime` |       | Path to `audit_runtime.c` (used with `--audit`).                                     |
+| `--release`       | `-r`  | Build with optimizations (also affects `test` benchmark numbers).                    |
+| `--fast-math`     |       | Opt in to floating-point reassociation and FMA contraction (native backends).        |
 | `--check`         |       | `format` dry-run: report changes without writing.                                    |
 
 See [CLI.md](docs/CLI.md) for the full reference (input resolution, build output, config files, and examples).
 
 ## Language Overview
 
-See [SPEC.md](SPEC.md) for the full language specification.
+See [SPEC.md](SPEC.md) for the full language specification. The snippets in
+this section build on each other — a later example may use a name declared by
+an earlier one.
 
 ### Value Types
 
@@ -115,7 +121,7 @@ See [SPEC.md](SPEC.md) for the full language specification.
 bool
 int     // and int8, int16, int32 and int64
 uint    // and uint8, uint16, uint32 and uint64
-float   // and float32 and float64
+float   // and float32 and float64, plus the unsigned ufloat variants
 string
 char
 null
@@ -180,12 +186,12 @@ As are variadic parameters:
 ```nomen
 func sum = (...int numbers, out int) {
     var total = 0
-    while i < numbers.length; i += 1 {
-        total = total + numbers.at(i)
+    for i of 0..numbers.length {
+        total += numbers.at(i)
     }
     return total
 }
-sum(1, 2, 3)    //
+sum(1, 2, 3)    // 6
 ```
 
 ### Control Flow
@@ -286,7 +292,7 @@ pub struct Point {
     }
 }
 
-const p = Point(3, 4)
+var p = Point(3, 4)
 p.translate(1, 1)
 const d = p.distance_from_origin()
 ```
@@ -365,21 +371,21 @@ of line by listing them after `:`. The required trait methods can live in the
 same extend, another extend, or the body:
 
 ```nomen
-trait Stringable {
-    func to_string = (out string)
+trait Describable {
+    func to_string = (self, out string)
 }
 
 struct Circle {
     var int radius
 }
 
-extend struct Circle: Stringable {
-    func to_string = (out string) {
+extend struct Circle: Describable {
+    func to_string = (self, out string) {
         return "Circle"
     }
 }
 
-const Stringable s = Circle(5)
+const Describable s = Circle(5)
 ```
 
 ### Auto-Derived Methods
@@ -397,8 +403,8 @@ pub struct Point: Equatable, Stringable {
 
 const a = Point(1, 2)
 const b = Point(1, 2)
-const bool same = a == b            // true  — derived #op_eq
-const bool diff = a != b            // false — derived from #op_eq
+const same = a == b                 // true  — derived #op_eq
+const diff = a != b                 // false — derived from #op_eq
 const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
 ```
 
@@ -567,11 +573,11 @@ Structs, enums, and free functions can declare type parameters. Instantiate
 a generic by passing concrete type arguments in angle brackets:
 
 ```nomen
-struct Box<T> {
+struct Slot<T> {
     var T value
 }
 
-const b = Box<int>(42)
+const b = Slot<int>(42)
 Console.write("\{b.value}")
 ```
 
@@ -592,18 +598,18 @@ Generic free functions infer their type arguments from the call site, so `T`
 is never written explicitly:
 
 ```nomen
-func unwrap<T> = (Box<T> box, out T) {
-    return box.value
+func unwrap<T> = (Slot<T> slot, out T) {
+    return slot.value
 }
 
-const b = Box<int>(42)
-const int v = unwrap(b)   // T inferred as int
+const b = Slot<int>(42)
+const v = unwrap(b)   // T inferred as int
 ```
 
-Type parameters are type-erased at the storage level — all values are 8 bytes
-on aarch64, so `T` exists only for compile-time checking. The compiler emits
-one specialized copy per concrete instantiation (`Box<int>` → `Box_int`). See
-[GENERICS.md](docs/GENERICS.md) for the full design.
+Each concrete instantiation is monomorphized — the compiler emits one
+specialized copy (`Slot<int>` → `Slot_int`) — and every value occupies a
+uniform 8-byte slot on aarch64, so `T` exists only for compile-time checking.
+See [GENERICS.md](docs/GENERICS.md) for the full design.
 
 A free function can also take a type itself as a parameter — spelled `type T`.
 The argument is the bare type name, the parameter has no runtime slot, and the
@@ -634,7 +640,9 @@ to Zig comptime, Rust macros, Swift macros and C# source generators.
 ### Constraints
 
 Constraints are compile-time assertions on parameters, fields, and variables.
-They are checked whenever the value is a compile-time constant:
+A compile-time constant is checked against the constraint at compile time; a
+runtime value must be provable — the compiler reports `Parameter constraint
+cannot be verified` unless a guard or initializer proves it:
 
 ```nomen
 func restricted = (int x: x > 5) {
@@ -645,22 +653,29 @@ restricted(10)   // OK
 restricted(2)    // Error: Parameter constraint not satisfied
 ```
 
-Indexes within a range are considered safe:
+Indexes within a range are considered safe. A bounds read that can't be
+proven is an error, so split the unproven read out on purpose:
 
 ```nomen
-func sum = (...int nums) {
-    // not ok, because we don't know how many items are in nums:
-    const first = nums.at(0)
-
+func sum = (...int nums, out int) {
     // ok, because we make sure we are in bounds:
     const second = if nums.length > 2 -> nums.at(1)
                    else -> -1
 
     // ok, because we know we are in bounds in each iteration:
     var result = 0
-    for i in 0 .. nums.length {
+    for i of 0..nums.length {
         result += nums.at(i)
     }
+    return result
+}
+```
+
+```nomen
+func first = (...int nums, out int) {
+    // not ok, because we don't know how many items are in nums:
+    return nums.at(0)
+    // Error: Parameter constraint cannot be verified
 }
 ```
 
@@ -698,7 +713,7 @@ An inline `[ field = value, ... ]` literal is an anonymous struct — a temporar
 ```nomen
 const p = [ name = "C", x = 25, y = 70 ]
 Console.write("\{p.name} \{p.x} \{p.y}")
-var [name, x, y] = p
+var [x, y] = p   // destructures by field name
 ```
 
 To build a _named_ struct, call its constructor. Seed a literal from it with `..` to override fields that have declared defaults, applied after construction:
@@ -783,10 +798,10 @@ func fetch = (uint64 id) {
 }
 
 pub func main = () {
-    async nursery {
-        nursery.start(Thread(fetch(1)))
-        nursery.start(Thread(fetch(2)))
-        nursery.start(Thread(fetch(3)))
+    async {
+        Thread(fetch(1)).start()
+        Thread(fetch(2)).start()
+        Thread(fetch(3)).start()
         // block does not exit until all three fetches finish
     }
 }
@@ -800,10 +815,10 @@ cancelling the call:
 func compute = (uint64 n) => n + 1
 
 pub func main = () {
-    async nursery {
-        var t = nursery.start(Thread(compute(41)))
+    async {
+        var t = Thread(compute(41)).start()
         t.wait()
-        const uint64 r = t.result_uint64()
+        const r = t.result()
         Console.write("\{r}")
     }
 }
@@ -820,7 +835,7 @@ func compute = (uint64 n, out uint64) {
 pub func main = () {
     async {
         var f = Fiber(compute(41)).start()
-        const uint64 r = f.result()        // parks, not blocks
+        const r = f.result()               // parks, not blocks
         Console.write("\{r}")
     }
 }
@@ -843,11 +858,11 @@ participate:
 struct Transaction {
     var int handle
 
-    func #init = (self, int handle) {
+    func #init = (ref self, int handle) {
         self.handle = handle
     }
 
-    func #destroy = () {
+    func #destroy = (self) {
         // runs automatically when a Transaction goes out of scope
     }
 }
@@ -861,31 +876,30 @@ See [MEMORY.md](docs/MEMORY.md) for the full model.
 
 ## Ownership & Borrows
 
-A bare `struct` is Copyable — assigning it copies the fields. `mv struct`
-is the single-owner form: its bindings move instead of copy, and the type
-owns its heap resources until scope exit. `string` is mv too: copying one
-binding to another requires `mv` (transfer) or `.copy()` (deep copy), and
-`.copy()` on a struct field or `return self.name` is the spelled deep copy.
-`view string` remains the cheap non-mv borrow.
+As shown above, a `mv struct` is the single-owner form and a bare `struct` is
+Copyable. `string` is mv too: copying one binding to another requires `mv`
+(transfer) or `.copy()` (deep copy), and `.copy()` on a struct field or
+`return self.name` is the spelled deep copy. `view string` remains the cheap
+non-mv borrow.
 
 ```nomen
-mv struct Box {
+mv struct Crate {
     var int value
 }
 
 // a mv field — owning slots spell `mv`: stores transfer
 mv struct Holder {
-    mv Box content
+    mv Crate content
 }
 
 // a mv parameter — the caller gives up access with `mv`
-func take = (mv Box b, out int) {
-    Console.write("\{b.value}")
+func take = (mv Crate c) {
+    Console.write("\{c.value}")
 }
 
-const h = Holder(mv Box(7))
-var b = Box(42)
-take(mv b)   // b is invalid after this
+const h = Holder(mv Crate(7))
+var c = Crate(42)
+take(mv c)   // c is invalid after this
 ```
 
 - `mv` transfers ownership — the source is invalid afterwards.

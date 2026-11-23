@@ -85,12 +85,12 @@ pub func main = () {
 
 	test("mv-struct mv destructuring", () => {
 		const input = `
-mv struct Counter {
+mv struct Totals {
 	var int count
 	var int total
 }
 pub func main = () {
-	var c = Counter(5, 50)
+	var c = Totals(5, 50)
 	var [count = mv n, total = mv t] = c
 	Console.write("\\{n} \\{t}")
 }

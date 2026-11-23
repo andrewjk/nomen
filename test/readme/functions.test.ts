@@ -22,10 +22,8 @@ greet("Alice")
 
 func sum = (...int numbers, out int) {
     var total = 0
-    var i = 0
-    while i < numbers.length {
-        total = total + numbers.at(i)
-        i = i + 1
+    for i of 0..numbers.length {
+        total += numbers.at(i)
     }
     return total
 }

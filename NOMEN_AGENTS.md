@@ -84,9 +84,11 @@ Independent conditions that can all fire stay as separate `if`s.
 
 ### Constraints are compile-time assertions
 
-`name: <bool expr>` after a parameter, field, or variable. Only evaluated when
-the value is a compile-time constant; constraints on fields propagate to the
-auto-generated `#init` parameters.
+`name: <bool expr>` after a parameter, field, or variable. A compile-time
+constant is checked against the constraint at compile time; a runtime value
+must be proven (an `if` guard or a provable initializer) or the compiler
+reports `Parameter constraint cannot be verified`. Constraints on fields
+propagate to the auto-generated `#init` parameters.
 
 ```nomen
 func div = (int a, int b: b != 0, out int) => a / b
@@ -97,20 +99,20 @@ func safe = (string[] s, int i: i >= 0 && i < s.length, out string) {
 
 ### Memory modifiers
 
-| Modifier | Meaning                                        |
-| -------- | ---------------------------------------------- |
-| `ref T`  | mutable borrow; caller must also write `ref`   |
-| `view T` | read-only borrow                               |
-| `mv T`   | transfer ownership; caller writes `mv`         |
-| `out T`  | output parameter, assigned inside the function |
+| Modifier | Meaning                                              |
+| -------- | ---------------------------------------------------- |
+| `ref T`  | mutable borrow; caller must also write `ref`         |
+| `view T` | read-only borrow                                     |
+| `mv T`   | transfer ownership; caller writes `mv`               |
+| `out T`  | the return slot (written last in the parameter list) |
 
 `const` values cannot be passed to `ref` — rebind the caller as `var` first.
 At local bindings the same keywords spell the binding's relationship to its
 initializer: `ref Box q = p` is a mv-struct ALIAS (a plain `var Box q = p`
 copy of a mv value — including a `string` — is an error: say `ref`, `mv`,
-or `.copy()`), `mv` transfers, `view` is a slice. A `ref` alias is not
-reassignable, mutation through it needs a `var` source, and nothing moves
-through it.
+or `.copy()`), `mv` transfers, `view` is a slice. Reassigning a `ref` alias
+re-points it (it stops aliasing and adopts the new value); mutation through
+it needs a `var` source, and nothing moves through it.
 
 ### Return types are `out` at the end
 

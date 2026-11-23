@@ -3,17 +3,17 @@ import { describe, expect, test } from "vite-plus/test";
 import { compile_module } from "./_helpers.ts";
 
 describe("readme: concurrency — nursery", () => {
-	test("named nursery spawns and joins tasks", () => {
+	test("async block spawns and joins tasks", () => {
 		const input = `
 func fetch = (uint64 id) {
     Console.write_line("fetching \\{id}")
 }
 
 pub func main = () {
-    async nursery {
-        nursery.start(Thread(fetch(1)))
-        nursery.start(Thread(fetch(2)))
-        nursery.start(Thread(fetch(3)))
+    async {
+        Thread(fetch(1)).start()
+        Thread(fetch(2)).start()
+        Thread(fetch(3)).start()
     }
 }
 `;
@@ -22,15 +22,15 @@ pub func main = () {
 });
 
 describe("readme: concurrency — Task handle", () => {
-	test("nursery.spawn returns a Task handle", () => {
+	test("Thread(...).start() returns a Task handle", () => {
 		const input = `
 func compute = (uint64 n) => n + 1
 
 pub func main = () {
-    async nursery {
-        var t = nursery.start(Thread(compute(41)))
+    async {
+        var t = Thread(compute(41)).start()
         t.wait()
-        const uint64 r = t.result_uint64()
+        const r = t.result()
         Console.write("\\{r}")
     }
 }
@@ -49,8 +49,8 @@ func compute = (uint64 n, out uint64) {
 pub func main = () {
     async {
         var f = Fiber(compute(41)).start()
-        const uint64 r = f.result()
-        Console.write("\\{r}")          // parks, not blocks
+        const r = f.result()               // parks, not blocks
+        Console.write("\\{r}")
     }
 }
 `;

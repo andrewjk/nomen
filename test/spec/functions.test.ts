@@ -84,15 +84,15 @@ count("a", "b", "c")
 	test("ref parameters and local var copies", () => {
 		const input = `
 func increment = (int x, out int) {
-    var int y = x
+    var y = x        // mutable local copy — the caller never sees it
     y = y + 1
     return y
 }
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5
 }
 var num = 1
-makeFive(ref num)
+make_five(ref num)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

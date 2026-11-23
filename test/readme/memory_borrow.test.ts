@@ -8,11 +8,11 @@ describe("readme: memory management", () => {
 struct Transaction {
     var int handle
 
-    func #init = (self, int handle) {
+    func #init = (ref self, int handle) {
         self.handle = handle
     }
 
-    func #destroy = () {
+    func #destroy = (self) {
     }
 }
 `;
@@ -23,22 +23,22 @@ struct Transaction {
 describe("readme: ownership and borrows", () => {
 	test("mv mv field and mv mv parameter", () => {
 		const input = `
-mv struct Box {
+mv struct Crate {
     var int value
 }
 
 mv struct Holder {
-    mv Box content
+    mv Crate content
 }
 
-func take = (mv Box b) {
-    Console.write("\\{b.value}")
+func take = (mv Crate c) {
+    Console.write("\\{c.value}")
 }
 
 pub func main = () {
-    const h = Holder(mv Box(7))
-    var b = Box(42)
-    take(mv b)
+    const h = Holder(mv Crate(7))
+    var c = Crate(42)
+    take(mv c)
 }
 `;
 		expect(compile_module(input)).toEqual([]);

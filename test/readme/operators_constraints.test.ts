@@ -23,11 +23,11 @@ const sum = Vec2(1, 2) + Vec2(3, 4)
 describe("readme: generics", () => {
 	test("generic struct instantiated with concrete type args", () => {
 		const input = `
-struct Box<T> {
+struct Slot<T> {
     var T value
 }
 
-const b = Box<int>(42)
+const b = Slot<int>(42)
 Console.write("\\{b.value}")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -48,16 +48,16 @@ struct Holder<T: Named> {
 
 	test("generic free function infers T from the call site", () => {
 		const input = `
-struct Box<T> {
+struct Slot<T> {
     var T value
 }
 
-func unwrap<T> = (Box<T> box, out T) {
-    return box.value
+func unwrap<T> = (Slot<T> slot, out T) {
+    return slot.value
 }
 
-const b = Box<int>(42)
-const int v = unwrap(b)
+const b = Slot<int>(42)
+const v = unwrap(b)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -105,5 +105,38 @@ restricted(2)
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("constraint"))).toBe(true);
+	});
+
+	test("in-bounds reads discharge: guarded read and range-for", () => {
+		const input = `
+func sum = (...int nums, out int) {
+    // ok, because we make sure we are in bounds:
+    const second = if nums.length > 2 -> nums.at(1)
+                   else -> -1
+
+    // ok, because we know we are in bounds in each iteration:
+    var result = 0
+    for i of 0..nums.length {
+        result += nums.at(i)
+    }
+    return result + second
+}
+
+sum(1, 2, 3)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("an unproven bounds read is an error", () => {
+		const input = `
+func first = (...int nums, out int) {
+    // not ok, because we don't know how many items are in nums:
+    return nums.at(0)
+}
+
+first(1)
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
 	});
 });

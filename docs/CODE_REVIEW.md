@@ -2,21 +2,32 @@
 
 Review date: 2026-11-24. Scope: `README.md`, `SPEC.md` (both rendered on the
 site at `/readme` and `/spec`), with cross-checks against `NOMEN_AGENTS.md`,
-`AGENTS.md`, `docs/` and the repo compiler. This is a review only — no docs or
-compiler code were changed.
+`AGENTS.md`, `docs/` and the repo compiler.
+
+**Update (2026-11-24, later the same day):** the documentation-consistency
+findings (the former §1 — failing README/SPEC examples, contradictions,
+stale content, broken links, README↔SPEC drift, convention breaks) were
+**fixed in `README.md` / `SPEC.md` / `NOMEN_AGENTS.md` and removed from this
+review**; the mirrored `test/readme/` and `test/spec/` copies were re-synced
+in the same change. One §1.6 item was resolved by investigation rather than
+by an edit: struct members really do default to `pub` (verified
+cross-namespace), and the System library's own house style is to spell
+`pub var` on members anyway — so the examples were left explicit and match
+the library. What remains below is the language-design and
+missing-features work. Line numbers in the remaining sections refer to the
+working tree as of the original review (before those fixes) and may have
+shifted.
 
 **How claims were verified.** Every "compiles" / "fails" statement below was
 run through the **repo** compiler (`npx tsx cli/src/index.ts check --in <file>`,
 and `run --arch js|c` where runtime behaviour mattered) on scratch files that
 wrap the snippet in `import System` + `pub func main`, the same way
 `test/readme/_helpers.ts` does. The globally installed `nomen` was not used
-because it is an older release. Line numbers refer to the working tree on the
-review date, which includes uncommitted edits to both files.
+because it is an older release.
 
 Priorities:
 
-- **P0**: a published example is wrong (it fails to compile, or the docs
-  contradict what the compiler does) on a page users read first.
+- **P0**: a soundness or contract problem users hit directly.
 - **P1**: a contradiction or stale statement that will mislead someone.
 - **P2**: structure, consistency and polish.
 
@@ -24,250 +35,34 @@ Priorities:
 
 ## 0. Top findings
 
-1. **Five README examples fail to compile on their own** (P0): variadic
-   `sum` (`README.md:181-189`), `Point.translate` on a `const`
-   (`README.md:289-290`), the `for i in` loop in Constraints
-   (`README.md:661`), anonymous-struct destructuring of a `string` field
-   (`README.md:699-701`) and `take` with no return (`README.md:882-884`).
-   `test/readme/` misses them because the test copies have drifted from the
-   README text (for example, the test uses `var p`, while the README uses
-   `const p`).
-2. **The spec contradicts itself about constraints** (P0). `SPEC.md:274`,
-   `README.md:637` and `NOMEN_AGENTS.md` say constraints are "only checked when
-   the value is a compile-time constant". In fact any runtime argument that
-   can't be proven gives the error `Parameter constraint cannot be verified`
-   (verified). `SPEC.md:2671-2700` describes the real behaviour, but only for
-   division.
-3. **`match` on a unit result with an error-side arm** (`SPEC.md:1314-1319`)
-   is rejected by the compiler. The spec's own rule at `SPEC.md:1523` forbids
-   it.
-4. **Generics are described three different ways**: "no monomorphization"
-   (`SPEC.md:547`), "monomorphized type" (`SPEC.md:1167`), and "one
-   specialized copy per instantiation" while also "type-erased"
-   (`README.md:603-605`).
-5. **Retired `class` still appears** in SPEC. Auto-free lists "Classes"
-   (`SPEC.md:3159`), `WeakHandle` says "The tracked type must be a CLASS"
-   (`SPEC.md:4196`), and see also `SPEC.md:2754` and `SPEC.md:3747`. Two
-   "Stage-1/Stage-2 limits" paragraphs (`SPEC.md:3720`, `SPEC.md:3913`) say
-   things that the sections above them have since made untrue.
-6. **Design: a Copyable `struct` may declare `#destroy`, and copying it runs
+1. **Design: a Copyable `struct` may declare `#destroy`, and copying it runs
    the destructor twice** on the C backend (verified: it prints
    `destroy 3` twice). The JS backend doesn't run it at all. The README and
-   SPEC `Transaction` example (`README.md:843`, `SPEC.md:480`) shows exactly
-   this resource-handle pattern on a plain `struct`.
-7. **Static and instance methods look alike.** A method with no `self`
-   parameter is static (`SPEC.md:4551`, "// static"). Yet the
-   `Stringable`/`Circle` examples (`README.md:368-383`, `SPEC.md:1085-1100`)
-   declare `to_string = (out string)` and call it on an instance. They also
-   redeclare `Stringable`, which **collides with `System`'s own `Stringable`**
-   ("Trait already declared") as soon as `import System` is present.
-8. **The biggest missing features**: flow-sensitive facts for constraints
+   SPEC `Transaction` example shows exactly this resource-handle pattern on a
+   plain `struct`.
+2. **Static and instance methods look alike.** A method with no `self`
+   parameter is static (`SPEC.md:4551`, "// static"). Yet the compiler
+   accepts trait methods written without `self`
+   (`to_string = (out string)`) and dispatches them on instances — whether a
+   method is static depends on context. The docs were updated to always
+   spell `self` on instance methods, but the compiler rule is still
+   implicit.
+3. **The biggest missing features**: flow-sensitive facts for constraints
    (early return, `len >= 0`), match guards and richer patterns, generic
    methods, a typed `Channel<T>`, comparison-operator overloading, and `[]`
-   index sugar. Section 3 has the full list.
+   index sugar. Section 2 has the full list.
 
 ---
 
-## 1. Documentation consistency and quality
+## 1. Language design consistency
 
-### 1.1 README examples that fail (P0)
+### 1.1 Constraints: the flow-fact model needs more facts (P0)
 
-All of these were checked with the snippet as written, plus `import System`
-and a `main` wrapper.
-
-| Where                                   | Snippet                                                       | Compiler says                                       | Fix                                                                                                                      |
-| --------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `README.md:181-189` Functions, variadic | `while i < numbers.length; i += 1` with no `i` declared       | `Unknown value: i` ×3                               | add `var i = 0`, or use `for n of numbers`. Also `sum(1, 2, 3)    //` has an empty comment; it should say `// 6`         |
-| `README.md:289-290` Structs             | `const p = Point(3, 4)` then `p.translate(1, 1)` (`ref self`) | `Update to const: p`                                | `var p`. The same bug is in `SPEC.md:2040-2041` and `SPEC.md:1818-1820` (`const v`, `v.scale(4)`), both verified failing |
-| `README.md:661` Constraints             | `for i in 0 .. nums.length`                                   | `Expected of`                                       | `for i of 0..nums.length` (verified to compile, and the bounds fact discharges `.at(i)`)                                 |
-| `README.md:699-701` Anonymous structs   | `var [name, x, y] = p` where `name` is a string               | `cannot copy 'string' out of field 'name' by value` | drop `name`, use `mv`, or show the error on purpose                                                                      |
-| `README.md:882-884` Ownership           | `func take = (mv Box b, out int)` with no `return`            | `Missing return`                                    | remove `out int`                                                                                                         |
-
-Snippets that fail only because they rely on names from an earlier block
-(Strings uses `name`/`age`; Pattern Matching uses `shape`; Error Handling
-uses `fetch`) pass when combined with that context. That's acceptable, but
-it's worth saying once at the top of "Language Overview" that snippets build
-on each other.
-
-`README.md:651-664` mixes a deliberate error (`nums.at(0)`, "not ok") into a
-function that's otherwise meant to compile. Readers who paste it get an
-error. Split it into "ok" and "error" blocks, as SPEC does elsewhere.
-
-**Root cause: the mirror tests have drifted.** `test/readme/structs_classes.test.ts:22`
-uses `var p = Point(3, 4)` where the README says `const p`. The AGENTS.md rule
-("keep these in sync") isn't enforced. Recommendation: generate the
-`test/readme/` and `test/spec/` inputs from the fenced blocks (extract by
-heading, as this review did with a 20-line Node script), and keep hand-written
-expectations only for the blocks marked as errors. Then any drift fails CI.
-Note also that `compile_module` passes `allow_internal: true`
-(`test/spec/_helpers.ts:44`), so SPEC examples that use `Buffer` and other
-internals (for example `SPEC.md:2958-2973`, `UserList`) pass tests but fail
-for users.
-
-### 1.2 SPEC examples that contradict the compiler or SPEC itself (P0/P1)
-
-| Where                                         | Problem                                                                                                                                                                                                                                                                                                | Verified |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
-| `SPEC.md:274` "How Constraints Are Evaluated" | Says unknown values are "not evaluated and no error is produced". In fact a runtime argument errors with `Parameter constraint cannot be verified` (`restricted(line.length)`). Same wrong claim in `README.md:637` and `NOMEN_AGENTS.md` ("Only evaluated when the value is a compile-time constant") | yes      |
-| `SPEC.md:1314-1319` Unit Results              | `match close(path) { case .ok … case .notfound … }`. Rejected: `'case .notfound' addresses the error side … handle the error side with 'try ... catch'`. Conflicts with `SPEC.md:1523`                                                                                                                 | yes      |
-| `SPEC.md:1141`                                | "Shorthand is only for simple case access — cases with associated data must use the full form". False: `return .circle(3)` and `var Shape s = .rect(1, 2)` compile, and SPEC itself uses `.error("not a number")` (`:840`) and `.fail("not a number")` (`:1175`)                                       | yes      |
-| `SPEC.md:1182-1186`                           | "the full form uses the generic name with explicit type arguments", but the example is `Option.some(4)` with no type arguments                                                                                                                                                                         | —        |
-| `SPEC.md:1085-1100` / `README.md:368-383`     | Redeclares `trait Stringable`. With `import System` (which every real program has) this fails: `Trait already declared: Stringable`, reported at a bogus location (`31:1` in a 16-line file). Rename it to something like `Describable`                                                                | yes      |
-| `SPEC.md:244`                                 | `var int y: x < 100` probably meant `y < 100`. As written, `Bounded(5, 500)` compiles. The same block also redeclares `const b`                                                                                                                                                                        | yes      |
-| `SPEC.md:462-466` Initializers                | `pub int x` fields (no `var`) give 9 parse errors (`Visibility can only be set for …`)                                                                                                                                                                                                                 | yes      |
-| `SPEC.md:1508-1518`                           | `case ParseError.corrupt` refers to a case that `ParseError` (`:1380`) doesn't declare                                                                                                                                                                                                                 | —        |
-| `SPEC.md:2327`, `:2344`, `:2352`              | `Console.write(x)` / `Console.write(item)` with an `int`. Rejected: `Type mismatch in param: int (expected string)`. Use `"\{x}"`                                                                                                                                                                      | yes      |
-| `SPEC.md:2224`                                | "An `if`/`else` with no `else` used as an expression yields `void` when taken and `null`-like when skipped" doesn't parse as English; say "an `if` used as an expression requires an `else`"                                                                                                           | —        |
-| `SPEC.md:1986` vs `:2261` vs `:2293`          | Expression `match` "requires `case _` on non-exhaustive types", then "A `case _` arm is required when using `match` as an expression value" (unconditional), while enum and `bool` matches are exhaustive without one. Pick one rule                                                                   | —        |
-| `SPEC.md:3909-3911` Attributes                | "an attribute name that matches a library type … links it exactly as if the source had mentioned it". `AGENTS.md` says the opposite: the type-link scan skips attribute-name tokens                                                                                                                    | —        |
-| `SPEC.md:3969` Json                           | `@rename("user")` is placed on the struct, but JSON `@rename` is documented as a field-level key (`:3962`)                                                                                                                                                                                             | —        |
-| `SPEC.md:4613-4616`                           | "instance methods at x1" vs "Instance methods: self in x0"                                                                                                                                                                                                                                             | —        |
-| `NOMEN_AGENTS.md` (Memory modifiers)          | "A `ref` alias is not reassignable", but `SPEC.md:535` says reassigning re-points it, and `q = Box<Node>(Node(1))` compiles                                                                                                                                                                            | yes      |
-| `NOMEN_AGENTS.md` table                       | `out T`: "output parameter, assigned inside the function". `out` is the return slot, not an output parameter                                                                                                                                                                                           | —        |
-
-### 1.3 Stale content (P1)
-
-- **Retired `class`:** `SPEC.md:3159` (Auto-free lists "Classes"),
-  `SPEC.md:4196` ("tracked type must be a CLASS"), `SPEC.md:2754` ("trait
-  or class payload"), `SPEC.md:3747` ("a class the heap pointer"). The
-  reserved-word list (`SPEC.md:21`) still lists `class` without saying it is
-  retired, which only `:35` explains. `core/System/ClassBuffer.nm` keeps the
-  old name.
-- **Overview omits JS:** `SPEC.md:5` says "compiles to C or AArch64 assembly".
-- **String representation:** `SPEC.md:60` says "C-style null-terminated
-  string". Strings are fat `(ptr, len)` values everywhere (AGENTS.md "String
-  convention", `SPEC.md:3746` "16-byte fat pair"). Also, `char` is "8-bit"
-  (`:61`), so `"héllo".length` is a byte count. Say so.
-- **Stage notes left in place:** `SPEC.md:3720` says "`#for` is
-  body-scope only (whole-declaration generation is a later stage)", directly
-  after the Declaration Generation section (`:3598`). `SPEC.md:3913` says
-  "pragmas are … not inside struct/trait bodies" and "`META` exists only
-  inside pragma conditions", which `:3292-3321` and `:3369` contradict. Delete
-  both paragraphs. `:3721` also uses the old name "raw `#arch` blocks".
-- **Old link text:** `SPEC.md:1203` and `:1539` say "see [Strict
-  Enums](#checked-enums)". The section is called "checked Enums" (also note the
-  lowercase heading at `:1205`).
-- **Internal plan jargon in a user-facing spec:** "STRUCT_PLAN_3 B1"
-  (`:2047`), "B1a" (`:2072`), "STRUCT_PLAN_3 Phase R — the shape menu"
-  (`:4032`, `:4063`, `:4258`, `:4543`), "line 422" (`:124`, a line number that
-  has moved), "stage 5" (`:3916`).
-- **Code Style section** (`SPEC.md:4618-4624`) describes the TypeScript
-  compiler's style (`FunctionNode`, `COMPOUND_SYMBOLS`, `^[../]` import
-  sorting). It doesn't belong in the language spec. Replace it with what
-  `nomen format` does (tabs, 100 columns, sorted imports, implicit types).
-- `SPEC.md:4541`: "`Task<uint64>` for uint64-returning functions,
-  `Task<uint64>` for void functions" is a copy-paste slip.
-
-### 1.4 Broken or fragile links (P1)
-
-- `SPEC.md:3169` → `MEMORY.md` and `SPEC.md:4095` → `ASYNC.md` are broken.
-  Both live in `docs/`. Other SPEC links use `docs/…` (`:3177`).
-- `SPEC.md:542` and `:2138` link `#owning-structs-1`. This relies on
-  GitHub-style de-duplication of two headings that differ only in case ("Owning
-  Structs" `:493`, "Owning structs" `:2045`). Check that the site renderer
-  produces the same slug, or rename one heading. `:2138` links to the section
-  it is in.
-- Other duplicate headings make the site's table of contents ambiguous:
-  "Structs" (`:403` "Struct Types" and `:2017`), "Task" (`:3987` and `:4537`),
-  "Destructuring" (`:679` and `:866`), "Arrays" (`:2534`) vs "Array Types"
-  (`:77`), Implicit Casting (`:2774`) vs Type-to-Type Coercion (`:3132`),
-  which say the same thing twice.
-- `SPEC.md:1984` is titled "Method/Function Calls as Expressions" but covers
-  `match`/`switch`/`if` expressions.
-
-### 1.5 README ↔ SPEC disagreements and drift (P1)
-
-| Topic                 | README                                                                                       | SPEC                                                           | Note                                                                                                                                                                      |
-| --------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Generics storage      | "type-erased … one specialized copy per instantiation (`Box<int>` → `Box_int`)" (`:603-605`) | "no monomorphization" (`:547`); "monomorphized" (`:1167`)      | The README sentence also contradicts itself. Describe what actually happens once: monomorphized, with a uniform 8-byte slot on aarch64                                    |
-| `#init` receiver      | `(self, int handle)` (`:846`)                                                                | `(ref self, int x, int y)` (`:467`, `:483`, `:1830`)           | `(self, …)` compiles but warns: "declare '{}'". Pick one spelling                                                                                                         |
-| `#destroy`            | `func #destroy = ()`, no `self`                                                              | same (`:487`)                                                  | `self` is used implicitly. Every other method spells `self`                                                                                                               |
-| Trait method receiver | `Printable.to_string = (self, out string)` (`:322`)                                          | `Stringable.to_string = (out string)` (`:1086`)                | See §2.2                                                                                                                                                                  |
-| Concurrency entry     | `async nursery { nursery.start(Thread(fetch(1))) }` (`:786`)                                 | `async { Thread(fetch(1)).start() }` (`:4427`)                 | README opens with the escape-hatch form. Show the plain form first                                                                                                        |
-| Task result           | `t.result_uint64()` (`:806`), `f.result()` (`:823`)                                          | both                                                           | Explain why there are two, or drop `result_uint64` from the intro                                                                                                         |
-| Fiber example         | inside `async { }` (`:821`)                                                                  | no nursery (`:4335`)                                           | —                                                                                                                                                                         |
-| Platforms             | CLI: `macos, ios, linux, android, windows, web` (`:100`)                                     | `META.platform`: `"macos"`, `"linux"` or `"windows"` (`:3266`) | —                                                                                                                                                                         |
-| Float types           | `float`, `float32`, `float64` (`:118`)                                                       | adds `ufloat`, `ufloat32`, `ufloat64` (`:59`)                  | README omits the unsigned floats (an unusual feature, see §2.7)                                                                                                           |
-| Running               | `nomen --in path/to/program.nm` (`:57`)                                                      | —                                                              | Verified: with no command, the CLI prints help and exits. It should be `nomen run --in …`                                                                                 |
-| CLI options           | table (`:93-104`)                                                                            | —                                                              | Omits `--release`/`-r` and `--fast-math`, which exist in `cli/src/args.ts:53-55` and `docs/CLI.md`. The text "Top-level options:" (`:80`) sits above the _commands_ table |
-
-### 1.6 Examples that break the repo's own conventions (P2)
-
-- **camelCase** `makeFive` (`SPEC.md:300`, `:1687`) breaks the snake_case
-  convention.
-- **Redundant annotations**, which `nomen check` warns about and `nomen
-format` removes: `const bool same = a == b` (`README.md:400`,
-  `SPEC.md:2192`), `const int v = unwrap(b)` (`README.md:600`),
-  `const uint64 r = t.result_uint64()` (`README.md:806`), `const string name =
-"Alice"` and `var int age = 30` (`SPEC.md:1561-1562`, which teach
-  annotations as the default), and literal blocks such as
-  `SPEC.md:2471-2491`.
-- **Redundant `pub` on members**: `SPEC.md:3110` says struct members default
-  to `pub`, yet nearly every example writes `pub var int x`. Either members
-  aren't really `pub` by default, or the examples teach noise.
-- **Modifier order**: `mv pub struct User` (`SPEC.md:3875`) vs `pub mv struct`
-  (`:3613`, `:4546`).
-- **Placeholders** `{ ... }` in code blocks (`SPEC.md:231`, `:318`, `:412`,
-  `:555`, `:2064`, `:3030`) won't compile. Use a comment body.
-- **Undefined names**: `Cat` (`SPEC.md:2765`), `Math.power` (`:3071`),
-  `users` (`:2970`), `Animal`/`Named`/`Dog` (`:1041-1049`), `should_exit`
-  (`:2384`).
-- **Name collisions with `System`**: user-defined `Box`/`Box<T>`
-  (`README.md:570`, `:872`), `Result` (`SPEC.md:1146`, `:2298`), `Counter`
-  defined three different ways, and `Stringable` (above). They work in some
-  contexts, but they teach shadowing of core names.
-- **Owning-field spelling is inconsistent**: `SPEC.md:2081-2083` says
-  `string` fields require `mv`, and `var label = ""` in an `mv struct` is
-  indeed rejected (`field 'label' owns memory — declare it 'mv string label'`,
-  verified). Yet `SPEC.md:582-585` (`Item`), `:3813-3816` (`Sample`) and
-  `:3969-3974` (`Account`) all write inferred `var x = ""` string fields.
-- **Indentation**: README and SPEC examples use 4 spaces. `nomen format`
-  emits tabs, and `SPEC.md:3970` (Json) is tab-indented. Choose one for docs.
-- **Markdown list breakage** at `SPEC.md:2696-2707` and `:3220-3222`: wrapped
-  inline code at column 0 breaks the bullet structure when rendered.
-
-### 1.7 Structure and coverage gaps (P2)
-
-- **README duplicates itself**: "Owning Structs" (`:294-313`) and "Ownership &
-  Borrows" (`:862-870`) open with the same paragraph. Merge them, or keep a
-  one-line pointer.
-- **Features with no README section**: Higher-Order Functions/lambdas/closures,
-  FFI, Compile-Time JSON, `#if`/`#for`/attributes (only a link), `mv enum`,
-  `Box<T>`, `readonly`, imports and visibility.
-- **The SPEC Standard Library section** (`:3920`) covers Console, Ansi, Json,
-  Task, Mutex and Channel, but not `List`, `Map`, `Set`, `StableList`,
-  `StringBuilder`, `Math`, `Time`, `Random`, `Option`, or the
-  `Stream/File/Http/Directory` modules in `core/System/`. Even one line per
-  type, with a link to `nomen docs` output, would help.
-- **Things the spec never defines**: integer overflow behaviour (`uint8`
-  200 + 100 compiles, with no stated wrap/trap rule); evaluation order of
-  arguments; the doc-comment syntax `nomen docs` consumes; how `nomen test`
-  files are written (assertions); program entry (`pub func main`) and exit
-  codes; global variables (mentioned in passing at `:4160` but never
-  specified).
-- **Missing from the operator precedence table** (`SPEC.md:2571-2586`): `??`,
-  `!!`, postfix `!`, `?.`, `as`, `..`, unary `-`.
-- `SPEC.md:2607` lists the overloadable operators, but `#op_as` (`:2765`) is
-  missing from the list.
-- The SPEC reads as a changelog in places: long single-paragraph rule dumps
-  such as `:158`, `:197`, `:2079-2085` and `:4253-4265`. Splitting each into a
-  short rule, an example, and an edge-case list would make it much easier to
-  read on the site.
-
----
-
-## 2. Language design consistency
-
-### 2.1 Constraints: three different models (P0)
-
-1. Docs: "only checked when the value is a compile-time constant".
-2. `.at()` and `/`: a runtime value must be **proven**, or it's an error
-   (`cannot be verified`).
-3. User parameter constraints: behave like (2), as verified.
-
-Since (2) and (3) are the real behaviour, constraints are refinement types
-checked by flow facts. That's a strong feature, but only if the flow analysis
-is good enough. Today it isn't:
+Constraints are refinement types checked by flow facts: `.at()` and `/`
+require a runtime value to be **proven** (`cannot be verified` otherwise),
+and user parameter constraints behave the same. The docs now document that
+rule (the former "only checked when the value is a compile-time constant"
+claim is fixed). The flow analysis itself is still too weak:
 
 - **No facts after an early return.** After `if n == 0 { return 0 }`,
   `divide(a, n)` still fails (verified, and logged in FOLLOWUP).
@@ -276,19 +71,20 @@ is good enough. Today it isn't:
   (verified). Make lengths non-negative facts, or make them `uint`.
 - **No way to assert a fact**: there is no `assume`/`assert` or checked
   narrowing such as `arr.at_checked(i) -> T?`. The `_or_panic` family is
-  mentioned (`SPEC.md:2750`) but not documented.
+  mentioned but not documented.
 
-Recommendation: document the "must prove" rule as the language contract,
-give the provable fact set (guards, loop ranges, early returns, length ≥ 0),
-and add an escape hatch, such as `arr.get(i)` returning `T?` and an explicit
-`assert(cond)` that both checks at runtime and adds the fact.
+Recommendation: give the provable fact set (guards, loop ranges, early
+returns, length ≥ 0), and add an escape hatch, such as `arr.get(i)`
+returning `T?` and an explicit `assert(cond)` that both checks at runtime
+and adds the fact.
 
-### 2.2 Methods: `self` spelling and static methods (P1)
+### 1.2 Methods: `self` spelling and static methods (P1)
 
 - A method with no `self` is static (`Task.current_cancelled`,
-  `SPEC.md:4551`). But trait methods written without `self`
-  (`Stringable.to_string = (out string)`) are called on instances, and they
-  compile. So whether a method is static depends on context.
+  `SPEC.md:4551`). But the compiler also accepts trait methods written
+  without `self` (`to_string = (out string)`) and dispatches them on
+  instances — whether a method is static depends on context. (The docs were
+  updated to always spell `self`; the compiler rule is still implicit.)
 - `self` is read-only, `ref self` is mutable, and `#init` takes either (and
   writes to it in both cases). `#destroy` takes nothing but uses `self`.
 - There's no `static` keyword and no `Self` documentation, yet
@@ -299,7 +95,7 @@ Recommendation: always require `self` for instance methods. Mark static
 methods explicitly (`static func`, or `Type.func`). Document `Self` and the
 `#self` placeholder in the Traits section.
 
-### 2.3 Copyable vs. `mv`, and destructors (P0 design)
+### 1.3 Copyable vs. `mv`, and destructors (P0 design)
 
 - A plain `struct` can declare `#destroy`, and copies duplicate it. On the C
   backend the destructor runs once per copy (`destroy 3` printed twice,
@@ -325,7 +121,7 @@ methods explicitly (`static func`, or `Type.func`). Document `Self` and the
   capture / destructure, by type kind") would help, both as documentation and
   as a design consistency check.
 
-### 2.4 Results, errors and nullables (P1)
+### 1.4 Results, errors and nullables (P1)
 
 The design is mostly coherent (`?.`/`??` mirror `!`/`!!`), with a few sharp
 edges:
@@ -354,7 +150,7 @@ edges:
   between two spellings of the same type is a trap. Lift in both cases, or
   reject `Result<…, error-enum>` in `out` position in favour of `!`.
 
-### 2.5 Two spellings for one thing (P2)
+### 1.5 Two spellings for one thing (P2)
 
 - `let` vs `->` in branches (`SPEC.md:2418-2447`). Two keywords with
   identical meaning, plus two paragraphs of rules about where `let` is _not_
@@ -369,7 +165,7 @@ edges:
   are fine, but `in` is a common typo (see the README bug), so give it a
   dedicated diagnostic ("did you mean `of`?").
 
-### 2.6 Statement and expression forms (P2)
+### 1.6 Statement and expression forms (P2)
 
 - `switch` in statement position accepts value arms (`case x > 100 ->
 "big"`, `SPEC.md:2314-2318`) and silently discards the value (verified, no
@@ -387,7 +183,7 @@ edges:
   differs from `ref` parameters, and aliasing inside the loop body is
   surprising. Document this clearly, or make it a true element borrow.
 
-### 2.7 Types (P2)
+### 1.7 Types (P2)
 
 - `ufloat` family: unsigned floats are unusual, and their semantics
   (negative results from subtraction? NaN?) aren't specified.
@@ -395,14 +191,14 @@ edges:
   (`SPEC.md:2776-2779` and `:3142-3146`).
 - `Channel` is untyped (`uint64` values plus `send_string`) because "Nomen
   values are pointer-sized" (`SPEC.md:4071`). That's out of step with the rest
-  of a statically typed language. See §3.
+  of a statically typed language. See §2.
 - Struct layout puts an 8-byte vtable word in **every** struct
   (`SPEC.md:3727`), so `Pair { int64, int32 }` is 24 bytes and
   `offset_of(Pair, "b") == 16`. This is a performance and FFI design choice
   worth stating explicitly (and possibly reconsidering for structs with no
   trait conformance).
 
-### 2.8 Lint false positives found while verifying (P2)
+### 1.8 Lint false positives found while verifying (P2)
 
 These make doc examples noisy and will train users to ignore warnings:
 
@@ -420,7 +216,7 @@ These make doc examples noisy and will train users to ignore warnings:
 
 ---
 
-## 3. Missing features (vs Rust, Swift, Zig, Go, Kotlin)
+## 2. Missing features (vs Rust, Swift, Zig, Go, Kotlin)
 
 Ordered by rough priority within each tier. "Effort" is a guess.
 
@@ -467,17 +263,46 @@ Ordered by rough priority within each tier. "Effort" is a guess.
 
 ---
 
-## 4. Suggested order of work
+## 3. Suggested order of work
 
-1. Fix the five README failures and the `SPEC.md` P0 rows in §1.2. Then
-   regenerate `test/readme/` and `test/spec/` from the docs so they can't
-   drift again (§1.1).
-2. Rewrite "How Constraints Are Evaluated" to describe the real rule, and in
-   the same change land flow facts for early return and `length >= 0` (§2.1).
-3. Purge retired `class` and the stale "Stage" paragraphs. Fix the two broken
-   links and the duplicate headings (§1.3–1.4).
-4. Make `#destroy` imply `mv` (§2.3). This is a soundness fix, not just docs.
-5. Decide the method receiver and static-method rule (§2.2), and the
-   result-`match` flattening question (§2.4). Both affect many examples, so
+1. Land flow facts for constraints — early returns and `length >= 0` — and
+   the `assert`/`arr.get(i)` escape hatch (§1.1).
+2. Make `#destroy` imply `mv` (§1.3). This is a soundness fix, not just docs.
+3. Decide the method receiver and static-method rule (§1.2), and the
+   result-`match` flattening question (§1.4). Both affect many examples, so
    settle them before more docs are written.
-6. Work through the Tier 1 features in §3.
+4. Work through the Tier 1 features in §2.
+5. Generate `test/readme/` and `test/spec/` inputs from the docs' fenced
+   blocks (extract by heading), keeping hand-written expectations only for
+   the blocks marked as errors — the doc/test drift this review found (and
+   hand-fixed) then fails CI instead of hiding.
+6. Finish the remaining documentation work below (P2): coverage gaps in the
+   README, the SPEC Standard Library section, and the never-specified
+   semantics.
+7. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
+   the tree.
+
+---
+
+## 4. Remaining documentation work (P2, not errors)
+
+Coverage and completeness items left open after the consistency fixes:
+
+- **Features with no README section**: Higher-Order Functions/lambdas/
+  closures, FFI, Compile-Time JSON, `#if`/`#for`/attributes (only a link),
+  `mv enum`, `Box<T>`, `readonly`, imports and visibility.
+- **The SPEC Standard Library section** covers Console, Ansi, Json, Task,
+  Mutex and Channel, but not `List`, `Map`, `Set`, `StableList`,
+  `StringBuilder`, `Math`, `Time`, `Random`, `Option`, or the
+  `Stream/File/Http/Directory` modules in `core/System/`. Even one line per
+  type, with a link to `nomen docs` output, would help.
+- **Things the spec never defines**: integer overflow behaviour (`uint8`
+  200 + 100 compiles, with no stated wrap/trap rule); evaluation order of
+  arguments; the doc-comment syntax `nomen docs` consumes; how `nomen test`
+  files are written (assertions); program entry (`pub func main`) and exit
+  codes; global variables (mentioned in passing but never specified).
+- **Missing from the operator precedence table**: `??`, `!!`, postfix `!`,
+  `?.`, `as`, `..`, unary `-`.
+- The SPEC reads as a changelog in places: long single-paragraph rule dumps
+  would read better split into a short rule, an example, and an edge-case
+  list.

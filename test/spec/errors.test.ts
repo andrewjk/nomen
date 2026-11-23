@@ -302,7 +302,7 @@ match result {
 		expect(compile_module(body)).toEqual([]);
 	});
 
-	test("the unit result form declares, falls through, and matches", () => {
+	test("the unit result form declares, falls through, and handles with try/catch", () => {
 		const body = `
 error FetchError {
 	case notfound
@@ -316,14 +316,10 @@ func close = (string path, out ! FetchError) {
 }
 
 func describe = (string path, out string) {
-	return match close(path) {
-		case .ok -> "closed"
-		case .fail(err) {
-			match err {
-				case .notfound -> "missing"
-			}
-		}
+	try close(path) catch {
+		case .notfound { return "missing" }
 	}
+	return "closed"
 }
 `;
 		expect(compile_module(body)).toEqual([]);

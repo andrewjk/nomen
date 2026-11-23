@@ -55,6 +55,42 @@ above_zero(threshold)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("an unproven runtime argument cannot be verified", () => {
+		const input = `
+func above_zero = (int x: x > 0) {
+    Console.write("\\{x}")
+}
+
+func run = (int n) {
+    above_zero(n)
+}
+
+run(4)
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+	});
+
+	test("a guard proves the constraint", () => {
+		const input = `
+func above_zero = (int x: x > 0) {
+    Console.write("\\{x}")
+}
+
+func run = (int n) {
+    above_zero(n)        // Error: Parameter constraint cannot be verified
+
+    if n > 0 {
+        above_zero(n)    // OK — the guard proves it
+    }
+}
+
+run(4)
+`;
+		const errors = compile_main(input);
+		expect(errors.length).toBe(1);
+	});
 });
 
 describe("spec: constraints - fields", () => {
@@ -62,7 +98,7 @@ describe("spec: constraints - fields", () => {
 		const input = `
 struct Bounded {
     var int x: x > 0
-    var int y: x < 100
+    var int y: y < 100
 }
 const b = Bounded(5, 50)
 `;
@@ -73,9 +109,9 @@ const b = Bounded(5, 50)
 		const input = `
 struct Bounded {
     var int x: x > 0
-    var int y: x < 100
+    var int y: y < 100
 }
-const b = Bounded(-1, 50)
+const b2 = Bounded(-1, 50)
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("not satisfied"))).toBe(true);

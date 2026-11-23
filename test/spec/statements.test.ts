@@ -111,11 +111,11 @@ match flag {
 
 	test("match enum with associated data (single payload)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(10)
+const result = Status.fail(10)
 const message = match result {
     case .ok -> "it's ok"
     case .fail(code) -> "error \\{code} encountered"
@@ -126,14 +126,14 @@ const message = match result {
 
 	test("match enum with associated data (qualified case name)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(10)
+const result = Status.fail(10)
 const message = match result {
-    case Result.ok -> "it's ok"
-    case Result.fail(code) -> "error \\{code} encountered"
+    case Status.ok -> "it's ok"
+    case Status.fail(code) -> "error \\{code} encountered"
 }
 `;
 		expect(compile_module(input)).toEqual([]);
@@ -173,11 +173,11 @@ const label = match n {
 
 	test("match enum with associated data (else branch)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(10)
+const result = Status.fail(10)
 const message = match result {
     case .fail(code) -> "error \\{code}"
 	case _ -> "unknown"
@@ -203,12 +203,12 @@ const label = match event {
 
 	test("match enum with associated data (binding shadowing outer var)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
 const code = 99
-const result = Result.fail(5)
+const result = Status.fail(5)
 const message = match result {
     case .fail(code) -> "inner code is \\{code}"
     case .ok -> "ok"
@@ -232,11 +232,11 @@ const sum = match p {
 
 	test("match enum with associated data (nested in function)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-func describe = (Result r, out string) => match r {
+func describe = (Status r, out string) => match r {
     case .ok -> "ok"
     case .fail(code) -> "error \\{code}"
 }
@@ -246,11 +246,11 @@ func describe = (Result r, out string) => match r {
 
 	test("match enum with associated data (return in branch)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-func code_of = (Result r, out int) {
+func code_of = (Status r, out int) {
     return match r {
         case .ok -> 0
         case .fail(code) => code
@@ -342,12 +342,12 @@ const bv = match b {
 
 	test("match enum with associated data (payload passed to function)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
 func report = (int c, out string) => "code is \\{c}"
-const result = Result.fail(3)
+const result = Status.fail(3)
 const msg = match result {
     case .fail(code) -> report(code)
     case .ok -> "ok"
@@ -358,12 +358,12 @@ const msg = match result {
 
 	test("match enum with associated data (reassigned enum value)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-var Result result = Result.ok
-result = Result.fail(8)
+var Status result = Status.ok
+result = Status.fail(8)
 const message = match result {
     case .ok -> "ok"
     case .fail(code) -> "error \\{code}"
@@ -374,11 +374,11 @@ const message = match result {
 
 	test("match enum with associated data (payload in nested match branch)", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(2)
+const result = Status.fail(2)
 const outer = match result {
     case .fail(code) -> match result {
         case .fail(c) -> c
@@ -392,11 +392,11 @@ const outer = match result {
 
 	test("exhaustiveness error when associated-data case missing", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(10)
+const result = Status.fail(10)
 const message = match result {
     case .ok -> "ok"
 }
@@ -407,11 +407,11 @@ const message = match result {
 
 	test("error when payload arity mismatches enum case", () => {
 		const input = `
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(10)
+const result = Status.fail(10)
 const message = match result {
     case .ok -> "ok"
     case .fail(a, b) -> "two"

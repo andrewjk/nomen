@@ -53,11 +53,11 @@ if dir == .north {
 
 	test("enum with associated data (single field)", () => {
 		const input = `
-pub enum Result {
+pub enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(5)
+const result = Status.fail(5)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

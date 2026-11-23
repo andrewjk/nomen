@@ -20,12 +20,12 @@ test("#switch selects the matching arm per target", () => {
 
 test("#for unrolls per field — the binding drives names, reads and writes", () => {
 	const body = `
-		mv struct Counter {
+		mv struct Tagged {
 			var int n
 			mv string label
 		}
-		func zero_ints = (mv Counter c, mv out Counter) {
-			#for field of META.info(Counter).fields {
+		func zero_ints = (mv Tagged c, mv out Tagged) {
+			#for field of META.info(Tagged).fields {
 				if field.type.name == "int" {
 					field.set(c, 0)
 				}
@@ -71,7 +71,7 @@ test("META.info over an unknown type errors at the loop", () => {
 test("attributes attach to structs and fields", () => {
 	const body = `
 		@sql_table("users")
-		mv pub struct User {
+		pub mv struct User {
 			@rename("user_name"), @sql_type("VARCHAR")
 			mv string user_name
 			var int age
@@ -85,7 +85,7 @@ test("attributes attach to structs and fields", () => {
 test("META.attr / has_attr drive a generic metadata consumer", () => {
 	const body = `
 		@sql_table("users")
-		mv pub struct User {
+		pub mv struct User {
 			@Name("user_name")
 			mv string user_name
 			var int age

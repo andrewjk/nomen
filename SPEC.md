@@ -2,7 +2,9 @@
 
 ## Overview
 
-Nomen is a statically-typed, compiled language that compiles to C or AArch64 assembly. It supports features from imperative, object-oriented, and functional paradigms.
+Nomen is a statically-typed, compiled language that compiles to C, AArch64
+assembly, or JavaScript. It supports features from imperative,
+object-oriented, and functional paradigms.
 
 ## Comments
 
@@ -16,7 +18,8 @@ Nomen is a statically-typed, compiled language that compiles to C or AArch64 ass
 ## Reserved Words
 
 The following words are reserved by the language and cannot be used as
-variable, parameter, field, type, or enum case names:
+variable, parameter, field, type, or enum case names (`class` is retired and
+kept only to reserve it — see below):
 
 `as` `async` `bitset` `break` `case` `class` `const` `continue` `else`
 `enum` `error` `foreign` `extend` `for` `func` `if` `import` `internal` `let`
@@ -57,8 +60,8 @@ Console.write("\{m}")
 
 - **Integers**: `int`, `uint`, `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64`
 - **Floating-point**: `float`, `ufloat`, `float32`, `ufloat32`, `float64`, `ufloat64` (the `u` variants are unsigned)
-- **String**: `string` (C-style null-terminated string)
-- **Character**: `char` (8-bit character)
+- **String**: `string` (a fat `(ptr, len)` pair pointing at a heap buffer — `.length` is the byte count)
+- **Character**: `char` (an 8-bit character; string indexing and `.length` count bytes, not code points)
 - **Boolean**: `bool`
 - **Null**: `null` (represents the absence of a value for nullable types)
 - **Void**: `void` (used for functions with no return value)
@@ -120,8 +123,8 @@ const strs = Array<string>.with("x", 2)  // Array<string> of ["x", "x"]
 
 Internally `Array<T>` is identical to `T[]`; casts, indexing (`.at`/`.set`),
 and `.length` behave the same. `Array<T>` is the canonical spelled-out form
-used throughout this document wherever a typed array is needed (e.g. tuples vs.
-arrays at line 422).
+used throughout this document wherever a typed array is needed (e.g. tuples
+vs. arrays).
 
 ### Nullable Types
 
@@ -228,7 +231,9 @@ safe_index(items, 5)   // Error: Parameter constraint not satisfied: i
 Constraints also work with `const` variables passed as arguments:
 
 ```
-func above_zero = (int x: x > 0) { ... }
+func above_zero = (int x: x > 0) {
+    Console.write("\{x}")
+}
 
 const threshold = 10
 above_zero(threshold)   // OK, 10 > 0
@@ -241,11 +246,11 @@ Struct fields can have constraints. Fields without default values that have cons
 ```
 struct Bounded {
     var int x: x > 0
-    var int y: x < 100
+    var int y: y < 100
 }
 
-const b = Bounded(5, 50)    // OK
-const b = Bounded(-1, 50)   // Error: Parameter constraint not satisfied: x
+const b = Bounded(5, 50)     // OK
+const b2 = Bounded(-1, 50)   // Error: Parameter constraint not satisfied: x
 ```
 
 Fields with default values are checked at definition time:
@@ -271,7 +276,28 @@ func process = () {
 
 #### How Constraints Are Evaluated
 
-Constraints are only checked when the value is a compile-time constant (integer literals, boolean literals, or `const` variables with known values). When the value is not known at compile time (e.g. runtime input, function call results), the constraint is not evaluated and no error is produced.
+Constraints are checked at every use. When the value is a compile-time
+constant (an integer or boolean literal, or a `const` variable with a known
+value), the constraint is evaluated at compile time and a violation is an
+error. When the value is only known at runtime (a parameter, a call result),
+the compiler must be able to PROVE the constraint from the surrounding flow —
+a guard (`if x > 0`), a range-for, or the argument's own initializer. An
+unproven runtime argument is rejected with `Parameter constraint cannot be
+verified` — spell the proof the compiler should use:
+
+```
+func above_zero = (int x: x > 0) {
+    Console.write("\{x}")
+}
+
+func run = (int n) {
+    above_zero(n)        // Error: Parameter constraint cannot be verified
+
+    if n > 0 {
+        above_zero(n)    // OK — the guard proves it
+    }
+}
+```
 
 Constraint expressions support:
 
@@ -297,25 +323,27 @@ A `ref` type holds a pointer to a value rather than the value itself. This allow
 Functions can accept parameters by reference using `ref`. The caller must also use the `ref` keyword at the call site to make the mutation explicit:
 
 ```
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5
 }
 
 var num = 1
-makeFive(ref num)
+make_five(ref num)
 // num is now 5
 ```
 
 Calling without `ref` at the call site is a compile error:
 
 ```
-makeFive(num)  // Error: Missing 'ref' keyword for ref parameter 'x'
+make_five(num)  // Error: Missing 'ref' keyword for ref parameter 'x'
 ```
 
 Using `ref` for a non-ref parameter is also an error:
 
 ```
-func print = (int x) { ... }
+func print = (int x) {
+    Console.write("\{x}")
+}
 print(ref 5)   // Error: Unexpected 'ref' keyword for non-ref parameter 'x'
 ```
 
@@ -324,10 +352,10 @@ a mutable value. Declare the caller's binding as `var` first:
 
 ```
 const fixed = 1
-makeFive(ref fixed)   // Error: Cannot pass const 'fixed' to ref parameter 'x'
+make_five(ref fixed)   // Error: Cannot pass const 'fixed' to ref parameter 'x'
 
 var mutable = 1
-makeFive(ref mutable) // OK — mutable is now 5
+make_five(ref mutable) // OK — mutable is now 5
 ```
 
 #### Declared Field Effects
@@ -409,7 +437,9 @@ pub struct Point {
     pub var int x
     pub var int y
 
-    pub func add = (self, Point other, out Point) { ... }
+    pub func add = (self, Point other, out Point) {
+        return Point(self.x + other.x, self.y + other.y)
+    }
 }
 ```
 
@@ -460,9 +490,9 @@ Initializer functions must set all properties that don't have default values, an
 
 ```
 pub struct Point {
-    pub int x
-    pub int y
-    pub int sum
+    pub var int x
+    pub var int y
+    pub var int sum
 
     func #init = (ref self, int x, int y) {
         self.x = x
@@ -478,13 +508,13 @@ If a struct has a `#destroy` function, it runs automatically when the struct goe
 
 ```
 pub struct Transaction {
-    pub int handle
+    pub var int handle
 
     func #init = (ref self, int handle) {
         self.handle = handle
     }
 
-    func #destroy = () {
+    func #destroy = (self) {
         // automatically runs when the Transaction goes out of scope
     }
 }
@@ -539,21 +569,29 @@ owned by `p`. A plain `var` copy of an alias source is a compile error —
 spell what you mean: `ref` to share, `mv` to transfer, `.copy()` for an
 independent copy.
 
-See [Owning structs](#owning-structs-1) for the field rules, the Copyable
+See [Move-Only Structs](#move-only-structs) for the field rules, the Copyable
 verifier, `Box<T>`, and the nullable lowerings.
 
 ### Generic Structs
 
-Structs can declare type parameters using `<T>` syntax. Type parameters are type-erased at the storage level — all values are 8 bytes on aarch64, so `T` is purely for compile-time type checking with no monomorphization.
+Structs can declare type parameters using `<T>` syntax. The compiler
+monomorphizes: each concrete instantiation becomes its own type
+(`List<int>` → `List_int`), and every value occupies a uniform 8-byte slot on
+aarch64, so generic code needs no runtime type dispatch. `T` exists for
+compile-time type checking.
 
 ```
 pub struct List<T> {
     var length = 0
     var capacity = 0
-    var items = 0
+    var T elem
 
-    pub func push = (self, T value) { ... }
-    pub func pop = (self, out T) { ... }
+    pub func push = (ref self, T value) {
+        self.elem = value
+    }
+    pub func pop = (self, out T) {
+        return self.elem
+    }
 }
 ```
 
@@ -581,7 +619,7 @@ constructor, a scalar becomes its zero value (`int` → `0`, `float` → `0.0`,
 ```
 mv struct Item {
     var n = 0
-    var label = ""
+    mv label = ""
 }
 
 func default_of<T> = (T seed, out T) {
@@ -667,7 +705,7 @@ const Array<int> nums = [1, 2, 3]            // typed array, not tuple
 const mixed = [1, "hello"]                   // inferred as [int, string] tuple
 ```
 
-#### Field Access
+#### Tuple Field Access
 
 Tuple fields are accessed with underscore-prefixed indices:
 
@@ -676,7 +714,7 @@ const things = [42, "answer"]
 Console.write("\{things._0} \{things._1}")  // "42 answer"
 ```
 
-#### Destructuring
+#### Destructuring Tuples
 
 Tuples can be destructured into individual variables. See [Destructuring](#destructuring)
 for the full set of forms (arrays and structs are also supported):
@@ -970,12 +1008,12 @@ field instead of binding a view (see
 [Move Destructuring](#move-destructuring-and-literal-transfers)):
 
 ```
-mv struct Counter {
+mv struct Totals {
     var int count
     var int total
 }
 
-var c = Counter(5, 50)
+var c = Totals(5, 50)
 var [count = mv n, total = mv t] = c
 Console.write("\{n} \{t}")  // "5 50"
 ```
@@ -1038,15 +1076,24 @@ pub trait Addable {
 Structs implement traits using `:` syntax. Multiple traits are separated by commas:
 
 ```
+trait Animal {
+    func speak = (self, out string)
+}
+
+trait Named {
+    func name = (self, out string)
+}
+
 struct Dog : Animal, Named {
-    // ...
+    func speak = (self, out string) { return "woof" }
+    func name = (self, out string) { return "Rex" }
 }
 ```
 
 Structs implementing a trait can be assigned to trait-typed variables:
 
 ```
-const Named named = Dog("Rex")
+const Named named = Dog()
 ```
 
 Trait functions without bodies are declarations (the implementing struct must provide the body):
@@ -1082,21 +1129,21 @@ const m = p.manhattan()
 An `extend` may also make an existing type conform to one or more traits out of line by listing them after `:`. The required trait methods may be supplied in the same extend's body, another extend, or the original body:
 
 ```
-trait Stringable {
-    func to_string = (out string)
+trait Describable {
+    func to_string = (self, out string)
 }
 
 struct Circle {
     var int radius
 }
 
-extend struct Circle : Stringable {
-    func to_string = (out string) {
+extend struct Circle : Describable {
+    func to_string = (self, out string) {
         return "Circle"
     }
 }
 
-const Stringable s = Circle(5)
+const Describable s = Circle(5)
 ```
 
 A trait the target already conforms to (from its body or a prior `extend`) is a duplicate error. Out-of-line conformance is indistinguishable from body-declared conformance: same vtable dispatch, same generic-trait argument handling, same auto-derived methods.
@@ -1138,17 +1185,17 @@ if dir == .north {
 }
 ```
 
-Shorthand is resolved in declarations with explicit type, assignments (inferred from target type), and comparisons (inferred from left operand type). Shorthand is only for simple case access — cases with associated data must use the full form `EnumName.case(args)`.
+Shorthand is resolved in declarations with explicit type, assignments (inferred from target type), and comparisons (inferred from left operand type). Cases with associated data take their payloads in the shorthand too — `.rect(10, 20)` where `Shape` is the known type — or use the full form `EnumName.case(args)`.
 
 Enum cases can contain information:
 
 ```
-pub enum Result {
+pub enum Status {
     case ok
     case fail(int code)
 }
 
-const result = Result.fail(5)
+const result = Status.fail(5)
 ```
 
 Enum cases can have multiple fields:
@@ -1179,7 +1226,7 @@ match result {
 }
 ```
 
-Shorthand cases resolve against the concrete instantiation, and the full form uses the generic name with explicit type arguments:
+Shorthand cases resolve against the concrete instantiation, and the full form uses the generic name (type arguments inferred from context, or written explicitly):
 
 ```
 var Option<int> found = Option.some(4)
@@ -1200,9 +1247,9 @@ pub enum Option<T> {
 }
 ```
 
-Because `Result` is checked, a fallible call's value may not be silently discarded — see [Strict Enums](#checked-enums).
+Because `Result` is checked, a fallible call's value may not be silently discarded — see [Checked Enums](#checked-enums).
 
-### checked Enums
+### Checked Enums
 
 An enum declared with the `checked` modifier may not have its values silently discarded: a statement-position call whose result is a checked enum value is a compile error. Bind the value or match on it — ignoring is fine, it just has to be deliberate (`_` discards explicitly):
 
@@ -1312,10 +1359,10 @@ func close = (string path, out ! FetchError) {
 }
 
 func describe = (string path, out string) {
-    return match close(path) {
-        case .ok -> "closed"
-        case .notfound -> "missing"
+    try close(path) catch {
+        case .notfound { return "missing" }
     }
+    return "closed"
 }
 ```
 
@@ -1379,6 +1426,7 @@ error LoadError {
 
 error ParseError {
     case syntax
+    case corrupt
 }
 
 func load = (string path, out int ! LoadError, ParseError) {
@@ -1536,7 +1584,7 @@ pub bitset Permissions {
 const perms = Permissions.read | Permissions.write
 ```
 
-Like enums, bitsets can be declared `checked` (`pub checked bitset Flags`), with the same discard rules — see [Strict Enums](#checked-enums).
+Like enums, bitsets can be declared `checked` (`pub checked bitset Flags`), with the same discard rules — see [Checked Enums](#checked-enums).
 
 Bitset values can be combined, checked, and toggled:
 
@@ -1558,9 +1606,9 @@ flags = flags ^ Permissions.execute
 ### Variables
 
 ```
-const string name = "Alice"
-var int age = 30
-var count = 10  // Type inference
+const name = "Alice"
+var age = 30
+var uint count = 10  // explicit annotation when `int` isn't the wanted type
 ```
 
 Types are inferred from initializers when omitted:
@@ -1676,20 +1724,21 @@ Constraints:
 
 #### `var` and `ref` Parameters
 
-Parameters are `const` by default. Use `var` for mutable local copies, or `ref` for pass-by-reference:
+Parameters are `const` by default. A function that needs a mutable scratch value makes a local `var` copy; use `ref` for pass-by-reference:
 
 ```
-func increment = (var int x, out int) {
-    x = x + 1
-    return x
+func increment = (int x, out int) {
+    var y = x        // mutable local copy — the caller never sees it
+    y = y + 1
+    return y
 }
 
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5  // modifies the caller's variable
 }
 ```
 
-`var` creates a mutable copy — changes don't affect the caller. `ref` passes a pointer to the caller's variable — changes are visible to the caller. The `ref` keyword is required at both the definition and call site (see [Reference Types](#reference-types)).
+A local `var` copy — changes don't affect the caller. `ref` passes a pointer to the caller's variable — changes are visible to the caller. The `ref` keyword is required at both the definition and call site (see [Reference Types](#reference-types)).
 
 A `ref` parameter may declare the fields it may displace as a brace set after its name (`ref Item item { stats }`), which narrows the invalidation of the caller's borrows to exactly those fields — see [Declared Field Effects](#declared-field-effects).
 
@@ -1815,7 +1864,7 @@ struct Vec2 {
     }
 }
 
-const v = Vec2(2, 3)
+var v = Vec2(2, 3)
 v.scale(4)       // calls scale(int) -> (8, 12)
 v.scale(v)       // calls scale(Vec2) -> (16, 36)
 ```
@@ -1981,7 +2030,7 @@ does not expose `Text` or `Controls` names, however the reference is spelled.
 `Control::Button` (note the missing `s`) is a compile error:
 `Namespace Control::Button is not imported`.
 
-### Method/Function Calls as Expressions
+### Match, Switch and If as Expressions
 
 `match`, `switch`, and `if`/`else` can all be used as expressions (assigned to
 a `const`/`var` or returned). When used as an expression, a `case _` arm is
@@ -2037,14 +2086,14 @@ pub struct Point {
     }
 }
 
-const p = Point(3, 4)     // auto-generated #init
+var p = Point(3, 4)       // auto-generated #init
 p.translate(1, 1)
 const d = p.distance_from_origin()   // 3*3 + 4*4 = 25
 ```
 
-#### Owning structs
+#### Move-Only Structs
 
-`mv struct` declares the type MOVE-ONLY (STRUCT_PLAN_3 B1): bindings move
+`mv struct` declares the type MOVE-ONLY: bindings move
 instead of copy, and the declaration — not a field walk — is the ownership
 contract. A bare `struct` is Copyable; the checker verifies that claim: a bare
 struct with a declared-`mv` field is rejected, naming the fix.
@@ -2061,14 +2110,17 @@ var c4 = c         // Error: cannot copy 'Config' by value — use .copy() or mv
 ```
 
 ```
-mv struct Config { ... }
+mv struct Config {
+    mv string name
+}
+
 struct Wrapper {          // Error: 'Wrapper' cannot be Copyable — field 'c'
     var Config c          //   owns heap memory --> mark the struct
 }                         //   `mv struct Wrapper`, or remove the field
 ```
 
 The same verifier applies to enums: a bare `enum` with a case payload typed a
-declared-`mv` struct must be declared `mv enum` (B1a), and bindings of
+declared-`mv` struct must be declared `mv enum`, and bindings of
 a declared-`mv` enum move instead of copy.
 
 **Fields: slots that receive moves spell `mv`.** `mv` marks a slot an owned
@@ -2135,7 +2187,7 @@ constraints to the generated `#init` parameters (see
 to take full control of construction (see [Initializers](#initializers)). A
 bare struct is a value type: assigning it copies the fields. For heap
 ownership and shared-in-scope aliasing, use `mv struct` plus `Box<T>` /
-`ref` — see [Owning Structs](#owning-structs-1).
+`ref` — see [Move-Only Structs](#move-only-structs).
 
 ### Traits
 
@@ -2189,9 +2241,9 @@ pub struct Point: Equatable, Stringable {
 
 const a = Point(1, 2)
 const b = Point(1, 2)
-const bool same = a == b            // true  — derived #op_eq
-const bool diff = a != b            // false — derived from #op_eq
-const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
+const same = a == b                  // true  — derived #op_eq
+const diff = a != b                  // false — derived from #op_eq
+const s = a.to_string()              // "Point(x=1, y=2)" — derived to_string
 ```
 
 `Stringable` derives a `to_string` that lists each field as `name=value`.
@@ -2221,8 +2273,8 @@ if x > 0 {
 }
 ```
 
-An `if`/`else` with no `else` used as an expression yields `void` when taken and
-`null`-like when skipped, so an `else` is required for a non-`void` result:
+An `if` used as an expression requires an `else` — without one there is no
+value for the skipped branch:
 
 ```
 const result = if x > 0 -> "positive"
@@ -2258,7 +2310,7 @@ const result = match x {
 }
 ```
 
-Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. A `case _` arm is required when using `match` as an expression value. The catch-all must be the last arm and appear at most once.
+Each `case` value is type-checked against the match expression type. Branches can use `->` for expression return or `{ }` for block body. A `case _` arm is required when a match on a non-exhaustive type (`int`, and other types without a fixed case set) is used as an expression value; matches on enums and `bool` are exhaustive without one. The catch-all must be the last arm and appear at most once.
 
 Match with enums (using shorthand syntax):
 
@@ -2295,11 +2347,11 @@ Match on `bool` without a `case _` arm must cover both `true` and `false`. Match
 Match with enums and associated data:
 
 ```
-enum Result {
+enum Status {
     case ok
     case fail(int code)
 }
-const result = Result.fail(10)
+const result = Status.fail(10)
 const message = match result {
     case .ok -> "it's ok"
     case .fail(code) -> "error \{code} encountered"
@@ -2324,13 +2376,13 @@ Unlike `match`, each `case` has its own boolean condition. A `case _` arm is req
 
 ```
 while x < 10 {
-    Console.write(x)
+    Console.write("\{x}")
     x += 1
 }
 
 // With update clause
 while x < 10; x += 1 {
-    Console.write(x)
+    Console.write("\{x}")
 }
 ```
 
@@ -2341,7 +2393,7 @@ For-each over arrays:
 ```
 const int[] items = [1, 2, 3]
 for item of items {
-    Console.write(item)
+    Console.write("\{item}")
 }
 ```
 
@@ -2349,7 +2401,7 @@ Range iteration:
 
 ```
 for i of 0..10 {
-    Console.write(i)
+    Console.write("\{i}")
 }
 ```
 
@@ -2380,6 +2432,8 @@ for item of items; total += item {
 ### Break and Continue
 
 ```
+var should_exit = false
+var should_skip = false
 while true {
     if should_exit {
         break
@@ -2468,27 +2522,27 @@ Marks unimplemented code. Prints the message and exits at runtime. Satisfies ret
 
 ```
 // Numbers
-const int a = 42
-const float b = 3.14
-const int c = -5
+const a = 42
+const b = 3.14
+const c = -5
 
 // Integer literals in other bases
-const int hex = 0xFF            // hexadecimal (255)
-const int oct = 0o377           // octal      (255)
-const int bin = 0b11111111      // binary     (255)
-const int group = 0xCAFE_F00D   // underscores are digit separators
+const hex = 0xFF            // hexadecimal (255)
+const oct = 0o377           // octal      (255)
+const bin = 0b11111111      // binary     (255)
+const group = 0xCAFE_F00D   // underscores are digit separators
 
 // Strings (multiline supported - start continuation lines with ")
-const string s = "Hello, World!"
-const string multi =
+const s = "Hello, World!"
+const multi =
     "Line 1
     "Line 2
 
 // Characters
-const char c = 'h'
+const ch = 'h'
 
 // Booleans
-const bool flag = true
+const flag = true
 
 // Null
 var int? nothing = null
@@ -2604,7 +2658,7 @@ struct Vec2 {
 }
 ```
 
-Supported operator functions: `#op_add` (+), `#op_sub` (-), `#op_mul` (\*), `#op_div` (/), `#op_mod` (%), `#op_eq` (==), `#op_ne` (!=).
+Supported operator functions: `#op_add` (+), `#op_sub` (-), `#op_mul` (\*), `#op_div` (/), `#op_mod` (%), `#op_eq` (==), `#op_ne` (!=). The `as` cast has its own operator function, `#op_as` (see [Custom Struct Casting](#custom-struct-casting)).
 
 `#op_eq` and `#op_ne` are duals: defining either one gives you both `==` and
 `!=`. A struct with `#op_eq` but no `#op_ne` gets `!=` as the logical negation
@@ -2693,11 +2747,12 @@ if n != 0 {
 }
 ```
 
-- `5 / 0` and `5 % 0` are compile errors: `Parameter constraint not
-satisfied: divisor`.
-- An unverifiable runtime divisor errors with `Parameter constraint cannot be
-verified` unless the code is inside the System library; discharge it with a
-  guard (`if n != 0`, `if n > 0`, a clamp) or a provably non-zero value.
+- `5 / 0` and `5 % 0` are compile errors: `Parameter constraint
+not satisfied: divisor`.
+- An unverifiable runtime divisor errors with `Parameter constraint
+cannot be verified` unless the code is inside the System library;
+  discharge it with a guard (`if n != 0`, `if n > 0`, a clamp) or a
+  provably non-zero value.
 - Float division by zero is unconstrained (IEEE ±inf / NaN).
 - The contract is declared as a parameter constraint on the built-in integer
   types' operator functions (`#op_div = (self, int divisor: divisor != 0, out
@@ -2751,8 +2806,8 @@ a different variant`). The check is opt-in and call-site visible — the same
   does not exist.
 - Both directions **copy**: the result is an independent value and the source
   keeps ownership.
-- An enum whose payloads cannot be deep-copied (a trait or class payload)
-  rejects the cast — use `match` to move the payload.
+- An enum whose payloads cannot be deep-copied (a trait or `mv`-struct
+  payload) rejects the cast — use `match` to move the payload.
 
 #### Custom Struct Casting
 
@@ -2767,13 +2822,18 @@ struct Dog {
     }
 }
 
+struct Cat {
+    var int value
+}
+
 const dog = Dog(9)
 const cat = dog as Cat
 ```
 
 #### Implicit Casting
 
-Automatic widening is allowed without `as`:
+Automatic widening is allowed without `as` — the same rules as
+[Type-to-Type Coercion](#type-to-type-coercion) below:
 
 - Smaller int types to larger int types of same signedness
 - Unsigned to signed if target is larger
@@ -2955,21 +3015,18 @@ view T)` method. In practice a container just delegates to its backing
 `Buffer`'s `slice` — pure Nomen, no inline architecture code:
 
 ```
-pub struct UserList: Viewable {
+pub mv struct UserList: Viewable {
     var length = 0
-    var items = Buffer<User>()
+    mv Buffer<int> items = Buffer<int>()
     pub func slice = (
         self,
         int start: start >= 0,
         int end: end >= start && end <= self.items.cap,
-        out view User,
+        out view int,
     ) {
         return self.items.slice(start, end)
     }
 }
-view sub = users.slice(10, 20)   // borrows from `users`
-sub.at(3)        // a User
-sub.length       // 10
 ```
 
 `Buffer.slice` borrows a `view` over its slab, so its `end` constraint is
@@ -3027,7 +3084,9 @@ while it lives. To hand a callee a piece of the bundle, pass the field — a
 plain `view T` argument, which is a call-scoped borrow:
 
 ```
-func render = (Line l) { ... }
+func render = (Line l) {
+    // render the line's fields
+}
 
 render(first)
 // Error: cannot pass a 'Line' as an argument — structs with 'view' fields
@@ -3067,8 +3126,8 @@ const x = point.x
 // Instance method
 point.add(other)
 
-// Static method
-const result = Math.power(2, 10)
+// Static method — called on the type
+const zeros = Array.with(0, 3)
 ```
 
 ## Visibility Modifiers
@@ -3156,8 +3215,6 @@ At the end of each scope, the compiler automatically:
 Auto-free applies only to types that own heap resources:
 
 - **Structs** with a `#destroy` function (see [Destroy Functions](#destroy-functions))
-- **Classes** (always heap-allocated; `#destroy` runs if defined — see
-  [Destroy Functions](#destroy-functions))
 - **Strings** (heap-allocated character buffers)
 
 Value types with no heap ownership are not cleaned up: **enums**, **bitsets**,
@@ -3166,7 +3223,7 @@ no independently-owned memory, so going out of scope requires no action. An
 enum or bitset that wraps a string field still relies on the auto-free of that
 field's string value, not on any destroy logic of its own.
 
-See [MEMORY.md](MEMORY.md) for the full memory model description.
+See [MEMORY.md](docs/MEMORY.md) for the full memory model description.
 
 ## Unsafe Code
 
@@ -3674,13 +3731,13 @@ future work — the iterable surface is the one above
   per-field-type dispatch reads naturally:
 
 ```
-mv struct Counter {
+mv struct Tagged {
     var int n
     mv string label
 }
 
-func zero_ints = (mv Counter c, mv out Counter) {
-    #for field of META.info(Counter).fields {
+func zero_ints = (mv Tagged c, mv out Tagged) {
+    #for field of META.info(Tagged).fields {
         if field.type.name == "int" {
             field.set(c, 0)
         }
@@ -3717,10 +3774,6 @@ binding used without `.name`/`.get`/`.set` — are reported at the loop:
 // Error: META.info: unknown type 'Nope' — reflection is over struct types
 ```
 
-Stage-2 limits: `#for` is body-scope only (whole-declaration generation is
-a later stage), and raw `#arch` blocks inside arms are not specialized per
-field.
-
 ### Layout Introspection (`META.size_of` / `META.align_of` / `META.offset_of`)
 
 Sizes and offsets fold to comptime ints from the same layout the backends
@@ -3744,7 +3797,7 @@ func probe = () {
 ```
 
 `META.size_of(T)` is the byte size (a `string` is the 16-byte fat pair, an
-enum the tag word plus its widest payload, a class the heap pointer);
+enum the tag word plus its widest payload, a `Box<T>` the heap pointer);
 `META.align_of(T)` is the natural alignment (`bool` 1, `int32` 4, every
 composite 8); `META.offset_of(T, "field")` is the field's byte offset from
 the value's first byte, vtable word included. Scalars and built-ins work
@@ -3812,7 +3865,7 @@ serves every struct:
 ```
 mv struct Sample {
     var count = 0
-    var label = ""
+    mv label = ""
 }
 
 func describe = (type T, out string) {
@@ -3872,7 +3925,7 @@ not symbols — nothing resolves them as types or functions.
 
 ```
 @sql_table("users")
-mv pub struct User {
+pub mv struct User {
     @rename("user_name"), @sql_type("VARCHAR")
     mv string user_name
     var int age
@@ -3906,16 +3959,10 @@ func keys<T> = (T value, out string) {
 missing attribute read is a compile error, never a silent empty string,
 and one attribute carries one value (repeat the attribute — not the
 arguments — if you ever find yourself packing several). Attribute names
-are ordinary identifiers: one that matches a library type or function
-name links it exactly as if the source had mentioned it — snake_case
-names rarely collide, but prefer names that don't.
-
-Stage-1 limits: pragmas are valid at file scope and in function bodies
-(not inside struct/trait bodies), and `META` exists only inside pragma
-conditions (it is not a runtime value). Raw code blocks select their target
-through the same `#if` fold (stage 5 — see "Unsafe Code" and
-`docs/COMPTIME.md`); the `#raw` opener carries only the block's own
-nature (`#raw("c")` dialect, `#raw(…, "file")` scope).
+are ordinary identifiers but never symbols: one that matches a library
+type's name does not link that type — the library type-link scan skips
+attribute-name tokens, so `@Table("users")` does not drag
+`Controls::Table` into the program.
 
 ## Standard Library
 
@@ -3965,24 +4012,25 @@ keys keep their defaults; unknown keys are skipped. Decoding is single-pass
 and builds no intermediate tree.
 
 ```
-@rename("user")
 mv struct Account {
-	var id = ""
-	var active = true
-	@skip
-	var cache = ""
+    @rename("user")
+    mv id = ""
+    var active = true
+    @skip
+    mv cache = ""
 }
 
 func round_trip = (string text, out string) {
-	var a = Account()
-	json_decode_into(text, ref a)
-	return json_encode(a)
+    var a = Account()
+    json_decode_into(text, ref a)
+    return json_encode(ref a)
 }
 ```
 
 `json_decode_into(text, ref value)` infers the struct type from the `ref`
-argument — the Go `Unmarshal(&value)` shape; `json_encode(value)` infers it
-from the value.
+argument — the Go `Unmarshal(&value)` shape; `json_encode(ref value)` infers
+it from the value. `@rename` and `@skip` are read from FIELDS — a struct-level
+attribute with those names has no effect on the JSON shape.
 
 ### Task
 
@@ -4029,7 +4077,7 @@ async {
 }
 ```
 
-`Mutex` is an **mv struct** (STRUCT_PLAN_3 Phase R — the shape menu):
+`Mutex` is an **mv struct**:
 its single field is an opaque handle, the value moves, and `#destroy`
 releases the pthread resource automatically at scope exit. Sharing one
 across tasks rides the checked region borrows — the example above passes
@@ -4060,7 +4108,7 @@ async {
 var v = ch.receive()   // blocks until ready
 ```
 
-`Channel` is an **mv struct** (STRUCT_PLAN_3 Phase R — the shape menu):
+`Channel` is an **mv struct**:
 every field is an opaque handle/counter word, the value moves, and
 `#destroy` drains the queue and releases the mutex/condvar. Sharing one
 across tasks rides the checked region borrows — the example passes `ch` bare
@@ -4092,7 +4140,7 @@ var s = ch.receive_string()   // blocks until ready
 
 Nomen's concurrency model is **structured concurrency via nurseries**: every
 concurrent split must rejoin before its lexical scope exits. See
-[ASYNC.md](ASYNC.md) for the full design and rationale.
+[ASYNC.md](docs/ASYNC.md) for the full design and rationale.
 
 ### Sendable
 
@@ -4182,19 +4230,24 @@ every slot holding the pointer; `get` compares generations and returns the
 live pointer or `null`.
 
 ```
-var child = Widget(2)
-var h = WeakHandle<Widget>(child)
+mv struct Widget {
+    var int id
+}
 
-var live = h.get()
+var child = Box<Widget>(Widget(2))
+var h = WeakHandle<Box<Widget>>(child)
+
+var Box<Widget>? live = h.get()
 if live != null {
     Console.write_line("still here")
 }
 ```
 
 - **The creation is the marker**: `WeakHandle<T>(obj)` registers `obj` in the
-  registry — nothing aliases without one. The tracked type must be a CLASS,
-  and the object must be owned ELSEWHERE (a fresh temporary is rejected — a
-  handle owns nothing, so the instance needs a real owner).
+  registry — nothing aliases without one. The tracked type must be a
+  heap-resident instance (`Box<T>`, or any `mv struct`), and the object must
+  be owned ELSEWHERE (a fresh temporary is rejected — a handle owns nothing,
+  so the instance needs a real owner).
 - **A handle binds once, at its declaration** — it is not re-pointed (the
   same const-pointer discipline as `ref`).
 - **`.get()` forces the nil check at the use site**: the race is inherently
@@ -4255,7 +4308,7 @@ a lifecycle marker, like `#init`/`#destroy`, that declares the type's
 construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
 `X(...)` on a `#spawn`-bearing type as the deferred-call construction, and a
 type that merely shares the name does not gain it. `Thread` and `Fiber` are
-**mv structs** (STRUCT_PLAN_3 Phase R — the shape menu): every field is
+**mv structs**: every field is
 an opaque handle (uint64/bool), so the construction yields an inline value
 that moves, and `#destroy` enforces must-start. A mv struct declaring
 `#spawn` constructs through the same special form: the construction yields
@@ -4534,13 +4587,12 @@ nursery-local values).
 An unnamed `async { }` block supports only lexical `Thread(...).start()`
 (no escape hatch) — naming the nursery is what makes it referenceable.
 
-### Task
+### The Task Handle
 
 The handle returned by `Thread(...).start()`. Generic — `T` is inferred from
-the spawned function's return type (`Task<uint64>` for uint64-returning
-functions, `Task<uint64>` for void functions). An **mv struct** whose
+the spawned function's return type. An **mv struct** whose
 fields are opaque handles — it moves, and its `#destroy` releases the future
-reference it holds (STRUCT_PLAN_3 Phase R):
+reference it holds:
 
 ```
 pub mv struct Task<T> : Awaitable {
@@ -4610,15 +4662,14 @@ has completed. The pool re-initializes on the next spawn.
 
 ### AArch64 Backend
 
-- Parameters: x0-x7 (static methods start at x0, instance methods at x1)
+- Parameters: x0-x7 (instance methods pass `self` in x0, parameters start at x1)
 - Return value: x0
 - Static methods: params in x0, x1, x2, ...
 - Instance methods: self in x0, params in x1, x2, ...
 
 ## Code Style
 
-- Line width: 100 characters
-- Imports: parent directories (`^[../]`) first, then local directories (`^[./]`)
-- Types/Classes: PascalCase (`FunctionNode`, `Type`)
-- Functions/Variables: snake_case (`tokenize`, `parse_statement`)
-- Constants: SCREAMING_SNAKE_CASE (`COMPOUND_SYMBOLS`)
+`nomen format` rewrites source to the canonical style: tab indentation, a
+100-character line width, imports sorted (parent directories first, then
+local), trailing commas, and redundant type annotations removed — prefer
+inference (`const p = Point(2, 3)`, not `const Point p = Point(2, 3)`).

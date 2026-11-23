@@ -84,7 +84,7 @@ pub struct Transaction {
         self.handle = handle
     }
 
-    func #destroy = () {
+    func #destroy = (self) {
     }
 }
 `;
@@ -300,21 +300,21 @@ const m = p.manhattan()
 
 	test("extend adds out-of-line trait conformance", () => {
 		const input = `
-trait Stringable {
-    func to_string = (out string)
+trait Describable {
+    func to_string = (self, out string)
 }
 
 mv struct Circle {
     var int radius
 }
 
-extend struct Circle : Stringable {
-    func to_string = (out string) {
+extend struct Circle : Describable {
+    func to_string = (self, out string) {
         return "Circle"
     }
 }
 
-const Stringable s = Circle(5)
+const Describable s = Circle(5)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -330,8 +330,8 @@ pub struct Point: Equatable {
 const a = Point(1, 2)
 const b = Point(1, 2)
 const c = Point(3, 4)
-const bool same = a == b
-const bool diff = a != c
+const same = a == b
+const diff = a != c
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

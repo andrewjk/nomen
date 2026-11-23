@@ -7,7 +7,7 @@ describe("spec: variables", () => {
 		const input = `
 const name = "Alice"
 var age = 30
-var count = 10
+var uint count = 10
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
@@ -179,8 +179,8 @@ struct Vec2 {
 const a = Vec2(1, 2)
 const b = Vec2(1, 2)
 const c = Vec2(3, 4)
-const bool same = a == b
-const bool diff = a != c
+const same = a == b
+const diff = a != c
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

@@ -127,22 +127,22 @@ func takeRefNode = (ref Node? n) { var z = 0 }
 
 	test("reference parameters", () => {
 		const input = `
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5
 }
 var num = 1
-makeFive(ref num)
+make_five(ref num)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
 
 	test("calling without ref is an error", () => {
 		const input = `
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5
 }
 var num = 1
-makeFive(num)
+make_five(num)
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("ref"))).toBe(true);
@@ -159,11 +159,11 @@ print(ref 5)
 
 	test("const value cannot be passed to ref parameter", () => {
 		const input = `
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5
 }
 const fixed = 1
-makeFive(ref fixed)
+make_five(ref fixed)
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("const"))).toBe(true);
@@ -171,11 +171,11 @@ makeFive(ref fixed)
 
 	test("var value can be passed to ref parameter", () => {
 		const input = `
-func makeFive = (ref int x) {
+func make_five = (ref int x) {
     x = 5
 }
 var mutable = 1
-makeFive(ref mutable)
+make_five(ref mutable)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

@@ -29,4 +29,15 @@ pub func main = () {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("anonymous struct destructures by field name", () => {
+		const input = `
+pub func main = () {
+	const p = [ name = "C", x = 25, y = 70 ]
+	Console.write("\\{p.name} \\{p.x} \\{p.y}")
+	var [x, y] = p   // destructures by field name
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
 });

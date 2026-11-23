@@ -34,8 +34,8 @@ Console.write_line(Ansi.bold(Ansi.green("success")))
 describe("spec: json serde", () => {
 	test("json_decode_into / json_encode round-trip a typed struct", () => {
 		const input = `
-@rename("user")
 mv struct Account {
+	@rename("user")
 	mv id = ""
 	var active = true
 	@skip
