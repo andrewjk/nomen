@@ -6,16 +6,6 @@ import test_error from "./test_error";
 
 // BUILD
 describe("function call build", () => {
-	test("function without params", async () => {
-		const input = `
-func greet = () {
-  Console.write("hello")
-}
-greet()
-`;
-		await build_and_check_output(input, "func_call_no_params", "hello");
-	});
-
 	test("function with string params", async () => {
 		const input = `
 func greet = (string name, string title) {

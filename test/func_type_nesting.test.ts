@@ -300,27 +300,6 @@ pub func main = (Init init) {
 `,
 		);
 	});
-
-	test("a func-typed struct field and its func call", async () => {
-		// Nested type arguments use the alias spelling too: the keyword
-		await run(
-			"func_alias_field",
-			"30\n",
-			`
-struct Plug {
-	var func (func (out int), out int) f
-}
-
-func apply = (func (out int) g, out int) { return g() }
-
-pub func main = (Init init) {
-	var int base = 10
-	var Plug p = Plug(apply)
-	Console.write_line("\\{p.f(func (out int) { return base * 3 })}")
-}
-`,
-		);
-	});
 });
 
 describe("func type rejections", () => {

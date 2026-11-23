@@ -260,12 +260,6 @@ pub func main = () {
 	expect(count(c, "free(")).toBe(3);
 });
 
-test.skip("kill-switch off restores the strdup'd assign copy", () => {
-	// Retired by D3: a bare `s = t` from another string binding is now a
-	// compile error, so there is no silent copy for the kill-switch to
-	// restore. The explicit `mv`/`.copy()` spellings are unconditional.
-});
-
 /**
  * Borrow-INITIALIZED assignees under D3: receiving a string borrow into an
  * mv local is spelled `src.at(0).copy()` — an owned heap copy — and a
@@ -388,29 +382,6 @@ pub func main = () {
  * frees the bytes once. The pre-fix lowering freed BOTH (C) or left the
  * assignee dangling (aarch64).
  */
-
-test("explicit mv transfers (single owner, no double free)", async () => {
-	const input = `
-import System
-
-pub func main = () {
-	var t = "aaaa".to_string()
-	var string s = "init"
-	s = mv t
-	Console.write(s)
-}
-`;
-	await run_program(input, "string_assign_explicit_mov_transfer", "aaaa");
-	const c = build_main(input, "c");
-	expect(c).toContain("s = t;");
-	expect(c).not.toContain("nomen_str_dup(t)");
-	// s's heap-forced literal init copy (eager-freed at the reassign), t's
-	// FLAG-GUARDED donor free (the transfer set _mv_owns_t, so the guard
-	// skips at runtime — the single owner is s), and the transferred block
-	// at scope exit.
-	expect(c).toContain("if (!_mv_owns_t) { free(t.ptr); }");
-	expect(count(c, "free(")).toBe(3);
-});
 
 /**
  * D3: a mv string initialized from another binding must be spelled —

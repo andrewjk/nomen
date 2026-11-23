@@ -245,38 +245,6 @@ pub func main = (Init init) {
 		);
 	});
 
-	test("mv-enum pop/match drain loop", async () => {
-		await build_and_check_output(
-			`
-import System
-
-mv enum Item {
-	case missing
-	case small(int id)
-	case big(int id, int a, int b)
-}
-
-pub func main = (Init init) {
-	var List<Item> l = List<Item>()
-	l.push(Item.small(1))
-	l.push(Item.big(2, 3, 4))
-	var int total = 0
-	while l.length > 0 {
-		match l.pop() {
-			case .missing { total += 0 }
-			case .small(v) { total += v }
-			case .big(id, a, b) { total += id + a + b }
-		}
-	}
-	Console.write("\\{total} \\{l.length}")
-}
-`,
-			"len_facts_mv_enum",
-			"10 0",
-			true,
-		);
-	});
-
 	test("scalar element borrow reads the pushed element", async () => {
 		await build_and_check_output(
 			`

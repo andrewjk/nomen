@@ -81,17 +81,6 @@ Console.write("\\{x}")
 		await build_and_check_output(input, "decl_const_expression", "7");
 	});
 
-	test("var updated in if block", async () => {
-		const input = `
-var x = 5
-if true {
-  x = 15
-}
-Console.write("\\{x}")
-`;
-		await build_and_check_output(input, "decl_var_if_update", "15");
-	});
-
 	test("const set in both branches", async () => {
 		const input = `
 const int x

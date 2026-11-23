@@ -133,22 +133,6 @@ Console.write(t)
 		await build_and_check_output(input, "leak_alias_declaration", "42");
 	});
 
-	test("while loop break does not leak heap string", async () => {
-		const input = `
-var int i = 0
-while i < 3 {
-  var string s = i.to_string()
-  i += 1
-  if i == 2 {
-    break
-  }
-  Console.write(s)
-}
-Console.write("done")
-`;
-		await build_and_check_output(input, "leak_while_break", "0done");
-	});
-
 	test("break runs struct destroy in loop", async () => {
 		const input = `
 struct Resource {
@@ -238,25 +222,6 @@ Console.write("\\{result.value}")
 		await build_and_check_output(input, "dfree_return_class", "42");
 	});
 
-	test("returning class from nested scope does not leak", async () => {
-		const input = `
-mv struct Box {
-  var int value
-}
-
-func get_box = (int x, out Box) {
-  var Box b = Box(x)
-  if x == 42 {
-    return b
-  }
-  return b
-}
-var Box result = get_box(42)
-Console.write("\\{result.value}")
-`;
-		await build_and_check_output(input, "dfree_return_nested_class", "42");
-	});
-
 	test("reassigning class frees old value", async () => {
 		const input = `
 mv struct Box {
@@ -293,21 +258,6 @@ Console.write("\\{result.value}")
 		expect(result.code).toContain("bl Box_init");
 
 		await build_and_check_output(input, "dfree_class_nested_scope_leaks", "42");
-	});
-
-	test("class with string field does not leak on destroy", async () => {
-		const input = `
-mv struct Named {
-  var int id
-  mv string name
-}
-
-var int id = 1
-var string name = 42.to_string()
-var Named n = Named(id, mv name)
-Console.write("\\{n.id}")
-`;
-		await build_and_check_output(input, "dfree_class_string_field", "1");
 	});
 
 	test("break does not leak class in loop body", async () => {
@@ -376,26 +326,6 @@ ref Box<Cell> t = s
 Console.write("\\{t.value}")
 `;
 		await build_and_check_output(input, "leak_class_alias_declaration", "42");
-	});
-
-	test("while loop break does not leak class", async () => {
-		const input = `
-mv struct Box {
-  var int value
-}
-
-var int i = 0
-while i < 3 {
-  var Box b = Box(i)
-  i += 1
-  if i == 2 {
-    break
-  }
-  Console.write("\\{b.value}")
-}
-Console.write("done")
-`;
-		await build_and_check_output(input, "leak_while_break_class", "0done");
 	});
 
 	/** The user program's main body: the System library is joined into the

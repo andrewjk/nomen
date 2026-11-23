@@ -11,7 +11,8 @@ import { parse_raw } from "./parse_with_imports";
 
 describe("Map with reference-typed values", () => {
 	// SKIP (B1 backend-cutover residual): same inlined-raw-primitive /
-	// mv-binding tranche as arena (see FOLLOWUP.md).
+	// mv-binding tranche as arena (still open — the second value-struct test
+	// below now passes; this constructor shape does not yet).
 	test.skip("variadic pairs constructor with value-struct values", async () => {
 		// Map<string, TV>(["k", TV(...)]) materializes each pair as a
 		// _Tuple_string_TV whose TV field is copied through a POINTER —
@@ -108,9 +109,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "map_reference_values", "woof\nmeow\nlen=3\ndone\n", true);
 	});
 
-	// SKIP (B1 backend-cutover residual): same inlined-raw-primitive /
-	// mv-binding tranche as arena (see FOLLOWUP.md).
-	test.skip("value-struct values (allmark's LinkReference shape) set/get/overwrite", async () => {
+	test("value-struct values (allmark's LinkReference shape) set/get/overwrite", async () => {
 		// The allmark port's `Map<string, int>` + parallel `List<LinkReference>`
 		// pattern collapses back to `Map<string, LinkReference>` — a value
 		// struct of strings works as TV via `Map()` + `set()` (no variadic

@@ -75,24 +75,6 @@ Console.write(w.name)
 	});
 });
 
-describe("destroy blocks build", () => {
-	test("struct with destroy block", async () => {
-		const input = `
-struct Resource {
-    var int handle
-
-    func #destroy = () {
-        self.handle = 0
-    }
-}
-
-const r = Resource(42)
-Console.write("\\{r.handle}")
-`;
-		await build_and_check_output(input, "destroy_basic", "42");
-	});
-});
-
 describe("#init and #destroy parse errors", () => {
 	test("#init outside struct", () => {
 		const input = `

@@ -93,18 +93,6 @@ Console.write("\\{x.at(0)}\\{x.at(1)}\\{x.at(2)}")
 `;
 		await build_and_check_output(input, "range_as_array", "123");
 	});
-
-	test("range used for index-based array access", async () => {
-		const input = `
-const nums = Array(10, 20, 30)
-var total = 0
-for i of 0..3 {
-  total = total + nums.at(i)
-}
-Console.write("\\{total}")
-`;
-		await build_and_check_output(input, "range_index_access", "60");
-	});
 });
 
 // ERRORS

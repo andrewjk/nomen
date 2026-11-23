@@ -177,9 +177,7 @@ Console.write("\\{m.describe(State.running(5))} \\{m.describe(State.idle)}")
 		await build_and_check_output(input, "enum_data_match_self_field", "12 7");
 	});
 
-	// SKIP (B1 backend-cutover residual): enum-with-data struct payloads ride
-	// the same mv-binding cleanup tranche (see FOLLOWUP.md).
-	test.skip("struct payload binds at the match (BUGS #9)", async () => {
+	test("struct payload binds at the match (BUGS #9)", async () => {
 		const input = `
 mv struct Config {
   mv string name
@@ -197,8 +195,7 @@ match h {
 		await build_and_check_output(input, "enum_struct_payload_match", "got owned");
 	});
 
-	// SKIP (B1 backend-cutover residual): see FOLLOWUP.md.
-	test.skip("struct payload from a local variable", async () => {
+	test("struct payload from a local variable", async () => {
 		const input = `
 mv struct Config {
   mv string name
@@ -218,8 +215,7 @@ match w {
 		await build_and_check_output(input, "enum_struct_payload_local", "local 9");
 	});
 
-	// SKIP (B1 backend-cutover residual): see FOLLOWUP.md.
-	test.skip("scalar payload after a struct payload keeps its offset", async () => {
+	test("scalar payload after a struct payload keeps its offset", async () => {
 		const input = `
 mv struct Config {
   mv string name

@@ -775,3 +775,42 @@ comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
 
+
+## Test-suite runtime (2026-11-23 audit)
+
+The suite is ~1175s wall / ~3100s summed across 611 files. Two audit passes
+found and removed dead weight:
+
+- Pass 1: two tautological assertions, two empty skipped stubs for the
+  retired D3 kill switch, and five stale `test.skip`s whose bugs were fixed
+  (re-enabled — `borrowed_accessor_return`, `enum_byval_param` ×3,
+  `map_reference_values` ×1; the map variadic-pairs case is still broken
+  and stays skipped).
+- Pass 2 (semantic): 32 tests testing the *same thing* as another test —
+  exact program+expected duplicates differing only in cache name
+  (`memory_double_free` ×4, `memory_leaks`/`class_move` break/continue
+  pairs, `ref_binding`, `init_final`, `uninitialized_class` ×2,
+  `string_assign_value_semantics` subset, `construction`/`structs`,
+  `access`/`structs`, `range`/`assignment`/`declaration`/`function_call`
+  basic-feature pairs, `layout_container` zstack pair, `nullable` pair,
+  `func_type_nesting`, `init_field_assignment`, `length_facts`,
+  `copy_semantics` ×2, `memory_unsafe_interp` int-method variant). Also
+  renamed the stale "…crashes" interpolation tests (the bug is fixed).
+
+Where the time actually goes, and options if it needs to shrink:
+
+- **GUI (test/gui/ + gui_*): 637s, 121 tests.** Each builds a single-TU
+  ObjC program on BOTH backends and recompiles the whole System library
+  per test (the precompiled system.o cannot carry AppKit). Prebuilding an
+  ObjC/GUI variant of system.o (or a per-file shared window program) would
+  cut most of this.
+- **Whole-benchmark-corpus tests: ~127s.** `nir.test.ts`, `nir_cfg.test.ts`,
+  `emit_c_nir.test.ts`, `emit_nir/benchmark_corpus.test.ts` and
+  `bench_matrix.test.ts` each parse/lower the entire bench corpus
+  independently. They test different properties (lowering completeness,
+  CFG/liveness, C-emitter byte-equality, feature matrix), so they are not
+  redundant — but sharing one parsed/lowered corpus (a module-scope cache)
+  would save most of the duplicated work.
+- **The remaining 2,300s is 4,295 distinct build+run tests** (0.4-0.9s
+  each: compile the user TU + link `system.o` + run), which is the
+  suite's real coverage; there is no redundancy to remove there.

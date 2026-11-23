@@ -4,8 +4,9 @@ import build from "../src/build";
 import check_output from "./check_output";
 import parse_with_imports from "./parse_with_imports";
 
-// Failing tests for a type-mismatch bug in string interpolation on the C
-// backend.
+// Historical regression coverage: a type-mismatch bug in string interpolation
+// on the C backend (the `_string_interpolate_N` argument ABI). The bug is
+// FIXED; these tests pin the correct per-argument conversion.
 //
 // `src/build_c/build_root_node.ts` emits `_string_interpolate_N` with every
 // argument typed `char *argN` and a `%s` format. But Nomen lets you
@@ -23,7 +24,7 @@ import parse_with_imports from "./parse_with_imports";
 const C = { arch: "c" as const, platform: "macos" as const, audit: true };
 
 describe("unsafe: string interpolation of a non-string value (C backend)", () => {
-	test("interpolating an int field crashes (reads int as char*)", async () => {
+	test("interpolating an int-valued expression renders its value", async () => {
 		const input = `
 const string other = "after"
 Console.write_line("\\{other.length} \\{other}")
@@ -34,7 +35,7 @@ Console.write_line("\\{other.length} \\{other}")
 		await check_output("unsafe_interp_int_field", result, "5 after\n", C);
 	});
 
-	test("interpolating an int variable crashes", async () => {
+	test("interpolating an int variable renders its value", async () => {
 		const input = `
 const int n = 42
 const string other = "x"
@@ -44,17 +45,5 @@ Console.write_line("\\{n} \\{other}")
 		expect(parsed.errors).toEqual([]);
 		const result = build(parsed.root, C);
 		await check_output("unsafe_interp_int_var", result, "42 x\n", C);
-	});
-
-	test("interpolating an int method result crashes", async () => {
-		const input = `
-const string line = "hello"
-const string other = "x"
-Console.write_line("\\{line.length} \\{other}")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, C);
-		await check_output("unsafe_interp_int_method", result, "5 x\n", C);
 	});
 });

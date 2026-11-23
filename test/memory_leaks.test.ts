@@ -238,27 +238,6 @@ Console.write("done")
 		await build_and_check_output(input, "leak_break_array_strings", "0done");
 	});
 
-	test("break does not leak array class elements in loop", async () => {
-		const input = `
-mv struct Box {
-  var int value
-}
-
-var int i = 0
-while i < 3 {
-  var items = Array(Box(i))
-  if i == 1 {
-    i += 1
-    break
-  }
-  Console.write("\\{items.at(0).value}")
-  i += 1
-}
-Console.write("done")
-`;
-		await build_and_check_output(input, "leak_break_array_classes", "0done");
-	});
-
 	test("continue does not leak array string elements in loop", async () => {
 		const input = `
 var int i = 0
@@ -273,26 +252,6 @@ while i < 3 {
 Console.write("done")
 `;
 		await build_and_check_output(input, "leak_continue_array_strings", "02done");
-	});
-
-	test("continue does not leak array class elements in loop", async () => {
-		const input = `
-mv struct Box {
-  var int value
-}
-
-var int i = 0
-while i < 3 {
-  var items = Array(Box(i))
-  i += 1
-  if i == 2 {
-    continue
-  }
-  Console.write("\\{items.at(0).value}")
-}
-Console.write("done")
-`;
-		await build_and_check_output(input, "leak_continue_array_classes", "02done");
 	});
 
 	test("struct field array of strings frees elements", async () => {

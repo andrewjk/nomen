@@ -252,39 +252,6 @@ Console.write("\\{a.value}")
 		await build_and_check_output(input, "class_inner_assign", "2");
 	});
 
-	test("class stored in struct field freed with struct", async () => {
-		const input = `
-mv struct Box {
-  var int value
-}
-
-mv struct Holder {
-  mv Box content
-}
-
-var Holder h = Holder(mv Box(42))
-Console.write("\\{h.content.value}")
-`;
-		await build_and_check_output(input, "class_in_struct_field", "42");
-	});
-
-	test("mv prevents double-free when class passed to function that returns it", async () => {
-		const input = `
-mv struct Box {
-  var int value
-}
-
-func identity = (mv Box b, out Box) {
-  return b
-}
-
-var Box a = Box(42)
-var Box b = identity(mv a)
-Console.write("\\{b.value}")
-`;
-		await build_and_check_output(input, "mov_prevents_double_free", "42");
-	});
-
 	test("heap-returned array of classes freed at scope exit", async () => {
 		const input = `
 mv struct Cell {

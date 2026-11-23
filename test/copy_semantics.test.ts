@@ -25,26 +25,6 @@ Console.write_line(b.n.to_string())
 		);
 	});
 
-	test("write through a bare mv param is rejected (const borrow)", () => {
-		// B1 full cutover: a bare mv-struct parameter is a read-only const
-		// borrow — the pbv shell convention is retired, so a callee write
-		// cannot stay silently local; mutation must be spelled `ref` (the
-		// next test pins its write-through visibility).
-		const input = `
-mv struct Info { mv string name = "" }
-func mutate = (Info p) {
-	p.name = "changed"
-	Console.write_line(p.name)
-}
-var Info a = Info()
-a.name = "original"
-mutate(a)
-Console.write_line(a.name)
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.some((e) => e.message.includes("Assignment to const: p"))).toBe(true);
-	});
-
 	test("ref argument: callee writes DO escape", async () => {
 		// The in-place write strdups into the caller's storage and records in
 		// the callee scope, whose exit drops the record — the documented
@@ -68,33 +48,6 @@ Console.write_line(a.name)
 			audit: false,
 			arch: "c",
 		});
-	});
-
-	test("passthrough chain copies only the field read, and stays leak-free", async () => {
-		await build_and_check_output(
-			`
-mv struct Pair { var int n = 0  mv string tag = "" }
-func build = (int n, string t, out Pair) {
-	var p = Pair()
-	p.n = n
-	p.tag = t + "-tag"
-	return p
-}
-func next = (Pair p, out Pair) {
-	var q = Pair()
-	q.n = p.n + 1
-	q.tag = p.tag.copy()
-	return q
-}
-var p = next(build(1, "one"))
-Console.write_line(p.n.to_string())
-Console.write_line(p.tag)
-p.tag = "changed"
-Console.write_line(p.tag)
-`,
-			"pbv_passthrough_chain",
-			"2\none-tag\nchanged\n",
-		);
 	});
 
 	test("copy argument is legal and equals the plain by-value form", async () => {

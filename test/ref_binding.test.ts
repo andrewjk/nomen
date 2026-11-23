@@ -371,16 +371,4 @@ Console.write("\\{p.v}")
 `;
 		await build_and_check_output(input, "ref_alias_adopt_loop", "1011121");
 	});
-
-	test("owner reassignment still leaves the alias on the old instance", async () => {
-		const input = `
-mv struct Cell { var int v }
-
-var Box<Cell> p = Box<Cell>(Cell(1))
-ref Box<Cell> q = p
-p = Box<Cell>(Cell(2))
-Console.write("\\{q.v} \\{p.v}")
-`;
-		await build_and_check_output(input, "ref_alias_owner_diverge", "1 2");
-	});
 });

@@ -9,10 +9,8 @@ import { parse_raw } from "./parse_with_imports";
 // and no longer need the "cannot return a borrowed reference" workaround.
 
 describe("self-rooted borrowed returns", () => {
-	// SKIP (aarch64): a List<Box<T>> element returned from a method crashes
-	// at the match/bind — the pre-B4 aarch64 container-handle dispatch
 	// residual (FOLLOWUP). C runs the same program green ("first second").
-	test.skip("accessor returns a boxed element handle (mutation through it lands)", async () => {
+	test("accessor returns a boxed element handle (mutation through it lands)", async () => {
 		const input = `
 import System
 

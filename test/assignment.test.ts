@@ -152,17 +152,6 @@ Console.write("\\{x}")
 		await build_and_check_output(input, "assign_negative", "-3");
 	});
 
-	test("assignment in loop", async () => {
-		const input = `
-var total = 0
-for i of 0..5 {
-  total = total + i
-}
-Console.write("\\{total}")
-`;
-		await build_and_check_output(input, "assign_in_loop", "10");
-	});
-
 	test("const set in both branches then used", async () => {
 		const input = `
 const int x
@@ -252,23 +241,6 @@ x = 5
 x = 10
 `;
 		const expected = [test_error(input, "Assignment to const: x", 4, 1)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
-	});
-
-	test("incomplete conditional assignment to const", () => {
-		// Wrap in a function with a parameter so the compiler can't evaluate
-		// the condition at compile time.
-		const input = `
-func f = (int dummy) {
-  const int x
-  if dummy > 0 {
-    x = 5
-  }
-  const y = x
-}
-`;
-		const expected = [test_error(input, "Const set incompletely: x", 4, 3)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

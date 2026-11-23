@@ -42,18 +42,6 @@ Console.write("\\{p.name} \\{p.age}")
 		await build_and_check_output(input, "construct_default_field", "Bob 0");
 	});
 
-	test("construct struct with multiple required fields", async () => {
-		const input = `
-struct Point {
-  var int x
-  var int y
-}
-var Point p = Point(3, 4)
-Console.write("\\{p.x} \\{p.y}")
-`;
-		await build_and_check_output(input, "construct_multi_param", "3 4");
-	});
-
 	test("construct struct and use field in expression", async () => {
 		const input = `
 struct Point {

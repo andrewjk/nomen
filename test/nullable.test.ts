@@ -86,16 +86,6 @@ if x == null {
 		await build_and_check_output(input, "nullable_eq_null", "is null");
 	});
 
-	test("nullable != null comparison", async () => {
-		const input = `
-var int? x = 5
-if x != null {
-    Console.write("\\{x}")
-}
-`;
-		await build_and_check_output(input, "nullable_neq_null", "5");
-	});
-
 	test("null == nullable comparison", async () => {
 		const input = `
 var int? x = null

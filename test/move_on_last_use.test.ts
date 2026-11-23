@@ -170,9 +170,3 @@ pub func main = () {
 	const c = build_main(input, "c");
 	expect(c).toContain("string_copy(a)");
 });
-
-test.skip("kill-switch off restores the strdup'd copy", () => {
-	// Retired by D3 (explicit mv required): the kill switch controlled the
-	// last-use inference that silently rewrote `var u = t`. Bindings now
-	// require an explicit `mv`/`.copy()`, so there is nothing to toggle.
-});

@@ -112,19 +112,6 @@ describe("`as ref int` is rejected (cast leak closed)", () => {
 			var ref int r = zero as ref int
 		`);
 	});
-
-	test("`as ref int` is NOT the cve-rs null-fabrication primitive (verified)", () => {
-		// Documentation-only assertion retained for the historical record.
-		// Empirically verified by building the generated code directly
-		// (see CVE-RS.md) before the checker gap was closed:
-		//   - C backend: emitted `&(long)<operand>` — the cast made every
-		//     operand an rvalue, so clang rejected it ("address of rvalue").
-		//   - aarch64 backend: emitted a value-copy; `0 as ref int` read the
-		//     value 0 — it did NOT dereference address 0 / segfault.
-		// The cast never reinterpreted an integer VALUE as a pointer; the
-		// cve-rs segfault.rs / references.rs primitives were never achievable.
-		expect(true).toBe(true);
-	});
 });
 
 // ---------------------------------------------------------------------------

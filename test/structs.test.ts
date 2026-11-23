@@ -401,23 +401,6 @@ Console.write("\\{c.x} \\{c.y}")
 		await build_and_check_output(input, "struct_value_method_copy_self", "1 2");
 	});
 
-	test("struct mutating method", async () => {
-		const input = `
-struct Counter {
-  var int count = 0
-  func increment = (ref self) {
-    self.count = self.count + 1
-  }
-}
-var Counter c = Counter()
-c.increment()
-c.increment()
-c.increment()
-Console.write("\\{c.count}")
-`;
-		await build_and_check_output(input, "struct_mutating_method", "3");
-	});
-
 	test("struct method with default param", async () => {
 		const input = `
 struct Adder {
@@ -531,31 +514,6 @@ mv struct Person {
 }
 `;
 		const expected = [test_error(input, "Assignment cannot appear here", 4, 3)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
-	});
-
-	test("field type mismatch on construction", () => {
-		const input = `
-mv struct Dog {
-  mv string name
-}
-const dog = Dog(5)
-`;
-		const expected = [test_error(input, "Type mismatch in param: int (expected string)", 5, 17)];
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
-	});
-
-	test("unknown field access", () => {
-		const input = `
-mv struct Person {
-  var int age
-}
-var Person p = Person(0)
-const x = p.name
-`;
-		const expected = [test_error(input, "Field not found: name", 6, 13)];
 		const parsed = parse(input);
 		expect(parsed.errors).toEqual(expected);
 	});

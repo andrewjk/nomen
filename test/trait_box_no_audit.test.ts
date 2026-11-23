@@ -42,6 +42,5 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "trait_box_no_audit", "area 9", true, {
 			audit: false,
 		});
-		expect(true).toBe(true);
 	});
 });

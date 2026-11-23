@@ -7,6 +7,6 @@
 [system_lib] C object: built; aarch64 object: built
 
  Test Files  611 passed (611)
-      Tests  5432 passed | 8 skipped (5440)
-   Start at  15:08:07
-   Duration  1175.32s (transform 33.33s, setup 0ms, import 967.42s, tests 8155.75s, environment 142ms)
+      Tests  5404 passed | 1 skipped (5405)
+   Start at  16:14:40
+   Duration  574.90s (transform 29.10s, setup 0ms, import 728.81s, tests 3660.24s, environment 84ms)

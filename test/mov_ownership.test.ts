@@ -93,21 +93,6 @@ struct Holder {
 				),
 			]);
 		});
-
-		test("trait-typed field is rejected (B5: boxed-handle field lowering is future work)", () => {
-			const input = `
-trait Speaker {
-  func say = (out string)
-}
-mv struct Holder {
-  mv Speaker s
-}
-`;
-			const parsed = parse(input);
-			expect(
-				parsed.errors.some((e) => e.message.includes("a trait-typed field is not supported yet")),
-			).toBe(true);
-		});
 	});
 
 	describe("class-type fields must use mv", () => {

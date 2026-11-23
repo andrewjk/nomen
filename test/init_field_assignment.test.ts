@@ -205,25 +205,6 @@ func fill = (ref Person p) {
 		expect(parsed.errors).toEqual([]);
 	});
 
-	test("a ref param forwards to ref-self methods", () => {
-		const input = `
-mv struct Person {
-  mv string name
-  func set_name = (ref self) {
-    self.name = "x"
-  }
-  pub func #init = (ref self) {
-    fill(ref self)
-  }
-}
-func fill = (ref Person p) {
-  p.set_name()
-}
-`;
-		const parsed = parse(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
 	test("a value-struct re-bind inside a helper is a copy, not an alias", () => {
 		const input = `
 struct Pair {

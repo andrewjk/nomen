@@ -85,20 +85,6 @@ Console.write(g.fmt_frame(1) + " " + g.fmt_frame(2) + " " + g.fmt_frame(3) + " "
 		);
 	});
 
-	test("zstack overlaps children, sizing to the largest", async () => {
-		await run(
-			"container_zstack",
-			`
-var Container z = ZStack()
-z.add(0, 100, 50, 1)
-z.add(0, 200, 80, 1)
-z.compute(800, 600)
-Console.write(z.fmt_frame(1) + " " + z.fmt_frame(2) + "\\n")
-`,
-			"0,0,200,80 0,0,200,80\n",
-		);
-	});
-
 	test("nested hstack inside vstack arranges its children", async () => {
 		await run(
 			"container_nested_hstack",

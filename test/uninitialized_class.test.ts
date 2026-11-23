@@ -50,42 +50,6 @@ Console.write("\\{f.x}")
 		expect(parsed.errors.some((e) => e.message.includes("not initialized"))).toBe(true);
 	});
 
-	test("access field on var initialized in all if branches", () => {
-		const input = `
-mv struct Foo {
-    var int x
-}
-
-var Foo f
-if true {
-    f = Foo(10)
-} else {
-    f = Foo(20)
-}
-Console.write("\\{f.x}")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
-	test("access field on var initialized only in one if branch", () => {
-		const input = `
-mv struct Foo {
-    var int x
-}
-
-var Foo f
-if true {
-    f = Foo(10)
-} else {
-    f = Foo(20)
-}
-Console.write("\\{f.x}")
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
 	test("access field on var initialized in all match branches", () => {
 		const input = `
 mv struct Foo {

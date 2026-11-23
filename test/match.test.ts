@@ -639,29 +639,6 @@ func main = () {
 		expect(parsed.errors[0].message).toContain("west");
 	});
 
-	test("exhaustive enum match with all cases", () => {
-		const input = `
-enum Direction {
-  case north
-  case south
-}
-
-func main = () {
-  var direction = Direction.north
-  match direction {
-    case .north {
-      Console.write("north")
-    }
-    case .south {
-      Console.write("south")
-    }
-  }
-}
-`;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors).toEqual([]);
-	});
-
 	test("exhaustive enum match with else", () => {
 		const input = `
 enum Direction {
