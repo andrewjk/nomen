@@ -89,12 +89,8 @@ test("sorts runs of imports", () => {
 
 test("keeps namespace paths tight", () => {
 	expect(format("import System:: Controls\n")).toBe("import System::Controls\n");
-	expect(format("import System :: Controls :: Geometry\n")).toBe(
-		"import System::Controls::Geometry\n",
-	);
-	expect(format("var Geometry :: Size s = Controls :: Geometry :: Size()\n")).toBe(
-		"var Geometry::Size s = Controls::Geometry::Size()\n",
-	);
+	expect(format("import System :: Controls\n")).toBe("import System::Controls\n");
+	expect(format("var Size s = Controls :: Size()\n")).toBe("var Size s = Controls::Size()\n");
 });
 
 test("binds panic and todo tightly to their parens", () => {

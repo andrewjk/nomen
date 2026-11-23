@@ -1,5 +1,5 @@
 import System
-import System::Stream::File
+import System::Stream
 import System::Test
 
 // Reads `fileio_corpus.txt` via a path RELATIVE to the --in root: `nomen

@@ -6,7 +6,7 @@ them, compiles + links + runs the resulting program, and renders vitest-style
 output from the records the binary streams back over stdout.
 
 This document is the design spec for the feature. The runtime half lives in
-[`core/System/Test.nm`](core/System/Test.nm) (the `Tester` class); the compile
+[`core/System/Test/Test.nm`](core/System/Test/Test.nm) (the `Tester` class); the compile
 half lives in [`cli/src/test.ts`](cli/src/test.ts) and
 [`cli/src/bench_loop.nm`](cli/src/bench_loop.nm).
 
@@ -71,7 +71,7 @@ are ordinary module-level functions the tests can call.
 
 ## The `Tester` API
 
-`Tester` is defined in [`core/System/Test.nm`](core/System/Test.nm). Every test
+`Tester` is defined in [`core/System/Test/Test.nm`](core/System/Test/Test.nm). Every test
 function receives one by reference.
 
 ### Assertions

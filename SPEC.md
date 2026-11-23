@@ -1936,12 +1936,14 @@ of a module:
 
 ```
 import System::Controls   // imports the Controls namespace from System
-import System::Controls::Geometry   // imports a single module file
 ```
 
-An import path must mirror the library's file layout — a namespace directory
-or a module file. A path that names nothing (`import System::Contrls`, note
-the typo) is a compile error: `Unknown import path: System::Contrls`.
+An import names a **namespace** — a directory of the library. Module files
+(`Controls/Geometry.nm`) are invisible to imports: a file-segment spelling
+(`import System::Controls::Geometry`) is a compile error —
+`Unknown import path: System::Controls::Geometry` — import the namespace
+instead. A path that names nothing (`import System::Contrls`, note the typo)
+is the same error: `Unknown import path: System::Contrls`.
 
 Imports must appear at the top level (root scope) — an `import` inside a
 function, struct, or other scope is a compile error.
@@ -1959,19 +1961,24 @@ import System::Text
 import System::Controls
 
 const ok = Text::Regex.test("a+b", "aaab")
-const size = Controls::Geometry::Size()
+const size = Controls::Size()
 ```
 
 A `::` path always names an entity — a type, a free function, or a value.
 Member and method access stays with `.` (`Text::Regex.test(...)`, not
 `Text::Regex::test(...)`).
 
+Every segment before the last is a NAMESPACE — a directory of the library.
+Module files are invisible to the path: `Geometry.nm` does not appear in
+`Size`'s spelling (`Controls::Size()`, never `Controls::Geometry::Size()`),
+and a file-segment spelling is a compile error —
+`Unknown namespace: Controls::Geometry`.
+
 A qualified reference is visible only when the referencing file can reach the
 name's namespace — its own namespace, an ancestor of it, or an import
 (see [Visibility Modifiers](#visibility-modifiers)). `import System` alone
 does not expose `Text` or `Controls` names, however the reference is spelled.
-Every segment before the last must also be a real namespace or module path of
-the library; `Control::Button` (note the missing `s`) is a compile error:
+`Control::Button` (note the missing `s`) is a compile error:
 `Namespace Control::Button is not imported`.
 
 ### Method/Function Calls as Expressions

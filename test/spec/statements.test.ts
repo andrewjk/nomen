@@ -650,9 +650,20 @@ describe("spec: imports", () => {
 		const input = `
 import System
 import System::Controls
-import System::Controls::Geometry
 `;
 		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("module files are invisible to imports", () => {
+		// docs/SCOPING.md: an import names a NAMESPACE directory. Geometry.nm
+		// is a module file, not a namespace — the file-segment spelling is an
+		// error.
+		const input = `
+import System::Controls::Geometry
+`;
+		expect(parse(input, core).errors).toEqual([
+			test_error(input, "Unknown import path: System::Controls::Geometry", 2, 1),
+		]);
 	});
 });
 
@@ -664,7 +675,7 @@ import System::Text
 import System::Controls
 
 const ok = Text::Regex.test("a+b", "aaab")
-const size = Controls::Geometry::Size()
+const size = Controls::Size()
 `;
 		expect(compile_module(input)).toEqual([]);
 	});

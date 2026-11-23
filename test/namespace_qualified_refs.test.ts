@@ -19,10 +19,19 @@ describe("namespace imports", () => {
 		expect(parse(input, core).errors).toEqual([]);
 	});
 
-	test("deep import System::Controls::Geometry compiles", () => {
+	test("a module file is not an import path", () => {
+		// docs/SCOPING.md: files are invisible to imports — only namespace
+		// directories are importable.
 		const input = `import System::Controls::Geometry
 `;
-		expect(parse(input, core).errors).toEqual([]);
+		expect(parse(input, core).errors).toEqual([
+			{
+				message: "Unknown import path: System::Controls::Geometry",
+				start: 0,
+				line: 1,
+				column: 1,
+			},
+		]);
 	});
 
 	test("bare module import compiles", () => {
@@ -77,7 +86,7 @@ describe("qualified references", () => {
 		const imports = "import System\nimport System::Controls";
 		const qualified = parse(
 			module_of(
-				`var Controls::Geometry::Size s = Controls::Geometry::Size()
+				`var Size s = Controls::Size()
 	\tConsole.write("\\{s.width} \\{s.height}")`,
 				imports,
 			),
@@ -136,8 +145,10 @@ describe("qualified reference errors", () => {
 	});
 
 	test("unknown qualified name still reports the bare name", () => {
+		// The prefix names the namespace (`Controls`); the final segment is the
+		// entity name, resolved flat — an unknown one reports as the bare name.
 		const input = module_of(
-			`var Size s = Controls::Geometry::Siz()`,
+			`var Size s = Controls::Siz()`,
 			"import System\nimport System::Controls",
 		);
 		const errors = parse(input, core).errors;

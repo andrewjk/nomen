@@ -19,8 +19,7 @@ describe("Control trait (Phase 6)", () => {
 		async () => {
 			const input = `
 import System
-import System::Controls::Control
-import System::Controls::Geometry
+import System::Controls
 
 struct Leaf: Control {
 	var int w = 30

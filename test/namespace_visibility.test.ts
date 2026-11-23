@@ -34,7 +34,7 @@ pub func main = () {
 import System
 
 pub func main = () {
-	var s = Controls::Geometry::Size()
+	var s = Controls::Size()
 	s.width = 10
 	Console.write_line(s.width.to_string())
 }
@@ -90,7 +90,7 @@ pub func main = () {
 		expect(ok1).toEqual([]);
 		const ok2 = errors_of(`
 import System
-import System::Text::Regex
+import System::Text
 
 pub func main = () {
 	if Regex.test("a", "abc") {
@@ -121,7 +121,7 @@ pub func main = () {
 	test("P7: bare library helpers are not callable from user code", () => {
 		const errors = errors_of(`
 import System
-import System::Text::Regex
+import System::Text
 
 pub func main = () {
 	var a = is_alpha_byte('q')

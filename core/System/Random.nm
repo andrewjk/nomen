@@ -13,7 +13,6 @@
 //	var uint64 roll = rng.below(6)          // 0..5
 //	var uint64 ms = rng.range(1000, 10000)  // 1000..10000, inclusive
 //
-import Time
 
 // Random is an OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 3 — the shape
 // menu): bindings mv instead of alias. The state is a bare uint64, so the

@@ -11,7 +11,7 @@ describe("library resolution", () => {
 	test("importing System::Text does not drag Controls (ObjC) into the build", () => {
 		const input = `
 import System
-import System::Text::Regex
+import System::Text
 
 pub func main = () {
 	if Regex.test("a", "abc") {
@@ -28,7 +28,7 @@ pub func main = () {
 	test("importing System::Text::Regex still resolves the Regex module", () => {
 		const input = `
 import System
-import System::Text::Regex
+import System::Text
 
 pub func main = () {
 	if Regex.test("a", "abc") {

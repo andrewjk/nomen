@@ -6,7 +6,7 @@ import check from "./check.ts";
 import { collect_spawned_starts } from "./check/utils/comptime.ts";
 import { ns_is_ancestor_or_self } from "./check/utils/namespaces.ts";
 import { attach_doc_comments } from "./doc_comments.ts";
-import { library_dir_prefixes, library_path_prefixes, type Library } from "./lib.ts";
+import { library_dir_prefixes, type Library } from "./lib.ts";
 import RootNode from "./nodes/RootNode.ts";
 import parse_statement from "./parse/parse_statement.ts";
 import type ParseStatus from "./parse/ParseStatus.ts";
@@ -216,16 +216,14 @@ function import_granted_namespace(
 	// of who imports them — there is exactly one library, and inline parses
 	// (no file path) still need the correct grant.
 	if (library && segments[0] === "System") {
+		// Namespace imports only — module files are invisible to imports
+		// (docs/SCOPING.md); validate_import_path rejects file paths.
 		const system_root = path.resolve(library.dir, "System");
 		const base = segments.slice(1);
 		if (!base.length) return "System";
 		const dir = path.resolve(system_root, ...base);
 		if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
 			return derive_dir_namespace(dir, library, entry_dir);
-		}
-		const file = `${dir}.nm`;
-		if (fs.existsSync(file)) {
-			return derive_dir_namespace(path.dirname(file), library, entry_dir);
 		}
 		// Unknown path — validate_import_path already reported the typo.
 		return name;
@@ -354,7 +352,6 @@ function validate_qualified_paths(
 	imports_by_file: Map<number, Set<string>>,
 ): void {
 	if (!library) return;
-	const path_prefixes = library_path_prefixes(library);
 	const dir_prefixes = library_dir_prefixes(library);
 	for (const ref of status.qualified_paths) {
 		const prefix_segments = ref.segments.slice(0, -1);
@@ -362,7 +359,6 @@ function validate_qualified_paths(
 		const ns = qualified_prefix_namespace(
 			prefix_segments,
 			library,
-			path_prefixes,
 			dir_prefixes,
 			status,
 			ref.start,
@@ -387,7 +383,6 @@ function validate_qualified_paths(
 function qualified_prefix_namespace(
 	segments: string[],
 	library: Library,
-	path_prefixes: Set<string>,
 	dir_prefixes: Set<string>,
 	status: ParseStatus,
 	start: number,
@@ -395,21 +390,17 @@ function qualified_prefix_namespace(
 	const lib_rooted = segments[0] === "System" || dir_prefixes.has(segments[0]);
 	if (lib_rooted) {
 		const rel = segments[0] === "System" ? segments.slice(1).join("/") : segments.join("/");
-		if (rel !== "" && !path_prefixes.has(rel) && !path_prefixes.has(`System/${rel}`)) {
-			add_error(status, `Unknown namespace: ${segments[0]}`, start);
+		// A qualified prefix names a NAMESPACE — a directory of the library.
+		// Module files are invisible to the path: `Controls::Geometry::Size`
+		// does not resolve through Geometry.nm (the type is `Controls::Size`),
+		// and a file-segment spelling is a loud error rather than a silent
+		// collapse (docs/SCOPING.md).
+		if (!dir_prefixes.has(rel)) {
+			add_error(status, `Unknown namespace: ${segments.join("::")}`, start);
 			return undefined;
 		}
-		// Collapse to the longest directory prefix.
-		for (let take = segments.length; take >= 1; take--) {
-			const cand = segments.slice(0, take).join("/");
-			const rel_cand = cand.startsWith("System/") ? cand.slice("System/".length) : cand;
-			if (take === 1 && (cand === "System" || rel_cand === "")) return "System";
-			if (dir_prefixes.has(rel_cand)) {
-				const parts = rel_cand === "" ? [] : rel_cand.split("/");
-				return ["System", ...parts].join("::");
-			}
-		}
-		return "System";
+		const parts = rel === "" ? [] : rel.split("/");
+		return ["System", ...parts].join("::");
 	}
 	// The program's own namespace tree, spelled as-is.
 	return segments.join("::");

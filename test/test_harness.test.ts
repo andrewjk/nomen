@@ -313,9 +313,9 @@ test("run_test_file links the companion C file (spawn fixture)", async () => {
 	}
 }, 60_000);
 
-test("run_test_file links aarch64 with System::Stream::File and honors the CWD contract", async () => {
+test("run_test_file links aarch64 with System::Stream and honors the CWD contract", async () => {
 	// Two contracts in one fixture:
-	// 1. aarch64 link: `import System::Stream::File` pulls Tcp's
+	// 1. aarch64 link: `import System::Stream` pulls Tcp's
 	//    `aarch64_use_c` companions into the object — the generated main
 	//    references the Tcp_* thunks even though the test never calls Tcp,
 	//    and the link must provide the companion C (the sibling-module

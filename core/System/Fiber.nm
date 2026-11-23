@@ -36,7 +36,6 @@
 
 // The launch surface's return type (ASYNC.md: the dependency is
 // declared by the library file, not inferred from user-source tokens).
-import Task
 
 /**
  * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking

@@ -159,11 +159,12 @@ its `extend`s). `const` fields are immutable everywhere.
 ```nomen
 import System                  // standard library
 import System::Test            // submodule
-import System::Controls::Geometry // a single module file
+import System::Controls        // a namespace (module files are invisible)
 ```
 
-Import paths must mirror the library's file layout — a typo'd path
-(`import System::Contrls`) is a compile error.
+An import names a namespace (a library directory) — module files are
+invisible to imports, so `import System::Controls::Geometry` is a compile
+error. A typo'd path (`import System::Contrls`) is too.
 
 Files in the same folder are one module — they already see each other's
 declarations, so never import a sibling. Only cross-namespace references

@@ -1,5 +1,5 @@
 import add_error from "../add_error.ts";
-import { library_path_prefixes } from "../lib.ts";
+import { library_dir_prefixes } from "../lib.ts";
 import ImportNode from "../nodes/ImportNode.ts";
 import RootNode from "../nodes/RootNode.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -45,6 +45,9 @@ function validate_import_path(status: ParseStatus, segments: string[], start: nu
 	if (segments.some((s) => !s)) return;
 	if (segments[0] !== "System") return;
 	if (segments.length === 1) return;
-	if (library_path_prefixes(status.library!).has(segments.join("/"))) return;
+	// Imports name NAMESPACE directories — module files are invisible to
+	// imports (`import System::Controls`, never
+	// `import System::Controls::Geometry`) — docs/SCOPING.md.
+	if (library_dir_prefixes(status.library!).has(segments.slice(1).join("/"))) return;
 	add_error(status, `Unknown import path: ${segments.join("::")}`, start);
 }
