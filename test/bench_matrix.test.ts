@@ -8,6 +8,7 @@ import { expect, test } from "vite-plus/test";
 import build from "../src/build";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
+import { build_cache_key, load_marker, save_marker } from "./build_cache";
 import { postprocess_macos } from "./postprocess";
 
 /**
@@ -96,6 +97,17 @@ const MATRIX: [string, string[]][] = [
 
 for (const [name, args] of MATRIX) {
 	test(`bench matrix byte-identical: ${name}`, async () => {
+		// Warm-run marker: "the two backends agreed" is deterministic for
+		// unchanged compiler + library sources (both in the key).
+		const folder = path.resolve("test", "out", "bench_matrix_identity");
+		const key = build_cache_key({
+			input: `${name}:${args.join(" ")}`,
+			raw: false,
+			kind: "native",
+			arch: "aarch64+c",
+			extra: "bench_matrix",
+		});
+		if (load_marker(folder, key)) return;
 		const a64 = await build_bench(name, "aarch64");
 		const c = await build_bench(name, "c");
 		const [out_a64, out_c] = await Promise.all([
@@ -103,5 +115,6 @@ for (const [name, args] of MATRIX) {
 			run_bin(c, args, 180000),
 		]);
 		expect(out_a64).toBe(out_c);
+		save_marker(folder, key);
 	}, 420000);
 }

@@ -1,7 +1,13 @@
+import path from "node:path";
+
 import { expect, test } from "vite-plus/test";
 
 import build from "../src/build";
-import { set_neon_vectorization_enabled } from "../src/build_aarch64/neon_emit";
+import {
+	neon_vectorization_enabled,
+	set_neon_vectorization_enabled,
+} from "../src/build_aarch64/neon_emit";
+import { cached_compile } from "./build_cache";
 import { parse_raw } from "./parse_with_imports";
 
 /**
@@ -16,11 +22,22 @@ import { parse_raw } from "./parse_with_imports";
  */
 
 function compile_aarch64(source: string): string {
-	const parsed = parse_raw(source, { arch: "aarch64" });
-	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	expect(result.errors ?? []).toEqual([]);
-	return result.code;
+	// Warm-run cache (test/build_cache.ts): keyed by the program plus the
+	// NEON toggle state, since these tests flip it to prove what does and
+	// does not vectorize.
+	const cached = cached_compile(source, {
+		arch: "aarch64",
+		raw: true,
+		audit: true,
+		folder: path.resolve("test", "out", "neon_vector_cache"),
+		extra: neon_vectorization_enabled() ? "neon:on" : "neon:off",
+		parse: (s) => parse_raw(s, { arch: "aarch64" }),
+		build,
+	});
+	if (!cached) throw new Error("cached_compile failed");
+	expect(cached.parse_errors).toEqual([]);
+	expect(cached.build_errors).toEqual([]);
+	return cached.code;
 }
 
 function compiles_without_vector(source: string): string {

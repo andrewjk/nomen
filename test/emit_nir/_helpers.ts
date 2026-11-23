@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { expect } from "vite-plus/test";
 
 import build from "../../src/build";
@@ -11,6 +13,7 @@ import { set_slp_pair_enabled } from "../../src/build_aarch64/slp_pair";
 import { set_region_pool_enabled } from "../../src/build_aarch64/utils/nir_regalloc";
 import { set_nir_site_promotion_enabled } from "../../src/build_aarch64/utils/nir_regalloc";
 import { set_value_numbering_enabled } from "../../src/build_aarch64/value_number";
+import { build_cache_key, load_marker, save_marker } from "../build_cache";
 import parse_with_imports, { parse_raw } from "../parse_with_imports";
 
 /**
@@ -39,6 +42,18 @@ export function compile_aarch64(source: string, raw = false, raw_statements = fa
 }
 
 export function expect_byte_identical(source: string, raw = false, raw_statements = false): void {
+	// Warm-run cache: the two-arm comparison is deterministic for unchanged
+	// compiler + library sources (both hashed into the key), so a marker
+	// stands in for re-compiling both arms.
+	const folder = path.resolve("test", "out", "nir_identity");
+	const key = build_cache_key({
+		input: source,
+		raw,
+		kind: "native",
+		arch: "aarch64",
+		extra: `nir:${raw_statements ? 1 : 0}`,
+	});
+	if (load_marker(folder, key)) return;
 	set_nir_emission_enabled(false);
 	set_neon_vectorization_enabled(false);
 	// Decl-site register binding (tranche G stage 3) is cursor-dependent by
@@ -77,6 +92,7 @@ export function expect_byte_identical(source: string, raw = false, raw_statement
 		const with_nir = compile_aarch64(source, raw, raw_statements);
 		expect(with_nir.length).toBeGreaterThan(0);
 		expect(with_nir).toEqual(baseline);
+		save_marker(folder, key);
 	} finally {
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(true);

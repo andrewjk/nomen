@@ -1,11 +1,11 @@
+import fs from "node:fs";
 // Split out of test/emit_nir.test.ts, then one test PER benchmark file:
 // the tests are registered dynamically from bench/nomen so a new benchmark is
 // covered automatically (no registry to update), while each file gets its own
 // test — per-test timeout headroom, a failure name that says which benchmark
 // broke, and no early-abort hiding later failures. Shared byte-identity
 // harness: ./_helpers.ts.
-
-import fs from "node:fs";
+import path from "node:path";
 
 import { expect, test } from "vite-plus/test";
 
@@ -24,6 +24,7 @@ import { set_value_numbering_enabled } from "../../src/build_aarch64/value_numbe
 import join from "../../src/join";
 import { get_library } from "../../src/lib";
 import parse from "../../src/parse";
+import { build_cache_key, load_marker, save_marker } from "../build_cache";
 
 const BENCH_DIR = "bench/nomen";
 const lib = get_library("core");
@@ -41,6 +42,17 @@ const lib = get_library("core");
  */
 function expect_bench_byte_identical(file: string): void {
 	const source = join(`${BENCH_DIR}/${file}`, "core");
+	// Warm-run marker: the two-arm comparison is deterministic for unchanged
+	// compiler + library sources (both in the key).
+	const folder = path.resolve("test", "out", "bench_identity");
+	const key = build_cache_key({
+		input: source,
+		raw: false,
+		kind: "native",
+		arch: "aarch64",
+		extra: `bench:${file}`,
+	});
+	if (load_marker(folder, key)) return;
 	const compile = (): string => {
 		const parsed = parse(source, lib, undefined, { arch: "aarch64", allow_internal: true });
 		expect(parsed.errors, file).toEqual([]);
@@ -71,6 +83,7 @@ function expect_bench_byte_identical(file: string): void {
 	set_slp_pair_enabled(false);
 	try {
 		expect(compile(), file).toEqual(baseline);
+		save_marker(folder, key);
 	} finally {
 		set_nir_emission_enabled(true);
 		set_neon_vectorization_enabled(true);

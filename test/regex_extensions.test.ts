@@ -1,18 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import { run_cached } from "./compile_cached";
 
 // Companion-C allocations aren't tracked by the audit wrappers (which only
 // wrap assembly-side malloc/free), so audit would report a counter imbalance.
 const opts = { arch: "aarch64", audit: false } as const;
 
 async function run(name: string, input: string, expected: string) {
-	const parsed = parse_with_imports(input, { arch: "aarch64" });
-	expect(parsed.errors).toEqual([]);
-	const result = build(parsed.root, { arch: "aarch64" });
-	await check_output(name, result, expected, opts);
+	await run_cached(name, input, expected, opts);
 }
 
 describe("Regex non-capturing groups", () => {

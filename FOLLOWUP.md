@@ -797,20 +797,30 @@ found and removed dead weight:
   `copy_semantics` ×2, `memory_unsafe_interp` int-method variant). Also
   renamed the stale "…crashes" interpolation tests (the bug is fixed).
 
-Where the time actually goes, and options if it needs to shrink:
+**Persistent build cache (implemented).** `test/build_cache.ts` memoizes
+the whole parse+check+codegen pipeline per (program, flags), keyed by the
+program text, every build/parse flag, and content hashes of the compiler
+sources (`src/**/*.ts`) and the library (`core/**`). `check_output` keeps
+its own compiled-binary/stdout cache, so a warm run with nothing changed
+replays everything from disk. Wired into:
 
-- **GUI (test/gui/ + gui_*): 637s, 121 tests.** Each builds a single-TU
-  ObjC program on BOTH backends and recompiles the whole System library
-  per test (the precompiled system.o cannot carry AppKit). Prebuilding an
-  ObjC/GUI variant of system.o (or a per-file shared window program) would
-  cut most of this.
-- **Whole-benchmark-corpus tests: ~127s.** `nir.test.ts`, `nir_cfg.test.ts`,
-  `emit_c_nir.test.ts`, `emit_nir/benchmark_corpus.test.ts` and
-  `bench_matrix.test.ts` each parse/lower the entire bench corpus
-  independently. They test different properties (lowering completeness,
-  CFG/liveness, C-emitter byte-equality, feature matrix), so they are not
-  redundant — but sharing one parsed/lowered corpus (a module-scope cache)
-  would save most of the duplicated work.
-- **The remaining 2,300s is 4,295 distinct build+run tests** (0.4-0.9s
-  each: compile the user TU + link `system.o` + run), which is the
-  suite's real coverage; there is no redundancy to remove there.
+- `build_and_check_output` (~720 tests, both backends; the JS arm too);
+- the `run_cached` helper for the local `run(...)` wrappers (regex family);
+- `neon_vector`'s compile helper (key includes the NEON toggle state);
+- the byte-identity harnesses (`emit_nir/_helpers`, `emit_c_nir`,
+  `emit_nir/benchmark_corpus`) via pass markers — the two-arm comparison is
+  deterministic for an unchanged compiler/library;
+- `bench_matrix` (the two-backend output equality is a pass marker);
+- `check_output`'s JS arm now caches stdout like the native arms.
+
+Measured: cold-ish warm run 583s → fully warm **218s** (tests summed
+3,744s → 958s). The remaining floor is per-test-FILE module loading of the
+compiler (~590s summed across 8 vitest workers ≈ 74s wall) plus tests that
+must inspect ASTs or run bespoke fixtures (`system_lib_fresh`,
+`test_harness`, extension/source-map tests).
+
+Further options, if needed: cache the AST-inspecting helpers' results
+(parse-only tests), share the compiler module graph across files
+(`isolate: false` is unsafe — the compiler carries module state), and a
+prebuilt ObjC `system.o` variant for the GUI tests (now mostly warm-cache
+reads, so this is less valuable than before).

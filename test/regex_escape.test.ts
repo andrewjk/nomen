@@ -2,6 +2,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import build from "../src/build";
 import check_output from "./check_output";
+import { run_cached } from "./compile_cached";
 import parse_with_imports from "./parse_with_imports";
 
 const opts = { arch: "aarch64", audit: false } as const;
@@ -19,10 +20,7 @@ Console.write("\\{Regex.count("[\\\\r]", "a\\rb")}\\n")
 Console.write("\\{Regex.test_ci("car\\\\r", "car\\r")}\\n")
 Console.write("\\{Regex.count("\\\\rz", "arz")}\\n")
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_escape_control", result, "true\n1\n1\ntrue\n0\n", opts);
+		await run_cached("regex_escape_control", input, "true\n1\n1\ntrue\n0\n", opts);
 	});
 
 	test("escaped control atoms keep the first-byte prefilter sound", async () => {
@@ -32,20 +30,14 @@ Console.write("\\{Regex.count("\\\\rz", "arz")}\\n")
 Console.write("\\{Regex.count("(\\\\r)?\\\\n", "a\\rb\\nc\\nd")}\\n")
 Console.write("\\{Regex.count("\\\\t+", "x\\t\\ty")}\\n")
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_escape_prefilter", result, "2\n1\n", opts);
+		await run_cached("regex_escape_prefilter", input, "2\n1\n", opts);
 	});
 
 	test("unsupported letter escape still matches a literal letter (no error)", async () => {
 		const input = `
 Console.write("\\{Regex.test("val\\\\z", "valz")}\\n")
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_escape_literal_letter", result, "true\n", opts);
+		await run_cached("regex_escape_literal_letter", input, "true\n", opts);
 	});
 });
 

@@ -1,8 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import { run_cached } from "./compile_cached";
 
 // Companion-C allocations aren't tracked by the audit wrappers (which only
 // wrap assembly-side malloc/free), so audit would report a counter imbalance.
@@ -17,10 +15,7 @@ if Regex.test("fox", "the quick brown fox") {
 	Console.write("no")
 }
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_test_literal", result, "yes", opts);
+		await run_cached("regex_test_literal", input, "yes", opts);
 	});
 
 	test("no match returns false", async () => {
@@ -31,10 +26,7 @@ if Regex.test("cat", "the quick brown fox") {
 	Console.write("no")
 }
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_test_none", result, "no", opts);
+		await run_cached("regex_test_none", input, "no", opts);
 	});
 
 	test("character class matches", async () => {
@@ -45,10 +37,7 @@ if Regex.test("[0-9]+", "abc123def") {
 	Console.write("none")
 }
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_test_class", result, "digit", opts);
+		await run_cached("regex_test_class", input, "digit", opts);
 	});
 
 	test("anchored pattern", async () => {
@@ -59,10 +48,7 @@ if Regex.test("^hello", "hello world") {
 	Console.write("no")
 }
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_test_anchor", result, "anchored", opts);
+		await run_cached("regex_test_anchor", input, "anchored", opts);
 	});
 });
 
@@ -72,10 +58,7 @@ describe("Regex match", () => {
 const string m = Regex.match("[0-9]+", "abc123def456")
 Console.write(m)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_match_first", result, "123", opts);
+		await run_cached("regex_match_first", input, "123", opts);
 	});
 
 	test("returns empty string when no match", async () => {
@@ -87,10 +70,7 @@ if m.length == 0 {
 	Console.write(m)
 }
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_match_none", result, "empty", opts);
+		await run_cached("regex_match_none", input, "empty", opts);
 	});
 
 	test("matches a word pattern", async () => {
@@ -98,10 +78,7 @@ if m.length == 0 {
 const string m = Regex.match("[a-z]+", "123 hello 456")
 Console.write(m)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_match_word", result, "hello", opts);
+		await run_cached("regex_match_word", input, "hello", opts);
 	});
 });
 
@@ -111,10 +88,7 @@ describe("Regex count", () => {
 const int c = Regex.count("ab", "ababab")
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_count_basic", result, "3", opts);
+		await run_cached("regex_count_basic", input, "3", opts);
 	});
 
 	test("returns 0 when no matches", async () => {
@@ -122,10 +96,7 @@ Console.write(c.to_string())
 const int c = Regex.count("xyz", "hello world")
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_count_none", result, "0", opts);
+		await run_cached("regex_count_none", input, "0", opts);
 	});
 
 	test("counts single match", async () => {
@@ -133,10 +104,7 @@ Console.write(c.to_string())
 const int c = Regex.count("fox", "the quick brown fox")
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_count_one", result, "1", opts);
+		await run_cached("regex_count_one", input, "1", opts);
 	});
 
 	test("counts with character class", async () => {
@@ -144,10 +112,7 @@ Console.write(c.to_string())
 const int c = Regex.count("[0-9]+", "abc123def456ghi789")
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_count_class", result, "3", opts);
+		await run_cached("regex_count_class", input, "3", opts);
 	});
 
 	test("counts alternation patterns", async () => {
@@ -155,10 +120,7 @@ Console.write(c.to_string())
 const int c = Regex.count("cat|dog", "cat and dog and cat")
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_count_alt", result, "3", opts);
+		await run_cached("regex_count_alt", input, "3", opts);
 	});
 
 	test("counts overlapping-capable patterns", async () => {
@@ -166,10 +128,7 @@ Console.write(c.to_string())
 const int c = Regex.count("aa", "aaaa")
 Console.write(c.to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_count_overlap", result, "2", opts);
+		await run_cached("regex_count_overlap", input, "2", opts);
 	});
 });
 
@@ -179,10 +138,7 @@ describe("Regex replace_all", () => {
 const string r = Regex.replace_all("o", "foo boo moo", "0")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_basic", result, "f00 b00 m00", opts);
+		await run_cached("regex_replace_basic", input, "f00 b00 m00", opts);
 	});
 
 	test("returns input when no matches", async () => {
@@ -190,10 +146,7 @@ Console.write(r)
 const string r = Regex.replace_all("xyz", "hello world", "0")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_none", result, "hello world", opts);
+		await run_cached("regex_replace_none", input, "hello world", opts);
 	});
 
 	test("replaces with empty string", async () => {
@@ -201,10 +154,7 @@ Console.write(r)
 const string r = Regex.replace_all(" ", "a b c", "")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_empty", result, "abc", opts);
+		await run_cached("regex_replace_empty", input, "abc", opts);
 	});
 
 	test("replaces with multi-char replacement", async () => {
@@ -212,10 +162,7 @@ Console.write(r)
 const string r = Regex.replace_all("fox", "the fox and the fox", "DOG")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_multi", result, "the DOG and the DOG", opts);
+		await run_cached("regex_replace_multi", input, "the DOG and the DOG", opts);
 	});
 
 	test("replaces character class matches", async () => {
@@ -223,10 +170,7 @@ Console.write(r)
 const string r = Regex.replace_all("[0-9]", "a1b2c3", "X")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_class", result, "aXbXcX", opts);
+		await run_cached("regex_replace_class", input, "aXbXcX", opts);
 	});
 
 	test("replaces alternation patterns", async () => {
@@ -234,10 +178,7 @@ Console.write(r)
 const string r = Regex.replace_all("cat|dog", "cat and dog", "ANIMAL")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_alt", result, "ANIMAL and ANIMAL", opts);
+		await run_cached("regex_replace_alt", input, "ANIMAL and ANIMAL", opts);
 	});
 
 	test("replaces consecutive matches", async () => {
@@ -245,10 +186,7 @@ Console.write(r)
 const string r = Regex.replace_all("ab", "ababc", "X")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_consec", result, "XXc", opts);
+		await run_cached("regex_replace_consec", input, "XXc", opts);
 	});
 
 	test("empty input returns empty", async () => {
@@ -256,10 +194,7 @@ Console.write(r)
 const string r = Regex.replace_all("x", "", "y")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_replace_empty_input", result, "", opts);
+		await run_cached("regex_replace_empty_input", input, "", opts);
 	});
 });
 
@@ -275,20 +210,14 @@ describe("Regex first-byte-set prefilter", () => {
 		const input = `
 Console.write(Regex.count("(ab)?c", "c ab c x").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_opt_group_count", result, "2", opts);
+		await run_cached("regex_prefilter_opt_group_count", input, "2", opts);
 	});
 
 	test("star group: match can start after the group", async () => {
 		const input = `
 Console.write(Regex.count("(ab)*c", "c abc ababc").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_star_group_count", result, "3", opts);
+		await run_cached("regex_prefilter_star_group_count", input, "3", opts);
 	});
 
 	test("group with inner alternation: all branches are candidates", async () => {
@@ -296,10 +225,7 @@ Console.write(Regex.count("(ab)*c", "c abc ababc").to_string())
 		const input = `
 Console.write(Regex.count("(x|y)z", "xz yz zz").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_group_alt_count", result, "2", opts);
+		await run_cached("regex_prefilter_group_alt_count", input, "2", opts);
 	});
 
 	test("chained optional groups", async () => {
@@ -307,10 +233,7 @@ Console.write(Regex.count("(x|y)z", "xz yz zz").to_string())
 		const input = `
 Console.write(Regex.count("(a)?(b)?c", "c bc ac abc").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_chained_opt_count", result, "4", opts);
+		await run_cached("regex_prefilter_chained_opt_count", input, "4", opts);
 	});
 
 	test("optional literal: match can start after the literal", async () => {
@@ -321,10 +244,7 @@ Console.write(Regex.count("(a)?(b)?c", "c bc ac abc").to_string())
 		const input = `
 Console.write(Regex.count("a?b", "b ab aab").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_opt_literal_count", result, "3", opts);
+		await run_cached("regex_prefilter_opt_literal_count", input, "3", opts);
 	});
 
 	test("optional class: match can start after the class", async () => {
@@ -332,10 +252,7 @@ Console.write(Regex.count("a?b", "b ab aab").to_string())
 		const input = `
 Console.write(Regex.count("[ab]?c", "c ac xbc").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_opt_class_count", result, "3", opts);
+		await run_cached("regex_prefilter_opt_class_count", input, "3", opts);
 	});
 
 	test("optional escaped shorthand: match can start after it", async () => {
@@ -344,10 +261,7 @@ Console.write(Regex.count("[ab]?c", "c ac xbc").to_string())
 		const input = `
 Console.write(Regex.count("\\\\d?x", "x 3x").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_opt_shorthand_count", result, "2", opts);
+		await run_cached("regex_prefilter_opt_shorthand_count", input, "2", opts);
 	});
 
 	test("lazy optional literal: still nullable for the first-byte set", async () => {
@@ -355,10 +269,7 @@ Console.write(Regex.count("\\\\d?x", "x 3x").to_string())
 		const input = `
 Console.write(Regex.count("a??b", "b ab").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_lazy_opt_count", result, "2", opts);
+		await run_cached("regex_prefilter_lazy_opt_count", input, "2", opts);
 	});
 
 	test("plus quantifier is not nullable: first set stays the atom", async () => {
@@ -368,10 +279,7 @@ Console.write(Regex.count("a??b", "b ab").to_string())
 		const input = `
 Console.write(Regex.count("a+b", "b xab aab").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_plus_count", result, "2", opts);
+		await run_cached("regex_prefilter_plus_count", input, "2", opts);
 	});
 
 	test("optional real-CR literal before LF (blank-line shape)", async () => {
@@ -386,10 +294,7 @@ if Regex.test("\\r?\\n", "line1\\nline2") {
 	Console.write("none")
 }
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_opt_cr_text", result, "blank", opts);
+		await run_cached("regex_prefilter_opt_cr_text", input, "blank", opts);
 	});
 
 	test("anchored pattern: the anchor is not a first byte", async () => {
@@ -398,10 +303,7 @@ if Regex.test("\\r?\\n", "line1\\nline2") {
 		const input = `
 Console.write(Regex.count("^ab", "ab ab").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_anchor_count", result, "1", opts);
+		await run_cached("regex_prefilter_anchor_count", input, "1", opts);
 	});
 
 	test("negated leading class: prefilter disabled, no matches dropped", async () => {
@@ -412,20 +314,14 @@ Console.write(Regex.count("^ab", "ab ab").to_string())
 		const input = `
 Console.write(Regex.count("[^a]b", "bb cb ab xb").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_neg_class_count", result, "3", opts);
+		await run_cached("regex_prefilter_neg_class_count", input, "3", opts);
 	});
 
 	test("wildcard start: prefilter disabled, matches found everywhere", async () => {
 		const input = `
 Console.write(Regex.count(".b", "ab bb").to_string())
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_wildcard_count", result, "2", opts);
+		await run_cached("regex_prefilter_wildcard_count", input, "2", opts);
 	});
 
 	test("regex-redux clean pattern over FASTA-shaped input", async () => {
@@ -436,9 +332,6 @@ Console.write(Regex.count(".b", "ab bb").to_string())
 const string r = Regex.replace_all("(>[^\\n]+)?\\n", ">one\\nACGT\\n>two\\nTGCA\\n", "")
 Console.write(r)
 `;
-		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output("regex_prefilter_fasta_clean", result, "ACGTTGCA", opts);
+		await run_cached("regex_prefilter_fasta_clean", input, "ACGTTGCA", opts);
 	});
 });

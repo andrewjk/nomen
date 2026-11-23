@@ -1,8 +1,6 @@
 import { expect, describe, test } from "vite-plus/test";
 
-import build from "../src/build";
-import check_output from "./check_output";
-import parse_with_imports from "./parse_with_imports";
+import { run_cached } from "./compile_cached";
 
 // Companion-C allocations aren't tracked by the audit wrappers (which only
 // wrap assembly-side malloc/free), so audit would report a counter imbalance.
@@ -10,10 +8,7 @@ const opts = { arch: "aarch64", audit: false } as const;
 
 function run(source: string, name: string, expected: string) {
 	return async () => {
-		const parsed = parse_with_imports(source, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
-		const result = build(parsed.root, { arch: "aarch64" });
-		await check_output(name, result, expected, opts);
+		await run_cached(name, source, expected, opts);
 	};
 }
 

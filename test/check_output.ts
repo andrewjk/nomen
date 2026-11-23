@@ -85,6 +85,20 @@ export default async function check_output(
 		const folder = path.resolve(".", "test", "out", "js", name);
 		if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
 		const codefile = path.join(folder, "main.mjs");
+		const cachefile = path.join(folder, ".cache");
+		const outputfile = path.join(folder, "output.txt");
+		// Same output cache as the native backends: an unchanged program on a
+		// warm run replays the recorded stdout instead of spawning Node.
+		const js_key = compute_cache_key(built.code, { arch, audit: false });
+		if (
+			fs.existsSync(cachefile) &&
+			cache_key_matches(cachefile, js_key) &&
+			fs.existsSync(outputfile)
+		) {
+			const cached_stdout = fs.readFileSync(outputfile, "utf-8");
+			expect(cached_stdout.substring(0, expected_output.length)).toBe(expected_output);
+			return;
+		}
 		fs.writeFileSync(codefile, built.code);
 
 		const rundir = path.join(folder, `run-${process.pid}-${crypto.randomBytes(6).toString("hex")}`);
@@ -119,7 +133,8 @@ export default async function check_output(
 			expect(stderr).toBeFalsy();
 		}
 		expect(stdout.substring(0, expected_output.length)).toBe(expected_output);
-		fs.writeFileSync(path.join(folder, "output.txt"), stdout);
+		fs.writeFileSync(outputfile, stdout);
+		fs.writeFileSync(cachefile, js_key);
 		return;
 	}
 	// The precompiled system object must be the variant built with the SAME
@@ -297,6 +312,7 @@ export default async function check_output(
 				name.startsWith("main") ||
 				name === "output.txt" ||
 				name === ".cache" ||
+				name === ".build.json" ||
 				name === "system.h"
 			) {
 				return;
@@ -350,6 +366,15 @@ export default async function check_output(
 	}
 	write_atomic(outputfile, options.normalize_output ? options.normalize_output(stdout) : stdout);
 	write_atomic(cachefile, cache_key);
+}
+
+/** Whether a cache file's recorded key equals `key` (tolerates a missing file). */
+function cache_key_matches(file: string, key: string): boolean {
+	try {
+		return fs.readFileSync(file, "utf8") === key;
+	} catch {
+		return false;
+	}
 }
 
 function compute_cache_key(

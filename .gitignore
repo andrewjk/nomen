@@ -17,3 +17,8 @@ bench/rust/target/
 test/out/**/run-*
 test/out/**/main.js
 test/out/**/main.mjs
+# Persistent per-test build cache (test/build_cache.ts)
+test/out/**/*.build.json
+# Warm-run cache markers / identities (test/build_cache.ts)
+test/out/**/*.ok
+test/out/neon_vector_cache/

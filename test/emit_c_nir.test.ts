@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { expect, test } from "vite-plus/test";
 
@@ -8,6 +9,7 @@ import join from "../src/join";
 import { get_library } from "../src/lib";
 import { lower_function } from "../src/nir/from_ast";
 import parse from "../src/parse";
+import { build_cache_key, load_marker, save_marker } from "./build_cache";
 import parse_with_imports, { parse_raw } from "./parse_with_imports";
 
 /**
@@ -28,6 +30,9 @@ function compile_c(source: string, raw = false): { code: string; headers: string
 }
 
 function expect_byte_identical(source: string, raw = false): void {
+	const folder = path.resolve("test", "out", "c_nir_identity");
+	const key = build_cache_key({ input: source, raw, kind: "native", arch: "c", extra: "cnir" });
+	if (load_marker(folder, key)) return;
 	set_c_nir_emission_enabled(false);
 	const baseline = compile_c(source, raw);
 	set_c_nir_emission_enabled(true);
@@ -35,6 +40,7 @@ function expect_byte_identical(source: string, raw = false): void {
 		const with_nir = compile_c(source, raw);
 		expect(with_nir.code.length).toBeGreaterThan(0);
 		expect(with_nir).toEqual(baseline);
+		save_marker(folder, key);
 	} finally {
 		set_c_nir_emission_enabled(true);
 	}
