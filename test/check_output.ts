@@ -306,14 +306,20 @@ export default async function check_output(
 	// The reserved names are only ever written at the folder's top level, so
 	// the skip list applies at depth 0 only.
 	const stage_entry = (abs: string, rel: string, depth: number): void => {
+		const name = path.basename(rel);
+		// Scratch dirs are never inputs — and a leaked one (see the finally
+		// cleanup below) may itself contain nested scratch dirs, so reject them
+		// at EVERY depth. Staging them caused recursive run-dir-in-run-dir
+		// explosion (tens of GB).
+		if (name.startsWith("run-")) return;
 		if (depth === 0) {
-			const name = path.basename(rel);
 			if (
 				name.startsWith("main") ||
 				name === "output.txt" ||
 				name === ".cache" ||
 				name === ".build.json" ||
-				name === "system.h"
+				name === "system.h" ||
+				name.endsWith(".build.json")
 			) {
 				return;
 			}
@@ -334,26 +340,44 @@ export default async function check_output(
 	let stderr: string;
 	let failed = false;
 	try {
-		let run_cmd = `"${outfile}"`;
+		// `ulimit -c 0`: an aborted test binary (the must-start / double-start
+		// destructor aborts) must not dump a multi-GB core into the scratch dir.
+		let run_cmd = `ulimit -c 0 && "${outfile}"`;
 		const arg_suffix = (options.args ?? []).map((a) => ` "${a}"`).join("");
 		run_cmd += arg_suffix;
 		if (options.provideStdin !== undefined) {
 			const inputfile = path.join(rundir, "input.txt");
 			fs.writeFileSync(inputfile, options.provideStdin);
-			run_cmd = `"${outfile}" < "${inputfile}"`;
+			run_cmd = `ulimit -c 0 && "${outfile}" < "${inputfile}"`;
 		}
 		const run_result = await execPromise(run_cmd, { cwd: rundir, maxBuffer: 10 * 1024 * 1024 });
 		stdout = run_result.stdout;
 		stderr = (compile_result.stderr || "") + (run_result.stderr || "");
 	} catch (error) {
 		failed = true;
+		// Keep only a bounded diagnostic log — the scratch dir itself is
+		// removed below. It may hold data files, cores, or output from the
+		// test program; none of that belongs in the tree. Opt-in: some tests
+		// EXPECT an abort (the must-start checks catch the throw), and their
+		// expected failures must not litter tracked directories.
+		const err = error as { stdout?: string; stderr?: string; message?: string };
+		if (process.env.NOMEN_TEST_DUMP_FAILURES === "1") {
+		const log = [
+			`--- stdout ---\n${(err.stdout ?? stdout ?? "").slice(0, 200_000)}`,
+			`--- stderr ---\n${(err.stderr ?? stderr ?? "").slice(0, 200_000)}`,
+			`--- message ---\n${err.message ?? ""}`,
+		].join("\n");
+			try {
+				fs.writeFileSync(path.join(folder, "failure.log"), log);
+			} catch {}
+		}
 		throw error;
 	} finally {
-		// Keep the scratch dir around for inspection when the run itself
-		// failed; otherwise remove it so no data files linger in the tree.
-		if (!failed) {
-			fs.rmSync(rundir, { recursive: true, force: true });
-		}
+		// Always remove the scratch dir: a failed run keeps a bounded
+		// `failure.log` above instead. Leaking it both grew the tree without
+		// bound and let the NEXT run stage it (recursive run-dir explosion).
+		fs.rmSync(rundir, { recursive: true, force: true });
+		void failed;
 	}
 
 	try {
@@ -366,6 +390,26 @@ export default async function check_output(
 	}
 	write_atomic(outputfile, options.normalize_output ? options.normalize_output(stdout) : stdout);
 	write_atomic(cachefile, cache_key);
+
+	// Keep the per-test footprint to the warm-run cache (output.txt + .cache):
+	// the compiled artifacts are throwaway — a warm hit returns before they
+	// would be needed, and a cache miss rewrites them. (Set
+	// NOMEN_TEST_KEEP_BUILDS=1 to keep the .s/.o/.out files for inspection.)
+	if (process.env.NOMEN_TEST_KEEP_BUILDS !== "1") {
+		for (const artifact of [codefile, outfile, companionfile, headerfile]) {
+			try {
+				fs.rmSync(artifact, { force: true });
+			} catch {}
+		}
+		try {
+			fs.rmSync(path.join(folder, "system.h"), { force: true });
+		} catch {}
+		// The companion object is compiled next to its source.
+		try {
+			const comp_obj = companionfile.replace(/\.[cm]$/, ".o");
+			fs.rmSync(comp_obj, { force: true });
+		} catch {}
+	}
 }
 
 /** Whether a cache file's recorded key equals `key` (tolerates a missing file). */

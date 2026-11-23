@@ -23,3 +23,4 @@ test/out/**/*.build.json
 test/out/**/*.ok
 test/out/neon_vector_cache/
 test/out/system_lib/**/*.state
+test/out/**/failure.log

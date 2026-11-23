@@ -35,10 +35,6 @@ if true {
 			const parsed = parse_with_imports(input);
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch, audit: false });
-			const file = arch === "c" ? "main.m" : "main.s";
-			const codePath = path.join("test", "out", arch, "cb_trait_routing", file);
-			fs.mkdirSync(path.dirname(codePath), { recursive: true });
-			fs.writeFileSync(codePath, result.code);
 			expect(result.code).toContain("ClassBuffer_Speaker");
 			expect(result.code).not.toMatch(/\bBuffer_Speaker\b/);
 		}
@@ -66,14 +62,14 @@ Console.write("\\ndone")
 		// T_destroy). Speaker_destroy dispatches via the destroy slot in the
 		// struct's vtable to Dog_destroy, which prints "destroying Rex". Then
 		// ClassBuffer frees the slot itself.
-		await build_and_check_output(input, "cb_trait_destroy_class", "destroying Rex\ndone");
+		const built = await build_and_check_output(
+			input,
+			"cb_trait_destroy_class",
+			"destroying Rex\ndone",
+		);
 
 		// Verify the aarch64 path emits Speaker_destroy as a real symbol.
-		const asm = fs.readFileSync(
-			path.join("test", "out", "aarch64", "cb_trait_destroy_class", "main.s"),
-			"utf-8",
-		);
-		expect(asm).toMatch(/Speaker_destroy:/);
+		expect(built.aarch64.code).toMatch(/Speaker_destroy:/);
 	});
 
 	test("List<Speaker> without a user #destroy still reclaims class fields", async () => {

@@ -32,7 +32,59 @@ function resolve_tsx(): string {
  * main process. C-backend tests always link their object; aarch64 falls back
  * to single-TU if its object couldn't be built.
  */
+/** Age (ms) after which a leaked scratch dir is pruned (another concurrent
+ *  vitest run may legitimately own a younger one). */
+const STALE_SCRATCH_MS = 60 * 60 * 1000;
+/** Age after which stale build-cache files are pruned. */
+const STALE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Keep `test/out` bounded. Two classes of leftovers accumulate:
+ * - `run-*` scratch dirs: a killed/crashed run can leave one behind. They are
+ *   deleted here when older than an hour (a concurrent suite may own a fresh
+ *   one).
+ * - build-cache entries (`*.build.json`, `*.ok`): every compiler edit changes
+ *   the cache key, so old-key files linger. Entries older than a week go.
+ */
+function prune_test_out(): void {
+	const root = path.resolve("test", "out");
+	if (!fs.existsSync(root)) return;
+	const now = Date.now();
+	const walk = (dir: string): void => {
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			const full = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				if (entry.name.startsWith("run-")) {
+					try {
+						if (now - fs.statSync(full).mtimeMs > STALE_SCRATCH_MS) {
+							fs.rmSync(full, { recursive: true, force: true });
+						}
+					} catch {}
+					continue;
+				}
+				walk(full);
+				continue;
+			}
+			if (entry.name.endsWith(".build.json") || entry.name.endsWith(".ok")) {
+				try {
+					if (now - fs.statSync(full).mtimeMs > STALE_CACHE_MS) {
+						fs.rmSync(full, { force: true });
+					}
+				} catch {}
+			}
+		}
+	};
+	walk(root);
+}
+
 export default async function setup(): Promise<void> {
+	prune_test_out();
 	const script = path.resolve(import.meta.dirname, "system_lib_worker.ts");
 	// The prebuild is the barrier workers start behind, so a FAILURE here must
 	// stop the run: proceeding would leave stale/unbuilt objects that the

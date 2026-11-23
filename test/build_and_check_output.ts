@@ -54,7 +54,8 @@ export default async function build_and_check_output(
 	raw = false,
 	extra_options: { fast_math?: boolean; audit?: boolean; platform?: string; js?: boolean } = {},
 	check_options: Parameters<typeof check_output>[3] = {},
-) {
+): Promise<Record<string, { code: string; headers: string; companion?: string }>> {
+	const built_by_arch: Record<string, { code: string; headers: string; companion?: string }> = {};
 	let architectures = ["aarch64", "c"] as const;
 	// Struct names in the prebuilt C system.o — tells the user-TU build which
 	// structs to emit itself (anything not here) vs reference from system.o.
@@ -82,6 +83,11 @@ export default async function build_and_check_output(
 		if (cached) {
 			expect(cached.parse_errors).toEqual([]);
 			expect(cached.build_errors).toEqual([]);
+			built_by_arch[arch] = {
+				code: cached.code,
+				headers: cached.headers,
+				companion: cached.companion,
+			};
 			await check_output(
 				name,
 				{
@@ -134,6 +140,11 @@ export default async function build_and_check_output(
 			headers: result.headers,
 			companion: result.companion,
 		});
+		built_by_arch[arch] = {
+			code: result.code,
+			headers: result.headers,
+			companion: result.companion,
+		};
 		await check_output(name, result, expected, {
 			...options,
 			system_lib: split,
@@ -152,6 +163,11 @@ export default async function build_and_check_output(
 		if (cached) {
 			expect(cached.parse_errors).toEqual([]);
 			expect(cached.build_errors).toEqual([]);
+			built_by_arch.js = {
+				code: cached.code,
+				headers: cached.headers,
+				companion: cached.companion,
+			};
 			await check_output(
 				name,
 				{ code: cached.code, headers: cached.headers, companion: cached.companion },
@@ -171,6 +187,11 @@ export default async function build_and_check_output(
 				headers: result.headers,
 				companion: result.companion,
 			});
+			built_by_arch.js = {
+				code: result.code,
+				headers: result.headers,
+				companion: result.companion,
+			};
 			await check_output(name, result, expected, {
 				arch: "js",
 				audit: false,
@@ -178,4 +199,6 @@ export default async function build_and_check_output(
 			});
 		}
 	}
+
+	return built_by_arch;
 }

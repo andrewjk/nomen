@@ -31,12 +31,11 @@ if true {
 }
 Console.write("done\\n")
 `;
-		await build_and_check_output(input, "classbuffer_proof", "done\n");
-		const asm = fs.readFileSync(
-			path.join("test", "out", "aarch64", "classbuffer_proof", "main.s"),
-			"utf-8",
-		);
-		expect(asm).toContain("bl Box_Animal_destroy");
+		const built = await build_and_check_output(input, "classbuffer_proof", "done\n");
+		// The generated aarch64 code is returned directly — asserting on it
+		// (rather than reading main.s from test/out) keeps the test valid on a
+		// warm run, where compiled artifacts are not written.
+		expect(built.aarch64.code).toContain("bl Box_Animal_destroy");
 	});
 
 	test("store_int rejects 0 (val != 0 prevents the leak footgun)", () => {
