@@ -2798,11 +2798,11 @@ const range = 0..5     // [0, 1, 2, 3, 4]
 | 2          | `??`, `!!`                                                                               |
 | 3          | `\|\|`                                                                                   |
 | 4          | `&&`                                                                                     |
-| 5          | `\|`                                                                                     |
-| 6          | `^`                                                                                      |
-| 7          | `&`                                                                                      |
-| 8          | `==`, `!=`                                                                               |
-| 9          | `<`, `<=`, `>`, `>=`                                                                     |
+| 5          | `==`, `!=`                                                                               |
+| 6          | `<`, `<=`, `>`, `>=`                                                                     |
+| 7          | `\|`                                                                                     |
+| 8          | `^`                                                                                      |
+| 9          | `&`                                                                                      |
 | 10         | `<<`, `>>`                                                                               |
 | 11         | `+`, `-`                                                                                 |
 | 12         | `*`, `/`, `%`                                                                            |
@@ -2812,7 +2812,9 @@ const range = 0..5     // [0, 1, 2, 3, 4]
 Prefix operators bind their operand's full postfix chain (`!a.b.c()` is
 `!(a.b.c())`), and postfix operators bind tighter than any binary operator
 (`a ?? b.c` is `a ?? (b.c)`). Coalescing (`??`/`!!`) is looser than `&&`:
-`a ?? false && false` reads as `a ?? (false && false)`.
+`a ?? false && false` reads as `a ?? (false && false)`. The bitwise
+operators bind **tighter** than the comparisons: `flags & mask == mask`
+reads as `(flags & mask) == mask`, with no parentheses required.
 
 #### Operator Overloading
 
@@ -3099,8 +3101,8 @@ Console.write("\{total:.2n} owed")
 Console.write("speed \{speed:.2e} m/s")
 ```
 
-A spec containing `#` or `,` is a custom pattern instead — the C#-style
-mini-language, validated at compile time. A pattern may carry a `<N`/`>N`
+A spec containing `#` or `,` is a custom pattern instead — a
+compile-time-validated mini-language. A pattern may carry a `<N`/`>N`
 alignment prefix; everything after it is the pattern:
 
 - `0` — a digit slot that always renders (zero-pads the value out to it).
@@ -4333,8 +4335,8 @@ func round_trip = (string text, out string) {
 ```
 
 `json_decode_into(text, ref value)` infers the struct type from the `ref`
-argument — the Go `Unmarshal(&value)` shape; `json_encode(ref value)` infers
-it from the value. `@rename` and `@skip` are read from FIELDS — a struct-level
+argument — the value is filled in through the pointer; `json_encode(ref value)`
+infers it from the value. `@rename` and `@skip` are read from FIELDS — a struct-level
 attribute with those names has no effect on the JSON shape.
 
 ### Task

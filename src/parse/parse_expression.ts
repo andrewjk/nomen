@@ -572,6 +572,10 @@ export default function parse_expression(status: ParseStatus, allow_assignment =
 }
 
 function operator_precedence(op: string) {
+	// Tightest binds first (smaller number). Bitwise `&`/`^`/`|` sit BETWEEN
+	// the shifts and the comparisons — tighter than `==`, unlike C — so
+	// `flags & X == X` parses as `(flags & X) == X` (the Go/Rust order; the
+	// C placement is the classic precedence trap the language fixes).
 	switch (op) {
 		case "!":
 		case "u-": {
@@ -590,23 +594,23 @@ function operator_precedence(op: string) {
 		case ">>": {
 			return 5;
 		}
+		case "&": {
+			return 6;
+		}
+		case "^": {
+			return 7;
+		}
+		case "|": {
+			return 8;
+		}
 		case ">":
 		case ">=":
 		case "<":
 		case "<=": {
-			return 6;
+			return 9;
 		}
 		case "==":
 		case "!=": {
-			return 7;
-		}
-		case "&": {
-			return 8;
-		}
-		case "^": {
-			return 9;
-		}
-		case "|": {
 			return 10;
 		}
 		case "&&": {

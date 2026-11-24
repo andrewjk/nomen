@@ -607,9 +607,13 @@ pub bitset Permissions {
 }
 
 var flags = Permissions.read | Permissions.write
-const can_write = (flags & Permissions.write) == Permissions.write
+const can_write = flags & Permissions.write == Permissions.write
 flags = flags ^ Permissions.execute
 ```
+
+Bitwise operators bind tighter than comparisons, so
+`flags & Permissions.write == Permissions.write` reads as
+`(flags & Permissions.write) == Permissions.write` — no parentheses needed.
 
 ### Operator Overloading
 
@@ -696,7 +700,7 @@ Console.write_line(field_names(Point))   // "Point: x y "
 See [COMPTIME.md](docs/COMPTIME.md) for the full compile-time surface
 (`#if`, `#for`, `#error`, attributes, generated declarations) and
 [COMPTIME_COMPARISON.md](docs/COMPTIME_COMPARISON.md) for how it compares
-to Zig comptime, Rust macros, Swift macros and C# source generators.
+to other languages' compile-time facilities.
 
 ### Box
 
