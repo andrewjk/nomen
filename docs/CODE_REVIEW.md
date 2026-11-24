@@ -19,7 +19,11 @@ length non-negativity, and the `at_or_null` escape hatch — no `assert`, the
 `if` guard IS the assertion) also landed and is removed below. So did the
 `#destroy` soundness fix: a Copyable struct declaring `#destroy` is now
 rejected with a named fix (`mv struct`), so a destructor can never run once
-per copy — that finding is removed from §0 and §1.2. One §1.6 item was resolved by investigation rather than
+per copy — that finding is removed from §0 and §1.2. The doc/test drift is
+closed in the same spirit: `test/docs_fences.ts` now compiles every non-error
+fenced example in README.md / SPEC.md straight from the docs, so breaking an
+example fails CI at its `file:line` + heading (error examples stay
+hand-written in the feature suites). One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -246,7 +250,3 @@ Ordered by rough priority within each tier. "Effort" is a guess.
    result-`match` flattening question (§1.3). Both affect many examples, so
    settle them before more docs are written.
 2. Work through the Tier 1 features in §2.
-3. Generate `test/readme/` and `test/spec/` inputs from the docs' fenced
-   blocks (extract by heading), keeping hand-written expectations only for
-   the blocks marked as errors — the doc/test drift this review found (and
-   hand-fixed) then fails CI instead of hiding.

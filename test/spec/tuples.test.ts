@@ -85,7 +85,7 @@ Console.write("\\{p._0} \\{p._1}")
 
 	test("tuples as struct fields", () => {
 		const input = `
-struct Container {
+mv struct Container {
     mv [int, string] payload
 }
 const c = Container([99, "bottles"])

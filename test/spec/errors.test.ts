@@ -153,6 +153,7 @@ error LoadError {
 
 error ParseError {
 	case syntax
+	case corrupt
 }
 
 func load = (string path, out int ! LoadError, ParseError) {
@@ -184,6 +185,7 @@ match result {
 			case .ParseError(e) {
 				match e {
 					case .syntax -> Console.write("syntax")
+					case .corrupt -> Console.write("corrupt")
 				}
 			}
 		}

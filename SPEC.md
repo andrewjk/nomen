@@ -869,8 +869,8 @@ Console.write("\{p._0} \{p._1}")  // "10 20"
 Tuples can be used as struct fields:
 
 ```
-struct Container {
-    var [int, string] payload
+mv struct Container {
+    mv [int, string] payload
 }
 
 const c = Container([99, "bottles"])
@@ -1578,6 +1578,7 @@ match result {
             case .ParseError(e) {
                 match e {
                     case .syntax -> Console.write("syntax")
+                    case .corrupt -> Console.write("corrupt")
                 }
             }
         }
@@ -1672,12 +1673,12 @@ An expression-position `try` still requires a `T ! E` result with a success valu
 In a composed set, arms may name the origin: `LoadError.timeout` is one case of one member, and `LoadError(err)` binds the whole member error (the inner match then resolves its cases):
 
 ```
-func describe = (string path, out string) {
+func describe = (string path, out int) {
     return try load(path) catch {
-        case LoadError.timeout -> "timeout"
-        case LoadError.offline -> "offline"
-        case ParseError.syntax -> "syntax"
-        case ParseError.corrupt -> "corrupt"
+        case LoadError.timeout -> -1
+        case LoadError.offline -> -2
+        case ParseError.syntax -> -3
+        case ParseError.corrupt -> -4
     }
 }
 ```
@@ -1767,6 +1768,7 @@ can cross a task boundary bare, because nothing can ever dangle it (see
 [Sendable](#sendable)).
 
 ```
+const greeting = "hello world"
 view hi = greeting.slice(0, 5)       // const view, inferred `view string`
 var view cursor = greeting.slice(0, 3)  // mutable, re-pointable
 ```
@@ -2283,6 +2285,10 @@ value can move into — it is the slot's transfer protocol, not its ownership.
   naming the fix.
 
 ```
+mv struct Dog {
+    var int id
+}
+
 mv struct Holder {
     mv Dog d        // owned slot: Holder(mv d) transfers, `mv` is the spelling
 }
@@ -2348,7 +2354,7 @@ pub trait Printable {
     func to_string = (self, out string)
 }
 
-pub struct Point {
+pub struct Point: Printable {
     pub var int x
     pub var int y
 
@@ -3033,6 +3039,7 @@ Expressions are embedded in strings with `\{...}`. Each expression has `.to_stri
 
 ```
 Console.write("Hello, \{name}. You are \{age} years old.")
+const arr = [1, 2, 3]
 Console.write("\{arr}")             // Arrays stringify element-by-element
 ```
 
@@ -3798,8 +3805,8 @@ so a type set composes with field reflection:
 
 ```
 @entity
-pub struct User {
-    pub var name = ""
+pub mv struct User {
+    pub mv name = ""
     pub var age = 0
 }
 

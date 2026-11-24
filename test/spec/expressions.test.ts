@@ -244,6 +244,8 @@ describe("spec: string interpolation", () => {
 const name = "Alice"
 const age = 30
 Console.write("Hello, \\{name}. You are \\{age} years old.")
+const arr = [1, 2, 3]
+Console.write("\\{arr}")
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

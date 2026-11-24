@@ -956,7 +956,8 @@ pub func parse_int = (string s, out int) {
 import System
 
 pub func main = () {
-    Console.write_line("\{parse_int(\"41\")}")   // 41
+    const n = parse_int("41")
+    Console.write_line("\{n}")   // 41
 }
 ```
 
