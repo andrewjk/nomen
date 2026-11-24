@@ -33,3 +33,27 @@ sum(1, 2, 3)
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("readme: higher-order functions", () => {
+	test("function-typed parameters and lambdas", () => {
+		const input = `
+func apply = (func (int, out int) mapper, int value, out int) {
+    return mapper(value)
+}
+
+var func (int, out int) doubler = (x, out int) => x * 2
+
+Console.write("\\{apply(doubler, 21)}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("lambdas capture the locals around them", () => {
+		const input = `
+const base = 10
+var func (int, out int) add_base = (x) => x + base
+Console.write("\\{add_base(1)} \\{add_base(2)}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});

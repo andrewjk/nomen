@@ -132,3 +132,39 @@ const s = a.to_string()
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("readme: readonly fields", () => {
+	test("readonly field bumped by its own method", () => {
+		const input = `
+struct Counter {
+    readonly count = 0
+
+    func bump = (ref self) {
+        self.count = self.count + 1
+    }
+}
+
+var c = Counter()
+c.bump()
+Console.write("\\{c.count}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
+
+describe("readme: box", () => {
+	test("Box is a single-owner pointer with transparent access", () => {
+		const input = `
+mv struct Node {
+    var int value
+    mv Box<Node>? next
+}
+
+var n = Node(1, null)
+var b = Box<Node>(mv n)
+Console.write_line("\\{b.value}")
+Console.write_line("\\{b.next == null}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});

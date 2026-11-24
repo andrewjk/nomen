@@ -15,6 +15,23 @@ object-oriented, and functional paradigms.
    /* nested comments supported */ */
 ```
 
+A `/** ... */` block comment immediately before a declaration is a **doc
+comment**: `nomen docs` attaches it to the following struct, trait, enum,
+bitset, or function and renders it into a markdown tree under `<root>/docs/`
+(one file per source file, mirroring the source layout). The delimiters and
+the conventional leading `*` are stripped, `@tag` lines (e.g. `@param`) are
+preserved verbatim, and nested `/* */` inside a doc comment is allowed. A
+top-level `pub` item with no doc comment produces a `nomen docs` warning.
+
+```
+/**
+ * Returns the sum of two ints
+ **/
+pub func add = (int a, int b, out int) {
+    return a + b
+}
+```
+
 ## Reserved Words
 
 The following words are reserved by the language and cannot be used as
@@ -158,7 +175,20 @@ const y = x + 1          // OK, y = 6
 
 ### Nullable Chaining
 
-`a?.b` reads a member only when the nullable target holds a value: the result is the member's type made nullable — null when the target is null, the member otherwise. Chains repeat the operator (`a?.b?.c`), continue with a plain `.` (`a?.b.c`, guarded by the `?.` hop), end in a method call (`a?.m(args)` — the call runs only on the non-null path), or start at a call (`f()?.x` — the base is evaluated once, into a hidden local). A nullable chain is a nullable VALUE: it lowers anywhere a nullable value is consumed, in the language's per-slot carriers (in-band for strings, the companion `_has` flag for scalars and structs).
+`a?.b` reads a member only when the nullable target holds a value: the result is
+the member's type made nullable — null when the target is null, the member
+otherwise.
+
+A chain is built from:
+
+- repeated hops — `a?.b?.c`
+- a plain `.` after a hop — `a?.b.c` (guarded by the `?.` hop)
+- a method call — `a?.m(args)` (runs only on the non-null path)
+- a call base — `f()?.x` (the base is evaluated once, into a hidden local)
+
+A nullable chain is a nullable VALUE: it lowers anywhere a nullable value is
+consumed, in the language's per-slot carriers (in-band for strings, the
+companion `_has` flag for scalars and structs).
 
 ```
 struct Profile {
@@ -197,7 +227,26 @@ pub func main = () {
 }
 ```
 
-In practice: `chain ?? fallback` picks the member or the fallback (evaluated lazily, once), and `chain != null` / `chain == null` test the whole chain (every nullable hop — including a final member that is itself a nullable field read with a plain `.`, whose own flag joins the tests). A plain field read on a nullable struct/scalar BASE coalesces the same way — `y.v ?? fb` (`y` a `T?` local or parameter) tests the base's own nullness, so it matches the `y?.v ?? fb` spelling. `?.` on a non-nullable value is an error pointing at `.`; `??` on a non-nullable LEFT is an error — the fallback could never run. A chain whose member path contains a call hoists the base into a hidden local so every hop test reads a pure path (no double evaluation); a nullable chain cannot be a `??` FALLBACK (`x ?? a?.b` is rejected — coalesce the chain first, `x ?? (a?.b ?? fb)`), because the fallback slot has no carrier for the chain's nullness.
+In practice:
+
+- `chain ?? fallback` picks the member or the fallback — evaluated lazily,
+  exactly once.
+- `chain != null` / `chain == null` test the whole chain — every nullable hop,
+  including a final member that is itself a nullable field read with a plain
+  `.`, whose own flag joins the tests.
+- A plain field read on a nullable struct/scalar BASE coalesces the same way:
+  `y.v ?? fb` (`y` a `T?` local or parameter) tests the base's own nullness, so
+  it matches the `y?.v ?? fb` spelling.
+
+Edge cases:
+
+- `?.` on a non-nullable value is an error pointing at `.`.
+- `??` on a non-nullable LEFT is an error — the fallback could never run.
+- A chain whose member path contains a call hoists the base into a hidden
+  local, so every hop test reads a pure path (no double evaluation).
+- A nullable chain cannot be a `??` FALLBACK (`x ?? a?.b` is rejected —
+  coalesce the chain first, `x ?? (a?.b ?? fb)`): the fallback slot has no
+  carrier for the chain's nullness.
 
 ### Constraints
 
@@ -1624,6 +1673,32 @@ Types are inferred from initializers when omitted:
 `view` is an immutable (const) view; `var view` is a mutable view you can
 re-point. The element type is inferred. See [Slicing](#slicing).
 
+#### Global Variables
+
+A file-scope `const` or `var` declaration is a global: it is visible to every
+function in its file (subject to the visibility modifiers — `pub` exports it
+to importers), lives for the whole program, and needs no `main` to exist:
+
+```
+var total = 0
+
+func bump = () {
+    total += 1
+}
+
+pub func main = () {
+    bump()
+    bump()
+    Console.write_line("\{total}")   // 2
+}
+```
+
+Prefer passing state through parameters — globals are the escape hatch for
+process-lifetime values (an app-lifetime `Channel`, a shared registry). The
+concurrency rules treat a global as its own lifetime region: a global donor
+can cross a task boundary bare, because nothing can ever dangle it (see
+[Sendable](#sendable)).
+
 ```
 view hi = greeting.slice(0, 5)       // const view, inferred `view string`
 var view cursor = greeting.slice(0, 3)  // mutable, re-pointable
@@ -2124,17 +2199,19 @@ declared-`mv` struct must be declared `mv enum`, and bindings of
 a declared-`mv` enum move instead of copy.
 
 **Fields: slots that receive moves spell `mv`.** `mv` marks a slot an owned
-value can move into — the slot's transfer protocol, not its ownership.
-Ownership is the type's business: the field is destroyed with the struct and
-a re-assignment reclaims the displaced value whether or not `mv` is written,
-which is why a `const` may own and a `view` may borrow and neither spells
-`mv` — no move ever lands in them. Owning scalar slots (`string`, a
-`Box<T>`, another mv struct, a mv enum, a trait handle) do receive moves —
-construction and stores transfer (the synthesized `#init` parameter is a
-`mv` param), borrow stores are rejected — so they spell it: `mv` is
-required on the declaration — "implicit with type inference, explicit with
-memory management". A bare `struct` cannot hold these fields: the verifier
-above rejects it, naming the fix.
+value can move into — it is the slot's transfer protocol, not its ownership.
+
+- Ownership is the type's business: the field is destroyed with the struct,
+  and a re-assignment reclaims the displaced value whether or not `mv` is
+  written. That is why a `const` may own and a `view` may borrow, and neither
+  spells `mv` — no move ever lands in them.
+- Owning scalar slots (`string`, a `Box<T>`, another mv struct, a mv enum, a
+  trait handle) DO receive moves — construction and stores transfer (the
+  synthesized `#init` parameter is a `mv` param), and borrow stores are
+  rejected — so they spell it. `mv` is required on the declaration:
+  "implicit with type inference, explicit with memory management".
+- A bare `struct` cannot hold these fields — the verifier above rejects it,
+  naming the fix.
 
 ```
 mv struct Holder {
@@ -2168,7 +2245,7 @@ mv struct Node {
 var n = Node(1, null)
 var b = Box<Node>(mv n)   // boxing moves: n is invalid after
 Console.write_line("\{b.value}")      // 1 — access through the box
-Console.write_line("\{b.next}")       // null (the pointee's next slot)
+Console.write_line("\{b.next == null}")   // true (the pointee's next slot)
 ```
 
 An inline containment cycle is a compile error naming the fix:
@@ -2624,20 +2701,27 @@ const range = 0..5     // [0, 1, 2, 3, 4]
 
 #### Operator Precedence (lowest to highest)
 
-| Precedence | Operators                         |
-| ---------- | --------------------------------- |
-| 1          | `=`, `+=`, `-=`, `*=`, `/=`, `%=` |
-| 2          | `\|\|`                            |
-| 3          | `&&`                              |
-| 4          | `\|`                              |
-| 5          | `^`                               |
-| 6          | `&`                               |
-| 7          | `==`, `!=`                        |
-| 8          | `<`, `<=`, `>`, `>=`              |
-| 9          | `<<`, `>>`                        |
-| 10         | `+`, `-`                          |
-| 11         | `*`, `/`, `%`                     |
-| 12         | `!` (unary NOT)                   |
+| Precedence | Operators                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| 1          | `=`, `+=`, `-=`, `*=`, `/=`, `%=`                                                        |
+| 2          | `??`, `!!`                                                                               |
+| 3          | `\|\|`                                                                                   |
+| 4          | `&&`                                                                                     |
+| 5          | `\|`                                                                                     |
+| 6          | `^`                                                                                      |
+| 7          | `&`                                                                                      |
+| 8          | `==`, `!=`                                                                               |
+| 9          | `<`, `<=`, `>`, `>=`                                                                     |
+| 10         | `<<`, `>>`                                                                               |
+| 11         | `+`, `-`                                                                                 |
+| 12         | `*`, `/`, `%`                                                                            |
+| 13         | unary `-`, `!` (unary NOT)                                                               |
+| 14         | postfix `.` member, `?.`, `()` call, postfix `!` (propagate), `as`, `..`, `[i]` (unsafe) |
+
+Prefix operators bind their operand's full postfix chain (`!a.b.c()` is
+`!(a.b.c())`), and postfix operators bind tighter than any binary operator
+(`a ?? b.c` is `a ?? (b.c)`). Coalescing (`??`/`!!`) is looser than `&&`:
+`a ?? false && false` reads as `a ?? (false && false)`.
 
 #### Operator Overloading
 
@@ -2764,6 +2848,35 @@ int)`); scalar arithmetic still lowers natively, so those declarations are
   (`#op_div … int scale: scale != 0`) verifies at the operation site — a
   provably violating argument is an error — and its facts discharge the
   function body's own divisions.
+
+### Integer Overflow
+
+Integer arithmetic wraps silently (two's complement) — there is no trap, no
+promotion, and no panic:
+
+```
+var uint8 a = 200
+a += 100
+Console.write("\{a}")   // 44 — wrapped
+
+var int8 b = 120
+b += 120
+Console.write("\{b}")   // -16 — wrapped
+```
+
+Only a literal that does not fit its target type is a compile error (see
+[Literal Coercion](#literal-coercion)); runtime values wrap. If wrap is not
+what you want, widen the type (`int64`, `uint64`) or constrain the operands
+before the operation.
+
+### Evaluation Order
+
+Operands are evaluated left to right. Call arguments are evaluated left to
+right, and each argument's side effects complete before the next argument
+begins. `&&` and `||` short-circuit (the right operand runs only when the
+left does not decide the result); `?.` and `??` evaluate the left operand
+once and the right only when the left is null; `!!` mirrors `??` for
+results.
 
 ### Cast Operator (`as`)
 
@@ -3964,10 +4077,91 @@ type's name does not link that type — the library type-link scan skips
 attribute-name tokens, so `@Table("users")` does not drag
 `Controls::Table` into the program.
 
+## Programs
+
+A program's entry point is `pub func main`. It takes either no parameters or
+a single `Init` — the argument count, the argument list, and whether stdout
+is a terminal:
+
+```
+import System
+
+pub func main = (Init init) {
+    Console.write_line("\\{init.argc} arguments")
+}
+```
+
+A normal return exits the program with status 0. `panic("message")` prints
+the message and terminates the program with a non-zero status; `todo("...")`
+behaves the same way. A test file (below) needs no `main` — the harness
+supplies one.
+
+## Testing
+
+A test is any `pub func <name> = (ref Tester t)` in a `*.test.nm` file. `nomen
+test` discovers every such file under the current folder, generates a harness
+that calls each test function in order, and reports pass/fail per test:
+
+```
+import System
+import System::Test
+
+func add = (int a, int b, out int) => a + b
+
+pub func test_add = (ref Tester t) {
+    t.expect(add(1, 1) == 2, "1 + 1 should be 2")
+}
+```
+
+- `t.expect(condition, "message")` — records a pass, or a failure with the message.
+- `t.fail("message")` — fails the test unconditionally.
+- `t.assert(nullable, "message")` — fails when the nullable value is null
+  (overloads for `int?`, `uint?`, `int64?`, `uint64?`).
+- `t.bench("label", fn)` — benchmarks `fn` (a zero-argument function);
+  `t.bench_n("label", fn, n)` pins the sample count. Run with `--release`
+  for numbers worth comparing.
+
+See [TESTING.md](docs/TESTING.md) for the harness design. `-f <regex>`
+filters which test files run, and anything a test prints is shown beneath
+the file when it fails.
+
 ## Standard Library
 
 The `System` library (in `core/System/`) is imported with `import System`. The
-most useful entry points are:
+most useful entry points are documented below; the rest of the library is a
+collection of small, focused modules — one line each, with a link to the
+source (the source files carry doc comments, so `nomen docs` renders the full
+reference):
+
+| Item                                          | Description                                                             |
+| --------------------------------------------- | ----------------------------------------------------------------------- |
+| [List](core/System/List.nm)                   | growable, ordered list of values (`push`/`pop`/`at`)                    |
+| [Map](core/System/Map.nm)                     | ordered key-value map; keys must be `Hashable` + `Equatable`            |
+| [Set](core/System/Set.nm)                     | ordered set of unique values; elements `Hashable` + `Equatable`         |
+| [StableList](core/System/StableList.nm)       | grow-only list whose element addresses survive `push`                   |
+| [StringBuilder](core/System/StringBuilder.nm) | growable byte buffer for building strings incrementally                 |
+| [Option](core/System/Option.nm)               | `Option<T>` — `some(T)` or `none`                                       |
+| [Result](core/System/Result.nm)               | `Result<T, E>` — the checked `ok`/`fail` enum behind `T ! E`            |
+| [Math](core/System/Math.nm)                   | math helpers (`power`, `sqrt`, `log`, …) — `import System::Math`        |
+| [Time](core/System/Time.nm)                   | wall-clock time and sleeping (static members)                           |
+| [Random](core/System/Random.nm)               | fast splitmix64 pseudo-random generator                                 |
+| [Arena](core/System/Arena.nm)                 | generational arena — one owner, cheap copyable `ArenaRef<T>` handles    |
+| [LinkedList](core/System/LinkedList.nm)       | arena-backed doubly-linked list (stable int node ids)                   |
+| [Tree](core/System/Tree.nm)                   | arena-backed binary tree (stable int node ids)                          |
+| [Graph](core/System/Graph.nm)                 | arena-backed directed graph (stable int node/edge ids)                  |
+| [BigInt](core/System/BigInt.nm)               | arbitrary-precision integer (sign-magnitude)                            |
+| [Text::Regex](core/System/Text/Regex.nm)      | regular-expression `test`/`match`/`replace_all` — `import System::Text` |
+| [Text::Json](core/System/Text/Json.nm)        | the `json_decode_into` / `json_encode` implementation                   |
+| [Buffer](core/System/Buffer.nm)               | internal growable slab — the backing store containers delegate to       |
+| [File](core/System/Stream/File.nm)            | file handle for reading and writing, plus static one-shot helpers       |
+| [Directory](core/System/Stream/Directory.nm)  | helpers for working with filesystem directories                         |
+| [Tcp](core/System/Stream/Tcp.nm)              | non-blocking sockets that park fibers while they wait                   |
+| [Http](core/System/Stream/Http.nm)            | minimal HTTP/1.1 client built on `Tcp`                                  |
+
+Names in nested folders (`Math`, `Text`, `Controls`, `Stream`) need their
+namespace imported: `import System::Math`, `import System::Text`, and so on —
+`import System` grants only `System`'s own names (see
+[Visibility Modifiers](#visibility-modifiers)).
 
 ### Console
 
@@ -4305,17 +4499,20 @@ t.wait()
 
 The construction is a **special form keyed on the type's `#spawn` member** —
 a lifecycle marker, like `#init`/`#destroy`, that declares the type's
-construction hook. `Thread` and `Fiber` declare `#spawn`; the compiler treats
-`X(...)` on a `#spawn`-bearing type as the deferred-call construction, and a
-type that merely shares the name does not gain it. `Thread` and `Fiber` are
-**mv structs**: every field is
-an opaque handle (uint64/bool), so the construction yields an inline value
-that moves, and `#destroy` enforces must-start. A mv struct declaring
-`#spawn` constructs through the same special form: the construction yields
-the inline value, with the handle fields written directly. A `#spawn`
-constructor's single argument is either a deferred call
-or a zero-arg function value; anything else is an error anchored at the
-argument.
+construction hook.
+
+- `Thread` and `Fiber` declare `#spawn`; the compiler treats `X(...)` on a
+  `#spawn`-bearing type as the deferred-call construction, and a type that
+  merely shares the name does not gain it.
+- `Thread` and `Fiber` are **mv structs**: every field is an opaque handle
+  (uint64/bool), so the construction yields an inline value that moves, and
+  `#destroy` enforces must-start.
+- Any mv struct declaring `#spawn` constructs through the same special form:
+  the construction yields the inline value, with the handle fields written
+  directly.
+- A `#spawn` constructor's single argument is either a deferred call or a
+  zero-arg function value; anything else is an error anchored at the
+  argument.
 
 Because the construction is a real value, it can be stored and started later —
 the arguments are bound at construction, the call happens at `start()`:

@@ -33,6 +33,18 @@ describe("spec: comments", () => {
 `;
 		expect(compile_module(input)).toEqual([]);
 	});
+
+	test("a doc comment attaches to the following declaration", () => {
+		const input = `
+/**
+ * Returns the sum of two ints
+ **/
+pub func add = (int a, int b, out int) {
+    return a + b
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
 });
 
 describe("spec: array types", () => {

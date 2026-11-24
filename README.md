@@ -194,6 +194,31 @@ func sum = (...int numbers, out int) {
 sum(1, 2, 3)    // 6
 ```
 
+### Higher-Order Functions
+
+Functions are values. A parameter can be a function type — spelled
+`func (params)` — and a lambda is written with `=>` for an expression body or
+the `func` keyword for a block body:
+
+```nomen
+func apply = (func (int, out int) mapper, int value, out int) {
+    return mapper(value)
+}
+
+var func (int, out int) doubler = (x, out int) => x * 2
+
+Console.write("\{apply(doubler, 21)}")   // 42
+```
+
+A lambda captures the locals around it. Scalars are copied at capture time;
+owning values (strings, `mv` structs) move in and the donor is invalidated:
+
+```nomen
+const base = 10
+var func (int, out int) add_base = (x) => x + base
+Console.write("\{add_base(1)} \{add_base(2)}")   // 11 12
+```
+
 ### Control Flow
 
 `if` and `else`:
@@ -408,6 +433,28 @@ const diff = a != b                 // false — derived from #op_eq
 const s = a.to_string()             // "Point(x=1, y=2)" — derived to_string
 ```
 
+### Readonly Fields
+
+A `readonly` field is readable wherever the struct is visible, but assignable
+only from the declaring struct's own methods:
+
+```nomen
+struct Counter {
+    readonly count = 0
+
+    func bump = (ref self) {
+        self.count = self.count + 1
+    }
+}
+
+var c = Counter()
+c.bump()
+Console.write("\{c.count}")   // 1
+```
+
+Writing a `readonly` field from outside the struct is a compile error; a
+`const` field is immutable everywhere, even inside the struct.
+
 ### Enums
 
 Enums are sum types. Cases can carry associated data, and shorthand `.case`
@@ -429,6 +476,20 @@ pub enum Shape {
 }
 
 const shape = Shape.rect(10, 20)
+```
+
+A plain `enum` is a value type — assignment copies. An `mv enum` owns its
+payloads: bindings move instead of copy, and a transfer is spelled `mv` on
+the value:
+
+```nomen
+mv enum Connection {
+    case open(string url)
+    case closed
+}
+
+var c = Connection.open("example.com")
+var c2 = mv c   // c is invalid afterwards
 ```
 
 ### Pattern Matching
@@ -637,6 +698,86 @@ See [COMPTIME.md](docs/COMPTIME.md) for the full compile-time surface
 [COMPTIME_COMPARISON.md](docs/COMPTIME_COMPARISON.md) for how it compares
 to Zig comptime, Rust macros, Swift macros and C# source generators.
 
+### Box
+
+`Box<T>` is a single-owner pointer to a heap value — the shape for graphs,
+trees, and anything that needs a stable address or breaks an inline cycle.
+Boxing moves the value in, and field access through the box is transparent:
+
+```nomen
+mv struct Node {
+    var int value
+    mv Box<Node>? next   // a nullable Box is the sanctioned cycle-breaker
+}
+
+var n = Node(1, null)
+var b = Box<Node>(mv n)   // boxing moves: n is invalid after
+Console.write_line("\{b.value}")          // 1 — access through the box
+Console.write_line("\{b.next == null}")   // true (the pointee's next slot)
+```
+
+### Compile-Time Metaprogramming
+
+Code can run at compile time. `#if` selects code per compile target before
+any checking happens (`META.arch` is `"c"`, `"aarch64"` or `"js"`):
+
+```nomen
+#if META.arch == "c" {
+    Console.write_line("portable path")
+} else {
+    Console.write_line("not c")
+}
+```
+
+Attributes attach compile-time metadata to structs and fields, and `#for`
+unrolls code over them — the basis for derive-style and serialization code:
+
+```nomen
+@sql_table("users")
+pub mv struct User {
+    @rename("user_name")
+    mv string name
+    var int age
+}
+
+func keys<T> = (T value, out string) {
+    var s = META.info(T).attr("sql_table") + ": "
+    #for field of META.info(T).fields {
+        if field.has_attr("rename") {
+            s = s + field.attr("rename")
+        } else {
+            s = s + field.name
+        }
+        s = s + ","
+    }
+    return s
+}
+
+Console.write_line(keys(User("jane", 31)))   // "users: user_name,age,"
+```
+
+### Compile-Time JSON
+
+Typed structs serialize to and from JSON directly — no DOM, no runtime
+key→field map. Field keys default to the field name; `@rename` maps a
+different JSON key and `@skip` omits a field in both directions:
+
+```nomen
+mv struct Account {
+    @rename("user")
+    mv id = ""
+    var active = true
+    @skip
+    mv cache = ""
+}
+
+func round_trip = (string text, out string) {
+    var a = Account()
+    json_decode_into(text, ref a)
+    return json_encode(ref a)
+}
+```
+
 ### Constraints
 
 Constraints are compile-time assertions on parameters, fields, and variables.
@@ -768,6 +909,49 @@ struct Point {
 const p = Point(3, 4)
 var [x, y] = p
 var [x = px, y = py] = p
+```
+
+### Imports and Visibility
+
+`import` pulls in a namespace — a directory of the library. A path names
+namespaces, never module files (`import System::Controls::Geometry` is a
+compile error):
+
+```nomen
+import System
+import System::Controls
+
+const size = Controls::Size()
+```
+
+A declaration is `pub` (reachable wherever its namespace is reachable),
+`internal` (only within the declaring namespace and its descendants), or
+unmarked (only within its own namespace). `import System` grants `System`'s
+own names only — reaching `Controls` names requires `import System::Controls`.
+Struct members default to `pub`; see the [spec](SPEC.md#visibility-modifiers)
+for the full rules.
+
+### FFI
+
+Body-less `foreign func` declarations map a Nomen function onto a C library
+symbol. Externs are System-library-only — user code calls them through the
+library's wrappers:
+
+```nomen
+// In the System library (core/System/Init.nm):
+foreign func atoi = (string s, out int)
+
+pub func parse_int = (string s, out int) {
+    return atoi(s)
+}
+```
+
+```nomen
+import System
+
+pub func main = () {
+    Console.write_line("\{parse_int(\"41\")}")   // 41
+}
 ```
 
 ## Standard Library

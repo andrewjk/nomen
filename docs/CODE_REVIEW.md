@@ -9,7 +9,11 @@ findings (the former §1 — failing README/SPEC examples, contradictions,
 stale content, broken links, README↔SPEC drift, convention breaks) were
 **fixed in `README.md` / `SPEC.md` / `NOMEN_AGENTS.md` and removed from this
 review**; the mirrored `test/readme/` and `test/spec/` copies were re-synced
-in the same change. One §1.6 item was resolved by investigation rather than
+in the same change. The coverage/definition gaps this surfaced (README
+sections for the undocumented features, the SPEC Standard Library index,
+integer overflow, argument evaluation order, doc comments, `nomen test`,
+program entry and exit codes, globals, and the full operator-precedence
+table) were filled the same day, so nothing is tracked here for them. One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -276,33 +280,5 @@ Ordered by rough priority within each tier. "Effort" is a guess.
    blocks (extract by heading), keeping hand-written expectations only for
    the blocks marked as errors — the doc/test drift this review found (and
    hand-fixed) then fails CI instead of hiding.
-6. Finish the remaining documentation work below (P2): coverage gaps in the
-   README, the SPEC Standard Library section, and the never-specified
-   semantics.
-7. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
+6. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
    the tree.
-
----
-
-## 4. Remaining documentation work (P2, not errors)
-
-Coverage and completeness items left open after the consistency fixes:
-
-- **Features with no README section**: Higher-Order Functions/lambdas/
-  closures, FFI, Compile-Time JSON, `#if`/`#for`/attributes (only a link),
-  `mv enum`, `Box<T>`, `readonly`, imports and visibility.
-- **The SPEC Standard Library section** covers Console, Ansi, Json, Task,
-  Mutex and Channel, but not `List`, `Map`, `Set`, `StableList`,
-  `StringBuilder`, `Math`, `Time`, `Random`, `Option`, or the
-  `Stream/File/Http/Directory` modules in `core/System/`. Even one line per
-  type, with a link to `nomen docs` output, would help.
-- **Things the spec never defines**: integer overflow behaviour (`uint8`
-  200 + 100 compiles, with no stated wrap/trap rule); evaluation order of
-  arguments; the doc-comment syntax `nomen docs` consumes; how `nomen test`
-  files are written (assertions); program entry (`pub func main`) and exit
-  codes; global variables (mentioned in passing but never specified).
-- **Missing from the operator precedence table**: `??`, `!!`, postfix `!`,
-  `?.`, `as`, `..`, unary `-`.
-- The SPEC reads as a changelog in places: long single-paragraph rule dumps
-  would read better split into a short rule, an example, and an edge-case
-  list.

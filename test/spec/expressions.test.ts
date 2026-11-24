@@ -542,6 +542,40 @@ const summed = point.add(Point(1, 2))
 	});
 });
 
+describe("spec: global variables", () => {
+	test("a file-scope var is visible to every function in the file", () => {
+		const input = `
+var total = 0
+
+func bump = () {
+    total += 1
+}
+
+pub func main = () {
+    bump()
+    bump()
+    Console.write_line("\\{total}")
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+});
+
+describe("spec: integer overflow", () => {
+	test("integer arithmetic wraps silently", () => {
+		const input = `
+var uint8 a = 200
+a += 100
+Console.write("\\{a}")
+
+var int8 b = 120
+b += 120
+Console.write("\\{b}")
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
+
 describe("spec: literal coercion", () => {
 	test("valid literal coercion", () => {
 		const input = `

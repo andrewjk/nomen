@@ -46,3 +46,18 @@ const s = p.to_string()
 		expect(compile_main(input)).toEqual([]);
 	});
 });
+
+describe("readme: mv enum", () => {
+	test("mv enum owns its payloads; bindings move", () => {
+		const input = `
+mv enum Connection {
+    case open(string url)
+    case closed
+}
+
+var c = Connection.open("example.com")
+var c2 = mv c
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
