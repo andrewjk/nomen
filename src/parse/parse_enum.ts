@@ -46,7 +46,10 @@ export default function parse_enum(
 		if (splice !== undefined) {
 			enum_comptime_name = splice;
 		} else {
-			name = consume_name(status);
+			// Type names are allowed to be keywords — the name after `enum`
+			// (or the `error` form parsed here) is unambiguous (same exemption
+			// as the name after `func`).
+			name = consume(status);
 		}
 	}
 	const node = new EnumNode(start, visibility, name);
@@ -69,7 +72,11 @@ export default function parse_enum(
 
 		while (peek_current(status) !== "}" && peek_current(status) !== undefined) {
 			if (accept("case", status)) {
-				const case_name = consume_name(status);
+				// Case names are allowed to be keywords: the name after `case`
+				// in a type body is unambiguous, and every use is dot-prefixed
+				// (`.todo`, `Status.todo`, match arm `case .todo`) — same
+				// exemption as the names after `func` and the type keywords.
+				const case_name = consume(status);
 				const params: ParameterNode[] = [];
 
 				if (accept("(", status)) {

@@ -42,7 +42,10 @@ export default function parse_struct(
 		if (splice !== undefined) {
 			struct_comptime_name = splice;
 		} else {
-			name = consume_name(status);
+			// Type names are allowed to be keywords: the name after `struct`
+			// is unambiguous (same exemption as the name after `func`), so a
+			// GUI module can declare `struct view`-style types.
+			name = consume(status);
 		}
 	}
 	const struct = new StructNode(start, visibility, name);

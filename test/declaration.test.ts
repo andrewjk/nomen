@@ -280,16 +280,13 @@ for match of [1, 2] {
 		expect(parsed.errors).toEqual(expected);
 	});
 
-	test("keyword as struct name", () => {
+	test("keyword as struct name is exempt (type-name exemption)", () => {
 		const input = `
 struct match {
 }
 `;
-		const expected = [
-			test_error(input, "'match' is a reserved word and cannot be used as a name", 2, 8),
-		];
 		const parsed = parse(input);
-		expect(parsed.errors).toEqual(expected);
+		expect(parsed.errors).toEqual([]);
 	});
 
 	test("keyword as destructuring name", () => {

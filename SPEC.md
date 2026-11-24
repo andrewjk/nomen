@@ -71,6 +71,42 @@ const m = Regex.match("[0-9]+", "abc123")
 Console.write("\{m}")
 ```
 
+Type names are exempt the same way: the name after `struct`, `trait`,
+`enum`, `bitset`, or `error` is unambiguous, so a GUI module can declare
+`struct view`-style types spelled with a reserved word:
+
+```
+struct view {
+    var int id
+}
+
+trait view {
+    func draw = (self)
+}
+
+var v = view(1)   // constructor calls read the name plainly
+```
+
+Enum and bitset case names are exempt too — the name after `case` in a type
+body is unambiguous, and every use is dot-prefixed (`.todo`, `Status.todo`,
+match arm `case .todo`, `Perm.import`):
+
+```
+enum Status {
+    case todo
+    case done
+}
+
+var s = Status.todo
+s = .done
+```
+
+Case payload parameters stay reserved (they are parameters, like any other),
+as do bindings, parameters, and fields. A keyword-spelled type name works
+where a bare name is expected (constructor calls, trait conformance,
+qualified enum cases) and not in modifier-ambiguous type positions — spell
+those forms in PascalCase (`View`), which was never reserved.
+
 ## Types
 
 ### Basic Types

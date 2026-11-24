@@ -3,6 +3,7 @@ import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import add_to_parent from "./utils/add_to_parent.ts";
+import consume from "./utils/consume.ts";
 import consume_comptime_name from "./utils/consume_comptime_name.ts";
 import consume_name from "./utils/consume_name.ts";
 import expect from "./utils/expect.ts";
@@ -23,7 +24,9 @@ export default function parse_trait(
 		if (splice !== undefined) {
 			trait_comptime_name = splice;
 		} else {
-			name = consume_name(status);
+			// Type names are allowed to be keywords — the name after `trait`
+			// is unambiguous (same exemption as the name after `func`).
+			name = consume(status);
 		}
 	}
 	const trait = new TraitNode(start, visibility, name);

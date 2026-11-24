@@ -222,8 +222,10 @@ ref Box q = p                        // mv-struct alias — must be spelled (no 
 ```
 
 Keywords (`out`, `match`, `if`, `of`, `as`, `swap`, …) are reserved and
-cannot be used as variable, parameter, field, type, or case names. Function
-names are exempt since calls go through `.name(...)` (e.g. `Regex.match`).
+cannot be used as variable, parameter, field, or case-payload-parameter
+names. Function, type, and case names are exempt — the name after `func`, a
+type keyword, or `case` is unambiguous (e.g. `Regex.match`, `struct view`,
+`case todo`).
 
 ### Functions
 
