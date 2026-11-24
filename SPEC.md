@@ -2798,11 +2798,11 @@ const range = 0..5     // [0, 1, 2, 3, 4]
 | 2          | `??`, `!!`                                                                               |
 | 3          | `\|\|`                                                                                   |
 | 4          | `&&`                                                                                     |
-| 5          | `\|`                                                                                     |
-| 6          | `^`                                                                                      |
-| 7          | `&`                                                                                      |
-| 8          | `==`, `!=`                                                                               |
-| 9          | `<`, `<=`, `>`, `>=`                                                                     |
+| 5          | `==`, `!=`                                                                               |
+| 6          | `<`, `<=`, `>`, `>=`                                                                     |
+| 7          | `\|`                                                                                     |
+| 8          | `^`                                                                                      |
+| 9          | `&`                                                                                      |
 | 10         | `<<`, `>>`                                                                               |
 | 11         | `+`, `-`                                                                                 |
 | 12         | `*`, `/`, `%`                                                                            |
@@ -2813,6 +2813,10 @@ Prefix operators bind their operand's full postfix chain (`!a.b.c()` is
 `!(a.b.c())`), and postfix operators bind tighter than any binary operator
 (`a ?? b.c` is `a ?? (b.c)`). Coalescing (`??`/`!!`) is looser than `&&`:
 `a ?? false && false` reads as `a ?? (false && false)`.
+
+Unlike C, the bitwise operators bind **tighter** than the comparisons
+(the Go/Rust order): `flags & mask == mask` reads as
+`(flags & mask) == mask`, with no parentheses required.
 
 #### Operator Overloading
 

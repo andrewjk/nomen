@@ -192,7 +192,7 @@ pub bitset Permissions {
 }
 var flags = Permissions.read
 flags = flags | Permissions.write
-const can_write = (flags & Permissions.write) == Permissions.write
+const can_write = flags & Permissions.write == Permissions.write
 flags = flags ^ Permissions.execute
 `;
 		expect(compile_main(input)).toEqual([]);

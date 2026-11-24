@@ -607,9 +607,13 @@ pub bitset Permissions {
 }
 
 var flags = Permissions.read | Permissions.write
-const can_write = (flags & Permissions.write) == Permissions.write
+const can_write = flags & Permissions.write == Permissions.write
 flags = flags ^ Permissions.execute
 ```
+
+Bitwise operators bind tighter than comparisons (the Go/Rust order), so
+`flags & Permissions.write == Permissions.write` reads as
+`(flags & Permissions.write) == Permissions.write` — no parentheses needed.
 
 ### Operator Overloading
 

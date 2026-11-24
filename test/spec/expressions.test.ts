@@ -92,6 +92,23 @@ var int y = (x << 2) & 3 | 1 ^ 0
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("bitwise operators bind tighter than comparisons", () => {
+		// The Go/Rust order (unlike C): `flags & mask == mask` reads as
+		// `(flags & mask) == mask` with no parentheses. Under the old C-like
+		// order this parsed as `flags & (mask == mask)` — a bitset-and-bool
+		// type error — so a clean check pins the new order.
+		const input = `
+pub bitset Perms {
+	case read
+	case write
+}
+var flags = Perms.read | Perms.write
+var bool can_write = flags & Perms.write == Perms.write
+var bool all = flags & Perms.read == Perms.read && flags & Perms.write == Perms.write
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: operator overloading", () => {
