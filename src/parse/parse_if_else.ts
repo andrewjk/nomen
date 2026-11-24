@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import BranchNode from "../nodes/BranchNode.ts";
 import { is_returning_node } from "../nodes/check_node_type.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
@@ -10,6 +11,7 @@ import type ParseStatus from "./ParseStatus.ts";
 import accept from "./utils/accept.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 export default function parse_if_else(status: ParseStatus): IfElseNode {
 	const if_start = get_index(status);
@@ -25,9 +27,35 @@ export default function parse_if_else(status: ParseStatus): IfElseNode {
 	}
 
 	if (accept("else", status)) {
-		let else_branch = parse_if_branch(status);
-		if (else_branch) {
-			if_else.else_branch = else_branch;
+		// `else if` isn't supported (the docs push `switch` for chained
+		// conditions) — say so instead of a bare `Expected {`, and absorb the
+		// nested chain so the parse recovers without cascades. Only the first
+		// else-if in a chain reports; the rest are the same mistake.
+		let said_else_if = false;
+		for (;;) {
+			if (peek_current(status) === "if") {
+				if (!said_else_if) {
+					add_error(
+						status,
+						`'else if' isn't supported — use a 'switch' for chained conditions`,
+						get_index(status),
+					);
+					said_else_if = true;
+				}
+				accept("if", status);
+				parse_expression(status);
+				const branch = parse_if_branch(status);
+				if (branch && !if_else.else_branch) {
+					if_else.else_branch = branch;
+				}
+				if (!accept("else", status)) break;
+				continue;
+			}
+			const branch = parse_if_branch(status);
+			if (branch && !if_else.else_branch) {
+				if_else.else_branch = branch;
+			}
+			break;
 		}
 	}
 

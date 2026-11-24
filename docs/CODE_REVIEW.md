@@ -138,9 +138,6 @@ edges:
 
 ### 1.5 Statement and expression forms (P2)
 
-- `else if` gives only `Expected {` (verified). Given how strongly the docs
-  push `switch`, the parser should say "`else if` isn't supported — use
-  `switch`".
 - **C precedence trap preserved**: `&`, `|` and `^` bind looser than `==`
   (`SPEC.md:2578-2581`), so `flags & X == X` parses as `flags & (X == X)`.
   The README works around it with parentheses (`:543`). New languages (Go,
