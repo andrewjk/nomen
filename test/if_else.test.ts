@@ -303,3 +303,49 @@ const a = y + z
 		expect(parsed.errors).toEqual(expected);
 	});
 });
+
+describe("else if is not supported", () => {
+	test("a dedicated error names the switch fix, without cascades", () => {
+		const input = `
+if x > 100 {
+	Console.write("big")
+} else if x > 10 {
+	Console.write("medium")
+} else {
+	Console.write("small")
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"'else if' isn't supported — use a 'switch' for chained conditions",
+				4,
+				8,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
+	test("a longer chain reports once", () => {
+		const input = `
+if a {
+	Console.write("a")
+} else if b {
+	Console.write("b")
+} else if c {
+	Console.write("c")
+}
+`;
+		const expected = [
+			test_error(
+				input,
+				"'else if' isn't supported — use a 'switch' for chained conditions",
+				4,
+				8,
+			),
+		];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+});
