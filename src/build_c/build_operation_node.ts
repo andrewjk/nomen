@@ -1,6 +1,10 @@
 import flatten_null_chain from "../build_common/null_chain.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
-import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import {
+	is_nullable_enum_with_data,
+	has_flag_name,
+	is_nullable_struct_type,
+} from "../build_common/nullable_struct.ts";
 import { is_float_type } from "../built_in_types.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
@@ -260,8 +264,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			// flag lives in the hidden `_ret_has` out-param) — hoist a value
 			// temp + flag temp in a statement expression.
 			if (
-				node.left_value.node_type === "func_call" &&
-				is_nullable_scalar_type((node.left_value as any).type, status)
+				(node.left_value.node_type === "func_call" ||
+					(node.left_value.node_type === "access" &&
+						(node.left_value as AccessNode).access?.node_type === "access_func")) &&
+				is_nullable_scalar_type(left_type, status)
 			) {
 				const id = ns_tmp_counter++;
 				const flag = `_nsh_${id}`;
@@ -284,15 +290,22 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				build_node(node.right_value, status);
 				status.code += `)`;
 			}
-		} else if (is_nullable_struct_type(left_type, status)) {
-			// Special case: a nullable struct function call on the LHS must be
-			// materialised ONCE (calling it twice — once for the flag, once
-			// for the value — would duplicate side effects and produce two
-			// different return flags). Wrap in a GCC statement-expression that
-			// hoists a value temp + flag temp, then yields the chosen value.
+		} else if (
+			is_nullable_struct_type(left_type, status) ||
+			is_nullable_enum_with_data(left_type, status)
+		) {
+			// Special case: a nullable struct — or nullable enum-with-data —
+			// function call on the LHS must be materialised ONCE (calling it
+			// twice — once for the flag, once for the value — would duplicate
+			// side effects and produce two different return flags). Wrap in a
+			// GCC statement-expression that hoists a value temp + flag temp,
+			// then yields the chosen value.
 			if (
-				node.left_value.node_type === "func_call" &&
-				is_nullable_struct_type((node.left_value as any).type, status)
+				(node.left_value.node_type === "func_call" ||
+					(node.left_value.node_type === "access" &&
+						(node.left_value as AccessNode).access?.node_type === "access_func")) &&
+				(is_nullable_struct_type(left_type, status) ||
+					is_nullable_enum_with_data(left_type, status))
 			) {
 				const id = ns_tmp_counter++;
 				const flag = `_nsh_${id}`;
@@ -374,8 +387,10 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			// Nullable scalar: null is the companion `_has` flag, not a value
 			// compare (0/false are real values).
 			if (
-				nullable_side.node_type === "func_call" &&
-				is_nullable_scalar_type((nullable_side as any).type, status)
+				(nullable_side.node_type === "func_call" ||
+					(nullable_side.node_type === "access" &&
+						(nullable_side as AccessNode).access?.node_type === "access_func")) &&
+				is_nullable_scalar_type(type, status)
 			) {
 				const id = ns_tmp_counter++;
 				const flag = `_nsh_${id}`;
@@ -392,13 +407,15 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				// `== null` → !has ; `!= null` → has
 				status.code += node.op === "==" ? `(!${has})` : `(${has})`;
 			}
-		} else if (is_nullable_struct_type(type, status)) {
-			// A nullable struct CALL result must be materialised once
-			// (calling twice would duplicate side effects). Wrap in a
-			// statement-expression that exposes the flag.
+		} else if (is_nullable_struct_type(type, status) || is_nullable_enum_with_data(type, status)) {
+			// A nullable struct — or nullable enum-with-data — CALL result
+			// must be materialised once (calling twice would duplicate side
+			// effects). Wrap in a statement-expression that exposes the flag.
 			if (
-				nullable_side.node_type === "func_call" &&
-				is_nullable_struct_type((nullable_side as any).type, status)
+				(nullable_side.node_type === "func_call" ||
+					(nullable_side.node_type === "access" &&
+						(nullable_side as AccessNode).access?.node_type === "access_func")) &&
+				(is_nullable_struct_type(type, status) || is_nullable_enum_with_data(type, status))
 			) {
 				const id = ns_tmp_counter++;
 				const flag = `_nsh_${id}`;
@@ -660,7 +677,11 @@ function is_null_comparison(node: OperationNode): boolean {
 
 function is_nullable_struct_side(node: any, status: BuildStatus): boolean {
 	const t = type_from_value_node(node);
-	return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status);
+	return (
+		is_nullable_struct_type(t, status) ||
+		is_nullable_scalar_type(t, status) ||
+		is_nullable_enum_with_data(t, status)
+	);
 }
 
 /**

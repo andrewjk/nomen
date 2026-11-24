@@ -43,3 +43,24 @@ export function has_nullable_struct_field(node: StructNode, status: NullableStru
 export function has_flag_name(name: string): string {
 	return `${name}_has`;
 }
+
+/** The minimal enum surface the nullable checks need (BuildStatus.enums). */
+export interface EnumEntryLike {
+	name: string;
+	has_associated_data: boolean;
+}
+
+/**
+ * Whether a nullable type names an ENUM-with-data: it rides the value-plus-
+ * hidden-flag convention (the tag+payload blob by value, null-ness via the
+ * hidden `*_ret_has`/`*_has` pointer) without being a struct in the layout
+ * tables.
+ */
+export function is_nullable_enum_with_data(
+	type: Type | undefined,
+	status: { enums: EnumEntryLike[] },
+): boolean {
+	if (!type?.is_nullable) return false;
+	const e = type.name ? status.enums.find((e) => e.name === type.name) : undefined;
+	return !!e && e.has_associated_data;
+}

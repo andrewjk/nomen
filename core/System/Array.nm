@@ -88,6 +88,16 @@ pub struct Array<T>: Viewable {
 		panic("index out of range")
 	}
 
+	// Nullable checked access: the element when index is inside self.length,
+	// `null` otherwise — the escape hatch for indices the constraint
+	// checker can't prove (`arr.at_or_null(i) ?? fallback`).
+	pub func at_or_null = (self, int index, out T?) {
+		if index >= 0 && index < self.length {
+			return self.at(index)
+		}
+		return null
+	}
+
 	pub func at_end = (self, out T) {
 		unsafe {
 			return self[self.length - 1]

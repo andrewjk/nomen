@@ -384,6 +384,32 @@ func run = (int n) {
 }
 ```
 
+The provable fact set:
+
+- **Guards.** A comparison in an `if` condition holds inside the branch —
+  each `&&` conjunct separately. A zero-guard that always exits proves the
+  negation for the code after it: `if n == 0 { return 0 }` makes `n != 0`
+  a fact for everything that follows (and `if n != 0 { return }` pins `n`
+  to `0`).
+- **Loop ranges.** `for i of 0..n` proves `i >= 0 && i < n` in the body.
+- **Length facts.** A value read from `.length`, `.count`, `.cap`, or
+  `.size` is known `>= 0` — so a length snapshot compared against another
+  length verifies a whole index contract:
+
+```
+func last = (string[] a, string[] b, out string) {
+    var n = a.length
+    if n < b.length {
+        return b.at(n)   // OK — n >= 0 (length fact), n < b.length (guard)
+    }
+    return ""
+}
+```
+
+Reassignment drops a variable's facts — the new value knows nothing. For
+indices no guard proves, the runtime-checked accessors are the escape
+hatch — see [Indexing](#indexing).
+
 Constraint expressions support:
 
 - Comparisons: `>`, `<`, `>=`, `<=`, `==`, `!=`
@@ -3105,6 +3131,19 @@ The `.at()` method has a compile-time bounds check when the index is a constant:
 const arr = [10, 20, 30]
 const x = arr.at(5)  // Error: Parameter constraint not satisfied
 ```
+
+For indices no guard proves, runtime-checked forms turn the contract into a
+plain runtime test instead of a compile error:
+
+```
+var arr = [10, 20, 30]
+var c = arr.at_or_null(50) ?? 0   // null when out of range → 0
+var v = arr.at_or(50, 0)          // the fallback when out of range
+```
+
+`at_or_panic(index)` traps on an out-of-range index — for the cases where
+out-of-range is a bug, not a branch. The same family exists on `string`
+(with `char` elements), `List`, `StableList`, and `LinkedList`.
 
 ### Slicing
 

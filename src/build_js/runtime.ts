@@ -332,6 +332,15 @@ function __list_at_or(list, i, fallback) {
 	return list[index];
 }
 
+// Nullable checked access — the JS side of the at_or_null escape hatch
+// family (Array/String/List/StableList/LinkedList at_or_null(i)): the
+// element, or null when the index is out of range.
+function __at_or_null(list, i) {
+	const index = Number(i);
+	if (index < 0 || index >= list.length) return null;
+	return list[index];
+}
+
 function __map_get(map, key) {
 	if (!map.has(key)) __panic("map key not found");
 	return map.get(key);

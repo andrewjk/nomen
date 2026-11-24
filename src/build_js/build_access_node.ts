@@ -179,6 +179,8 @@ function build_method_call(
 				return `__string_at(${text}, ${args[0]})`;
 			case "at_or":
 				return `__string_at_or(${text}, ${args[0]}, ${args[1]})`;
+			case "at_or_null":
+				return `__at_or_null(${text}, ${args[0]})`;
 			case "slice":
 			case "substring":
 				return `${text}.slice(Number(${args[0]}), Number(${args[1]}))`;
@@ -225,6 +227,8 @@ function build_method_call(
 				return `BigInt(${list}.length)`;
 			case "at":
 				return `${list}[Number(${args[0]})]`;
+			case "at_or_null":
+				return `__at_or_null(${list}, ${args[0]})`;
 			case "set":
 				return `(${list}[Number(${args[0]})] = ${stored_args(access.params, status)[1]})`;
 			case "push":

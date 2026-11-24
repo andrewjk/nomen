@@ -820,6 +820,12 @@ func first = (...int nums, out int) {
 }
 ```
 
+Indices no guard proves have runtime-checked forms — `nums.at_or(0, -1)`
+(the fallback), `nums.at_or_null(0)` (a nullable `T?`), and
+`nums.at_or_panic(0)` (trap). See the
+[spec](SPEC.md#how-constraints-are-evaluated) for the full provable fact
+set.
+
 ### Arrays
 
 ```nomen

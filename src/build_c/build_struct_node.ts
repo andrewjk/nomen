@@ -5,7 +5,11 @@ import {
 import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_struct_name, mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
-import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import {
+	is_nullable_enum_with_data,
+	has_flag_name,
+	is_nullable_struct_type,
+} from "../build_common/nullable_struct.ts";
 import { classify_param } from "../build_common/param_classify.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
@@ -896,7 +900,8 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 		const old_nullable_ret_has = status.nullable_ret_has_param;
 		if (
 			is_nullable_struct_type(func.return_type, status) ||
-			is_nullable_scalar_type(func.return_type, status)
+			is_nullable_scalar_type(func.return_type, status) ||
+			is_nullable_enum_with_data(func.return_type, status)
 		) {
 			status.nullable_ret_has_param = "_ret_has";
 		} else {
@@ -1116,11 +1121,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 				status.code += `, unsigned char ${has_flag_name(c_function_name(func.params[i].name))}`;
 			}
 		}
-		// A nullable RETURN type (struct or scalar) adds a hidden
-		// `unsigned char *_ret_has` out-parameter, mirroring free functions.
+		// A nullable RETURN type (struct, scalar, or enum-with-data) adds a
+		// hidden `unsigned char *_ret_has` out-parameter, mirroring free
+		// functions.
 		if (
 			is_nullable_struct_type(func.return_type, status) ||
-			is_nullable_scalar_type(func.return_type, status)
+			is_nullable_scalar_type(func.return_type, status) ||
+			is_nullable_enum_with_data(func.return_type, status)
 		) {
 			if (func.params.length > 0) status.code += `, `;
 			status.code += `unsigned char *_ret_has`;

@@ -101,6 +101,8 @@ export function list_method(name: string, list: string, args: string[]): string 
 			return `${list}[Number(${args[0]})]`;
 		case "at_or":
 			return `__list_at_or(${list}, ${args[0]}, ${args[1]})`;
+		case "at_or_null":
+			return `__at_or_null(${list}, ${args[0]})`;
 		case "set":
 		case "set_or_panic":
 			return `(${list}[Number(${args[0]})] = ${args[1]})`;
@@ -282,6 +284,8 @@ export function stable_list_method(name: string, list: string, args: string[]): 
 			return `${list}[Number(${args[0]})]`;
 		case "at_or":
 			return `__list_at_or(${list}, ${args[0]}, ${args[1]})`;
+		case "at_or_null":
+			return `__at_or_null(${list}, ${args[0]})`;
 		case "copy":
 			return `__copy(${list})`;
 	}

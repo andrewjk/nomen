@@ -1485,7 +1485,42 @@ export function apply_negated_bounds(
 		return;
 	}
 	if (op.op === "&&") return;
-	if (op.op !== "<" && op.op !== "<=" && op.op !== ">" && op.op !== ">=") return;
+	if (op.op !== "<" && op.op !== "<=" && op.op !== ">" && op.op !== ">=") {
+		// Zero-equality guards — GUARD-CLAUSE callers only (refine_numeric:
+		// the body always exits, so the fall-through path is exclusively the
+		// condition's negation). After a NON-exiting if, `n == 0` holds on
+		// only one of two reachable paths and must not be recorded.
+		//   if n == 0 { return }  → the code after knows n != 0 (the divisor
+		//     contract's fact shape, mirroring apply_bounds' `n != 0` case)
+		//   if n != 0 { return }  → the code after knows n == 0 — pinned to
+		//     the singleton interval [0, 1), which the evaluator reads as a
+		//     literal.
+		if (!refine_numeric || (op.op !== "==" && op.op !== "!=")) return;
+		const is_zero_lit = (x: BaseNode): boolean =>
+			x.node_type === "value" && /^[+-]?0+$/.test((x as ValueNode).value);
+		const as_path = (x: BaseNode): string | undefined => {
+			if (x.node_type === "value") {
+				const v = (x as ValueNode).value;
+				return /^[A-Za-z_][\w.]*$/.test(v) ? v : undefined;
+			}
+			if (x.node_type === "access") return expr_to_string(x, status);
+			return undefined;
+		};
+		let path: string | undefined;
+		if (is_zero_lit(op.left_value)) path = as_path(op.right_value);
+		else if (is_zero_lit(op.right_value)) path = as_path(op.left_value);
+		if (!path) return;
+		const var_decl = status.values.findLast((v) => v.name === path.split(".")[0]);
+		if (!var_decl) return;
+		if (op.op === "==") {
+			if (!var_decl.nonzero_exprs) var_decl.nonzero_exprs = [];
+			if (!var_decl.nonzero_exprs.includes(path)) var_decl.nonzero_exprs.push(path);
+		} else {
+			var_decl.range_lower = 0;
+			var_decl.range_upper = 1;
+		}
+		return;
+	}
 
 	// Determine the variable and the expression it's compared against
 	let var_name: string | undefined;

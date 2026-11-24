@@ -352,6 +352,15 @@ const x = arr.at(5)
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("not satisfied"))).toBe(true);
 	});
+
+	test("runtime-checked accessors: at_or_null, at_or", () => {
+		const input = `
+var arr = [10, 20, 30]
+var c = arr.at_or_null(50) ?? 0
+var v = arr.at_or(50, 0)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: slicing", () => {

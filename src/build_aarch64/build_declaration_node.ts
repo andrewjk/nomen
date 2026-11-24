@@ -2182,7 +2182,11 @@ export default function build_declaration_node(
 				(node.value.node_type === "cast" && !!(node.value as CastNode).enum_case_conversion) ||
 				(node.value.node_type === "value" &&
 					(node.value as ValueNode).is_enum_shorthand &&
-					status.enums.find((e) => e.name === node.type.name && e.has_associated_data))
+					status.enums.find((e) => e.name === node.type.name && e.has_associated_data)) ||
+				// A `??` over a nullable enum-with-data call yields the chosen
+				// blob's ADDRESS in x0 (the struct-rvalue convention) — same
+				// blob copy.
+				(node.value.node_type === "op" && (node.value as OperationNode).op === "??")
 			) {
 				emit_var_address(status, "x1", node.name);
 				emit_struct_copy("x0", "x1", 0, enum_size, status);

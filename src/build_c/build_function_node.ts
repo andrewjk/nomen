@@ -5,7 +5,11 @@ import emission_label from "../build_common/emission_label.ts";
 import { direct_string_fields } from "../build_common/has_string_fields.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
-import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import {
+	is_nullable_enum_with_data,
+	has_flag_name,
+	is_nullable_struct_type,
+} from "../build_common/nullable_struct.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { ref_param_entry_dup_fields } from "../build_common/scan_ref_string_writes.ts";
@@ -300,7 +304,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 		// can't return both as a single by-value result).
 		if (
 			is_nullable_struct_type(node.return_type, status) ||
-			is_nullable_scalar_type(node.return_type, status)
+			is_nullable_scalar_type(node.return_type, status) ||
+			is_nullable_enum_with_data(node.return_type, status)
 		) {
 			if (!first_param) status.code += ", ";
 			status.code += `unsigned char *_ret_has`;
@@ -411,7 +416,8 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_nullable_ret_has = status.nullable_ret_has_param;
 	if (
 		is_nullable_struct_type(node.return_type, status) ||
-		is_nullable_scalar_type(node.return_type, status)
+		is_nullable_scalar_type(node.return_type, status) ||
+		is_nullable_enum_with_data(node.return_type, status)
 	) {
 		status.nullable_ret_has_param = "_ret_has";
 	} else {

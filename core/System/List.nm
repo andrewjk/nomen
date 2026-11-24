@@ -88,6 +88,16 @@ pub mv struct List<T>: Viewable {
 		panic("index out of range")
 	}
 
+	// Nullable checked access: the element when i is inside self.length,
+	// `null` otherwise — the escape hatch for indices the constraint
+	// checker can't prove (`xs.get(i) ?? fallback`).
+	pub func at_or_null = (self, int i, out T?) {
+		if i >= 0 && i < self.length {
+			return self.at(i)
+		}
+		return null
+	}
+
 	// A non-mv `view T` over [start, end). Delegates to the backing Buffer's
 	// #arch slice primitive — no #arch code here. Borrows from self.
 	pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {

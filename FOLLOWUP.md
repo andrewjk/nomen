@@ -424,9 +424,14 @@ machinery is `evaluate_const_condition`
 (`known_length` — for `List` keyed to `.length`; for `LinkedList`/`Tree`
 keyed to their `count` field through the same model: a fresh constructor is
 0, `add` appends one, the link setters preserve it), guards (including
-field-path guards, landed 2026-11-09), inclusive bounds, singleton-range
-indices, negated guards, and length-snapshot aliases discharge it. What
-still needs a guard (or a contract-free spelling — `at_or_panic`/`at_or`,
+field-path guards, landed 2026-11-09; `&&` conjuncts and early-return
+zero-guards, landed 2026-11-24 — `if n == 0 { return }` proves `n != 0`
+after, `if n != 0 { return }` pins `n` to 0, and every conjunct of a
+compound guard records), inclusive bounds, singleton-range indices,
+negated guards, and length-snapshot aliases discharge it (a `.length`
+snapshot is known `>= 0`). What
+still needs a guard (or a contract-free spelling — `at_or_panic`/`at_or`/
+`at_or_null`,
 `get_or_panic`, `pop`):
 
 - **Unknown provenance**: a container from a function return or a parameter

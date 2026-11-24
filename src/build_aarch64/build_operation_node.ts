@@ -3,7 +3,11 @@ import { enum_with_data_side, static_enum_case } from "../build_c/utils/enum_eq.
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import flatten_null_chain from "../build_common/null_chain.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
-import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import {
+	has_flag_name,
+	is_nullable_enum_with_data,
+	is_nullable_struct_type,
+} from "../build_common/nullable_struct.ts";
 import string_literal_length from "../build_common/string_literal_length.ts";
 import {
 	is_float_type as name_is_float_type,
@@ -1572,16 +1576,28 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		const left_t = type_from_value_node(node.left_value);
 		const left_is_nullable_struct = is_nullable_struct_type(left_t, status);
 		const left_is_nullable_scalar = is_nullable_scalar_type(left_t, status);
-		if (left_is_nullable_scalar && node.left_value.node_type === "func_call") {
-			// A nullable scalar CALL result lives in a `_call_ret_` temp
-			// (x0 = temp address): read the value at +0 and the flag word at
-			// +8 directly — building the call once only.
+		const left_is_nullable_enum =
+			!!left_t?.is_nullable && get_enum_sret_size(left_t.name, status) !== undefined;
+		const left_is_nullable_call =
+			(left_is_nullable_scalar || left_is_nullable_enum) &&
+			(node.left_value.node_type === "func_call" ||
+				(node.left_value.node_type === "access" &&
+					(node.left_value as AccessNode).access?.node_type === "access_func"));
+		if (left_is_nullable_call) {
+			// A nullable scalar/enum CALL result (free call or method call)
+			// lives in a temp: x0 = temp address, the value blob at +0, and
+			// the flag word after the blob (+8 for scalars, +blob for enums).
+			// Spill the whole value and build the call once only.
+			const blob = left_is_nullable_enum && left_t ? get_enum_sret_size(left_t.name, status)! : 8;
+			const flag_offset = left_is_nullable_enum ? blob : 8;
 			build_operand(node.left_value, "x0", status);
 			ensure_newline(status);
-			emit_asm(status, `ldr x1, [x0]\n`);
-			emit_asm(status, `ldr x2, [x0, #8]\n`);
-			const spill = allocate_stack_space(status, 8);
-			emit_asm(status, `str x1, [x29, #${spill}]\n`);
+			const spill = allocate_stack_space(status, blob);
+			for (let off = 0; off < blob; off += 8) {
+				emit_asm(status, `ldr x1, [x0, #${off}]\n`);
+				emit_asm(status, `str x1, [x29, #${spill + off}]\n`);
+			}
+			emit_asm(status, `ldr x2, [x0, #${flag_offset}]\n`);
 			const have_label = `.Lcoalesce_have_${coalesce_counter++}`;
 			const done_label = `.Lcoalesce_done_${coalesce_counter++}`;
 			emit_asm(status, `cmp x2, #0\n`);
@@ -1590,11 +1606,17 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			ensure_newline(status);
 			emit_asm(status, `b ${done_label}\n`);
 			emit_asm(status, `${have_label}:\n`);
-			emit_asm(status, `ldr x0, [x29, #${spill}]\n`);
+			// Yield the value: scalars as the word itself; enum/struct blobs
+			// as the ADDRESS of the spilled blob (structs build to addresses).
+			if (left_is_nullable_enum) {
+				emit_asm(status, `add x0, x29, #${spill}\n`);
+			} else {
+				emit_asm(status, `ldr x0, [x29, #${spill}]\n`);
+			}
 			emit_asm(status, `${done_label}:\n`);
 			return;
 		}
-		if (left_is_nullable_struct || left_is_nullable_scalar) {
+		if (left_is_nullable_struct || left_is_nullable_scalar || left_is_nullable_enum) {
 			build_operand(node.left_value, "x0", status);
 			ensure_newline(status);
 			const spill = allocate_stack_space(status, 8);
@@ -1708,13 +1730,21 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	) {
 		const nullable_flagged_side = (n: BaseNode) => {
 			const t = type_from_value_node(n);
-			return is_nullable_struct_type(t, status) || is_nullable_scalar_type(t, status);
+			const r =
+				is_nullable_struct_type(t, status) ||
+				is_nullable_scalar_type(t, status) ||
+				(!!t?.is_nullable && get_enum_sret_size(t.name, status) !== undefined);
+			return r;
 		};
 		const nullable_side = nullable_flagged_side(node.left_value)
 			? node.left_value
 			: node.right_value;
 		const side_type = type_from_value_node(nullable_side);
-		if (is_nullable_struct_type(side_type, status) || is_nullable_scalar_type(side_type, status)) {
+		if (
+			is_nullable_struct_type(side_type, status) ||
+			is_nullable_scalar_type(side_type, status) ||
+			is_nullable_enum_with_data(side_type, status)
+		) {
 			load_nullable_has(nullable_side, "x1", status);
 			ensure_newline(status);
 			// has==1 means non-null. `== null` → !has (eq 0); `!= null` → has (ne 0).
@@ -2606,17 +2636,25 @@ export function load_nullable_has(node: BaseNode, target_reg: string, status: Bu
 			return;
 		}
 	}
-	// Function call result: the call was materialised into a temp with the
-	// flag at `[temp + struct_size]`. Resolve the temp's address and load.
-	if (node.node_type === "func_call") {
-		const t = (node as any).type;
+	// Function call result — a free call or a method call (`access` wrapping
+	// an `access_func`): the call was materialised into a temp with the
+	// flag after the value (a nullable SCALAR return rides the x8 sret
+	// buffer's flag word at +8; a nullable struct's flag sits at
+	// `[temp + struct_size]`). Resolve the temp's address and load.
+	if (
+		node.node_type === "func_call" ||
+		(node.node_type === "access" && (node as any).access.node_type === "access_func")
+	) {
+		const t = type_from_value_node(node);
 		if (t?.name) {
-			const struct_size = get_struct_size(t.name, status);
+			const flag_offset = is_nullable_scalar_type(t, status)
+				? 8
+				: (get_enum_sret_size(t.name, status) ?? get_struct_size(t.name, status));
 			// Build the call expression: it leaves x0 = address of the temp
 			// (struct value start). Load the flag from there.
 			build_operand(node, target_reg, status);
 			ensure_newline(status);
-			emit_asm(status, `ldr ${target_reg}, [${target_reg}, #${struct_size}]\n`);
+			emit_asm(status, `ldr ${target_reg}, [${target_reg}, #${flag_offset}]\n`);
 			return;
 		}
 	}

@@ -102,6 +102,16 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		panic("index out of range")
 	}
 
+	// Nullable checked access: the element when index is inside self.length,
+	// `null` otherwise — the escape hatch for indices the constraint
+	// checker can't prove (`xs.get(i) ?? fallback`).
+	pub func at_or_null = (self, int index, out char?) {
+		if index >= 0 && index < self.length {
+			return self.at(index)
+		}
+		return null
+	}
+
 	// A non-mv slice [start, end) into self's buffer. Returns a `view
 	// string` (ptr, len) that borrows from self: it may not outlive self's
 	// scope and is invalidated if self is reassigned. Use .to_string() to

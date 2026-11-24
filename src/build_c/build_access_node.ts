@@ -10,7 +10,10 @@ import {
 } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
-import { is_nullable_struct_type } from "../build_common/nullable_struct.ts";
+import {
+	is_nullable_enum_with_data,
+	is_nullable_struct_type,
+} from "../build_common/nullable_struct.ts";
 import {
 	drop_self_written_string_field_records,
 	scan_self_string_field_writes,
@@ -1983,7 +1986,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						target_param &&
 						!target_param.is_self_param &&
 						(is_nullable_struct_type(target_param.type, status) ||
-							is_nullable_scalar_type(target_param.type, status))
+							is_nullable_scalar_type(target_param.type, status) ||
+							is_nullable_enum_with_data(target_param.type, status))
 					) {
 						status.code += `, `;
 						emit_nullable_arg_flag(access_func.params[i], status);
@@ -1998,7 +2002,8 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					(target_method ?? trait_default_func)?.return_type ?? access_func.type;
 				if (
 					is_nullable_struct_type(method_ret_type, status) ||
-					is_nullable_scalar_type(method_ret_type, status)
+					is_nullable_scalar_type(method_ret_type, status) ||
+					is_nullable_enum_with_data(method_ret_type, status)
 				) {
 					const flag_name = status.current_nullable_call_flag;
 					status.code += `, `;

@@ -13,7 +13,10 @@ in the same change. The coverage/definition gaps this surfaced (README
 sections for the undocumented features, the SPEC Standard Library index,
 integer overflow, argument evaluation order, doc comments, `nomen test`,
 program entry and exit codes, globals, and the full operator-precedence
-table) were filled the same day, so nothing is tracked here for them. One §1.6 item was resolved by investigation rather than
+table) were filled the same day, so nothing is tracked here for them.
+The §1.1 flow-facts work (early-return zero-guards, `&&` conjunct guards,
+length non-negativity, and the `at_or_null` escape hatch — no `assert`, the
+`if` guard IS the assertion) also landed and is removed below. One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -60,29 +63,7 @@ Priorities:
 
 ## 1. Language design consistency
 
-### 1.1 Constraints: the flow-fact model needs more facts (P0)
-
-Constraints are refinement types checked by flow facts: `.at()` and `/`
-require a runtime value to be **proven** (`cannot be verified` otherwise),
-and user parameter constraints behave the same. The docs now document that
-rule (the former "only checked when the value is a compile-time constant"
-claim is fixed). The flow analysis itself is still too weak:
-
-- **No facts after an early return.** After `if n == 0 { return 0 }`,
-  `divide(a, n)` still fails (verified, and logged in FOLLOWUP).
-- **`.length` is a signed `int`.** `if n < arr.length { arr.at(n) }` fails
-  because `n >= 0` isn't known, even when `n` is itself a `.length`
-  (verified). Make lengths non-negative facts, or make them `uint`.
-- **No way to assert a fact**: there is no `assume`/`assert` or checked
-  narrowing such as `arr.at_checked(i) -> T?`. The `_or_panic` family is
-  mentioned but not documented.
-
-Recommendation: give the provable fact set (guards, loop ranges, early
-returns, length ≥ 0), and add an escape hatch, such as `arr.get(i)`
-returning `T?` and an explicit `assert(cond)` that both checks at runtime
-and adds the fact.
-
-### 1.2 Methods: `self` spelling and static methods (P1)
+### 1.1 Methods: `self` spelling and static methods (P1)
 
 - A method with no `self` is static (`Task.current_cancelled`,
   `SPEC.md:4551`). But the compiler also accepts trait methods written
@@ -99,7 +80,7 @@ Recommendation: always require `self` for instance methods. Mark static
 methods explicitly (`static func`, or `Type.func`). Document `Self` and the
 `#self` placeholder in the Traits section.
 
-### 1.3 Copyable vs. `mv`, and destructors (P0 design)
+### 1.2 Copyable vs. `mv`, and destructors (P0 design)
 
 - A plain `struct` can declare `#destroy`, and copies duplicate it. On the C
   backend the destructor runs once per copy (`destroy 3` printed twice,
@@ -125,7 +106,7 @@ methods explicitly (`static func`, or `Type.func`). Document `Self` and the
   capture / destructure, by type kind") would help, both as documentation and
   as a design consistency check.
 
-### 1.4 Results, errors and nullables (P1)
+### 1.3 Results, errors and nullables (P1)
 
 The design is mostly coherent (`?.`/`??` mirror `!`/`!!`), with a few sharp
 edges:
@@ -154,7 +135,7 @@ edges:
   between two spellings of the same type is a trap. Lift in both cases, or
   reject `Result<…, error-enum>` in `out` position in favour of `!`.
 
-### 1.5 Two spellings for one thing (P2)
+### 1.4 Two spellings for one thing (P2)
 
 - `let` vs `->` in branches (`SPEC.md:2418-2447`). Two keywords with
   identical meaning, plus two paragraphs of rules about where `let` is _not_
@@ -169,7 +150,7 @@ edges:
   are fine, but `in` is a common typo (see the README bug), so give it a
   dedicated diagnostic ("did you mean `of`?").
 
-### 1.6 Statement and expression forms (P2)
+### 1.5 Statement and expression forms (P2)
 
 - `switch` in statement position accepts value arms (`case x > 100 ->
 "big"`, `SPEC.md:2314-2318`) and silently discards the value (verified, no
@@ -187,7 +168,7 @@ edges:
   differs from `ref` parameters, and aliasing inside the loop body is
   surprising. Document this clearly, or make it a true element borrow.
 
-### 1.7 Types (P2)
+### 1.6 Types (P2)
 
 - `ufloat` family: unsigned floats are unusual, and their semantics
   (negative results from subtraction? NaN?) aren't specified.
@@ -202,7 +183,7 @@ edges:
   worth stating explicitly (and possibly reconsidering for structs with no
   trait conformance).
 
-### 1.8 Lint false positives found while verifying (P2)
+### 1.7 Lint false positives found while verifying (P2)
 
 These make doc examples noisy and will train users to ignore warnings:
 
@@ -226,15 +207,15 @@ Ordered by rough priority within each tier. "Effort" is a guess.
 
 ### Tier 1: high priority (blocks idiomatic code today)
 
-| Feature                                                                                                                       | Peers                                                                   | Rationale                                                                                                                         | Effort |
-| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Flow-sensitive constraint facts (early return, `else`-after-guard, `len >= 0`, facts from `while` conditions)                 | Rust (NLL-style flow), Kotlin smart casts, Swift `guard`                | Constraints are enforced for runtime values, so without this ordinary guard code fails. This is the single biggest friction point | M      |
-| `guard`/early-exit narrowing for nullables and results (`const v = x ?? return`, or `guard let`)                              | Swift `guard`, Kotlin `?: return`, Rust `let … else`                    | Pairs with the item above. Today the narrowing only flows into the `if` body                                                      | S–M    |
-| Match guards, or-patterns, nested/struct patterns, range patterns (`case .rect(w, h) if w == h`, `case .a, .b`, `case 1..10`) | Rust, Swift, Kotlin `when`                                              | `match` is central, but currently it handles only one level of case + bind. That's why composed errors need three nested matches  | M      |
-| Typed `Channel<T>`                                                                                                            | Go, Rust mpsc, Kotlin channels                                          | The untyped `uint64` channel plus `send_string` doesn't fit a typed language with `Sendable`                                      | M      |
-| Generic methods (`func map<U> = (self, func (T, out U) f, out List<U>)`)                                                      | All peers                                                               | `SPEC.md:3860`: "there are no generic methods". This blocks `map`/`filter`/`fold` on collections                                  | M–L    |
-| Comparison and ordering overloading (`#op_lt` / a `Comparable` trait), unary `-`, index operators                             | Rust `PartialOrd`/`Index`, Swift `Comparable`, Kotlin `compareTo`/`get` | Only arithmetic and `==` are overloadable. Sorting user types and generic `max`/`min` need ordering                               | S–M    |
-| `[]` index sugar for `.at`/`.set`                                                                                             | All peers                                                               | `arr.at(i)` and `grid.at(1).at(0)` are verbose. `p[i]` already exists inside `unsafe`, so the syntax is free                      | S      |
+| Feature                                                                                                                       | Peers                                                                   | Rationale                                                                                                                        | Effort |
+| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Residual flow-fact narrowing (facts from `while` conditions, `else`-side narrowing after a guard)                             | Rust (NLL-style flow), Kotlin smart casts, Swift `guard`                | The core set landed 2026-11-24 (early-return zero-guards, `&&` conjuncts, `length >= 0`); these are the remaining shapes         | M      |
+| `guard`/early-exit narrowing for nullables and results (`const v = x ?? return`, or `guard let`)                              | Swift `guard`, Kotlin `?: return`, Rust `let … else`                    | Pairs with the item above. Today the narrowing only flows into the `if` body                                                     | S–M    |
+| Match guards, or-patterns, nested/struct patterns, range patterns (`case .rect(w, h) if w == h`, `case .a, .b`, `case 1..10`) | Rust, Swift, Kotlin `when`                                              | `match` is central, but currently it handles only one level of case + bind. That's why composed errors need three nested matches | M      |
+| Typed `Channel<T>`                                                                                                            | Go, Rust mpsc, Kotlin channels                                          | The untyped `uint64` channel plus `send_string` doesn't fit a typed language with `Sendable`                                     | M      |
+| Generic methods (`func map<U> = (self, func (T, out U) f, out List<U>)`)                                                      | All peers                                                               | `SPEC.md:3860`: "there are no generic methods". This blocks `map`/`filter`/`fold` on collections                                 | M–L    |
+| Comparison and ordering overloading (`#op_lt` / a `Comparable` trait), unary `-`, index operators                             | Rust `PartialOrd`/`Index`, Swift `Comparable`, Kotlin `compareTo`/`get` | Only arithmetic and `==` are overloadable. Sorting user types and generic `max`/`min` need ordering                              | S–M    |
+| `[]` index sugar for `.at`/`.set`                                                                                             | All peers                                                               | `arr.at(i)` and `grid.at(1).at(0)` are verbose. `p[i]` already exists inside `unsafe`, so the syntax is free                     | S      |
 
 ### Tier 2: medium priority
 
@@ -269,16 +250,14 @@ Ordered by rough priority within each tier. "Effort" is a guess.
 
 ## 3. Suggested order of work
 
-1. Land flow facts for constraints — early returns and `length >= 0` — and
-   the `assert`/`arr.get(i)` escape hatch (§1.1).
-2. Make `#destroy` imply `mv` (§1.3). This is a soundness fix, not just docs.
-3. Decide the method receiver and static-method rule (§1.2), and the
-   result-`match` flattening question (§1.4). Both affect many examples, so
+1. Make `#destroy` imply `mv` (§1.2). This is a soundness fix, not just docs.
+2. Decide the method receiver and static-method rule (§1.1), and the
+   result-`match` flattening question (§1.3). Both affect many examples, so
    settle them before more docs are written.
-4. Work through the Tier 1 features in §2.
-5. Generate `test/readme/` and `test/spec/` inputs from the docs' fenced
+3. Work through the Tier 1 features in §2.
+4. Generate `test/readme/` and `test/spec/` inputs from the docs' fenced
    blocks (extract by heading), keeping hand-written expectations only for
    the blocks marked as errors — the doc/test drift this review found (and
    hand-fixed) then fails CI instead of hiding.
-6. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
+5. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
    the tree.

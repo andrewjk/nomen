@@ -82,6 +82,16 @@ pub mv struct LinkedList<T>: Enumerable {
 		panic("index out of range")
 	}
 
+	// Nullable checked access: the element when idx is inside self.count,
+	// `null` otherwise — the escape hatch for indices the constraint
+	// checker can't prove (`xs.get(i) ?? fallback`).
+	pub func at_or_null = (self, int idx, out T?) {
+		if idx >= 0 && idx < self.count {
+			return self.at(idx)
+		}
+		return null
+	}
+
 	pub func length = (self, out int) {
 		return self.count
 	}

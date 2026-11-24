@@ -137,6 +137,115 @@ struct Config {
 	});
 });
 
+describe("spec: constraints - flow facts", () => {
+	test("an early-return zero guard proves != 0 for a user constraint", () => {
+		const input = `
+func divide = (int a, int b: b != 0, out int) => a / b
+
+func f = (int a, int n, out int) {
+    if n == 0 {
+        return 0
+    }
+    return divide(a, n)
+}
+
+f(10, 2)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("an early-return zero guard discharges the divisor contract", () => {
+		const input = `
+func f = (int a, int n, out int) {
+    if n == 0 {
+        return 0
+    }
+    return a / n
+}
+
+f(10, 2)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("an early-return != guard pins the fall-through to zero", () => {
+		const input = `
+func need_zero = (int m: m == 0, out int) => m
+
+func f = (int n, out int) {
+    if n != 0 {
+        return 99
+    }
+    return need_zero(n)
+}
+
+f(0)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("a non-exiting zero guard proves nothing", () => {
+		const input = `
+func f = (int a, int n, out int) {
+    if n == 0 {
+        Console.write("zero")
+    }
+    return a / n
+}
+
+f(10, 2)
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+	});
+
+	test("reassignment between guard and use drops the fact", () => {
+		const input = `
+func f = (int a, int n, out int) {
+    var m = n
+    if m == 0 {
+        return 0
+    }
+    m = a
+    return a / m
+}
+
+f(10, 2)
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("cannot be verified"))).toBe(true);
+	});
+
+	test("a length snapshot carries its >= 0 fact through a guard", () => {
+		const input = `
+func last = (string[] a, string[] b, out string) {
+    var n = a.length
+    if n < b.length {
+        return b.at(n)   // OK — n >= 0 (length fact), n < b.length (guard)
+    }
+    return ""
+}
+
+last(["a", "b"], ["c", "d", "e"])
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("compound && guards record every conjunct", () => {
+		const input = `
+func get = (string[] b, int i, out string) {
+    if i >= 0 && i < b.length {
+        return b.at(i)
+    }
+    return ""
+}
+
+get(["a"], 0)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+});
+
 describe("spec: constraints - variables", () => {
 	test("variable constraint checked on init and reassign", () => {
 		const input = `

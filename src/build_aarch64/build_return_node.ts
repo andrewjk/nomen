@@ -200,17 +200,29 @@ export default function build_return_node(
 	// value+flag (no extra copy or hardcoded flag at the call site).
 	const returns_nullable_struct = is_nullable_struct_type(status.function_return_type, status);
 	const returns_nullable_scalar = is_nullable_scalar_type(status.function_return_type, status);
+	// A nullable ENUM-with-data return rides the same sret buffer: the tag+
+	// payload blob at +0, the companion flag word after the blob.
+	const ret_type_name = status.function_return_type?.name;
+	const returns_nullable_enum =
+		!!status.function_return_type?.is_nullable &&
+		get_enum_sret_size(ret_type_name, status) !== undefined;
+	const nullable_sret_flag_offset = returns_nullable_scalar
+		? 8
+		: returns_nullable_struct
+			? get_struct_size(ret_type_name!, status)
+			: returns_nullable_enum
+				? get_enum_sret_size(ret_type_name, status)!
+				: undefined;
 	const nullable_ret_is_null =
-		(returns_nullable_struct || returns_nullable_scalar) &&
+		(returns_nullable_struct || returns_nullable_scalar || returns_nullable_enum) &&
 		(!node.value ||
 			(node.value.node_type === "value" && (node.value as ValueNode).value === "null"));
 	if (nullable_ret_is_null) {
 		// `return null`: write 0 to the flag slot in the sret buffer (the
 		// value is left uninitialised — the caller won't read it when null).
 		if (status.return_buffer_stack_offset !== undefined) {
-			const struct_size = get_struct_size(status.function_return_type!.name, status);
 			emit_asm(status, `ldr x8, [x29, #${status.return_buffer_stack_offset}]\n`);
-			emit_asm(status, `str xzr, [x8, #${struct_size}]\n`);
+			emit_asm(status, `str xzr, [x8, #${nullable_sret_flag_offset}]\n`);
 		}
 		// Run scope-exit cleanup for remaining declarations and jump to the
 		// return epilogue (mirrors the void-return path above). The
@@ -1119,13 +1131,16 @@ export default function build_return_node(
 			} else {
 				emit_struct_copy("x0", "x8", 0, struct_size, status);
 			}
-			// For a nullable STRUCT return, the sret buffer is sized
-			// `struct_size + 8` and the 8-byte word at [struct_size] is the
-			// companion `_has` flag. We've just copied the non-null value —
-			// write `1` so the caller sees the result as non-null. (The
-			// null-return path is handled at the top of this function.)
-			// Enums are never nullable, so this stays struct-only.
-			if (ret_struct && returns_nullable_struct) {
+			// For a nullable STRUCT — or nullable ENUM-with-data — return,
+			// the sret buffer carries the companion `_has` flag word after
+			// the blob (`struct_size` here is the copied blob's size). We've
+			// just copied the non-null value — write `1` so the caller sees
+			// the result as non-null. (The null-return path is handled at
+			// the top of this function.)
+			if (
+				(ret_struct && returns_nullable_struct) ||
+				(ret_enum_size !== undefined && returns_nullable_enum)
+			) {
 				emit_asm(status, `mov x9, #1\n`);
 				emit_asm(status, `str x9, [x8, #${struct_size}]\n`);
 			}

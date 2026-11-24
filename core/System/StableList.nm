@@ -238,6 +238,16 @@ pub mv struct StableList<T> {
 		panic("index out of range")
 	}
 
+	// Nullable checked access: the element when i is inside self.length,
+	// `null` otherwise — the escape hatch for indices the constraint
+	// checker can't prove (`xs.get(i) ?? fallback`).
+	pub func at_or_null = (self, int i, out T?) {
+		if i >= 0 && i < self.length {
+			return self.at(i)
+		}
+		return null
+	}
+
 	// Overwrite an EXISTING element in place (i must be < length — the
 	// refill contract): the displaced element is reclaimed, `value` is
 	// installed, and no slot moves — element addresses are untouched, so

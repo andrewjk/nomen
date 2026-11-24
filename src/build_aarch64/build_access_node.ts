@@ -3108,10 +3108,16 @@ function build_access_method(
 	// drop `is_nullable`).
 	const nullable_scalar_ret =
 		is_nullable_scalar_type(method_ret_type, status) && !method_ret_type.is_ref;
+	// A nullable ENUM-with-data return rides the same sret-plus-flag shape:
+	// the tag+payload blob at +0, the companion flag word after the blob.
+	const nullable_enum_ret =
+		!!method_ret_type.is_nullable &&
+		get_enum_sret_size(method_ret_type.name, status) !== undefined &&
+		!method_ret_type.is_ref;
 
 	let temp_addr = "";
 	let temp_offset = 0;
-	if (return_struct || nullable_scalar_ret) {
+	if (return_struct || nullable_scalar_ret || nullable_enum_ret) {
 		temp_addr = `_access_temp_${access_temp_counter++}`;
 		// The temp must hold the FULL result blob: an enum-with-data return
 		// is not a struct, so get_struct_size answers the 8-byte default for
@@ -3119,16 +3125,21 @@ function build_access_method(
 		// past the slot into the frame's saved-register area (List<mv-enum>
 		// .pop's inline move memcpy'd 32 bytes into an 8-byte slot, clobbering
 		// x19/x29 on return → SIGSEGV in the caller). get_enum_sret_size
-		// answers the real tag+payload size.
+		// answers the real tag+payload size. A NULLABLE return additionally
+		// carries the companion flag word after the blob (+8 for scalars,
+		// +blob for enums — the callee writes it through x8).
+		const enum_blob =
+			get_enum_sret_size(ret_type_name, status) ?? get_struct_size(ret_type_name, status);
 		temp_offset = allocate_stack_space(
 			status,
-			nullable_scalar_ret
-				? 16
-				: (get_enum_sret_size(ret_type_name, status) ?? get_struct_size(ret_type_name, status)),
+			nullable_scalar_ret ? 16 : nullable_enum_ret ? enum_blob + 8 : enum_blob,
 		);
 		status.stack_offsets!.set(temp_addr, temp_offset);
 		if (nullable_scalar_ret) {
 			status.stack_offsets!.set(has_flag_name(temp_addr), temp_offset + 8);
+		}
+		if (nullable_enum_ret) {
+			status.stack_offsets!.set(has_flag_name(temp_addr), temp_offset + enum_blob);
 		}
 		emit_asm(status, `add x8, x29, #${temp_offset}\n`);
 	}
