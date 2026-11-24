@@ -38,6 +38,17 @@ the edit is local:
   stop invalidating callers' borrows — unless the type is copyable and the
   parameter is never written through, in which case taking it by value is the
   better shape (no fix: the call sites would change too);
+- **a `ref self` receiver on a concrete value struct derives `{}`** (landed
+  2026-11-25): every field a Copyable struct can declare is value storage
+  (owning/string/view fields all force `mv struct`), so the wildcard
+  provably displaces nothing and the empty set is supplied instead of
+  asked for. The set is marked derived, so signatures and hovers still show
+  the author's text; forwarding the receiver through a caller's
+  `{}`-narrowed `ref` parameter just works. `mv struct` receivers keep the
+  wildcard and the lint (their sets are load-bearing), and lifecycle
+  receivers (`#init`) keep theirs too — there `{}` is the RESTRICTIVE
+  spelling (rule 3 would block forwarding `self` to wildcard helpers, the
+  shape the #init-completeness analysis follows);
 - an un-annotated `ref self` reader says "use bare `self`" with a local
   quick fix (`ref self` → `self`); a `{}` receiver that is never written
   through gets the same. A `ref self` that DOES displace heap fields stays a

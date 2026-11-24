@@ -120,7 +120,11 @@ export default function emit_warnings(root: BaseNode, status: CheckStatus): void
 						param.name_start ?? param.start,
 						drop_ref_self_quick_fix(param),
 					);
-				} else if (!displaces) {
+				} else if (!displaces && !entry.func_name.startsWith("#")) {
+					// Lifecycle receivers (`#init`) keep their wildcard: there
+					// the empty set is the RESTRICTIVE spelling — it blocks
+					// forwarding `self` to wildcard helpers — so the advice
+					// would push users away from the permissive shape.
 					add_warning(
 						status,
 						`Method receiver 'self' mutates only value-type storage — declare '{}' so calls keep callers' borrows alive`,

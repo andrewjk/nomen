@@ -134,6 +134,62 @@ export function current_function(status: CheckStatus): FunctionNode | undefined 
 }
 
 /**
+ * Derived `{}` for concrete value-struct receivers (FIELD_EFFECTS.md's
+ * value-type exemption, taken to the type level): a `ref self` method on a
+ * struct whose every field is value storage provably displaces nothing, so
+ * the empty set — the fact `ref self {}` states — is DERIVED instead of
+ * asked for. The wildcard receiver then composes with callers that narrow it
+ * through a declared `ref` parameter, and the `{}` lint has nothing to say.
+ *
+ * "Every field is value storage" is checked with the same
+ * `field_can_displace` test the rules use, so a value struct carrying a
+ * `view` field (legal — views borrow, the declaration-level `mv` rule only
+ * rejects OWNING spellings) keeps its wildcard, as do `mv struct` receivers
+ * (their sets are load-bearing), traits (no scope: the set describes
+ * whichever conformer is dispatched), generic templates (a
+ * monomorphization may own), and lifecycle receivers (`#init`/`#destroy` —
+ * a derived `{}` on an init would be RESTRICTIVE: rule 3 would block
+ * forwarding `self` to a wildcard helper, and the #init-completeness
+ * analysis follows exactly that pattern). Monomorphized clones copy the
+ * template's `field_set`, so a derived `{}` never widens onto an owning
+ * mono.
+ */
+export function derive_receiver_field_set(func: FunctionNode, status: CheckStatus): void {
+	const self_param = func.params[0];
+	if (
+		!self_param?.is_self_param ||
+		!(self_param.is_ref || self_param.type.is_ref) ||
+		self_param.field_set !== undefined ||
+		func.type_params.length > 0 ||
+		func.name.startsWith("#")
+	) {
+		return;
+	}
+	const struct = func.scope as
+		| {
+				node_type?: string;
+				is_owning?: boolean;
+				is_class?: boolean;
+				is_simple_type?: boolean;
+				is_generic?: boolean;
+				fields?: { type: Type }[];
+		  }
+		| undefined;
+	if (
+		struct?.node_type !== "struct" ||
+		struct.is_owning ||
+		struct.is_class ||
+		struct.is_simple_type ||
+		struct.is_generic ||
+		!struct.fields?.every((f) => !field_can_displace(f.type, status))
+	) {
+		return;
+	}
+	self_param.field_set = [];
+	self_param.field_set_derived = true;
+}
+
+/**
  * The current function's `ref` parameter named `root`, if the innermost
  * binding of that name really is the parameter (a shadowing local breaks the
  * identification and disables the verification).

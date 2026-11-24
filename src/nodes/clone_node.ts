@@ -553,6 +553,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			c.comptime_name = n.comptime_name;
 			c.comptime_type_template = n.comptime_type_template;
 			c.field_set = n.field_set?.slice();
+			c.field_set_derived = n.field_set_derived;
 			c.field_set_span = n.field_set_span ? { ...n.field_set_span } : undefined;
 			c.is_variadic_tuple = n.is_variadic_tuple;
 			c.constraint = n.constraint ? clone_node(n.constraint) : undefined;

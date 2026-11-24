@@ -497,9 +497,10 @@ class Builder {
 
 	/** The declared field set suffix (FIELD_EFFECTS.md): `{}` for "displaces
 	 *  nothing", `{ a, b }` for a named set, and nothing at all for a wildcard
-	 *  (no declaration). */
+	 *  (no declaration). A DERIVED set (a value-struct receiver's, supplied by
+	 *  the checker) is skipped: signatures show the author's text. */
 	private field_set_text(node: ParameterNode): string {
-		if (node.field_set === undefined) return "";
+		if (node.field_set === undefined || node.field_set_derived) return "";
 		if (node.field_set.length === 0) return " {}";
 		return ` { ${node.field_set.join(", ")} }`;
 	}

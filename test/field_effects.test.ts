@@ -309,6 +309,89 @@ pub func main = (Init init) {
 			"Method receiver 'self' mutates only value-type storage — declare '{}' so calls keep callers' borrows alive",
 		);
 	});
+
+	test("a plain (value) struct receiver derives {} — no lint, composes with narrowed ref params", () => {
+		// Every field of a Copyable struct is value storage, so a wildcard
+		// `ref self` provably displaces nothing — the checker derives the
+		// empty set instead of asking for it: no lint, and the method is
+		// callable through a caller's `{}`-narrowed `ref` parameter.
+		const r = run(`
+struct Pixel {
+	var int x
+	var int y
+
+	func set_x = (ref self, int v) {
+		self.x = v
+	}
+}
+
+func paint = (ref Pixel p {}) {
+	p.set_x(9)
+}
+
+pub func main = (Init init) {
+	var px = Pixel(1, 2)
+	paint(ref px)
+	Console.write("\\{px.x}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).not.toContain(
+			"Method receiver 'self' mutates only value-type storage — declare '{}' so calls keep callers' borrows alive",
+		);
+	});
+
+	test("a view-field value struct keeps its wildcard — the field is displace-capable", () => {
+		// Views count as displace-capable (`field_can_displace`), so a value
+		// struct carrying one does NOT derive `{}`: the receiver stays a
+		// silent wildcard, and forwarding it through a `{}`-narrowed `ref`
+		// parameter is still rejected (the derivation must not make this
+		// compile).
+		const r = run(`
+struct Cursor {
+	var view string text
+	var int pos = 0
+
+	func rebind = (ref self, view string t) {
+		self.text = t
+	}
+}
+
+pub func main = (Init init) {
+	var c = Cursor("abc")
+	c.rebind("xy")
+	Console.write("\\{c.text}")
+}
+`);
+		expect(r.errors).toEqual([]);
+		expect(r.warnings).not.toContain(
+			"Method receiver 'self' mutates only value-type storage — declare '{}' so calls keep callers' borrows alive",
+		);
+
+		const forwarded = run(`
+struct Cursor {
+	var view string text
+	var int pos = 0
+
+	func rebind = (ref self, view string t) {
+		self.text = t
+	}
+}
+
+func replot = (ref Cursor c {}) {
+	c.rebind("xy")
+}
+
+pub func main = (Init init) {
+	var c = Cursor("abc")
+	replot(ref c)
+	Console.write("\\{c.text}")
+}
+`);
+		expect(forwarded.errors).toContain(
+			"calling 'rebind' may change any field of 'c' — the receiver declares no field set, but 'replot' narrows 'c' to an empty field set; declare a set on the receiver's parameter or widen this one",
+		);
+	});
 });
 
 describe("free ref parameters", () => {

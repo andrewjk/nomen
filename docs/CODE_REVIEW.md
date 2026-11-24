@@ -33,8 +33,11 @@ static, called on the type; there is no `static` keyword) — §1.1 and the
 §0 finding it fed are removed below, with error tests in
 `test/structs.test.ts` / `test/traits.test.ts`. Four of the §1.7 lint
 false positives landed the same way (the `for ref` const recommendation,
-mutations through `ref` aliases, and calls counting as callee reads); the
-section keeps only the `ref self {}` inference suggestion. One §1.6 item was resolved by investigation rather than
+mutations through `ref` aliases, and calls counting as callee reads), and
+the §1.7 `{}` suggestion landed with them, scoped: concrete value-struct
+receivers now DERIVE `{}` (the lint fires only on `mv struct` setters, and
+lifecycle receivers keep the permissive wildcard), so the section keeps the
+remaining mv-body inference. One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -175,10 +178,17 @@ through `q` stays silent), and a call reads its callee — a called closure
 (`"\{f()}"`) and a `T: type` parameter constructed as `T()` count as used.
 Regression tests live in `test/warnings.test.ts`.
 
-- `Method receiver 'self' mutates only value-type storage — declare '{}'` fires
-  on every simple `ref self` setter (README Counter, SPEC `readonly`
-  Counter). If `{}` can be inferred, infer it, rather than asking every user
-  to write `ref self {}`.
+- `Method receiver 'self' mutates only value-type storage — declare '{}'` used
+  to fire on every simple `ref self` setter (README Counter, SPEC `readonly`
+  Counter). Plain-struct receivers now DERIVE `{}` — every field a Copyable
+  struct can declare is value storage, so the wildcard provably displaces
+  nothing, the lint is silent, and the receiver composes with callers that
+  narrow it through a declared `ref` parameter (which used to be an error).
+  The lint now fires only on `mv struct` setters, where the set is
+  load-bearing (lifecycle receivers keep the permissive wildcard, since
+  `{}` would block forwarding `self` to wildcard helpers). What remains is
+  the mv-body inference: if `{}` can be inferred from the body, infer it,
+  rather than asking users to write `ref self {}`.
 
 ---
 

@@ -40,6 +40,13 @@ export default class ParameterNode extends BaseNode {
 	 */
 	field_set_span?: { start: number; end: number };
 	/**
+	 * The set was DERIVED, not written: a concrete value-struct receiver
+	 * whose every field is value storage provably displaces nothing, so the
+	 * checker supplies `{}` (see utils/field_effects.ts). Signatures and
+	 * hovers show the author's text, so the extension skips derived sets.
+	 */
+	field_set_derived?: boolean;
+	/**
 	 * Set when this is a variadic tuple parameter (`...[T1, T2, ...]`).
 	 * At the call site, consecutive arguments are grouped into tuples.
 	 */

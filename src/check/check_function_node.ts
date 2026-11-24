@@ -15,7 +15,7 @@ import { materialize_anon_enum_type } from "./utils/anon_enum.ts";
 import check_type_exists from "./utils/check_type_exists.ts";
 import clone_status from "./utils/clone_status.ts";
 import { collect_rebound_names } from "./utils/devirtualize.ts";
-import { ensure_ref_param_write } from "./utils/field_effects.ts";
+import { derive_receiver_field_set, ensure_ref_param_write } from "./utils/field_effects.ts";
 import { extract_length_equalities_at_registration } from "./utils/flow_bounds.ts";
 import materialize_type from "./utils/materialize_type.ts";
 import { struct_has_view_fields } from "./utils/view_fields.ts";
@@ -224,6 +224,9 @@ export default function check_function_node(func: FunctionNode, status: CheckSta
 			}
 		}
 	}
+	// Derived `{}` for value-struct receivers — before the body runs, so the
+	// declared-effect verification sees it (see derive_receiver_field_set).
+	derive_receiver_field_set(func, function_status);
 	// Parallel-length equations are scoped to the function whose params
 	// declared them; a nested function's params may shadow the outer names,
 	// so it starts with a clean slate.
