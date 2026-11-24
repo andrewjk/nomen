@@ -41,6 +41,12 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 		// field's `scope` stays unset — the access check's visibility
 		// leniency for trait fields depends on it.)
 		decl.is_trait_field = true;
+		// A `view T name` field (the view DECLARATION keyword) normalizes its
+		// type inside check_declaration_node — after this walk — so stamp the
+		// borrow here: a view member is never an owner.
+		if (decl.declaration === "view") {
+			decl.type.is_view = true;
+		}
 		if (decl.declaration === "var" && decl.type.name && is_class_type(decl.type.name, status)) {
 			add_error(status, `class-type fields must use 'mv', not 'var'`, decl.start);
 		}

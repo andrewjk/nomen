@@ -278,6 +278,14 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 			add_error(status, `struct fields cannot be 'ref'`, decl.start);
 			continue;
 		}
+		// A `view T name` field (the view DECLARATION keyword) gets its view
+		// marker set inside check_declaration_node — which runs after this
+		// walk — so normalize here too: a view member is a (ptr, len) borrow,
+		// never an owner, and the Copyable verifier below must see the
+		// borrow, not a plain `T`.
+		if (decl.declaration === "view") {
+			decl.type.is_view = true;
+		}
 		// A func-typed field (e.g. `pub var func (int, out bool) test`) stores
 		// an 8-byte code pointer. The parser leaves the type NAME empty and
 		// puts the signature on func_params/func_return_type; give it an

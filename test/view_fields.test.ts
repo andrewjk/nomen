@@ -578,3 +578,62 @@ pub func main = () { Console.write("x") }`).some((m) => m.includes("cannot be 'r
 		).toBe(true);
 	});
 });
+
+describe("view struct fields on plain (Copyable) structs", () => {
+	test("a `view T name` member (the declaration keyword spelling) is accepted", () => {
+		// The `view` keyword normalizes the field's type inside
+		// check_declaration_node — the Copyable verifier used to read the
+		// plain `T` before that and wrongly reject the struct as owning.
+		// A view member is a (ptr, len) borrow, never an owner: plain
+		// structs keep them.
+		const input = `
+import System
+struct Slice {
+	view string text
+	pub func #init = (ref self, view string t) {
+		self.text = t
+	}
+}
+pub func main = () {
+	var s = Slice("abc")
+	Console.write(s.text.to_string())
+}
+`;
+		expect(errors(input)).toEqual([]);
+	});
+
+	test("a view member still keeps the wildcard receiver — no derived {}", () => {
+		// The view field is displace-capable (field_can_displace), so the
+		// struct does not derive `{}` for its receivers: repointing the view
+		// is a real displacement. (Forwarding itself is moot — view-field
+		// structs cannot cross a call boundary — so this pins the
+		// declaration-level fact the derivation reads.)
+		const parsed = parse(
+			`
+import System
+struct Cursor {
+	view string text
+	var int pos = 0
+	pub func rebind = (ref self, view string t) {
+		self.text = t
+	}
+	pub func advance = (ref self) {
+		self.pos = self.pos + 1
+	}
+}
+pub func main = () {
+	var c = Cursor("abc")
+	Console.write("\\{c.pos}")
+}
+`,
+			lib,
+		);
+		expect(parsed.errors).toEqual([]);
+		const cursor = parsed.root.statements.find(
+			(s) => (s as unknown as { name?: string }).name === "Cursor",
+		) as unknown as { functions: { name: string; params: { field_set?: string[] }[] }[] };
+		for (const method of cursor.functions) {
+			expect(method.params[0].field_set).toBeUndefined();
+		}
+	});
+});
