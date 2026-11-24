@@ -29,7 +29,7 @@ mv struct MyRow {
 	mv Button btn
 	var int count = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.btn = Button(window, "+1")
 		self.btn.on_click(func () { self.count = self.count + 1 })
 	}
@@ -72,7 +72,7 @@ mv struct RowsApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("idle")
 		var Container grid = VStack(8)

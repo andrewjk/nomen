@@ -37,12 +37,12 @@ pub mv struct Tcp {
 	// 0 = ok; 1 = DNS, 2 = socket, 3 = connect, 4 = listen, 5 = closed.
 	pub var last_error = 0
 
-	pub func #init = (self, int handle) {
+	pub func #init = (ref self, int handle) {
 		self.fd = handle
 		self.last_error = 0
 	}
 
-	pub func #destroy = () {
+	pub func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
 				if (self->fd >= 0) {

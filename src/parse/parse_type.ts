@@ -92,6 +92,13 @@ function parse_type_base(status: ParseStatus): Type {
 	const start = get_index(status);
 	// `Controls::Button` — qualified references flatten to the bare name
 	const { base } = parse_qualified_name(status, consume(status), start);
+	// `Self` is reserved (and undocumented) — the struct's own type spells
+	// `#self` (the placeholder trait signatures and generated members use).
+	// Rejecting here catches the trait-declaration path, whose body-less
+	// signatures the checker never resolves, with one clear message.
+	if (base === "Self") {
+		add_error(status, `'Self' is not a type — spell the struct's own type as '#self'`, start);
+	}
 	const type = new Type(base);
 	type.start = start;
 	if (is_view) type.is_view = true;

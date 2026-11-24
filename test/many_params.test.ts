@@ -164,7 +164,7 @@ struct VSum {
   var int var_count
   var int var_first
 
-  func #init = (self, int a, int b, int c, int d, int e, int f, int g, ...int rest) {
+  func #init = (ref self, int a, int b, int c, int d, int e, int f, int g, ...int rest) {
     self.fixed_total = a + b + c + d + e + f + g
     self.var_count = rest.length
     if rest.length > 0 {

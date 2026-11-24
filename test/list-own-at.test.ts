@@ -28,7 +28,7 @@ describe("List<Own>.at() element-load borrows", () => {
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -51,7 +51,7 @@ Console.write("!")
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -69,7 +69,7 @@ Console.write("\\{r.handle}!")
 mv struct Inner {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("I")
 	}
 }
@@ -99,7 +99,7 @@ import System
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -121,7 +121,7 @@ import System
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }

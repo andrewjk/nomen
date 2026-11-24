@@ -721,6 +721,17 @@ function signature_matches(
 	trait_func: FunctionNode,
 	substitution: Map<string, string>,
 ): boolean {
+	// The receiver is part of the signature: a trait method dispatches on an
+	// instance, so an override without `self` (a static) can never satisfy
+	// it — and vice versa. Filtering self from BOTH sides (as this function
+	// used to do) would let a struct's static shadow a trait's instance
+	// method.
+	if (
+		!!trait_func.params.some((p) => p.is_self_param) !==
+		!!struct_func.params.some((p) => p.is_self_param)
+	) {
+		return false;
+	}
 	const trait_params = trait_func.params.filter((p) => !p.is_self_param);
 	const struct_params = struct_func.params.filter((p) => !p.is_self_param);
 	if (trait_params.length !== struct_params.length) return false;

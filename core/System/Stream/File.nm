@@ -637,7 +637,7 @@ pub mv struct File {
 	// Closes the handle if still open (no-op after close). Runs automatically
 	// at scope exit, so an unclosed `File` never leaks. Best-effort: failures
 	// are not reported (use `close` to observe them).
-	func #destroy = () {
+	func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
 				if (self->handle) {

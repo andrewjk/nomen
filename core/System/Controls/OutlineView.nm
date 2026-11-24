@@ -551,7 +551,7 @@ pub mv struct OutlineView: Control {
 		return s
 	}
 
-	func #destroy = () {
+	func #destroy = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				for (long i = 0; i < g_tree_count; i++) {

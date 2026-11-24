@@ -11,7 +11,7 @@ pub struct Chars {
 	var view string source
 	var byte_pos = 0
 
-	pub func #init = (self, view string source) {
+	pub func #init = (ref self, view string source) {
 		self.source = source
 	}
 

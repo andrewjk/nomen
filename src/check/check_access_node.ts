@@ -51,6 +51,7 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
+import resolve_declared_type from "./utils/resolve_declared_type.ts";
 import { enforce_detach_owns_captures, enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import { clone_type } from "./utils/tuple_struct.ts";
@@ -1044,6 +1045,37 @@ export function check_access_function_node(
 					? " (inside compile-time-generated code — the derived body's field type lacks this method; write it on the field's type, or skip the field)"
 					: ""
 			}`,
+			node.start,
+		);
+		return false;
+	}
+
+	// Static/instance discipline: a method that declares `self` dispatches on
+	// an INSTANCE receiver; a method with no `self` parameter is static and is
+	// called on the TYPE. Whether a member is static must not depend on the
+	// call's context, so the receiver form has to match the declaration —
+	// `Type.static(...)` / `instance.method(...)` are the only valid shapes.
+	// A receiver is the type itself when it is a bare word that names a
+	// declared type and no value of that name is in scope (`Task`, not
+	// `task`); hoisted receiver temps and chained receivers are instances.
+	const receiver_word = target.node_type === "value" ? (target as ValueNode).value : undefined;
+	const receiver_is_type_name =
+		!!receiver_word &&
+		receiver_word !== "self" &&
+		!status.values.some((v) => v.name === receiver_word) &&
+		!!resolve_declared_type(receiver_word, status);
+	if (func.params[0]?.is_self_param && receiver_is_type_name) {
+		add_error(
+			status,
+			`'${target_type.name}.${node.name}' is an instance method — call it on an instance ('value.${node.name}(…)')`,
+			node.start,
+		);
+		return false;
+	}
+	if (!func.params[0]?.is_self_param && !receiver_is_type_name) {
+		add_error(
+			status,
+			`'${node.name}' is a static method of '${target_type.name}' — call it on the type ('${target_type.name}.${node.name}(…)')`,
 			node.start,
 		);
 		return false;

@@ -456,7 +456,7 @@ Console.write("r=\\{wide(1, 2, 3, 4, 5, 6, 7, 8, 10)}")
 test("inline body param does not alias caller's promoted register", async () => {
 	const input = `
 struct F {
-  inline func twice = (float n, out float) {
+  inline func twice = (self, float n, out float) {
     return n + n
   }
 }
@@ -491,7 +491,7 @@ func narrow = (int16 a, int16 b, out int16) {
 struct S {
   var uint16 s
   var bool f
-  pub func #init = (self, uint16 s, bool f) {
+  pub func #init = (ref self, uint16 s, bool f) {
     self.s = s
     self.f = f
   }

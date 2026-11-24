@@ -26,7 +26,7 @@ describe("class aliasing: double destroy / double free", () => {
 		const input = `
 mv struct R {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -66,7 +66,7 @@ Console.write("\\{p.c.v}\\n")
 		const input = `
 mv struct R {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -145,7 +145,7 @@ describe("class reassignment in a loop", () => {
 		const input = `
 mv struct R {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		self.v = 0
 	}
 }
@@ -164,7 +164,7 @@ Console.write("\\{p.v}\\n")
 		const input = `
 mv struct R {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		self.v = 0
 	}
 }

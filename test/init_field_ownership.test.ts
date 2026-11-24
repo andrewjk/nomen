@@ -24,7 +24,7 @@ pub mv struct Outer {
 	pub mv Inner inner
 	pub mv string name
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.inner = Inner()
 		self.name = "x"
 	}
@@ -49,7 +49,7 @@ import System
 pub mv struct Twice {
 	pub mv string name = "start"
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.name = "a"
 		self.name = "b"
 	}

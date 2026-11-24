@@ -386,7 +386,7 @@ mv struct MyPager : Control {
 	var Button next
 	var int page = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.prev = Button(window, "<")
 		self.next = Button(window, ">")
 		self.prev.on_click(func () { self.page = self.page - 1 })

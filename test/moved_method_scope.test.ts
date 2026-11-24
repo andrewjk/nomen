@@ -23,12 +23,12 @@ struct Pnt {
 }
 
 struct Holder {
-	func make = (out Pnt) {
+	func make = (self, out Pnt) {
 		var Pnt response = Pnt()
 		response.x = 7
 		return response
 	}
-	func drop_it = () {
+	func drop_it = (self) {
 		var string response = 42.to_string()
 		Console.write(response)
 		Console.write("\\n")

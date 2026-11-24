@@ -75,7 +75,7 @@ describe("StableList borrows survive push", () => {
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -124,7 +124,7 @@ import System
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -173,7 +173,7 @@ Console.write("\\{cells.at_or_panic(0).value}!")
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -220,7 +220,7 @@ import System
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -242,7 +242,7 @@ import System
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -268,7 +268,7 @@ import System
 mv struct Res {
 	var uint64 handle
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }

@@ -24,7 +24,7 @@ describe("destructuring inside a generic method body", () => {
 		const input = `
 mv struct Holder<TK, TV> {
 	var int n = 0
-	pub func #init = (self, ...[TK, TV] pairs) {
+	pub func #init = (ref self, ...[TK, TV] pairs) {
 		var i = 0
 		while i < pairs.length; i += 1 {
 			var [k, v] = pairs.at(i)
@@ -46,7 +46,7 @@ mv struct Holder<TK, TV> {
 	func take = (ref self, mv TK k) {
 		self.n = self.n + 1
 	}
-	pub func #init = (self, ...[TK, TV] pairs) {
+	pub func #init = (ref self, ...[TK, TV] pairs) {
 		var i = 0
 		while i < pairs.length; i += 1 {
 			var [mv k, mv v] = pairs.at(i)

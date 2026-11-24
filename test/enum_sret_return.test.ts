@@ -70,7 +70,7 @@ mv enum Load {
 }
 
 struct Source {
-  func load = (out Load) {
+  func load = (self, out Load) {
     return Load.found("method")
   }
 }

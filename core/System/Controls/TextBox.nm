@@ -342,7 +342,7 @@ pub mv struct TextBox: Control {
 		return s
 	}
 
-	func #destroy = () {
+	func #destroy = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				if (self->handle) {

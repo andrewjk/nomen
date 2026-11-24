@@ -36,7 +36,7 @@ struct Box {
   pub func twice_scaled = (self, out int) {
     return self.scaled(5) * 2
   }
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.v = v
   }
 }
@@ -120,7 +120,7 @@ struct Calc {
   pub func sub = (self, int a, int b, out int) {
     return a * 10 + b
   }
-  pub func #init = (self) {}
+  pub func #init = (ref self) {}
 }
 
 struct Taker {
@@ -131,7 +131,7 @@ struct Taker {
     }
     return 0
   }
-  pub func #init = (self) {}
+  pub func #init = (ref self) {}
 }
 
 var Calc c = Calc()

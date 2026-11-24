@@ -280,7 +280,7 @@ pub mv struct Text: Control {
 		}
 	}
 
-	func #destroy = () {
+	func #destroy = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				if (self->handle) {

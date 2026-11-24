@@ -84,7 +84,7 @@ pub mv struct Transaction {
         self.handle = handle
     }
 
-    func #destroy = (self) {
+    func #destroy = (ref self) {
     }
 }
 `;
@@ -96,7 +96,7 @@ pub mv struct Transaction {
 pub struct Transaction {
     var int handle
 
-    func #destroy = (self) {
+    func #destroy = (ref self) {
     }
 }
 `;
@@ -121,7 +121,7 @@ pub mv struct Transaction {
         self.handle = handle
     }
 
-    func #destroy = (self) {
+    func #destroy = (ref self) {
     }
 }
 `;
@@ -135,7 +135,7 @@ struct Point {
 }
 
 extend struct Point {
-    func #destroy = (self) {
+    func #destroy = (ref self) {
     }
 }
 

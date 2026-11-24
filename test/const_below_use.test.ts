@@ -33,7 +33,7 @@ pub const LATE = "hello"
 import System
 
 struct Greeter {
-	pub func greet = (out string) {
+	pub func greet = (self, out string) {
 		return GREETING
 	}
 }

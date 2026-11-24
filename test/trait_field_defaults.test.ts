@@ -48,7 +48,7 @@ trait Tagged {
 }
 
 mv struct G : Tagged {
-	func #destroy = () {
+	func #destroy = (ref self) {
 	}
 }
 
@@ -175,12 +175,12 @@ trait Holds {
 	mv string label = "inner-seed"
 }
 mv struct Inner : Holds {
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 	}
 }
 mv struct Outer {
 	mv Inner a
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.a = Inner()
 	}
 }

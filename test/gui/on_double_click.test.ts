@@ -33,7 +33,7 @@ mv struct OpenApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var Text label = Text(window)
 		label.set_text("idle")
 		var Container grid = VStack(8)
@@ -144,7 +144,7 @@ mv struct RowsApp : App {
 	mv List<uint64> handles
 	mv Text status
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var Container rows = VStack(0)
 		var List<CheckBox> owned = List<CheckBox>()
 		var List<uint64> handles = List<uint64>()

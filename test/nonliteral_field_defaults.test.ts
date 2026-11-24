@@ -47,7 +47,7 @@ mv struct Pair {
 	mv string a = "de" + "fault"
 	mv string b
 
-	func #init = (self, string s) {
+	func #init = (ref self, string s) {
 		self.b = s.copy()
 	}
 }

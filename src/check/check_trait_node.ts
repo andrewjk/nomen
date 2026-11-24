@@ -63,6 +63,18 @@ export default function check_trait_node(trait: TraitNode, status: CheckStatus) 
 	}
 
 	for (let func of trait.functions) {
+		// A trait method dispatches on the receiver, so it must declare one —
+		// a method with no `self` parameter is static, and a static cannot
+		// dispatch through a trait vtable. `#`-prefixed lifecycle markers
+		// (`#init`/`#destroy`/`#spawn`) are construction hooks, not dispatch
+		// entries, and keep their own receiver rules.
+		if (!func.name.startsWith("#") && !func.params.some((p) => p.is_self_param)) {
+			add_error(
+				status,
+				`trait method '${func.name}' must declare 'self' — instance methods take a receiver ('func ${func.name} = (self, …)')`,
+				func.start,
+			);
+		}
 		// A default body that binds `Self` (the conformer) can neither be
 		// checked nor emitted at the trait level — `META.info(#self)` and the
 		// `#for` walk over its fields resolve only per conformer. Marking it

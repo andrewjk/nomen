@@ -25,7 +25,7 @@ mv struct PaneApp : App {
 	mv Container stack
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var SplitView split = SplitView(window, 2, true)
 		// The pane grid hosts a label on pane 0; registration is by scalar
 		// handle (one borrow of self per call — the set_document trade).

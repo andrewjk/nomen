@@ -14,17 +14,17 @@ describe("trait dispatch (polymorphic)", () => {
 	test("method call through trait-typed variable", async () => {
 		const input = `
 trait Speaker {
-  func speak = (out string)
+  func speak = (self, out string)
 }
 
 struct Dog: Speaker {
-  func speak = (out string) {
+  func speak = (self, out string) {
     return "woof"
   }
 }
 
 struct Cat: Speaker {
-  func speak = (out string) {
+  func speak = (self, out string) {
     return "meow"
   }
 }
@@ -98,15 +98,15 @@ Console.write(n.name)
 	test("two structs dispatch correctly through one trait parameter", async () => {
 		const input = `
 trait Speaker {
-  func speak = (out int)
+  func speak = (self, out int)
 }
 
 mv struct Dog: Speaker {
-  func speak = (out int) { return 1 }
+  func speak = (self, out int) { return 1 }
 }
 
 mv struct Cat: Speaker {
-  func speak = (out int) { return 2 }
+  func speak = (self, out int) { return 2 }
 }
 
 func code = (Speaker s, out int) {

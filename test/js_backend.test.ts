@@ -1037,7 +1037,7 @@ Console.write("\\{a.x}\\n")
 struct P {
 	var int x
 	var int y
-	func #init = (self, int v) {
+	func #init = (ref self, int v) {
 		self.x = v * 2
 		self.y = v + 1
 	}
@@ -1537,8 +1537,7 @@ Console.write("q=\\{q.to_digit()} r=\\{r.to_digit()}\\n")
 		await js_output(
 			"js_skip_native_only",
 			`
-var Tester t = Tester()
-Console.write("audit=\\{t.audit_count()}\\n")
+Console.write("audit=\\{Tester.audit_count()}\\n")
 `,
 			"audit=0\n",
 		);

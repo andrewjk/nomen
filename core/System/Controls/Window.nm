@@ -1653,7 +1653,7 @@ pub mv struct Window: Control {
 			while self.is_visible() {
 				// App menu Quit / ⌘Q (or quit()): close the window — the
 				// quit flag then ends the app below.
-				if self.quit_flag() {
+				if Window.quit_flag() {
 					self.close()
 				}
 				// Close interception: the delegate refused the native close and
@@ -1715,10 +1715,10 @@ pub mv struct Window: Control {
 			// macOS convention: the app stays alive after the last window
 			// closes — pump until Dock Quit (or quit()) ends the process, or
 			// a Dock click reopens the window and the frame loop resumes.
-			while !self.quit_flag() && !Window.reopen_flag() {
+			while !Window.quit_flag() && !Window.reopen_flag() {
 				Window.process_events()
 			}
-			if self.quit_flag() {
+			if Window.quit_flag() {
 				return
 			}
 			// Reopened from the Dock: re-show and resume frames. start() runs
@@ -1785,7 +1785,7 @@ pub mv struct Window: Control {
 		}
 	}
 
-	func #destroy = () {
+	func #destroy = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				if (self->handle) {

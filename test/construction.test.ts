@@ -91,7 +91,7 @@ Console.write("\\{a.value} \\{b.value}")
 		const input = `
 struct Scale {
   var int factor = 1
-  pub func #init = (self, ref int n) {
+  pub func #init = (ref self, ref int n) {
     self.factor = n
   }
 }

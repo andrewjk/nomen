@@ -69,7 +69,7 @@ mv struct TodoApp: App {
 	mv Button add_btn
 	mv Container grid
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		const title = Text(window)
 		title.set_text("Todo List")
 

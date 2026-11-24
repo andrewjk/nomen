@@ -536,9 +536,10 @@ struct P {
 	});
 
 	test("self used in generic #init body without being declared as a parameter", () => {
-		// Same contract on a generic struct's custom #init: using `self`
-		// without declaring it must error cleanly, not hang the checker
-		// (regression guard — generic custom #init used to loop forever here).
+		// Same contract on a generic struct's custom #init: `#init` must
+		// declare its receiver — the parse error fires and a read-only
+		// `self` is injected so the body still checks (the field write then
+		// asks for `ref self`).
 		const input = `
 struct Bag<T> {
 	var T item
@@ -552,7 +553,9 @@ func main = () {
 `;
 		const parsed = parse(input);
 		const messages = parsed.errors.map((e) => e.message);
-		expect(messages).toContain("Unknown value: self");
+		expect(messages).toContain(
+			"'#init' must declare its receiver — spell it 'func #init = (self)' ('ref self' when it writes fields)",
+		);
 	});
 
 	test("immutable self param cannot be mutated", () => {
@@ -569,5 +572,101 @@ struct P {
 		const parsed = parse(input);
 		const messages = parsed.errors.map((e) => e.message);
 		expect(messages.some((m) => m.includes("self") && m.includes("mutat"))).toBe(true);
+	});
+
+	test("#destroy must declare its receiver", () => {
+		// A method with no `self` parameter is static — a lifecycle hook that
+		// never received its instance is meaningless. The parse error fires
+		// and a read-only `self` is injected so the body still checks.
+		const input = `
+mv struct R {
+	var int handle
+	func #destroy = () {
+		Console.write(handle)
+	}
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain(
+			"'#destroy' must declare its receiver — spell it 'func #destroy = (self)' ('ref self' when it writes fields)",
+		);
+	});
+
+	test("#init that writes fields requires a ref self receiver", () => {
+		// `ref self` is the mutability spelling — including in `#init`.
+		// Bare `self` is a read-only receiver in every method.
+		const input = `
+struct Counter {
+	var int count
+	pub func #init = (self, int start) {
+		self.count = start
+	}
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain(
+			"Cannot mutate 'self' — it is immutable; declare as 'ref self' to allow mutation",
+		);
+	});
+
+	test("static method cannot be called on an instance", () => {
+		// Whether a member is static must not depend on the call's context:
+		// a no-receiver method is called on the type, never on a value.
+		const input = `
+struct Counter {
+	var int count
+	pub func make = (int n, out Counter) {
+		return Counter(n)
+	}
+}
+pub func main = () {
+	var c = Counter(1)
+	var d = c.make(2)
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain(
+			"'make' is a static method of 'Counter' — call it on the type ('Counter.make(…)')",
+		);
+	});
+
+	test("instance method cannot be called on the type", () => {
+		// An instance method requires an instance receiver — calling it
+		// through the type leaves no receiver to dispatch on.
+		const input = `
+struct Counter {
+	var int count
+	pub func get = (self, out int) {
+		return self.count
+	}
+}
+pub func main = () {
+	var c = Counter(1)
+	var int x = Counter.get()
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain(
+			"'Counter.get' is an instance method — call it on an instance ('value.get(…)')",
+		);
+	});
+
+	test("capital-S 'Self' is not a type — spell '#self'", () => {
+		// `Self` is reserved (and undocumented). The struct's own type in
+		// trait signatures spells the `#self` placeholder — including in a
+		// trait declaration, whose body-less signatures the checker never
+		// resolves, so the rejection must happen at parse.
+		const input = `
+pub trait Addable {
+	func add = (self, #self other, out Self)
+}
+`;
+		const parsed = parse(input);
+		const messages = parsed.errors.map((e) => e.message);
+		expect(messages).toContain("'Self' is not a type — spell the struct's own type as '#self'");
 	});
 });

@@ -35,7 +35,7 @@ mv struct LifecycleApp : App {
 	var bool allow_close = false
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var Text label = Text(window)
 		label.set_text("idle")
 		var Container grid = VStack(8)

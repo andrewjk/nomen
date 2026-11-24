@@ -585,7 +585,7 @@ mv struct Tagged {
 	mv string label
 	var int n
 
-	func #init = (self, mv string l, int k) {
+	func #init = (ref self, mv string l, int k) {
 		self.label = mv l
 		self.n = k * 2
 	}

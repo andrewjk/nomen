@@ -29,7 +29,7 @@ mv struct FocusApp : App {
 	var int blur_b = 0
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.field_a = TextBox(window)
 		self.field_b = TextBox(window)
 		var Container grid = VStack(8)
@@ -124,7 +124,7 @@ mv struct InputApp : App {
 	var int changes = 0
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.field = TextBox(window)
 		var Container grid = VStack(8)
 		grid.add(self.field.handle, 0, 24, 1)

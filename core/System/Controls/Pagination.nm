@@ -30,7 +30,7 @@ pub mv struct Pagination {
 	var int page_change_id = -1
 	var page_change_pending = false
 
-	pub func #init = (self, Window window, int pages: pages > 0 && pages <= 5) {
+	pub func #init = (ref self, Window window, int pages: pages > 0 && pages <= 5) {
 		self.prev = Button(window, "<")
 		self.next = Button(window, ">")
 		self.b0 = Button(window, "1")

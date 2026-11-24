@@ -124,7 +124,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write_line("d\\{self.v}")
 	}
 }

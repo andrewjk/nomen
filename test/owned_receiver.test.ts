@@ -61,7 +61,7 @@ mv struct Engine {
 mv struct Car {
 	mv Engine engine
 
-	pub func #init = (self, mv Engine e) {
+	pub func #init = (ref self, mv Engine e) {
 		self.engine = mv e
 	}
 }

@@ -174,7 +174,7 @@ describe("ref class param forwarded to a method ref param", () => {
 		const input = `
 mv struct Box { var int v }
 mv struct Mutator {
-    func bump = (ref Box b) {
+    func bump = (self, ref Box b) {
         b.v = b.v + 1
     }
 }
@@ -193,7 +193,7 @@ Console.write("\\{a.v}\\n")
 		const input = `
 mv struct Box { var int v }
 mv struct Mutator {
-    func replace = (ref Box b) {
+    func replace = (self, ref Box b) {
         b = Box(9)
     }
 }
@@ -212,7 +212,7 @@ Console.write("\\{a.v}\\n")
 		const input = `
 mv struct Box { var int v }
 mv struct Mutator {
-    func replace = (ref Box b) {
+    func replace = (self, ref Box b) {
         b = Box(42)
     }
 }

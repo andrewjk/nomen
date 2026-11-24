@@ -72,7 +72,7 @@ pub mv struct Mutex {
 	}
 	}
 
-	pub func #destroy = () {
+	pub func #destroy = (self) {
 	#if META.arch == "c" {
 		#raw {
 			if (self->handle) {

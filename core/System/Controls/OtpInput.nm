@@ -14,7 +14,7 @@ pub mv struct OtpInput {
 	mv SecureField f3
 	mv SecureField f4
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.f0 = SecureField(window)
 		self.f1 = SecureField(window)
 		self.f2 = SecureField(window)

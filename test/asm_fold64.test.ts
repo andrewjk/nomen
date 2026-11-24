@@ -268,7 +268,7 @@ const SPLITMIX_PROGRAM = `
 mv struct R {
 	var uint64 state = 0
 
-	func #init = (self, uint64 seed) {
+	func #init = (ref self, uint64 seed) {
 		self.state = seed
 	}
 

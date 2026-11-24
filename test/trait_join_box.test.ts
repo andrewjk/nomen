@@ -21,7 +21,7 @@ struct Square : Shape {
 	func area = (self, out int) {
 		return self.side * self.side
 	}
-	pub func #init = (self, int s) {
+	pub func #init = (ref self, int s) {
 		self.side = s
 	}
 }
@@ -48,7 +48,7 @@ mv struct Label : Shape {
 	func area = (self, out int) {
 		return self.text.length
 	}
-	pub func #init = (self) {}
+	pub func #init = (ref self) {}
 }
 func make_label = (int k, out Shape) {
 	return switch {

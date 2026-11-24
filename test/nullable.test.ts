@@ -627,7 +627,7 @@ if a != null {
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("\\{self.v}")
     }
 }
@@ -645,7 +645,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("\\{self.v}")
     }
 }
@@ -888,7 +888,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("box \\{self.v}")
     }
 }
@@ -965,7 +965,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("box \\{self.v}")
     }
 }
@@ -990,7 +990,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("box \\{self.v}")
     }
 }
@@ -1010,7 +1010,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("d\\{self.v}")
     }
 }
@@ -1051,7 +1051,7 @@ describe("nullable class field assignment", () => {
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("\\{self.v}")
     }
 }
@@ -1072,7 +1072,7 @@ Console.write("done")
 		const input = `
 mv struct Box {
     var int v
-    func #destroy = () {
+    func #destroy = (ref self) {
         Console.write_line("\\{self.v}")
     }
 }

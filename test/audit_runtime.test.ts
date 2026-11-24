@@ -250,7 +250,7 @@ import System
 
 mv struct Pair {
 	mv string name
-	pub func #init = (self, string n) {
+	pub func #init = (ref self, string n) {
 		self.name = n.copy()
 	}
 }

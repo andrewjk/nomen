@@ -17,7 +17,7 @@ import System
 pub mv struct Counter {
 	var uint64 handle = 0
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.handle = 42
 	}
 

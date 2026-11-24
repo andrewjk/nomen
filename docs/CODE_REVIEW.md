@@ -23,7 +23,15 @@ per copy — that finding is removed from §0 and §1.2. The doc/test drift is
 closed in the same spirit: `test/docs_fences.ts` now compiles every non-error
 fenced example in README.md / SPEC.md straight from the docs, so breaking an
 example fails CI at its `file:line` + heading (error examples stay
-hand-written in the feature suites). One §1.6 item was resolved by investigation rather than
+hand-written in the feature suites). The §1.1 method-receiver work landed
+the same day: instance methods must declare `self` (trait methods too),
+`ref self` is required to write fields — including in `#init` — `#destroy`
+must declare its receiver, capital-S `Self` is rejected in favour of the
+`#self` placeholder (documented in the Traits section), and the static /
+instance call forms are enforced at call sites (a receiver-less method is
+static, called on the type; there is no `static` keyword) — §1.1 and the
+§0 finding it fed are removed below, with error tests in
+`test/structs.test.ts` / `test/traits.test.ts`. One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -49,14 +57,7 @@ Priorities:
 
 ## 0. Top findings
 
-1. **Static and instance methods look alike.** A method with no `self`
-   parameter is static (`SPEC.md:4551`, "// static"). Yet the compiler
-   accepts trait methods written without `self`
-   (`to_string = (out string)`) and dispatches them on instances — whether a
-   method is static depends on context. The docs were updated to always
-   spell `self` on instance methods, but the compiler rule is still
-   implicit.
-2. **The biggest missing features**: flow-sensitive facts for constraints
+1. **The biggest missing features**: flow-sensitive facts for constraints
    (early return, `len >= 0`), match guards and richer patterns, generic
    methods, a typed `Channel<T>`, comparison-operator overloading, and `[]`
    index sugar. Section 2 has the full list.
@@ -64,23 +65,6 @@ Priorities:
 ---
 
 ## 1. Language design consistency
-
-### 1.1 Methods: `self` spelling and static methods (P1)
-
-- A method with no `self` is static (`Task.current_cancelled`,
-  `SPEC.md:4551`). But the compiler also accepts trait methods written
-  without `self` (`to_string = (out string)`) and dispatches them on
-  instances — whether a method is static depends on context. (The docs were
-  updated to always spell `self`; the compiler rule is still implicit.)
-- `self` is read-only, `ref self` is mutable, and `#init` takes either (and
-  writes to it in both cases). `#destroy` takes nothing but uses `self`.
-- There's no `static` keyword and no `Self` documentation, yet
-  `SPEC.md:1034` uses `#self other, out Self`, which compiles but is
-  explained nowhere outside comptime.
-
-Recommendation: always require `self` for instance methods. Mark static
-methods explicitly (`static func`, or `Type.func`). Document `Self` and the
-`#self` placeholder in the Traits section.
 
 ### 1.2 Copyable vs. `mv` ergonomics (P1)
 
@@ -246,7 +230,6 @@ Ordered by rough priority within each tier. "Effort" is a guess.
 
 ## 3. Suggested order of work
 
-1. Decide the method receiver and static-method rule (§1.1), and the
-   result-`match` flattening question (§1.3). Both affect many examples, so
-   settle them before more docs are written.
+1. Decide the result-`match` flattening question (§1.3) — it affects many
+   examples, so settle it before more docs are written.
 2. Work through the Tier 1 features in §2.

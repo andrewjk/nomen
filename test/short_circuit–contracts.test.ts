@@ -161,6 +161,7 @@ func call_probe = (Prober p, List<int> xs, List<int> hash, out int) {
 
 pub struct Prober {
 	func probe = (
+		self,
 		List<int> xs,
 		List<int> hash: hash.length == xs.length,
 		int hi: hi >= 0 && hi <= xs.length,

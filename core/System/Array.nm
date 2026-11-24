@@ -4,7 +4,7 @@
 pub struct Array<T>: Viewable {
 	pub const int length
 
-	pub func #init = (...T items) {
+	pub func #init = (self, ...T items) {
 		#if META.arch == "c" {
 			#raw {
 				self->length = _items_len;

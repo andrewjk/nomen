@@ -141,7 +141,7 @@ pub func main = () {
 		const input = `
 mv struct Cell {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }
@@ -170,7 +170,7 @@ mv struct H {
 		const input = `
 mv struct Cell {
 	var int v
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("D")
 	}
 }

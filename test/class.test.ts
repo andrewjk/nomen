@@ -73,7 +73,7 @@ Console.write("\\{result}")
 mv struct Resource {
     var int value
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.value = 999
     }
 }

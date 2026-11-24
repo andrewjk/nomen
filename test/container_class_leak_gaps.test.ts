@@ -57,7 +57,7 @@ Console.write("\\n")
 		const input = `
 mv struct Resource {
 	var int handle
-	func #destroy = () {
+	func #destroy = (ref self) {
 		Console.write("destroyed\\n")
 	}
 }
@@ -164,7 +164,7 @@ mv struct Animal { var char letter }
 mv struct Zoo {
 	mv List<Animal> animals = List<Animal>()
 
-	func #init = (self) {
+	func #init = (ref self) {
 		self.animals.push(mv Animal('Z'))
 	}
 }

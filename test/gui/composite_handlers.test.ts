@@ -32,7 +32,7 @@ mv struct MyPager {
 	mv Button next
 	var int page = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.prev = Button(window, "<")
 		self.next = Button(window, ">")
 		self.prev.on_click(func () { self.page = self.page - 1 })
@@ -53,7 +53,7 @@ mv struct PagerApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("idle")
 		var MyPager pager = MyPager(window)
@@ -159,7 +159,7 @@ mv struct MyPager {
 	var int page_change_id = -1
 	var bool page_change_pending = false
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.prev = Button(window, "<")
 		self.next = Button(window, ">")
 		self.prev.on_click(func () { self.move(-1) })
@@ -197,7 +197,7 @@ mv struct PagerApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("idle")
 		var MyPager pager = MyPager(window)

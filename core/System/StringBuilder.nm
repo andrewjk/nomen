@@ -525,7 +525,7 @@ pub mv struct StringBuilder {
 	}
 
 	// Drop the buffer without finalizing (free the byte buffer outright).
-	func #destroy = () {
+	func #destroy = (ref self) {
 		if self.data != 0 {
 			free(self.data)
 			self.data = 0

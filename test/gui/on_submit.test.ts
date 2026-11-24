@@ -31,7 +31,7 @@ mv struct SubmitApp : App {
 	var int hits = 0
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var TextBox name = TextBox(window)
 		var SecureField secret = SecureField(window)
 		var SearchField search = SearchField(window)
@@ -156,7 +156,7 @@ mv struct SearchApp : App {
 	mv SearchField search
 	mv Text status
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var SearchField search = SearchField(window)
 		self.search = mv search
 		var Text status = Text(window)

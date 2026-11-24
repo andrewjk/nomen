@@ -29,12 +29,12 @@ pub mv struct Random {
 	pub var uint64 state = 0
 
 	// Seed from the wall clock (nanoseconds since the epoch).
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.state = Time.now_ns()
 	}
 
 	// Seed from an explicit value — reproducible sequences for tests.
-	pub func #init = (self, uint64 seed) {
+	pub func #init = (ref self, uint64 seed) {
 		self.state = seed
 	}
 

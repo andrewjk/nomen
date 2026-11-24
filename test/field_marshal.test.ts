@@ -42,7 +42,7 @@ struct Counter {
   pub func len_from_call = (ref self, Inner i) {
     self.len = i.doubled()
   }
-  pub func #init = (self) {
+  pub func #init = (ref self) {
     self.len = 0
   }
 }
@@ -52,7 +52,7 @@ struct Inner {
   pub func doubled = (self, out int) {
     return self.v * 2
   }
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.v = v
   }
 }
@@ -98,21 +98,21 @@ import System
 
 struct Inner {
   var int v
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.v = v
   }
 }
 
 struct Mid {
   var Inner inner
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.inner = Inner(v)
   }
 }
 
 struct Outer {
   var Mid mid
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.mid = Mid(v)
   }
 }
@@ -145,19 +145,19 @@ test("multi-hop chain behavioral: three nested value structs, both backends", as
 		`
 struct Inner {
   var int v
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.v = v
   }
 }
 struct Mid {
   var Inner inner
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.inner = Inner(v)
   }
 }
 struct Outer {
   var Mid mid
-  pub func #init = (self, int v) {
+  pub func #init = (ref self, int v) {
     self.mid = Mid(v)
   }
 }
@@ -190,7 +190,7 @@ struct Counter {
   func triple = (self, int k, out int) {
     return k * 3
   }
-  pub func #init = (self) {
+  pub func #init = (ref self) {
     self.len = 0
   }
 }
@@ -216,7 +216,7 @@ pub mv struct Panel {
   pub func set_title = (ref self, string t) {
     self.title = t.copy()
   }
-  pub func #init = (self) {}
+  pub func #init = (ref self) {}
 }
 
 pub func main = () {
@@ -244,7 +244,7 @@ pub mv struct Panel {
       self.text = doc.slice(1, 4)
     }
   }
-  pub func #init = (self) {
+  pub func #init = (ref self) {
     self.text = ""
   }
 }
@@ -275,7 +275,7 @@ pub mv struct Panel {
   pub func set_title_heap = (ref self) {
     self.title = 42.to_string()
   }
-  pub func #init = (self) {}
+  pub func #init = (ref self) {}
 }
 var Panel f = Panel()
 f.set_title(mv "hello")

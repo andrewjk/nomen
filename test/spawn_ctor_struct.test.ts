@@ -44,7 +44,7 @@ mv pub struct Job {
 		self.future = 0
 		return t
 	}
-	pub func #destroy = () {
+	pub func #destroy = (ref self) {
 		if self.future != 0 {
 			Task.future_release(self.future)
 			self.future = 0
@@ -127,7 +127,7 @@ mv pub struct Greeter {
 		self.future = 0
 		return t
 	}
-	pub func #destroy = () {
+	pub func #destroy = (ref self) {
 		if self.future != 0 {
 			Task.future_release(self.future)
 			self.future = 0
@@ -175,7 +175,7 @@ import System
 			self.future = 0
 			return t
 		}
-		pub func #destroy = () {
+		pub func #destroy = (ref self) {
 			if self.future != 0 {
 				Task.future_release(self.future)
 				self.future = 0
@@ -257,7 +257,7 @@ import System
 
 mv pub struct Plain {
 	pub var uint64 v = 0
-	pub func #init = (self, uint64 n) {
+	pub func #init = (ref self, uint64 n) {
 		self.v = n
 	}
 }

@@ -212,10 +212,10 @@ Console.write("\\{v}\\n")
 		// this failed with "cannot be verified".
 		const input = `
 struct Const {
-  func zero = (out int: out == 0) {
+  func zero = (self, out int: out == 0) {
     return 0
   }
-  func slot = (int i: i == 0, out int) {
+  func slot = (self, int i: i == 0, out int) {
     return i
   }
 }

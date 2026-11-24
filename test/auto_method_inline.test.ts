@@ -27,7 +27,7 @@ import System
 struct Acc {
 	var int total
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.total = 0
 	}
 
@@ -85,7 +85,7 @@ import System
 struct Down {
 	var int n
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.n = 0
 	}
 
@@ -120,7 +120,7 @@ import System
 mv struct Keeper {
 	mv Buffer<JsonNode> nodes = Buffer<JsonNode>()
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.nodes.grow(4)
 	}
 
@@ -156,7 +156,7 @@ struct Inner {
 struct Counter {
 	var int base = 1
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.base = 1
 	}
 

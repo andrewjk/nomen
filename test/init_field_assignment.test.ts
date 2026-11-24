@@ -306,7 +306,7 @@ mv struct Handler {
 		const input = `
 mv struct Handle {
   var uint64 id
-  pub func #init = (self) {
+  pub func #init = (ref self) {
   #if META.arch == "c" {
   	#raw {
   	  self->id = 7;

@@ -23,7 +23,7 @@ mv struct CountApp : App {
 	mv Text label
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("0")
 	}
@@ -66,7 +66,7 @@ mv struct ResizeApp : App {
 	var int resizes = 0
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("0")
 	}
@@ -117,7 +117,7 @@ mv struct ProbeApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("probe")
 		var Container g = VStack(0)

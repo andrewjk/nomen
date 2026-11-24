@@ -10,7 +10,7 @@ describe("custom init build", () => {
 struct Counter {
     var int count
 
-    func #init = (self, int start) {
+    func #init = (ref self, int start) {
         self.count = start
     }
 }
@@ -28,7 +28,7 @@ struct Point {
     var int y
     var int sum
 
-    func #init = (self, int x, int y) {
+    func #init = (ref self, int x, int y) {
         self.x = x
         self.y = y
         self.sum = x + y
@@ -47,7 +47,7 @@ struct Config {
     var int timeout = 30
     var int retries
 
-    func #init = (self, int retries) {
+    func #init = (ref self, int retries) {
         self.retries = retries
     }
 }
@@ -63,7 +63,7 @@ Console.write("\\{cfg.timeout}")
 pub mv struct Widget {
     mv string name
 
-    pub func #init = (self, string name) {
+    pub func #init = (ref self, string name) {
         self.name = name.copy()
     }
 }
@@ -93,7 +93,7 @@ describe("auto-destroy enforcement", () => {
 mv struct Resource {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = 0
     }
 }
@@ -109,7 +109,7 @@ Console.write("\\{r.handle}")
 mv struct Resource {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = 0
     }
 }
@@ -145,7 +145,7 @@ describe("mv on return", () => {
 mv struct Resource {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = 0
     }
 }
@@ -167,7 +167,7 @@ describe("ownership transfer", () => {
 mv struct Inner {
     var int value
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.value = 0
     }
 }
@@ -189,7 +189,7 @@ Console.write("\\{outer.child.value}")
 mv struct File {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = 0
     }
 }

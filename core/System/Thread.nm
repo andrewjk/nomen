@@ -195,7 +195,7 @@ pub mv struct Thread<T> : Spawnable<T> {
 	// call would silently never run) — report it and abort. A started
 	// Thread owns nothing: the launch transferred the task closure, result
 	// slot, cancel flag, and future to the runtime, and cleared the fields.
-	pub func #destroy = () {
+	pub func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
 				if (!self->started) {

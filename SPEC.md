@@ -597,7 +597,7 @@ declaring type.
 
 ### Initializers
 
-Initializer functions must set all properties that don't have default values, and can set const property values.
+Initializer functions must set all properties that don't have default values, and can set const property values. An `#init` is an instance lifecycle method: it declares its receiver like any other method — `ref self` when it writes fields (the usual shape), bare `self` when it doesn't, and a missing receiver is an error.
 
 ```
 pub struct Point {
@@ -615,7 +615,7 @@ pub struct Point {
 
 ### Destroy Functions
 
-If a struct has a `#destroy` function, it runs automatically when the struct goes out of scope. The destroy function takes no parameters (besides `self`) and cannot be called manually.
+If a struct has a `#destroy` function, it runs automatically when the struct goes out of scope. The destroy function declares only its receiver (`self`, or `ref self` when it clears fields) and cannot be called manually — like every instance method, the receiver is required.
 
 A struct declaring `#destroy` must be `mv struct` — the type is single-owner.
 A destructor on a Copyable struct would run once per copy, and every copy
@@ -1181,13 +1181,21 @@ has no field storage to revalidate).
 
 ### Trait Types
 
-Interfaces that can be implemented by structs:
+Interfaces that can be implemented by structs. Every trait method is an
+instance method, so its signature declares a `self` (or `ref self`)
+receiver — a trait method with no receiver is a compile error:
 
 ```
 pub trait Addable {
-    func add = (self, #self other, out Self)
+    func add = (self, #self other, out #self)
 }
 ```
+
+`#self` in a type position is the conformer's own type: `add` takes
+another instance of the same type and returns one. Inside a trait default
+body, `#self` also names the conformer in expression position (e.g.
+`META.info(#self)`), which is how the reflection defaults in the standard
+library derive methods per conforming struct.
 
 Structs implement traits using `:` syntax. Multiple traits are separated by commas:
 
@@ -2380,7 +2388,7 @@ Conforming to `Stringable`, `Equatable`, or `Hashable` binds the trait's
 reflection default — a `#for`-based default body over
 `META.info(#self).fields` — when the struct does not supply the method
 itself, the same way a struct gets an auto-generated `#init`. A hand-written
-method always wins. The default is expanded per conformer (with `Self` as
+method always wins. The default is expanded per conformer (with `#self` as
 the conformer's type), so a field that cannot derive — a field type with no
 `to_string`, no `==`, and no `hash` for the respective trait — is a
 per-field compile error in the generated body, not a silent skip.
@@ -3323,6 +3331,12 @@ const x = point.x
 ```
 
 ### Method Calls
+
+A method that declares `self` (or `ref self`) is an **instance method** — it
+is called on a value. A method with no receiver is **static** — it is called
+on the type, and there is no `static` keyword to spell it otherwise. The
+receiver form must match the declaration: calling a static method on an
+instance, or an instance method on the type, is a compile error.
 
 ```
 // Instance method

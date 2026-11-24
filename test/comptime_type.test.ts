@@ -232,7 +232,7 @@ test("forwarding: through a custom #init of a generic struct", () => {
 		}
 		struct Wrap<T> {
 			var T item
-			pub func #init = (self, T item) {
+			pub func #init = (ref self, T item) {
 				self.item = item
 			}
 			pub func describe = (self, out string) {

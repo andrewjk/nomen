@@ -95,7 +95,7 @@ mv struct Pair {
 	mv string a = "default"
 	mv string b = "bee"
 
-	func #init = (self, string s) {
+	func #init = (ref self, string s) {
 		self.a = s.copy()
 	}
 }
@@ -137,7 +137,7 @@ mv struct Pair {
 	mv string a = "default"
 	mv string b = "bee"
 
-	func #init = (self, string s) {
+	func #init = (ref self, string s) {
 		self.a = s + "!"
 	}
 }
@@ -217,7 +217,7 @@ mv struct Pair {
 	mv string a = "de" + "fault"
 	mv string b = "bee"
 
-	func #init = (self, string s) {
+	func #init = (ref self, string s) {
 		self.a = s + "!"
 	}
 }
@@ -245,7 +245,7 @@ mv struct Pair {
 	mv string a
 	mv string b = "bee"
 
-	func #init = (self, string s) {
+	func #init = (ref self, string s) {
 		self.a = s + "!"
 	}
 }
@@ -275,7 +275,7 @@ mv struct Pair {
 	mv string a = "default"
 	mv string b = "bee"
 
-	func #init = (self, string s) {
+	func #init = (ref self, string s) {
 		self.a = s.copy()
 	}
 }
@@ -312,7 +312,7 @@ mv struct Pair {
 	mv string a = "de" + "fault"
 	mv string b = "bee"
 
-	func #init = (self, string s, bool hot) {
+	func #init = (ref self, string s, bool hot) {
 		if hot {
 			self.a = s + "!"
 		}

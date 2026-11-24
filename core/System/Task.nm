@@ -32,7 +32,7 @@ pub mv struct Task<T> : Awaitable {
 	// wait/result/cancel a handle, but never constructs a bare one (it would
 	// reference no task at all). The auto-free pass reclaims the returned
 	// handle via #destroy, exactly like a spawn-yielded Task.
-	internal #init = () {
+	internal #init = (self) {
 	}
 
 	// Block until the task finishes. Idempotent — calling twice is safe, and
@@ -386,7 +386,7 @@ pub mv struct Task<T> : Awaitable {
 	// (`result()` zeroes the slot when it moves the value out) is freed
 	// here, before the future releases the cell. The Task instance itself
 	// is freed by the auto-free pass after #destroy returns.
-	pub func #destroy = () {
+	pub func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
 					if (self->future) {

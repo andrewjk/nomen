@@ -25,13 +25,13 @@ Console.write(f.name)
 	test("trait with struct method override", async () => {
 		const input = `
 trait Person {
-  func greet = (out string) {
+  func greet = (self, out string) {
     return "hi"
   }
 }
 
 mv struct Frank: Person {
-  func greet = (out string) {
+  func greet = (self, out string) {
     return "hello from Frank"
   }
 }
@@ -46,7 +46,7 @@ Console.write(f.greet())
 		const input = `
 trait Person {
   mv string name
-  func greet = (out string) {
+  func greet = (self, out string) {
     return "hi"
   }
 }
@@ -80,19 +80,19 @@ Console.write("\\{c.count}")
 	test("struct with multiple traits", async () => {
 		const input = `
 trait Greeter {
-  func greet = (out string) {
+  func greet = (self, out string) {
     return "hi"
   }
 }
 
 trait Dancer {
-  func dance = (out string) {
+  func dance = (self, out string) {
     return "dance"
   }
 }
 
 mv struct Frank: Greeter, Dancer {
-  func greet = (out string) {
+  func greet = (self, out string) {
     return "hello"
   }
 }
@@ -208,10 +208,34 @@ Console.write(get_name(Alice()))
 	await build_and_check_output(input, "trait_struct_in_func", "Alice");
 });
 
-test("trait struct method without self", async () => {
+test("trait struct method without self", () => {
+	// A trait method must declare `self` — a method with no receiver is
+	// static, and a static cannot dispatch through a trait vtable.
 	const input = `
 trait Person {
   func hello = (out string) {
+    return "hello"
+  }
+}
+`;
+	const expected = [
+		test_error(
+			input,
+			"trait method 'hello' must declare 'self' — instance methods take a receiver ('func hello = (self, …)')",
+			3,
+			3,
+		),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
+});
+
+test("static method is not an override of a trait method", () => {
+	// The receiver is part of the signature: a static (no-self) method does
+	// not satisfy a trait's instance-method declaration.
+	const input = `
+trait Person {
+  func hello = (self, out string) {
     return "hello"
   }
 }
@@ -221,11 +245,17 @@ mv struct Frank: Person {
     return "hello from Frank"
   }
 }
-
-const f = Frank()
-Console.write(f.hello())
 `;
-	await build_and_check_output(input, "trait_method_no_self", "hello from Frank");
+	const expected = [
+		test_error(
+			input,
+			"Type 'Frank' does not conform to trait 'Person': method 'hello' does not match the trait signature",
+			9,
+			3,
+		),
+	];
+	const parsed = parse(input);
+	expect(parsed.errors).toEqual(expected);
 });
 
 test("trait struct field update", async () => {
@@ -271,7 +301,7 @@ trait Person {
 mv struct Frank: Person {
   mv string name = "Frank"
   var int age = 30
-  func describe = (out string) {
+  func describe = (self, out string) {
     return "hello"
   }
 }
@@ -444,7 +474,7 @@ struct Parrot: Speaker {
 	test("inheriting a default body without overriding is allowed", () => {
 		const input = `
 trait Greeter {
-  func hello = (out string) {
+  func hello = (self, out string) {
     return "hi"
   }
 }

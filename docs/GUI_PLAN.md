@@ -28,11 +28,11 @@ All controls follow one shape (see `CheckBox.nm` for the template):
 ```
 pub mv struct X : Control {
 	var uint64 handle = 0
-	pub func #init = (self, Window window) { … }   // alloc + addSubview
+	pub func #init = (ref self, Window window) { … } // alloc + addSubview
 	pub func set_frame = (ref self, int x, int y, int w, int h) { … }
 	// value APIs (set_text, is_checked, …)
 	// Control trait conformance: measure / set_frame / intrinsic_size
-	func #destroy = () { … }                        // removeFromSuperview + release
+	func #destroy = (self) { … }                     // removeFromSuperview + release
 }
 ```
 

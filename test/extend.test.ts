@@ -132,12 +132,12 @@ Console.write("\\{a.double_balance()}")
 	test("extend adds out-of-line trait conformance", async () => {
 		const input = `
 trait Speaker {
-	func speak = (out string)
+	func speak = (self, out string)
 }
 struct Dog {
 }
 extend struct Dog : Speaker {
-	func speak = (out string) {
+	func speak = (self, out string) {
 		return "woof"
 	}
 }
@@ -171,19 +171,19 @@ Console.write("\\{combine(Count(), 5)}")
 	test("extend conformance with multiple traits", async () => {
 		const input = `
 trait Named {
-	func name = (out string)
+	func name = (self, out string)
 }
 trait Priced {
-	func price = (out int)
+	func price = (self, out int)
 }
 mv struct Product {
 	var int unused = 0
 }
 extend struct Product : Named, Priced {
-	func name = (out string) {
+	func name = (self, out string) {
 		return "w"
 	}
-	func price = (out int) {
+	func price = (self, out int) {
 		return 9
 	}
 }

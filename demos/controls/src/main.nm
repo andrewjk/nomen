@@ -130,7 +130,7 @@ mv struct GalleryApp: App {
 	mv Text status
 	mv prev_status = ""
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		// The whole gallery scrolls: the page lives on a Scrollable's
 		// document view. The window is a viewport on a page much taller
 		// than it, so every section stays reachable by scrolling.

@@ -9,7 +9,7 @@ import build_and_check_output from "./build_and_check_output";
 test("heap string local returned in enum payload from method", async () => {
 	const input = `
 struct Maker {
-	func make = (out Option<string>) {
+	func make = (self, out Option<string>) {
 		const string s = "abc".to_string()
 		return .some(mv s)
 	}
@@ -41,7 +41,7 @@ match r {
 test("returning an enum local transfers payload ownership", async () => {
 	const input = `
 struct Picker {
-	func pick = (bool ok, out Option<string>) {
+	func pick = (self, bool ok, out Option<string>) {
 		var Option<string> r = Option<string>.some("kept")
 		if !ok {
 			r = Option<string>.none

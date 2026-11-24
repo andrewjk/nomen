@@ -145,15 +145,38 @@ export default function parse_function(
 			parse_function_parameter(parent, func, status);
 		}
 
-		// `#destroy` and `#spawn` may be written with no parameter list
-		// (`func #destroy = ()`) or with an explicit `self`/`ref self`. Only
-		// auto-inject a mutable self when the author didn't supply one —
-		// otherwise a duplicate "self" parameter is created and the author's
-		// (mutable) declaration is lost. (`#spawn` is the Spawnable
-		// construction marker — ASYNC.md; its body is a
-		// declaration, the compiler generates the construction.)
+		// `#destroy` and `#init` are instance lifecycle methods — they must
+		// declare their receiver, like any other instance method (`#spawn` is
+		// exempt: the Spawnable construction marker's body is a declaration,
+		// the construction itself is compiler-generated — ASYNC.md). A method
+		// with no `self` parameter is static, and a lifecycle hook that never
+		// received its instance is meaningless. On a missing receiver the
+		// error fires and a read-only `self` is injected so the body still
+		// checks (references resolve; writes then ask for `ref self`).
 		if (
-			(name === "#destroy" || name === "#spawn") &&
+			(name === "#destroy" || name === "#init") &&
+			parent.node_type === "struct" &&
+			!func.params.some((p) => p.is_self_param)
+		) {
+			add_error(
+				status,
+				`'${name}' must declare its receiver — spell it 'func ${name} = (self)' ('ref self' when it writes fields)`,
+				start,
+			);
+			const self_param = new ParameterNode(start, "self", new Type((parent as StructNode).name));
+			self_param.is_self_param = true;
+			func.params.unshift(self_param);
+		}
+
+		// `#spawn` may be written with no parameter list (`func #spawn = ()`)
+		// or with an explicit `self`/`ref self`. Auto-inject a mutable self
+		// when the author didn't supply one — otherwise a duplicate "self"
+		// parameter is created and the author's (mutable) declaration is
+		// lost. (`#spawn` is the Spawnable construction marker — ASYNC.md;
+		// its body is a declaration, the compiler generates the
+		// construction.)
+		if (
+			name === "#spawn" &&
 			parent.node_type === "struct" &&
 			!func.params.some((p) => p.is_self_param)
 		) {
@@ -370,9 +393,6 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.type_start = param.start;
 		param.type = new Type(self_owner?.name ?? "");
 		param.is_self_param = true;
-		if (func.name === "#init") {
-			param.declaration = "var";
-		}
 
 		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);
@@ -381,11 +401,11 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		return;
 	} else if (status.tokens[status.i]?.value === "self" && self_owner) {
 		// `var self` / `cp self` / `mv self` are rejected: use `ref self`
-		// for mutation (visible to the caller) or bare `self` (read-only; in
-		// `#init` it may assign fields). A declaration keyword consumed above
-		// (var/cp/mv all set declaration="var") is detectable here because a
-		// bare `self` is still "const" at this point — the `#init` override
-		// below hasn't run yet, so this can't be done later in the check pass.
+		// for mutation (visible to the caller) or bare `self` (read-only).
+		// A declaration keyword consumed above (var/cp/mv all set
+		// declaration="var") is detectable here because a bare `self` is
+		// still "const" at this point — this can't be done later in the
+		// check pass.
 		if (param.declaration === "var") {
 			add_error(
 				status,
@@ -415,9 +435,6 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 		param.type_start = param.start;
 		param.type = new Type(self_owner?.name ?? "");
 		param.is_self_param = true;
-		if (func.name === "#init") {
-			param.declaration = "var";
-		}
 
 		if (accept(",", status) && peek_current(status) !== ")") {
 			parse_function_parameter(parent, func, status);

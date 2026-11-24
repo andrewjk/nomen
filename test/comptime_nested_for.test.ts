@@ -43,7 +43,7 @@ test("an inner arm composes with the outer binding (stack)", () => {
 			mv struct S_#{w.name} {
 				#for f of META.info(Base).fields {
 					var #{f.name} = 0
-					pub func describe_#{f.name} = (out string) {
+					pub func describe_#{f.name} = (self, out string) {
 						return w.name + "/" + f.name
 					}
 				}
@@ -73,7 +73,7 @@ struct Base {
 	mv struct S_#{w.name} {
 		#for f of META.info(Base).fields {
 			var #{f.name} = 0
-			pub func describe_#{f.name} = (out string) {
+			pub func describe_#{f.name} = (self, out string) {
 				return w.name + "/" + f.name
 			}
 		}

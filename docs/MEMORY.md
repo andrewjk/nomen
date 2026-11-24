@@ -54,7 +54,7 @@ Structs can define a `#destroy` function that runs automatically when the struct
 struct Resource {
     var int handle
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.handle = -1
     }
 }
@@ -181,7 +181,7 @@ instance's storage is reclaimed:
 mv struct Counter {
     var int count
 
-    func #destroy = () {
+    func #destroy = (ref self) {
         self.count = 0
     }
 }

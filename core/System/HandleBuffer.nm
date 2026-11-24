@@ -551,7 +551,7 @@ pub mv struct HandleBuffer<T> {
 		}
 	}
 
-	func #destroy = () {
+	func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
 				if (self->data) {

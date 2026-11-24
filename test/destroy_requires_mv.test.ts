@@ -17,7 +17,7 @@ mv struct Transaction {
 		self.handle = handle
 	}
 
-	func #destroy = (self) {
+	func #destroy = (ref self) {
 		Console.write_line("destroy \\{self.handle}")
 	}
 }

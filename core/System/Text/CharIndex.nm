@@ -25,7 +25,7 @@ pub mv struct CharIndex {
 	mv runs = List<CharRun>()
 	var char_count = 0
 
-	pub func #init = (self, view string source) {
+	pub func #init = (ref self, view string source) {
 		self.source = source
 		var pos = 0
 		var int len = source.length

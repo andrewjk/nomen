@@ -68,7 +68,7 @@ mv struct Binding {
 	var uint64 handle = 0
 	var func () action = Console.write_line
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 	}
 }
 
@@ -76,7 +76,7 @@ pub mv struct Store {
 	mv List<Binding> list = List<Binding>()
 	var int ran = 0
 
-	pub func #init = (self) {
+	pub func #init = (ref self) {
 		self.list = List<Binding>()
 	}
 

@@ -32,7 +32,7 @@ mv struct RightClickApp : App {
 	mv List<uint64> handles
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		// One row at the top of a plain VStack root (no scrollable, so
 		// document space == window content space — the handler hit-tests
 		// the window-space click directly).

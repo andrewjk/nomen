@@ -188,7 +188,7 @@ Console.write("done")
 mv struct Resource {
   var int handle
 
-  func #destroy = () {
+  func #destroy = (ref self) {
     self.handle = -1
   }
 }

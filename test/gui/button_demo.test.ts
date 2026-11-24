@@ -20,7 +20,7 @@ mv struct ButtonApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var Button click = Button(window, "Click me")
 		var Container grid = VStack(0)
 		grid.add_spacer_to(grid.root_index(), 1, 1)

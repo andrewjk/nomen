@@ -20,7 +20,7 @@ mv struct ClickApp : App {
 	mv Container grid
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.label = Text(window)
 		self.label.set_text("idle")
 		self.btn = Button(window, "Go")

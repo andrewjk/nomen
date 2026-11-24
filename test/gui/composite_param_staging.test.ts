@@ -26,7 +26,7 @@ import System::Controls
 
 pub mv struct Card {
 	mv TextBox title
-	pub func #init = (self, Window window, string label) {
+	pub func #init = (ref self, Window window, string label) {
 		var TextBox t = TextBox(window)
 		self.title = mv t
 		self.title.set_text(label)
@@ -58,7 +58,7 @@ import System::Controls
 
 pub mv struct Direct {
 	mv TextBox box
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		// The direct form: the ctor call sits in the assignment itself (the
 		// composite controls use this). It used to stage the Window param's
 		// spill-slot address as the struct.
@@ -90,7 +90,7 @@ import System::Controls
 pub mv struct Leaker {
 	mv TextBox box
 	mv Stepper step
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		self.box = TextBox(window)
 		self.step = Stepper(window)
 	}

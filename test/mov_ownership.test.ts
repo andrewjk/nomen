@@ -77,7 +77,7 @@ struct Point {
 		test("struct with trait field using mv", () => {
 			const input = `
 trait Speaker {
-  func say = (out string)
+  func say = (self, out string)
 }
 struct Holder {
   mv Speaker s

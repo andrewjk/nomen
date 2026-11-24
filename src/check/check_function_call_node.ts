@@ -186,6 +186,25 @@ export default function check_function_call_node(
 	// descriptor (CLOSURE.md Phase 2).
 	if (func?.is_closure && func.captures?.length) func = undefined;
 
+	// Static-method discipline: a bare name resolves to a FREE function only.
+	// When no free function shares the name and the fallback found a struct
+	// member (a static method — no `self` parameter), the call must be
+	// spelled on its type: a method's namespace is its type, not the file,
+	// so `make(1)` never means `Counter.make(1)`.
+	if (
+		func &&
+		!func.params?.[0]?.is_self_param &&
+		status.structs.some((s) => s.functions.includes(func!))
+	) {
+		const owner = status.structs.find((s) => s.functions.includes(func!))!;
+		add_error(
+			status,
+			`'${func.name}' is a static method of '${owner.name}' — call it on the type ('${owner.name}.${func.name}(…)')`,
+			node.start,
+		);
+		return false;
+	}
+
 	if (!func) {
 		// Resolve the constructed type's declaration by its SOURCE name,
 		// honouring scope (a nested type on a colliding name carries a

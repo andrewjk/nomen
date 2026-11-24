@@ -341,7 +341,7 @@ pub mv struct Channel {
 		}
 	}
 
-	pub func #destroy = () {
+	pub func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
 				if (self->mu) {

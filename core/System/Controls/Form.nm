@@ -21,7 +21,7 @@ pub mv struct Form {
 	var rows = 0
 	var int rows_stack = -1
 
-	pub func #init = (self, Window window, string title) {
+	pub func #init = (ref self, Window window, string title) {
 		self.box = GroupBox(window, title)
 		self.l0 = Text(window)
 		self.l1 = Text(window)

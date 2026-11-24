@@ -287,7 +287,7 @@ struct Holder {
 	test("trait-typed fields are not supported yet (fix named)", () => {
 		const input = `
 trait Speaker {
-	func say = (out string)
+	func say = (self, out string)
 }
 mv struct Holder {
 	mv Speaker s

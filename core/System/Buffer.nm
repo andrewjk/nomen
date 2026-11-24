@@ -1176,7 +1176,7 @@ pub mv struct Buffer<T> {
 		}
 	}
 
-	func #destroy = () {
+	func #destroy = (ref self) {
 		if self.data != 0 {
 			free(self.data)
 		}

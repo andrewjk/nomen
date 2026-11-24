@@ -33,7 +33,7 @@ mv struct SelectApp : App {
 	var int hits = 0
 	var int frames = 0
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var Tabs tabs = Tabs(window, 2)
 		var Table table = Table(window, 2)
 		table.set_header(0, "Item")
@@ -147,7 +147,7 @@ mv struct PickApp : App {
 	mv Select pick
 	mv ComboBox combo
 
-	pub func #init = (self, Window window) {
+	pub func #init = (ref self, Window window) {
 		var Select pick = Select(window)
 		pick.add_item("Red")
 		self.pick = mv pick

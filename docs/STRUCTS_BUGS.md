@@ -72,7 +72,7 @@ aarch64. Repro (prints `DD` on aarch64, `D` on C):
 import System
 class Box {
 	var int v
-	func #destroy = () {
+	func #destroy = (self) {
 		Console.write("D")
 	}
 }
