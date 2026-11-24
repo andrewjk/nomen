@@ -416,7 +416,7 @@ export default function build_return_node(
 		// Use the function's declared return type for the _return_val temp.
 		// The expression type (node.type) may differ when type erasure is in
 		// play (e.g. List<Animal>.pop returns T=Animal, but the expression
-		// `self.items.move_int(idx)` returns int/long from ClassBuffer's
+		// `self.items.move_int(idx)` returns int/long from HandleBuffer's
 		// type-erased storage). Fall back to node.type if function_return_type
 		// is not available.
 		const ret_type = status.function_return_type || node.type;
@@ -571,7 +571,7 @@ export default function build_return_node(
 		const returns_bare_self = false;
 		// A trait-typed return inside a monomorphized container method (e.g.
 		// `T List_T_at(...) { return self.items.load_int(i); }`) wraps a raw
-		// `long`-returning storage primitive (ClassBuffer.load_int/move_int).
+		// `long`-returning storage primitive (HandleBuffer.load_int/move_int).
 		// The declared return type is `struct <Trait> *`, so cast the int
 		// expression to the pointer type. Without this, `struct Speaker *_x =
 		// long_expr` is an integer-to-pointer conversion error. Skip when the
@@ -779,7 +779,7 @@ export default function build_return_node(
 		const wrap_view_string_return =
 			!!ret_type.is_view && ret_type.name === "string" && !is_view_value(node.value, status);
 		// Type erasure: when the function returns a class/struct pointer but
-		// the return expression is a simple type (e.g. long from ClassBuffer's
+		// the return expression is a simple type (e.g. long from HandleBuffer's
 		// type-erased load_int/move_int), cast the expression to the correct
 		// pointer type so C's type system is satisfied.
 		const expr_type_name = node.type?.name || "";

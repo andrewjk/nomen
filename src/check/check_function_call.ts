@@ -1275,7 +1275,7 @@ export default function check_function_call(
 		}
 		// Storing a BORROWED class/trait value into a `mv T` slot would
 		// create shared ownership: the destination container's `#destroy`
-		// (ClassBuffer-backed for class/trait element types) frees the
+		// (HandleBuffer-backed for class/trait element types) frees the
 		// pointer per-element, but the borrow's source still references the
 		// same instance — a runtime double-free (SIGABRT) when the source
 		// is later destroyed. The same holds for a `mv` VALUE-STRUCT
@@ -2342,13 +2342,13 @@ export default function check_function_call(
 	// declarations, but a `var` initialized with a literal still gets a
 	// point range `[n, n+1)` via `track_assignment_bounds`.
 	// Match the generic `Buffer` (checked pre-mono on generic containers like
-	// List<T>) as well as monomorphized names (Buffer_int, ClassBuffer_Animal)
+	// List<T>) as well as monomorphized names (Buffer_int, HandleBuffer_Animal)
 	// seen on non-generic structs whose Buffer<T> fields are already rewritten.
 	const is_bufferish =
 		target_type?.name === "Buffer" ||
-		target_type?.name === "ClassBuffer" ||
+		target_type?.name === "HandleBuffer" ||
 		!!target_type?.name?.startsWith("Buffer_") ||
-		!!target_type?.name?.startsWith("ClassBuffer_");
+		!!target_type?.name?.startsWith("HandleBuffer_");
 	if (self_path && self_path !== "?" && is_bufferish && func.return_constraint) {
 		const size_param = node.params[0];
 		if (size_param) {

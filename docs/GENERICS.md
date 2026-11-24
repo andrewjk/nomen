@@ -156,12 +156,12 @@ The steps, for `List<int>`:
    `substitute_raw_in_node` (which also rewrites identifiers inside `#arch`
    raw blocks — see below).
 7. **Resolve `Buffer<Elem>` fields.** A field of type `Buffer<T>` is
-   re-routed to `Buffer<Elem>` or `ClassBuffer<Elem>` depending on whether
+   re-routed to `Buffer<Elem>` or `HandleBuffer<Elem>` depending on whether
    the resolved element is a class/trait or a plain value, then
    monomorphized in turn. The clone's `self.`-rooted field accesses are
    re-typed from the mono struct's field declarations
    (`retype_self_field_chains`), so a body access typed `Buffer<T>` names
-   the re-routed mono (`ClassBuffer_Elem`) instead of the substituted
+   the re-routed mono (`HandleBuffer_Elem`) instead of the substituted
    `Buffer<Elem>` spelling no build ever emits.
 8. **Re-check custom `#init`.** Variadic-tuple constructors (e.g.
    `Map<K,V>(["a",1], ["b",2])`) get a fresh `#init` clone, re-checked in a

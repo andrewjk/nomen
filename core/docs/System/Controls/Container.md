@@ -13,7 +13,7 @@ Conforms to `Control`: `measure(BoxConstraints)` measures the whole subtree,
 unbounded-content size. The handle-based `add` API and the SoA engine are
 unchanged — the trait methods are thin entry points over the existing math,
 so a `Container` can also be driven polymorphically as a `Control` (passed to
-a `Control`-taking function, stored in a `ClassBuffer<Control>`, etc.).
+a `Control`-taking function, stored in a `HandleBuffer<Control>`, etc.).
 
 **Members:**
 

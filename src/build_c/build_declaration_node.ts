@@ -690,7 +690,7 @@ export default function build_declaration_node(
 		// allocated — the concrete struct isn't statically known (the
 		// method's declared return type is the trait), so storage must be
 		// a pointer (`void *`) dispatched through the trait vtable. The
-		// ClassBuffer<Trait> slot already stores a correct vtable-bearing
+		// HandleBuffer<Trait> slot already stores a correct vtable-bearing
 		// class pointer, so dispatch works once the local is tracked in
 		// class_vars (build_vtable_target passes it by value, not &name)
 		// and variable_types (so accesses are recognized as trait

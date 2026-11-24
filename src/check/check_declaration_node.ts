@@ -848,7 +848,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		}
 
 		// A struct that transitively owns a heap resource (List/Map via a Buffer
-		// field, Buffer/File/ClassBuffer via a resource-releasing #destroy, or any
+		// field, Buffer/File/HandleBuffer via a resource-releasing #destroy, or any
 		// struct with a class field) cannot be byte-copied from another variable —
 		// both copies would free the same backing data (double-free). Only a
 		// bare-variable copy is rejected here; a fresh allocation (constructor /

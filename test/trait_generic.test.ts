@@ -86,7 +86,7 @@ Console.write("\\{key_of(M())}")
 		await build_and_check_output(input, "generic_trait_multi_param", "42");
 	});
 
-	test("heterogeneous ClassBuffer<Greetable> dispatches generic-trait conformers", async () => {
+	test("heterogeneous HandleBuffer<Greetable> dispatches generic-trait conformers", async () => {
 		// Two classes conform to the generic Greetable<T> with DIFFERENT type
 		// args (Bone vs Mouse); both slot into a List<Greetable> and dispatch
 		// destroy through the trait vtable. Mirrors cb_trait_multi but with a

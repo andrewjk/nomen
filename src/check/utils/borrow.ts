@@ -140,7 +140,7 @@ export function borrow_owner_of(node: BaseNode, status: CheckStatus): string | u
  * owned value). True for class-/trait-typed returns and for `view T` returns;
  * false for primitives, constructors, and `mv out T` (owned) returns. Traits
  * are reference types just like classes (a trait-typed value is a heap pointer
- * into someone else's ClassBuffer<Trait> slot), so an instance method returning
+ * into someone else's HandleBuffer<Trait> slot), so an instance method returning
  * a trait borrows from its receiver the same way a class-typed return does.
  */
 function is_borrowed_return(t: Type | undefined, status: CheckStatus): boolean {

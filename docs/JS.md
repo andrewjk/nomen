@@ -16,24 +16,24 @@ maps the resulting program onto JavaScript.
 
 ## Value mapping
 
-| Nomen                          | JavaScript                                                 |
-| ------------------------------ | ---------------------------------------------------------- |
-| every `int`/`uint` family      | `bigint`                                                   |
-| every `float` family           | `number`                                                   |
-| `string`, `char`               | `string` (a char is one JS character)                      |
-| `bool`                         | `boolean`                                                  |
-| `T[]` / `Array<T>`             | JS array                                                   |
-| `List<T>`                      | JS array                                                   |
-| `StableList<T>`                | JS array (stable indices are plain element references)     |
-| `Buffer<T>` / `ClassBuffer<T>` | JS array (capacity is the array length)                    |
-| `Set<T>`                       | JS `Set`                                                   |
-| `Map<K, V>`                    | JS `Map` (keys by JS identity — see below)                 |
-| `StringBuilder`                | `{ s }`                                                    |
-| `Box<T>`                       | `{ __value }` (access through the box is transparent)      |
-| struct                         | plain object with a `$type` method table                   |
-| enum                           | `{ $tag, <payload fields> }`                               |
-| tuple                          | `_Tuple_…_init` object with `_0`, `_1`, … fields           |
-| trait-typed value              | the concrete struct value; trait calls dispatch on `$type` |
+| Nomen                           | JavaScript                                                 |
+| ------------------------------- | ---------------------------------------------------------- |
+| every `int`/`uint` family       | `bigint`                                                   |
+| every `float` family            | `number`                                                   |
+| `string`, `char`                | `string` (a char is one JS character)                      |
+| `bool`                          | `boolean`                                                  |
+| `T[]` / `Array<T>`              | JS array                                                   |
+| `List<T>`                       | JS array                                                   |
+| `StableList<T>`                 | JS array (stable indices are plain element references)     |
+| `Buffer<T>` / `HandleBuffer<T>` | JS array (capacity is the array length)                    |
+| `Set<T>`                        | JS `Set`                                                   |
+| `Map<K, V>`                     | JS `Map` (keys by JS identity — see below)                 |
+| `StringBuilder`                 | `{ s }`                                                    |
+| `Box<T>`                        | `{ __value }` (access through the box is transparent)      |
+| struct                          | plain object with a `$type` method table                   |
+| enum                            | `{ $tag, <payload fields> }`                               |
+| tuple                           | `_Tuple_…_init` object with `_0`, `_1`, … fields           |
+| trait-typed value               | the concrete struct value; trait calls dispatch on `$type` |
 
 Strings and chars are JS strings rather than UTF-8 byte buffers; UTF-16 code
 units and UTF-8 bytes differ for non-ASCII text (see FOLLOWUP.md).
@@ -77,7 +77,7 @@ running. Natively modelled types (`List`, `StableList`, `Buffer`, `Map`, `Set`,
 `Box`, `StringBuilder`, `BigInt`, `String`, the primitive wrappers, `Array`,
 `Console`, `Format`) are never lowered generically.
 
-`Buffer<T>` and `ClassBuffer<T>` map onto JS arrays, so `.cap` reads return the
+`Buffer<T>` and `HandleBuffer<T>` map onto JS arrays, so `.cap` reads return the
 array length and `alloc`/`grow`/`load`/`store`/`replace`/`move`/`shift`/
 `slice`/`copy` are array operations. This is what lets the containers above
 (plus `BigInt`) cross-compile and run without the native slab. `slice` yields a

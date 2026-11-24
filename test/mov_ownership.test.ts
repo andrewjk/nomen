@@ -73,7 +73,7 @@ struct Point {
 		// STRUCT_PLAN_3 B5: a trait handle is a boxed, mv value (B4), but
 		// the FIELD lowering (boxed handle storage + vtable dispatch through
 		// the field) is not built yet — the error names the fix. A class with
-		// a trait field keeps working (ClassBuffer routing).
+		// a trait field keeps working (HandleBuffer routing).
 		test("struct with trait field using mv", () => {
 			const input = `
 trait Speaker {

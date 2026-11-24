@@ -2,9 +2,9 @@ import { describe, test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// Trait-typed retrieval from a `ClassBuffer<Trait>`: a trait-typed local
+// Trait-typed retrieval from a `HandleBuffer<Trait>`: a trait-typed local
 // whose initializer is a method-call return (e.g. `var Speaker p =
-// pets.at(i)`), not a constructor. The ClassBuffer<Trait> slot already
+// pets.at(i)`), not a constructor. The HandleBuffer<Trait> slot already
 // stores a correct vtable-bearing class pointer; the gap was that the
 // trait-typed-local storage path only recognised constructor
 // initializers, so a method-call return fell through and got no usable
@@ -14,7 +14,7 @@ import build_and_check_output from "./build_and_check_output";
 // `mv out T` method like `pop` transfers ownership (freed at scope
 // exit).
 
-describe("Trait-typed retrieval from ClassBuffer<Trait>", () => {
+describe("Trait-typed retrieval from HandleBuffer<Trait>", () => {
 	test("retrieve via .at and dispatch (borrow — not freed)", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }

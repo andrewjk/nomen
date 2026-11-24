@@ -85,7 +85,7 @@ Console.write("\\{x.letter}\\n")
 	});
 
 	test("storing a borrowed trait value is rejected", async () => {
-		// Trait-typed containers also store owned pointers (ClassBuffer<Trait>
+		// Trait-typed containers also store owned pointers (HandleBuffer<Trait>
 		// with vtable-dispatched destroy), so the same shared-ownership
 		// hazard applies.
 		const input = `

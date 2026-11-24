@@ -358,7 +358,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			// <Struct>_destroy: Buffer<T> calls T_destroy per element when T
 			// is a mv value struct (per-element destroy on replace /
 			// scope exit), and trait-conforming mv value structs dispatch
-			// destroy through the vtable when boxed into ClassBuffer<Trait>.
+			// destroy through the vtable when boxed into HandleBuffer<Trait>.
 			build_auto_destroy_function(node, status);
 		}
 		status.current_struct = undefined;
@@ -705,7 +705,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		// constructed instance (the traits table for conformers, the constant
 		// 1 here), so a mv Buffer's per-slot destroy can distinguish a
 		// live element from a zeroed (unconstructed / moved-out) cap slot —
-		// the inline counterpart of ClassBuffer's NULL pointer-slot guard.
+		// the inline counterpart of HandleBuffer's NULL pointer-slot guard.
 		emit_asm(status, `mov x9, #1\n`);
 		emit_asm(status, `str x9, [x19]\n`);
 	}
@@ -3129,7 +3129,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	// function. Slot [0] of _<Struct>_traits (below) holds the address of
 	// this table (or 0); the synthesized `<Trait>_destroy` shim loads
 	// [obj] → [vtable, #0] → [destroy_funcs, #0] → the concrete destroy fn,
-	// so a ClassBuffer<Trait> reclaims heterogeneous boxed elements
+	// so a HandleBuffer<Trait> reclaims heterogeneous boxed elements
 	// polymorphically. The destroy fn exists when the struct has a user
 	// #destroy, is a class (auto-destroy), or is a trait-conforming value
 	// struct with mv fields (auto-destroy). For structs without any of

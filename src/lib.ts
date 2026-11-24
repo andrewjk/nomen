@@ -289,15 +289,15 @@ function build_type_map(
 		}
 	}
 
-	// The monomorphizer rewrites Buffer<T> fields to ClassBuffer<T> when T is
+	// The monomorphizer rewrites Buffer<T> fields to HandleBuffer<T> when T is
 	// a class or trait (see check_function_call_node.ts). That pairing isn't
-	// visible in source text, so ensure ClassBuffer is resolved whenever
+	// visible in source text, so ensure HandleBuffer is resolved whenever
 	// Buffer is (and vice versa).
 	for (const [, entry] of types) {
-		if (entry.deps.includes("Buffer") && !entry.deps.includes("ClassBuffer")) {
-			entry.deps.push("ClassBuffer");
+		if (entry.deps.includes("Buffer") && !entry.deps.includes("HandleBuffer")) {
+			entry.deps.push("HandleBuffer");
 		}
-		if (entry.deps.includes("ClassBuffer") && !entry.deps.includes("Buffer")) {
+		if (entry.deps.includes("HandleBuffer") && !entry.deps.includes("Buffer")) {
 			entry.deps.push("Buffer");
 		}
 	}

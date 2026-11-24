@@ -1,15 +1,15 @@
-// ClassBuffer<T>: a flat buffer of owned class pointers of type T. The
+// HandleBuffer<T>: a flat buffer of owned handles of type T. The
 // class-ness is compile-time: #destroy calls the monomorphized element destroy
 // (`T_destroy` -> e.g. Animal_destroy) directly, and store_int/replace_int
 // forbid 0 (you can't overwrite a pointer with null and leak it — use move_int
 // to relinquish a slot). T must be a class. Buffer<T> is the value counterpart.
 
 /**
- * A flat buffer of owned class pointers of type T — the backing store for collections of classes
+ * A flat buffer of owned handles of type T — the backing store for collections of class instances and traits
  **/
-pub mv struct ClassBuffer<T> {
+pub mv struct HandleBuffer<T> {
 	internal var uint64 data = 0
-	// Publicly readable; grown only by ClassBuffer's own methods (`readonly`).
+	// Publicly readable; grown only by HandleBuffer's own methods (`readonly`).
 	readonly cap = 0
 
 	internal func alloc_int = (ref self {}, int size, out int: out >= size) {
@@ -20,9 +20,9 @@ pub mv struct ClassBuffer<T> {
 
 	// Semantic parity with Buffer<T>.alloc: generic code (e.g. Map#init's
 	// `self.values.alloc(N)`) forwards to either Buffer — where alloc is
-	// T_SIZE-aware (string slots are 16 bytes) — or this ClassBuffer, whose
+	// T_SIZE-aware (string slots are 16 bytes) — or this HandleBuffer, whose
 	// slots are always one pointer wide. The compiler routes value-struct
-	// element types to Buffer and class/trait elements to ClassBuffer
+	// element types to Buffer and class/trait elements to HandleBuffer
 	// (monomorphize's field rewrite), so a call arriving HERE is always
 	// pointer-sized: delegate to alloc_int.
 	func alloc = (ref self {}, int size, out int: out >= size) {
@@ -63,7 +63,7 @@ pub mv struct ClassBuffer<T> {
 	// Address of slot `i` (library-only): the ELEMENT BORROW primitive for
 	// trait/class elements — `ref T x = list.at(i)` (docs/HANDLERS.md Stage
 	// 4) reaches here through the List wrapper when the element is a trait
-	// (the items buffer is a ClassBuffer). ClassBuffer slots are 8-byte
+	// (the items buffer is a HandleBuffer). HandleBuffer slots are 8-byte
 	// handles, so the slot's CONTENT is the instance pointer: return the
 	// stored word, not the slot's address. Library-internal: bounds are the
 	// caller's obligation (the List wrapper constrains them).
@@ -86,11 +86,11 @@ pub mv struct ClassBuffer<T> {
 		}
 	}
 
-	// Generic (T-typed) counterparts of the _int primitives. ClassBuffer only
+	// Generic (T-typed) counterparts of the _int primitives. HandleBuffer only
 	// ever holds 8-byte class pointers (T_SIZE is 8), so these are
 	// behaviorally identical to their _int counterparts — they exist so
 	// List<T> can call a single uniform API whether T is a value struct
-	// (Buffer) or a class (ClassBuffer, after the Buffer<T> field is
+	// (Buffer) or a class (HandleBuffer, after the Buffer<T> field is
 	// rewritten). Bodies use 8-byte slots, matching _int.
 
 	func grow = (ref self {}, int needed, out int: out >= needed) {
@@ -180,7 +180,7 @@ pub mv struct ClassBuffer<T> {
 	// INTERNAL (StableList's directory chunks, class elements): init the
 	// view, run the typed `store` (the ownership-transferring slot store),
 	// then clear the view so the holder's teardown reclaims nothing. The
-	// holder passes a ClassBuffer FIELD, never a local (a local owning buffer
+	// holder passes a HandleBuffer FIELD, never a local (a local owning buffer
 	// is auto-destroyed at scope exit and would free the borrowed slab).
 	internal func store_in_slab = (
 		ref self {},
@@ -199,7 +199,7 @@ pub mv struct ClassBuffer<T> {
 	// checker treats the result as OWNED — the slot is relinquished, so the
 	// caller is the sole remaining owner. This is the mv-extract primitive
 	// (parallel to List.pop); use it (not load) when transferring ownership
-	// out of a ClassBuffer slot, or moving a value into a fresh mv
+	// out of a HandleBuffer slot, or moving a value into a fresh mv
 	// container — load returns a BORROW (the slot is unchanged) and storing
 	// it elsewhere would create shared ownership (double-free at destroy).
 	inline func move = (ref self {}, int i: i >= 0 && i < self.cap, mv out T) {
@@ -466,7 +466,7 @@ pub mv struct ClassBuffer<T> {
 		}
 	}
 
-	// Bulk transfer for backward-shift deletion — the ClassBuffer
+	// Bulk transfer for backward-shift deletion — the HandleBuffer
 	// counterpart of Buffer.move_range (same contract: every slot in
 	// [dst, dst + count) must be DEAD — zeroed by a move-out or otherwise
 	// unowned — because the block move overwrites without reclaiming; the
@@ -524,7 +524,7 @@ pub mv struct ClassBuffer<T> {
 	// A non-mv (ptr, len) slice [start, end) over this buffer's class
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors
-	// Buffer.slice; ClassBuffer stores 8-byte slots, so the element width is 8.
+	// Buffer.slice; HandleBuffer stores 8-byte slots, so the element width is 8.
 	func slice = (
 		self,
 		int start: start >= 0,
@@ -541,7 +541,7 @@ pub mv struct ClassBuffer<T> {
 		}
 		#if META.arch == "aarch64" {
 			#raw {
-				// x19 = self (ClassBuffer struct ptr), x1 = start, x2 = end.
+				// x19 = self (HandleBuffer struct ptr), x1 = start, x2 = end.
 				// self->data at [x19, #8]. Return (ptr, len) in x0/x1.
 				ldr x0, [x19, #8]
 				mov x3, #8

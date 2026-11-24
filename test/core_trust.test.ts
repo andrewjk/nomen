@@ -105,7 +105,7 @@ mv struct Packed {
 }
 struct Driver {
 	func drive = (ref self, mv Box<Packed> seed, out int) {
-		var ClassBuffer<Box<Packed>> cb = ClassBuffer<Box<Packed>>()
+		var HandleBuffer<Box<Packed>> cb = HandleBuffer<Box<Packed>>()
 		cb.alloc_int(2)
 		cb.store(0, mv seed)
 		Console.write("\\{cb.load(0).v}")

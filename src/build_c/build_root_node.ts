@@ -134,7 +134,7 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 
 	// For every trait, emit a `<Trait>_destroy(void *obj)` shim that dispatches
 	// through the destroy slot at index 0 of the struct's vtable. This makes
-	// the T_destroy reference inside ClassBuffer<Trait>'s raw #destroy block
+	// the T_destroy reference inside HandleBuffer<Trait>'s raw #destroy block
 	// (substituted to `<Trait>_destroy`) resolve to a real symbol that reaches
 	// the actual conforming struct's destroy. Without this, a trait-typed
 	// collection would either fail to link or call a non-existent symbol.
@@ -146,7 +146,7 @@ void **_get_trait_func(void **obj, int trait_index, int func_index)
 		if (emitted_trait_destroys.has(trait.name)) continue;
 		// Partition by trait origin across the TU split: a system trait's shim
 		// is defined in the system TU, a user trait's in the user TU (matching
-		// where the referencing ClassBuffer<Trait> lands).
+		// where the referencing HandleBuffer<Trait> lands).
 		if (status.emit_mode === "system" && !trait.is_library) continue;
 		if (status.emit_mode === "user" && trait.is_library) continue;
 		emitted_trait_destroys.add(trait.name);

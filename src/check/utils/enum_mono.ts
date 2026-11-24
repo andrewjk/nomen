@@ -201,7 +201,7 @@ function substitute_payload(t: Type, substitution: Map<string, Type>): Type {
  *
  * A class/trait payload is an OWNING slot: the tagged union stores the
  * instance pointer raw and the enum value's scope exit destroys + frees it —
- * the same single-ownership contract ClassBuffer<T> slots follow. A borrowed
+ * the same single-ownership contract HandleBuffer<T> slots follow. A borrowed
  * argument would leave two owners (the payload and the borrow's source) — a
  * double free — so it is rejected here, mirroring mv-field stores. Fresh
  * constructions transfer soundly; an owned LOCAL is moved implicitly

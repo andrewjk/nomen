@@ -485,7 +485,7 @@ These were previously open gaps and are now enforced at compile time:
   again until it is reassigned (which revalidates it) or revalidated by a swap.
 - **Container-stored instances are freed.** When `T` is a mv struct, a
   container's backing storage reclaims each stored instance in its `#destroy`
-  (the `ClassBuffer` routing — the class-era naming persists for the
+  (the `HandleBuffer` routing — the class-era naming persists for the
   pointer-slot tier) — so `mv`-into-container no longer leaks.
 - **View-carrying structs crossing a call boundary** are rejected: as an
   argument (a container store is an argument), as a return (self-rooted

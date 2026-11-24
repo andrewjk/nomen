@@ -32,7 +32,7 @@ export function moved_param_is_consumed(
 	traits?: TraitNode[],
 ): boolean {
 	// A raw `#arch` body is opaque to this scan — it may store the param into
-	// a mv container (ClassBuffer.store_T/replace_T do exactly that), so
+	// a mv container (HandleBuffer.store_T/replace_T do exactly that), so
 	// assume ownership escaped and let the body/callee manage the value.
 	// Emitting the epilogue reclaim would free a pointer the raw body just
 	// handed to its owner (a double free at the container's destroy).

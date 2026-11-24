@@ -644,7 +644,7 @@ function evaluate_operation(
 		// system guarantees a constructed value — `Box<T>?` / `Class?` is the
 		// nullable spelling, and the zero representation is only reachable
 		// through it. Discharge the constraint from the declared type (e.g.
-		// `ClassBuffer.store`'s `mv T val: val != 0` slot precondition, called
+		// `HandleBuffer.store`'s `mv T val: val != 0` slot precondition, called
 		// with a non-nullable box donor).
 		if (op.op === "!=") {
 			const nonnull_reference = (var_name: string | undefined): boolean => {

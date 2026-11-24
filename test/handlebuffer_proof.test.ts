@@ -3,17 +3,17 @@ import { describe, expect, test } from "vite-plus/test";
 import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
-// Proof that the ClassBuffer<T> compile-time mechanism works: the element
+// Proof that the HandleBuffer<T> compile-time mechanism works: the element
 // destroy is monomorphized directly into #destroy (T_destroy -> Animal_destroy),
 // store_int forbids 0, and elements are freed on destroy. This de-risks the
-// full ClassBuffer/ValueBuffer split before migrating the containers.
+// full HandleBuffer/ValueBuffer split before migrating the containers.
 
-describe("ClassBuffer<T> compile-time class freeing", () => {
+describe("HandleBuffer<T> compile-time class freeing", () => {
 	test("monomorphized #destroy calls the element destroy directly (no leak)", async () => {
-		// ClassBuffer<T> stores 8-byte POINTER elements — the surviving shape
+		// HandleBuffer<T> stores 8-byte POINTER elements — the surviving shape
 		// is a class-stamped T, i.e. `Box<Animal>` (a mv struct element
 		// is inline and retires with the class tier). The monomorphized
-		// ClassBuffer_Box_Cell.#destroy must call Box_Cell_destroy directly
+		// HandleBuffer_Box_Cell.#destroy must call Box_Cell_destroy directly
 		// — the T_destroy substitution — and elements are freed on destroy.
 		const input = `
 mv struct Animal {
@@ -23,7 +23,7 @@ mv struct Animal {
 	}
 }
 if true {
-	var ClassBuffer<Box<Animal>> buf = ClassBuffer<Box<Animal>>()
+	var HandleBuffer<Box<Animal>> buf = HandleBuffer<Box<Animal>>()
 	buf.alloc_int(4)
 }
 Console.write("done\\n")
@@ -43,7 +43,7 @@ mv struct Animal {
 		self.letter = ' '
 	}
 }
-var ClassBuffer<Box<Animal>> buf = ClassBuffer<Box<Animal>>()
+var HandleBuffer<Box<Animal>> buf = HandleBuffer<Box<Animal>>()
 buf.alloc_int(4)
 buf.store_int(0, 0)
 `;

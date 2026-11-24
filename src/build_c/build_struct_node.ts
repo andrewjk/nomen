@@ -166,7 +166,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				// Constructed stamp: a value struct's `_vt` is non-zero for
 				// every constructed instance, so a mv Buffer's per-slot
 				// destroy can skip zeroed (unconstructed) cap slots — the
-				// inline counterpart of ClassBuffer's NULL pointer-slot guard.
+				// inline counterpart of HandleBuffer's NULL pointer-slot guard.
 				status.code += `self${accessor}_vt = (void *)1;\n`;
 			}
 
@@ -608,9 +608,9 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 	}
 
 	// Classes without a custom #destroy need an auto-generated X_destroy
-	// function so that ClassBuffer<T>'s raw C block (which calls T_destroy)
+	// function so that HandleBuffer<T>'s raw C block (which calls T_destroy)
 	// can link. The function recursively destroys class-typed fields, then
-	// returns — the caller (e.g. ClassBuffer) calls free() afterwards.
+	// returns — the caller (e.g. HandleBuffer) calls free() afterwards.
 	if (is_class && !node.functions.find((f) => f.name === "#destroy")) {
 		build_auto_destroy(node, status);
 	} else if (
@@ -623,7 +623,7 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 		// <Struct>_destroy: Buffer<T> calls T_destroy per element when T is
 		// a mv value struct (per-element destroy on replace / scope
 		// exit), and trait-conforming mv value structs dispatch destroy
-		// through the vtable when boxed into ClassBuffer<Trait>. Without
+		// through the vtable when boxed into HandleBuffer<Trait>. Without
 		// this, mv value struct elements in containers would leak their
 		// string/class fields.
 		build_auto_destroy(node, status);
@@ -659,7 +659,7 @@ function build_struct_traits(node: StructNode, status: BuildStatus) {
 	// Per-struct destroy function-pointer table, or NULL if the struct has
 	// no destroy function. Slot [0] of _<Struct>_traits (below) holds the
 	// address of this table (or NULL); a trait-typed collection
-	// (ClassBuffer<Trait>) dispatches destroy polymorphically by loading
+	// (HandleBuffer<Trait>) dispatches destroy polymorphically by loading
 	// [obj] → [vtable, #0] → [destroy_funcs, #0] → the concrete destroy.
 	// This is independent of which trait the collection is typed by — every
 	// trait-conforming struct has the same vtable prefix layout. The destroy

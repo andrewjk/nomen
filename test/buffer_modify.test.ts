@@ -2,7 +2,7 @@ import { test } from "vite-plus/test";
 
 import build_and_check_output from "./build_and_check_output";
 
-// Buffer.modify / ClassBuffer.modify: the encoded load→modify→store
+// Buffer.modify / HandleBuffer.modify: the encoded load→modify→store
 // round-trip. The primitive applies a `func (T, out T)` to a live slot and
 // handles ownership itself (displaced value freed, round-trip identity kept)
 // — unlike store, which assumes a fresh slot and leaks on overwrite.
@@ -78,8 +78,8 @@ Console.write("\\{p.a}:\\{p.b}")
 	await build_and_check_output(input, "buffer_modify_trivial_struct", "11:2");
 });
 
-test("ClassBuffer.modify class element", async () => {
-	// ClassBuffer<T> stores pointer elements — the R shape is a Box<T>
+test("HandleBuffer.modify class element", async () => {
+	// HandleBuffer<T> stores pointer elements — the R shape is a Box<T>
 	// element (mv struct elements are inline and retire with the class
 	// tier).
 	const input = `
@@ -93,7 +93,7 @@ func make_bumped = (mv Box<Counter> c, out Box<Counter>) {
 
 struct Buffer_driver {
 	func drive = (ref self, mv Box<Counter> seed, out int) {
-		var ClassBuffer<Box<Counter>> cb = ClassBuffer<Box<Counter>>()
+		var HandleBuffer<Box<Counter>> cb = HandleBuffer<Box<Counter>>()
 		cb.alloc_int(2)
 		cb.store(0, mv seed)
 		cb.modify(0, make_bumped)
@@ -137,7 +137,7 @@ Console.write("\\{bi.value}")
 // the hoisted instance temp is consumed and its scope-exit destroy+free is
 // suppressed (it used to run alongside the container's per-slot destroy —
 // `Counter_destroy` twice on one pointer, SIGABRT).
-test("ctor result straight into ClassBuffer.store", async () => {
+test("ctor result straight into HandleBuffer.store", async () => {
 	const input = `
 mv struct Counter {
 	var int value
@@ -145,7 +145,7 @@ mv struct Counter {
 
 struct Buffer_driver {
 	func drive = (ref self, out int) {
-		var ClassBuffer<Box<Counter>> cb = ClassBuffer<Box<Counter>>()
+		var HandleBuffer<Box<Counter>> cb = HandleBuffer<Box<Counter>>()
 		cb.alloc_int(2)
 		cb.store(0, Box<Counter>(Counter(1)))
 		cb.modify(0, make_bumped)
@@ -168,7 +168,7 @@ Console.write_line("")
 // A class local loaded from a container aliases the slot (a borrow — the
 // container still owns the element): the local must NOT be destroy-tracked,
 // and storing it back with `mv` must not double-free.
-test("ClassBuffer slot borrow kept alive across mv", async () => {
+test("HandleBuffer slot borrow kept alive across mv", async () => {
 	const input = `
 mv struct Counter {
 	var int value
@@ -176,7 +176,7 @@ mv struct Counter {
 
 struct Buffer_driver {
 	func drive = (ref self, mv Box<Counter> seed, out int) {
-		var ClassBuffer<Box<Counter>> cb = ClassBuffer<Box<Counter>>()
+		var HandleBuffer<Box<Counter>> cb = HandleBuffer<Box<Counter>>()
 		cb.alloc_int(2)
 		cb.store(0, mv seed)
 		var Box<Counter> c = cb.load(0)

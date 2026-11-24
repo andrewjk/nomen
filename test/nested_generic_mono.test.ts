@@ -6,9 +6,9 @@ import parse_with_imports from "./parse_with_imports";
 
 // Nested generics inside generic struct bodies must monomorphize: a field
 // shaped `List<Box<T>>` (any Generic<G<T>> in a generic struct's own body)
-// materializes every nested mono (`Box_int`, `ClassBuffer_Box_int`,
+// materializes every nested mono (`Box_int`, `HandleBuffer_Box_int`,
 // `List_Box_int`) and the cloned method bodies dispatch through the
-// field's REWRITTEN mono (Buffer→ClassBuffer), not the substituted
+// field's REWRITTEN mono (Buffer→HandleBuffer), not the substituted
 // annotation spelling — previously the aarch64 clone bodies emitted calls
 // to a never-materialized `Buffer_Box_int_grow` (link failure), and a
 // `mv`-declared field substituted to a non-owning type (`Box<int>`'s
@@ -49,7 +49,7 @@ if o.items.length > 0 {
 
 test("template method constructs the nested generic", async () => {
 	// The cloned `add` body's `self.items.push(...)` must dispatch through
-	// the field's rewritten mono (ClassBuffer_Box_Packed), not the stale
+	// the field's rewritten mono (HandleBuffer_Box_Packed), not the stale
 	// substituted `Buffer<Box<Packed>>` spelling (aarch64 link failure).
 	const input = `
 mv struct Packed {
@@ -164,7 +164,7 @@ if t.mid.items.length > 0 {
 
 test("nested generic field types materialize the full mono chain", () => {
 	// Every nested mono in the chain is materialized — no half-cloned links
-	// (`List_Box_int`, its `ClassBuffer_Box_int` backing, `Box_int`).
+	// (`List_Box_int`, its `HandleBuffer_Box_int` backing, `Box_int`).
 	const input = `
 mv struct Outer<T> {
 	var List<Box<T>> items = List<Box<T>>()
@@ -179,7 +179,7 @@ o.items.push(Box<int>(5))
 	const names = parsed.root.statements
 		.filter((s) => (s as { node_type: string }).node_type === "struct")
 		.map((s) => (s as { name?: string }).name);
-	for (const mono of ["Outer_int", "List_Box_int", "ClassBuffer_Box_int", "Box_int"]) {
+	for (const mono of ["Outer_int", "List_Box_int", "HandleBuffer_Box_int", "Box_int"]) {
 		expect(names).toContain(mono);
 	}
 });

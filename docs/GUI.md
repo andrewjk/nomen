@@ -143,7 +143,7 @@ distribution, and `LEN_PERCENT`/explicit `LEN_*` sizing**).
 
 Every native control is an `mv struct` carrying a `uint64 handle`, and the
 y-flip needs the window's content height — both are handle-level concerns. The
-earlier compiler blockers (vtable dispatch, `ClassBuffer<Trait>` storage, generic-trait
+earlier compiler blockers (vtable dispatch, `HandleBuffer<Trait>` storage, generic-trait
 conformance) are all closed. But a full `Container : Control` /
 `Array<Control>` **object-tree** rewrite — where leaves are `Control` objects
 slotted into the container — turned out to be blocked by **Nomen's ownership
@@ -152,11 +152,11 @@ compounding, verified obstacles:
 
 1. **No trait↔int coercion outside generics.** `Widget as int` and
    `int → Widget` are both rejected in non-generic code; the T↔int coercion
-   only happens _inside_ generic containers (`List<T>`/`ClassBuffer<T>`) via
+   only happens _inside_ generic containers (`List<T>`/`HandleBuffer<T>`) via
    return position. So trait-typed child storage can't be hand-rolled — it must
    go through a generic container.
 2. **Generic trait collections are mv.** `List<Control>` / `Buffer<Control>`
-   monomorphize to `ClassBuffer<Control>`, which frees every element on
+   monomorphize to `HandleBuffer<Control>`, which frees every element on
    destroy. There is **no non-mv (borrowed) heterogeneous collection**, so
    the spec's `add(Control child)` borrowed model is inexpressible.
 3. ~~**`mov Trait` params are rejected.**~~ **CLOSED** (STRUCT_PLAN_3 B4).
@@ -200,7 +200,7 @@ and returns the resolved `Size`; `set_frame(x,y,w,h)` arranges the subtree into
 the rectangle; `intrinsic_size` measures against unbounded space). The
 handle-based `add` API and the SoA internals are unchanged, so a `Container`
 can be driven polymorphically as a `Control` (passed to a `Control`-taking
-function, stored in a `ClassBuffer<Control>`, dispatched through the vtable)
+function, stored in a `HandleBuffer<Control>`, dispatched through the vtable)
 without disturbing the app or the layout tests. `Button`, `CheckBox`, and
 `TextBox` were brought into conformance too (`Window`/`Text` already were), so
 every control in the layer is a `Control`; their `intrinsic_size`/`measure`
@@ -1080,7 +1080,7 @@ cannot be verified headlessly, but the **layout math** can:
      exposed, so the existing handle-based `Container` API keeps working unchanged.
    - The handle-based `Container` itself is **not** yet `Container : Control` (that's the
      trait smoke test, phase 9); phase 6 only makes the native leaf controls trait-conformant
-     so they can later slot into `Array<Control>` / `ClassBuffer<Control>`.
+     so they can later slot into `Array<Control>` / `HandleBuffer<Control>`.
    - Enabling this surfaced a compiler gap in the import/dependency walker
      (`src/parse.ts:resolve_types_with_deps`): module-path imports whose module name doesn't
      match one of their own type names (e.g. `import System::Controls::Geometry`, which
@@ -1132,16 +1132,16 @@ UI infrastructure):
   tables and a `_get_trait_func(obj, trait, func)` resolver, mirroring the C
   backend.~~ ✅ **Done** on both backends — see
   [Trait dispatch (polymorphic calls)](#trait-dispatch-polymorphic-calls).
-- ~~**`monomorphize` routes trait-`T` to `ClassBuffer`.**~~ ✅ **Done.**
+- ~~**`monomorphize` routes trait-`T` to `HandleBuffer`.**~~ ✅ **Done.**
   `check_function_call_node.ts:183-209` now recognizes a `Buffer<Elem>` field
   whose `Elem` is a trait (not just a class) and rewrites both the field type
-  and its default constructor to the monomorphized `ClassBuffer_<Trait>` so
+  and its default constructor to the monomorphized `HandleBuffer_<Trait>` so
   every build path resolves against the concrete buffer. Runtime-tested on
   both backends in `test/trait_collection_destroy.test.ts` (homogeneous and
   heterogeneous `List<Speaker>`).
 - ~~**Trait-typed destroy propagation in containers.**~~ ✅ **Done.**
-  `ClassBuffer<Trait>#destroy` walks each slot and dispatches `<Trait>_destroy`
-  through the vtable (`core/System/ClassBuffer.nm:179-225`), with the
+  `HandleBuffer<Trait>#destroy` walks each slot and dispatches `<Trait>_destroy`
+  through the vtable (`core/System/HandleBuffer.nm:179-225`), with the
   vtable-shim symbols synthesized in `src/build.ts:75-103` (aarch64) and
   `src/build_c/build_root_node.ts:97-121` (C). Verified end-to-end on both
   backends by `test/trait_collection_destroy.test.ts`.
@@ -1154,7 +1154,7 @@ UI infrastructure):
   boxed. A bare `Trait` parameter takes a pointer to the caller value for the
   call (no allocation); a `mv Trait` parameter takes ownership of the box.
   The native controls are `mv struct`s, so they box straight into
-  `ClassBuffer<Control>` slots unchanged.
+  `HandleBuffer<Control>` slots unchanged.
 - ~~**Parse trait conformance with type arguments** (`core/System/Viewable.nm:8-11`,
   not `Controls/Viewable.nm`), so `Container<T: Control>`-style generics
   become possible. `TraitNode` has no `type_params` field, `parse_trait.ts`
@@ -1177,7 +1177,7 @@ UI infrastructure):
     like its non-generic counterpart. Verified end-to-end on **both** backends
     in `test/trait_generic.test.ts` (marker trait, abstract-method override,
     multi-param trait, parametric `struct Wrap<T>: Greetable<T>`, and
-    heterogeneous `ClassBuffer<Greetable>` destroy dispatch with two conformers
+    heterogeneous `HandleBuffer<Greetable>` destroy dispatch with two conformers
     carrying different type args).
   - **Still out of scope** (follow-ups): (a) ~~trait **bounds on struct type
     params** — `struct Container<T: Control>` (`:` constraining `T`, not
@@ -1651,7 +1651,7 @@ INFINITY = 2147483647` lowered to `foreign long INFINITY;` and
 
 ### Layout features still owed (now unblocked)
 
-With the native controls now `mv struct`s, `ClassBuffer<Trait>` polymorphic
+With the native controls now `mv struct`s, `HandleBuffer<Trait>` polymorphic
 storage in place, and the enum geometry-type blockers fixed, `Container` itself
 now conforms to `Control` (see [Container as a Control](#container-as-a-control))
 — but the full trait-based `Array<Control>` **object-tree** is _not_ reachable
@@ -1731,7 +1731,7 @@ below ship on the existing handle-based v1 (no object-tree needed).
   [Implementation phases](#implementation-phases) 8). The aarch64 codegen gap
   that previously blocked this is fixed (see [Smaller compiler
   bugs](#smaller-compiler-bugs-hit-while-building-v1)).
-- ~~**Trait-typed retrieval from a `ClassBuffer<Trait>`** — `var Speaker p =
+- ~~**Trait-typed retrieval from a `HandleBuffer<Trait>`** — `var Speaker p =
 pets.at(0)` (where the local's initializer is a method-call return rather
   than a constructor) still falls through the trait-typed-local path today
   (only constructor initializers are handled). Once that local-init path is
@@ -1757,7 +1757,7 @@ out T` method (`owned_return`, e.g. `list.pop()`) transfers ownership
   boxed handle, so the deref is universal). Runtime-tested on both
   backends in `test/trait_collection_retrieve.test.ts` (`.at` borrow,
   `pop` owned, and heterogeneous `Dog`/`Cat` round-trip through
-  `ClassBuffer<Speaker>`).
+  `HandleBuffer<Speaker>`).
 
 > `ZStack` and nested containers (VStack/HStack/Grid/ZStack composed to any
 > depth) now ship in the handle-based v1 — see `Container.add_*` /

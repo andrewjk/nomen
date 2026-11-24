@@ -182,10 +182,10 @@ export default function build(
 		}
 		// For every trait, emit a `<Trait>_destroy` shim that dispatches
 		// through the destroy slot at index 0 of the struct's vtable. This
-		// makes the T_destroy reference inside ClassBuffer<Trait>'s raw
+		// makes the T_destroy reference inside HandleBuffer<Trait>'s raw
 		// #destroy block (substituted to `<Trait>_destroy`) resolve to a real
 		// symbol that reaches the actual conforming struct's destroy. Without
-		// it, a trait-typed heterogeneous collection (e.g. ClassBuffer<Speaker>
+		// it, a trait-typed heterogeneous collection (e.g. HandleBuffer<Speaker>
 		// of `Dog`/`Cat`) would fail to link. Dedupe by name —
 		// status.traits can carry duplicates today (gather_structs pushes per-
 		// block, and conformance by multiple structs to the same trait can
@@ -194,7 +194,7 @@ export default function build(
 		for (const trait of status.traits) {
 			if (emitted_trait_destroys.has(trait.name)) continue;
 			// Partition destroy shims by trait origin so they land in the same
-			// TU as the ClassBuffer<Trait> that references them (a system trait
+			// TU as the HandleBuffer<Trait> that references them (a system trait
 			// collection is always System-origin → system TU; a user trait
 			// collection → user TU). Avoids duplicate symbols across TUs.
 			if (status.emit_mode === "system" && !trait.is_library) continue;

@@ -357,12 +357,12 @@ function buffer_zero(target: BaseNode): { zero: string; copy_loads: boolean } {
 	}
 }
 
-/** `Buffer_int` → `int`, `Buffer<T>` → `T`, `ClassBuffer_Animal` → `Animal`. */
+/** `Buffer_int` → `int`, `Buffer<T>` → `T`, `HandleBuffer_Animal` → `Animal`. */
 function buffer_element_name(type: { name: string; type_args?: { name: string }[] } | undefined) {
 	const arg = type?.type_args?.[0];
 	if (arg) return arg.name;
 	const name = type?.name ?? "";
-	for (const prefix of ["ClassBuffer_", "Buffer_"]) {
+	for (const prefix of ["HandleBuffer_", "Buffer_"]) {
 		if (name.startsWith(prefix)) return name.slice(prefix.length);
 	}
 	return undefined;

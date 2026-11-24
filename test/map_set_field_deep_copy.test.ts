@@ -86,7 +86,7 @@ Console.write("c=\\{c.length} s=\\{s.length}\\n")
 	});
 });
 
-// A class/trait key or value routes the member to `ClassBuffer`, which has no
+// A class/trait key or value routes the member to `HandleBuffer`, which has no
 // `copy` — a cloned body would call a nonexistent `<...>_copy`. The call is
 // rejected with targeted guidance (mirroring the `List.copy` gate); the
 // monomorphizer never clones the body for such an instantiation.
@@ -118,7 +118,7 @@ pub func main = (Init init) {
 		expect(parsed.errors.length).toBeGreaterThan(0);
 		expect(parsed.errors[0].message).toBe(
 			"Map.copy() is not available when the key or value type is a class or trait — " +
-				"its store is a ClassBuffer with no copy, so the copy would share the stored " +
+				"its store is a HandleBuffer with no copy, so the copy would share the stored " +
 				"instances (a double free). Keep one mv map and index into it, or rebuild the " +
 				"map with fresh instances.",
 		);

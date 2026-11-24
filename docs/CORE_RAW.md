@@ -52,7 +52,7 @@ element storage.
 | File                   | Functions                                                                                                                                           | Why raw                                                                                                                                                                                           |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Buffer.nm` (28 funcs) | alloc/grow/zero/load/store/move/replace/modify/shift/slice (size-aware, public) + internal `*_u32`/`*_int`/`*_float` fixed-width variants, #destroy | `data` is a `uint64` slab handle, cast to `int*`/`T*`/`double*` per access; calloc/realloc/memset/memcpy; `modify` is the encoded load→modify→store round-trip (specialized per mv element)       |
-| `ClassBuffer.nm` (14)  | alloc/grow/load/store/move/replace/modify/shift/slice (public) + internal alloc_int/grow_int/load_int/store_int/move_int/replace_int, #destroy      | Same pattern plus per-element destroy; monomorphizer rewrites `Buffer<T>` fields to this for classes; `modify` frees the displaced instance (identity-guarded)                                    |
+| `HandleBuffer.nm` (14) | alloc/grow/load/store/move/replace/modify/shift/slice (public) + internal alloc_int/grow_int/load_int/store_int/move_int/replace_int, #destroy      | Same pattern plus per-element destroy; monomorphizer rewrites `Buffer<T>` fields to this for classes; `modify` frees the displaced instance (identity-guarded)                                    |
 | `Array.nm` (9)         | #init, at, first, set, at_end, slice, with, add, mul                                                                                                | Elements stored inline after the header (`(T*)((char*)self + sizeof(*self))`); `T_NEEDS_STRDUP` string-slot specialization                                                                        |
 | `BigInt.nm` (7)        | get, set, data_ptr, get_at, set_at, div128, mul_wide_hi                                                                                             | uint64-as-pointer limb access; `div128` needs `unsigned __int128` 128/64 divide (aarch64: `___udivti3`); `mul_wide_hi` needs the high half of a 64×64 product (`umulh`) — no 128-bit ops in Nomen |
 | `StringBuilder.nm` (5) | ensure, append_char, append_string, to_string, #destroy                                                                                             | uint64 byte-buffer handle + realloc/memcpy; `to_string` transfers ownership of the raw buffer                                                                                                     |
@@ -282,7 +282,7 @@ No regressions beyond noise on either backend. The BigInt experiment
 - 128-bit helpers (`BigInt.div128`, `mul_wide_hi`) — better served by
   `mul_hi`-style builtins than by unsafe pointers.
 - The inline per-element load/store primitives (`Buffer.load*`/`store*`,
-  `ClassBuffer.load*`/`store*`, `StringBuilder.append_char`/`to_string`)
+  `HandleBuffer.load*`/`store*`, `StringBuilder.append_char`/`to_string`)
   remain raw for now — but the blocker has moved: the naked-expansion
   path (naked_inline.ts) makes spliced leaf bodies free, so these can
   convert as soon as their bodies fit the whitelist (Buffer.load*'s
@@ -305,13 +305,13 @@ No regressions beyond noise on either backend. The BigInt experiment
 - `Console.platform` (OS detection) and the `Task`/`Channel` pool internals
   unless externs (pthread) + unsafe (node structs) are pushed through them.
 - `Controls/` (UI, companion-C by policy).
-- Remaining category A blocks not yet migrated: `ClassBuffer`
+- Remaining category A blocks not yet migrated: `HandleBuffer`
   load/store/move/replace/shift (per-element inline splices —
   convertible via naked_inline once their bounds-constraint locals fit
-  the whitelist), `ClassBuffer.slice`, `Buffer.slice`,
+  the whitelist), `HandleBuffer.slice`, `Buffer.slice`,
   `String.slice`/`#op_add`/`#op_mul` (need a view constructor or raw
   memcpy shapes), `JsonTree.#destroy` (calls the mono-only `T_destroy`
-  symbol). CONVERTED this pass: `ClassBuffer.alloc_int`/`grow_int`/
+  symbol). CONVERTED this pass: `HandleBuffer.alloc_int`/`grow_int`/
   `grow` (plain Nomen over the calloc/realloc/memset externs) and the
   `JsonTree` slab trio (`alloc_node` coda, `free_text`, `set_text` —
   unsafe Nomen over malloc/memcpy/memset with the 7-word slab stride).

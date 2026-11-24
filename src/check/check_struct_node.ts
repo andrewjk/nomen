@@ -339,7 +339,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	status.values.length = values_length_before_fields;
 
 	// Resolve generic field types on non-generic structs (e.g. Buffer<T> →
-	// Buffer_T or ClassBuffer_T). Generic structs get this rewrite inside
+	// Buffer_T or HandleBuffer_T). Generic structs get this rewrite inside
 	// monomorphize(); non-generic structs need it here so that downstream
 	// build phases (especially the C companion typedef) see the concrete
 	// monomorphized name rather than the unresolved generic.
@@ -510,7 +510,7 @@ function mark_owning_auto_init_params(struct: StructNode, status: CheckStatus) {
 
 /**
  * Rewrite `Buffer<Elem>` field types on a non-generic struct to their
- * monomorphized name (Buffer_Elem / ClassBuffer_Elem), including the field's
+ * monomorphized name (Buffer_Elem / HandleBuffer_Elem), including the field's
  * default constructor call. Generic structs get this rewrite inside
  * monomorphize() instead. Shared between check_struct_node (statement-order)
  * and the upfront resolve_struct_field_types pass so the rewrite runs exactly
@@ -525,7 +525,7 @@ function rewrite_generic_buffer_fields(struct: StructNode, status: CheckStatus) 
 		const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
 		const elem_is_trait = !!status.traits.find((t) => t.name === elem.name);
 		const generic = status.structs.find(
-			(s) => s.name === (elem_is_class || elem_is_trait ? "ClassBuffer" : "Buffer"),
+			(s) => s.name === (elem_is_class || elem_is_trait ? "HandleBuffer" : "Buffer"),
 		);
 		if (!generic) continue;
 		const buf_mono = monomorphize(generic, [elem], status);

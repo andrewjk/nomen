@@ -253,8 +253,8 @@ pub mv struct StableList<T> {
 	// installed, and no slot moves — element addresses are untouched, so
 	// borrows into other slots stay valid (a `ref self` call, so borrows
 	// INTO this list's element i die, like any mutator). Chunk 0 and tail
-	// slots go through Buffer/ClassBuffer `replace` (the displaced-reclaim
-	// write; `set` cannot: ClassBuffer — the class-element mono of
+	// slots go through Buffer/HandleBuffer `replace` (the displaced-reclaim
+	// write; `set` cannot: HandleBuffer — the class-element mono of
 	// `items`/`stage` — has no `set`, only `replace`), tail slots through
 	// the `stage` view over the chunk slab, cleared before return so the
 	// field destroy reclaims nothing. This is the write counterpart of `at`

@@ -624,12 +624,12 @@ export function monomorphize(
 	});
 
 	// Compile-time class-ness OR trait-ness: a `Buffer<Elem>` field resolves
-	// to ClassBuffer<Elem> when Elem is a class OR a trait (both are stored as
+	// to HandleBuffer<Elem> when Elem is a class OR a trait (both are stored as
 	// 8-byte owned pointers and freed per-element on destroy — a trait-typed
 	// slot dispatches destroy via the vtable). Otherwise Elem is a value type
 	// and we keep Buffer<Elem>. The field type AND its default constructor are
-	// rewritten to the monomorphized name (e.g. ClassBuffer_Animal /
-	// ClassBuffer_Speaker / Buffer_int) so types match and every build path
+	// rewritten to the monomorphized name (e.g. HandleBuffer_Animal /
+	// HandleBuffer_Speaker / Buffer_int) so types match and every build path
 	// resolves against the concrete buffer directly.
 	for (const field of mono_fields) {
 		const elem = field.type.name === "Buffer" ? field.type.type_args?.[0] : undefined;
@@ -637,7 +637,7 @@ export function monomorphize(
 		const elem_is_class = !!status.structs.find((s) => s.name === elem.name && s.is_class);
 		const elem_is_trait = !!status.traits.find((t) => t.name === elem.name);
 		const generic = status.structs.find(
-			(s) => s.name === (elem_is_class || elem_is_trait ? "ClassBuffer" : "Buffer"),
+			(s) => s.name === (elem_is_class || elem_is_trait ? "HandleBuffer" : "Buffer"),
 		);
 		if (!generic) continue;
 		const buf_mono = monomorphize(generic, [elem], status);
@@ -712,7 +712,7 @@ export function monomorphize(
 	const cloned_methods: FunctionNode[] = [];
 	// A library `copy` composes member `.copy()` calls (`Map`/`Set` copy their
 	// Buffer members). For a class/trait instantiation the member routes to
-	// `ClassBuffer`, which has no copy — the clone would reference a
+	// `HandleBuffer`, which has no copy — the clone would reference a
 	// nonexistent `<...>_copy`. Skipped per-method (same shape as the
 	// variadic-#init gate below); calling `.copy()` on such an instantiation
 	// is rejected at the call site with targeted guidance (check_access_node).
@@ -794,7 +794,7 @@ export function monomorphize(
 		// struct's actual field declarations. substitute_node_types renames
 		// type params by name only, so a body access typed `Buffer<T>` becomes
 		// `Buffer<Box_Pt>` — but the mono struct's field was MATERIALIZED to a
-		// different mono at the same substitution (the Buffer→ClassBuffer
+		// different mono at the same substitution (the Buffer→HandleBuffer
 		// rewrite keys on the substituted element's class-ness), leaving the
 		// body's node type naming a struct that is never emitted. The aarch64
 		// method dispatch keys the callee name on this node type (a `bl
@@ -1336,8 +1336,8 @@ function retype_self_references(nodes: BaseNode[], struct_name: string) {
  * re-checked; substitute_node_types renames type params by NAME only, so an
  * access node typed `Buffer<T>` in the generic body carries `Buffer<Box_Pt>`
  * after substitution — while the mono struct's own field was materialized to
- * a DIFFERENT mono at the same moment (the Buffer→ClassBuffer rewrite keys on
- * the substituted element's class-ness: `ClassBuffer_Box_Pt`). The body's
+ * a DIFFERENT mono at the same moment (the Buffer→HandleBuffer rewrite keys on
+ * the substituted element's class-ness: `HandleBuffer_Box_Pt`). The body's
  * stale node type then names a struct that is never emitted: the aarch64
  * method dispatch derives the callee name from it (`Buffer_Box_Pt_grow` —
  * undefined at link time), and any build-side consumer reading the node type
@@ -2930,7 +2930,7 @@ function substitute_raw_in_node(
 					: `sizeof(${c_type_name})`;
 			value = value.replace(new RegExp(`\\b${param}_SIZE\\b`, "g"), size_expr);
 			// Substitute T_destroy placeholder with the monomorphized element's
-			// destroy symbol (e.g. ClassBuffer<Animal>.#destroy calls Animal_destroy).
+			// destroy symbol (e.g. HandleBuffer<Animal>.#destroy calls Animal_destroy).
 			value = value.replace(new RegExp(`\\b${param}_destroy\\b`, "g"), `${type}_destroy`);
 			// Delegated-callee tokens: raw bodies in chunked containers
 			// (StableList's directory chunks) reach the element buffer's mono'd
@@ -2940,10 +2940,10 @@ function substitute_raw_in_node(
 			// alone and the substitution supplies the prefix, exactly like
 			// T_destroy above. The prefix follows the same reference-type
 			// routing as the field rewrite: Box/trait elements live in a
-			// ClassBuffer<T>, everything else in a Buffer<T> (identical
+			// HandleBuffer<T>, everything else in a Buffer<T> (identical
 			// {_vt, data, cap} layout, so the stack view works for both).
 			const buffer_prefix = is_reference_type_arg(new Type(type), structs, traits)
-				? "ClassBuffer_"
+				? "HandleBuffer_"
 				: "Buffer_";
 			value = value.replace(
 				new RegExp(`\\b${param}_load_from\\b`, "g"),
@@ -3008,15 +3008,15 @@ function substitute_raw_in_node(
 	// monomorphized symbol so the build keys `_init` correctly.
 	const any_node = node as any;
 	// Reference-typed element routing: a `Buffer<T>` whose (substituted) type
-	// arg resolves to a CLASS or TRAIT must lower as `ClassBuffer<T>` — the
+	// arg resolves to a CLASS or TRAIT must lower as `HandleBuffer<T>` — the
 	// field-level rewrite in monomorphize does this for struct FIELDS, but a
 	// constructor call inside a generic BODY (e.g. Map.rehash's
 	// `swap Buffer<TV>()`) only passes through here. Without the swap, the
-	// name still reads `Buffer_Animal` while the field is `ClassBuffer_Animal`
+	// name still reads `Buffer_Animal` while the field is `HandleBuffer_Animal`
 	// — mismatched types, undeclared functions.
 	const route_reference_elem = (base: string, args: Type[]): string =>
 		base === "Buffer" && args.length === 1 && is_reference_type_arg(args[0], structs, traits)
-			? "ClassBuffer"
+			? "HandleBuffer"
 			: base;
 	if (node.node_type === "func_call" && any_node.type_args?.length) {
 		const old_args = any_node.type_args as Type[];
@@ -3069,14 +3069,14 @@ function substitute_raw_in_node(
 	// method calls on the local against the unresolved `Buffer_TK` symbol.
 	if (node.node_type === "declare" && any_node.type?.name) {
 		any_node.type = substitute_type(any_node.type, substitution);
-		// Route Buffer<X> -> ClassBuffer<X> when X is a class/trait, matching
+		// Route Buffer<X> -> HandleBuffer<X> when X is a class/trait, matching
 		// the field rewrite (e.g. Map.rehash's `var Buffer<TV> old_values`).
 		if (
 			any_node.type.name === "Buffer" &&
 			any_node.type.type_args?.length === 1 &&
 			is_reference_type_arg(any_node.type.type_args[0] as Type, structs, traits)
 		) {
-			any_node.type.name = "ClassBuffer";
+			any_node.type.name = "HandleBuffer";
 		}
 		if (any_node.func_return_type?.name) {
 			any_node.func_return_type = substitute_type(any_node.func_return_type, substitution);

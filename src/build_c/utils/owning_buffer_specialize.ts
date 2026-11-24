@@ -28,7 +28,7 @@ import { ensure_box_clone } from "./box_clone.ts";
  *  - replace_T: destroy old slot value + shallow-copy + strdup per string.
  *  - #destroy: per-element T_destroy + free slab.
  *
- * Class/trait elements route to ClassBuffer (which handles per-element
+ * Class/trait elements route to HandleBuffer (which handles per-element
  * destroy/frees soundly); trivially-destructible value structs (no mv
  * fields) use the plain Buffer primitives unchanged.
  *
@@ -57,7 +57,7 @@ export function owning_buffer_element(
 	);
 	if (!elem || elem.is_class) return undefined;
 	// Only own-string-field value structs need specialization. A struct with
-	// only class fields would already route to ClassBuffer; a struct with no
+	// only class fields would already route to HandleBuffer; a struct with no
 	// mv fields (trivially destructible) uses the plain primitives.
 	if (!has_owning_fields(elem, status)) return undefined;
 	return elem;

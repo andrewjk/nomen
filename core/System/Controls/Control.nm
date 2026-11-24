@@ -8,7 +8,7 @@
 // regardless of storage: the handle-based `Container` applies frames directly via
 // native `setFrame:` today, but a control that also conforms to `Control` can be
 // driven through the trait interface (and slotted into `Array<Control>` /
-// `ClassBuffer<Control>` once the container migrates).
+// `HandleBuffer<Control>` once the container migrates).
 
 /**
  * The polymorphic interface every UI node implements (measure / set_frame / intrinsic_size)

@@ -6,8 +6,8 @@ import { parse_raw } from "./parse_with_imports";
 // `Map` with reference-typed values: the variadic-tuple #init is gated off
 // for class/trait instantiations (the pair tuple can't satisfy the `mv TV`
 // chain across the variadic boundary), so construction is `Map()` + `set()`.
-// Storage routes to ClassBuffer<TV>; the rehash body's `swap Buffer<TV>()`
-// and Map's alloc forwards route names to ClassBuffer.
+// Storage routes to HandleBuffer<TV>; the rehash body's `swap Buffer<TV>()`
+// and Map's alloc forwards route names to HandleBuffer.
 
 describe("Map with reference-typed values", () => {
 	// SKIP (B1 backend-cutover residual): same inlined-raw-primitive /

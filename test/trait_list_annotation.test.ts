@@ -5,7 +5,7 @@ import { parse_raw } from "./parse_with_imports";
 
 // An explicit `List<SomeTrait>` local annotation used to trip "struct fields
 // cannot be trait types" (the annotated-declaration path skipped the
-// ClassBuffer rewrite). Pin the annotated form on both backends.
+// HandleBuffer rewrite). Pin the annotated form on both backends.
 
 describe("explicit trait-typed container annotations", () => {
 	test("annotated List<Animal> local pushes, dispatches, and frees", async () => {

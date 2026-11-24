@@ -478,7 +478,7 @@ owning-specialized deep copy on every lookup and the LRU-style hit path
 stops paying a second probe. It traps on an absent key (a missing key is a
 bug at a slot-borrow site; miss-as-case lookups keep `get_or`). INTERNAL,
 like every slot-borrow primitive (`List`/`Buffer`/`StableList`/
-`ClassBuffer.slot_ptr`, `StableList.append_slot_ptr`): the raw pointer must
+`HandleBuffer.slot_ptr`, `StableList.append_slot_ptr`): the raw pointer must
 not cross the library boundary, so user code reaches the family only
 through the element-borrow rewrite below — and since the checker checks
 visibility on the pre-rewrite spelling, the marker costs the lowering
@@ -871,7 +871,7 @@ the construct begins.
   (`core/System/Map.nm`) runs set's whole preamble (alloc-if-empty,
   rehash-at-load-factor) and probe with the KEY, does the insert
   bookkeeping (mark used, store key, bump length) or the displaced reclaim
-  via a new `Buffer<T>.destroy_at(i)` / `ClassBuffer<T>.destroy_at(i)`
+  via a new `Buffer<T>.destroy_at(i)` / `HandleBuffer<T>.destroy_at(i)`
   (the destroy half of replace, no copy, specialized per element kind by
   both backends like `replace`), and returns the VALUE slot's address.
   INTERNAL, like every slot primitive — the raw pointer must not cross the
@@ -2144,7 +2144,7 @@ both-backend territory nobody has measured.
 **What landed.** The backward shift after a removal is ONE block transfer
 instead of a per-element `shift` loop. `Buffer` gained an INTERNAL
 `move_range(dst, src, count)` raw primitive (`core/System/Buffer.nm`, the
-ClassBuffer twin for class/trait elements alongside): a single `memmove` over
+HandleBuffer twin for class/trait elements alongside): a single `memmove` over
 the `count`-slot tail — the bytes carry mv elements' heap pointers wholesale,
 exactly the per-element `shift` semantics — plus one `memset` of the source
 slots the destination never covers ([dst + count, src + count), which is ONE
@@ -2170,7 +2170,7 @@ ints — both backends, audit on, so every removed element must be released
 exactly once), the aarch64 emitted-code pin (the splice's count guard +
 `bl _memmove` + `bl _memset`, no per-element shift loop), and the C pin (the
 bulk `move_range` helper call). The full suite (534 files, both backends)
-passes; the ClassBuffer twin is pinned by the trait-list runtime tests that
+passes; the HandleBuffer twin is pinned by the trait-list runtime tests that
 motivated it.
 
 **Measured.** Shape micro-bench — `bench/nomen/list_remove.nm`: a
@@ -2210,7 +2210,7 @@ tombstone alternative too — 18 below.
 shift. The observation is sound: entries that move do so in contiguous
 chains — after a move gap becomes k, so the next moveable entry at k + 1
 shifts into k, each entry landing exactly one slot below where it was — so a
-chain can flush as ONE `Buffer.move_range`/`ClassBuffer.move_range` block,
+chain can flush as ONE `Buffer.move_range`/`HandleBuffer.move_range` block,
 with the hash words relocated in their own u32 loop (move_range's T_SIZE
 stride does not fit the `alloc_u32` slabs) and the `used` words needing no
 per-move updates at all (every slot in the scan stays used=1; the final
@@ -2275,7 +2275,7 @@ bigger target than the shifts ever were (FOLLOWUP.md).
 (`memset`) — three operations, two `bl`s, and the relay call per push. The
 tail push now stores DIRECTLY into the chunk slot:
 
-- `Buffer.store_in_slab(slab, fill, slot, val)` (+ the `ClassBuffer` twin for
+- `Buffer.store_in_slab(slab, fill, slot, val)` (+ the `HandleBuffer` twin for
   class/trait element lists) — INTERNAL, typed Nomen: `init_view` points the
   buffer at the foreign slab, the mono'd `store` runs its per-element
   specialization (deep copy for owning elements, pointer store for classes),

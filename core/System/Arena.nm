@@ -34,7 +34,7 @@ pub struct ArenaRef<T> {
  **/
 pub mv struct Arena<T> {
 	// Slot payloads. T = value struct/primitive routes to Buffer<T>; T =
-	// class/trait routes to ClassBuffer<T> (monomorphize rewrites the field),
+	// class/trait routes to HandleBuffer<T> (monomorphize rewrites the field),
 	// so slot ownership follows the usual element rules.
 	var values = Buffer<T>()
 	// Per-slot generation, bumped on every free. Slots are calloc'd, so a

@@ -189,7 +189,7 @@ var Box<Holder> h2 = h1
 //
 //   - Owning (resource-releasing): the #destroy calls into a raw asm/C block to
 //     release a heap allocation or system handle (Buffer frees its `data`, File
-//     calls fclose, ClassBuffer frees each element). A byte-copy would duplicate
+//     calls fclose, HandleBuffer frees each element). A byte-copy would duplicate
 //     that ownership, so both copies release the same resource on cleanup -- a
 //     double-free. These structs may not be copied from a variable.
 //

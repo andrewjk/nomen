@@ -10,7 +10,7 @@
  *                    `box.f` to `box.__value.f`)
  *   StringBuilder  → `{ s }`
  *   Buffer<T>      → a JS array (capacity is the array length)
- *   ClassBuffer<T> → a JS array (elements are object references)
+ *   HandleBuffer<T> → a JS array (elements are object references)
  *
  * Method dispatch is by the RECEIVER's declared type name plus the method
  * name; anything unmapped falls through to a warning stub in the caller.
@@ -21,7 +21,7 @@
 export function library_base_name(name: string): string {
 	for (const base of [
 		"StringBuilder",
-		"ClassBuffer",
+		"HandleBuffer",
 		"StableList",
 		"Buffer",
 		"Atomic",
@@ -41,19 +41,19 @@ export function library_base_name(name: string): string {
 	return name;
 }
 
-/** Is `name` a `Buffer<T>` (value slots) or `ClassBuffer<T>` (class slots)? */
+/** Is `name` a `Buffer<T>` (value slots) or `HandleBuffer<T>` (class slots)? */
 export function is_buffer_type(name: string): boolean {
 	return (
 		name === "Buffer" ||
 		name.startsWith("Buffer_") ||
-		name === "ClassBuffer" ||
-		name.startsWith("ClassBuffer_")
+		name === "HandleBuffer" ||
+		name.startsWith("HandleBuffer_")
 	);
 }
 
-/** `ClassBuffer<T>` stores class references, so its stores are not copies. */
+/** `HandleBuffer<T>` stores class references, so its stores are not copies. */
 export function is_class_buffer_type(name: string): boolean {
-	return name === "ClassBuffer" || name.startsWith("ClassBuffer_");
+	return name === "HandleBuffer" || name.startsWith("HandleBuffer_");
 }
 
 /** Constructors for the supported library types (`List<int>()`,
@@ -166,10 +166,10 @@ export function map_method(name: string, map: string, args: string[]): string | 
 	return undefined;
 }
 
-/** A method call on a `Buffer<T>` / `ClassBuffer<T>` receiver (a JS array).
+/** A method call on a `Buffer<T>` / `HandleBuffer<T>` receiver (a JS array).
  *  The array length is the buffer's capacity; slots are grown on demand. */
 export interface BufferOptions {
-	/** `ClassBuffer<T>`: slots hold references, so stores are not copies. */
+	/** `HandleBuffer<T>`: slots hold references, so stores are not copies. */
 	class_elements: boolean;
 	/** Zero value for a freshly grown slot (shown for non-suffixed methods). */
 	zero: string;

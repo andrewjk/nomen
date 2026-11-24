@@ -257,7 +257,7 @@ offsets), and it must resolve the containing struct by the mono name (the
 bare generic's field is still typed `T`).
 
 Nothing before `Box` had an inline generic value-struct field in a CLASS —
-List/Map/Set hold elements through `Buffer_<T>`/`ClassBuffer<T>` pointer
+List/Map/Set hold elements through `Buffer_<T>`/`HandleBuffer<T>` pointer
 slots — so the aarch64 mono layout path was never exercised with one. The
 Box runtime tests now run on BOTH backends.
 

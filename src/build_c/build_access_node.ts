@@ -1253,7 +1253,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// Buffer<T> inside a monomorphized method body whose node
 				// types were not substituted), try resolving from the struct
 				// definition directly — the field's type WAS rewritten during
-				// monomorphization (Buffer<T> → ClassBuffer_Animal).
+				// monomorphization (Buffer<T> → HandleBuffer_Animal).
 				if (
 					method_type?.type_args?.length &&
 					node.target.node_type === "access" &&
@@ -1283,7 +1283,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				}
 				// Look up the target method to detect type erasure (class
 				// pointer passed to a type-erased long parameter, e.g.
-				// ClassBuffer.store_int).
+				// HandleBuffer.store_int).
 				const target_struct_for_method = mono_struct_name
 					? status.structs.find((s) => s.name === mono_struct_name && !s.is_generic)
 					: undefined;
@@ -1890,7 +1890,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						}
 					}
 					// Type erasure: when a class pointer is passed to a
-					// type-erased long parameter (e.g. ClassBuffer.store_int
+					// type-erased long parameter (e.g. HandleBuffer.store_int
 					// takes `long val` but receives a `struct Animal *`),
 					// cast to (long). Only applies to class pointers — struct
 					// args use the normal &-pass-by-pointer path.

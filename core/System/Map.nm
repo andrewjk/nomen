@@ -43,7 +43,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		var int cap = self.keys.cap
 		if cap == 0 {
 			// alloc_T: for Buffer<TK> it is T_SIZE-aware (string keys are
-			// 16-byte slots); for ClassBuffer<TV> it delegates to alloc_int
+			// 16-byte slots); for HandleBuffer<TV> it delegates to alloc_int
 			// (one pointer per slot). Both have it for generic parity.
 			cap = self.keys.alloc(8)
 			self.values.alloc(8)
@@ -98,7 +98,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		var int cap = self.keys.cap
 		if cap == 0 {
 			// alloc_T: for Buffer<TK> it is T_SIZE-aware (string keys are
-			// 16-byte slots); for ClassBuffer<TV> it delegates to alloc_int
+			// 16-byte slots); for HandleBuffer<TV> it delegates to alloc_int
 			// (one pointer per slot). Both have it for generic parity.
 			cap = self.keys.alloc(8)
 			self.values.alloc(8)
@@ -289,7 +289,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	// copied through their own primitives — `Buffer.copy` is T_SIZE-aware
 	// (8-byte loads for `int`), which would read past a 4-byte-per-slot
 	// `alloc_u32` slab. Not available for class/trait keys or values (the
-	// member routes to ClassBuffer, which has no copy — the checker rejects
+	// member routes to HandleBuffer, which has no copy — the checker rejects
 	// the call; see the copy gate in check_access_node).
 	pub func copy = (self, out Map<TK, TV>) {
 		var dst = Map<TK, TV>()

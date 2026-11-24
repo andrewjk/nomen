@@ -5,17 +5,17 @@ import build_and_check_output from "./build_and_check_output";
 import parse_with_imports from "./parse_with_imports";
 
 // Milestone 1: trait-typed heterogeneous storage works end-to-end. The
-// compiler now (a) routes a trait-T element type to ClassBuffer<Trait>
+// compiler now (a) routes a trait-T element type to HandleBuffer<Trait>
 // (parallel to the existing class-T routing in monomorphize), and
 // (b) dispatches trait-typed destroy through a per-struct vtable slot so
-// the per-element reclaim in ClassBuffer<T>.#destroy reaches the actual
+// the per-element reclaim in HandleBuffer<T>.#destroy reaches the actual
 // conforming struct's destroy. Together these unblock the storage /
 // destroy half of `Array<Control>`-style heterogeneous trait collections.
 // (Elements must be classes — value structs can no longer be implicitly
 // boxed into trait-typed slots; declare them as classes instead.)
 
-describe("ClassBuffer<Trait> polymorphic destroy (Milestone 1)", () => {
-	test("Buffer<Speaker> field type routes to ClassBuffer_Speaker", async () => {
+describe("HandleBuffer<Trait> polymorphic destroy (Milestone 1)", () => {
+	test("Buffer<Speaker> field type routes to HandleBuffer_Speaker", async () => {
 		const input = `
 trait Speaker { func speak = (self, out string) }
 mv struct Dog : Speaker { func speak = (self, out string) { return "woof" } }
@@ -27,12 +27,12 @@ if true {
 `;
 		// A List<Speaker> field declares `Buffer<Speaker> items`. With the
 		// monomorphize fix that recognises trait-T as class-like, the field
-		// rewrites to ClassBuffer_Speaker (not Buffer_Speaker).
+		// rewrites to HandleBuffer_Speaker (not Buffer_Speaker).
 		for (const arch of ["c", "aarch64"] as const) {
 			const parsed = parse_with_imports(input);
 			expect(parsed.errors).toEqual([]);
 			const result = build(parsed.root, { arch, audit: false });
-			expect(result.code).toContain("ClassBuffer_Speaker");
+			expect(result.code).toContain("HandleBuffer_Speaker");
 			expect(result.code).not.toMatch(/\bBuffer_Speaker\b/);
 		}
 	});
@@ -54,11 +54,11 @@ if true {
 }
 Console.write("\\ndone")
 `;
-		// When pets goes out of scope, ClassBuffer_Speaker's #destroy loops
+		// When pets goes out of scope, HandleBuffer_Speaker's #destroy loops
 		// each slot, calling Speaker_destroy(slot[i]) (substituted from
 		// T_destroy). Speaker_destroy dispatches via the destroy slot in the
 		// struct's vtable to Dog_destroy, which prints "destroying Rex". Then
-		// ClassBuffer frees the slot itself.
+		// HandleBuffer frees the slot itself.
 		const built = await build_and_check_output(
 			input,
 			"cb_trait_destroy_class",

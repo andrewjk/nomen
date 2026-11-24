@@ -180,7 +180,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 	// same length and entries. The u32-word buffers are copied through their
 	// own primitives — `Buffer.copy` is T_SIZE-aware (8-byte loads for
 	// `int`), which would read past a 4-byte-per-slot `alloc_u32` slab. Not
-	// available for class/trait elements (the member routes to ClassBuffer,
+	// available for class/trait elements (the member routes to HandleBuffer,
 	// which has no copy — the checker rejects the call; the shape is also
 	// unreachable today since `T: Hashable + Equatable` cannot be a trait
 	// without trait-conformance syntax).

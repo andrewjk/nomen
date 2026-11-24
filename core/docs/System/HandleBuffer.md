@@ -1,8 +1,8 @@
-# ClassBuffer
+# HandleBuffer
 
-## `struct ClassBuffer<T>`
+## `struct HandleBuffer<T>`
 
-A flat buffer of owned class pointers of type T — the backing store for collections of classes
+A flat buffer of owned handles of type T — the backing store for collections of class instances and traits
 
 **Members:**
 

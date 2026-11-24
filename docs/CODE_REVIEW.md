@@ -250,5 +250,3 @@ Ordered by rough priority within each tier. "Effort" is a guess.
    blocks (extract by heading), keeping hand-written expectations only for
    the blocks marked as errors — the doc/test drift this review found (and
    hand-fixed) then fails CI instead of hiding.
-4. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
-   the tree.

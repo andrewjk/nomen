@@ -51,7 +51,7 @@ Console.write("\\n")
 	// that was actually stored. The inline mv-buffer destroy walks the
 	// `cap` slots, so it skips empty ones via the constructed stamp every
 	// `_init` writes into word 0 (the traits table for conformers, constant 1
-	// otherwise) — the inline counterpart of ClassBuffer's NULL pointer-slot
+	// otherwise) — the inline counterpart of HandleBuffer's NULL pointer-slot
 	// guard.
 	test("class #destroy is not invoked for container-stored elements", async () => {
 		const input = `

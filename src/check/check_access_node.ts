@@ -999,7 +999,7 @@ export function check_access_function_node(
 	if (!func) {
 		// `Map`/`Set` `.copy()` with a class/trait key or value: the copy body
 		// composes member `.copy()` calls, and a class/trait member routes to
-		// `ClassBuffer`, which has no copy. The monomorphizer therefore skips
+		// `HandleBuffer`, which has no copy. The monomorphizer therefore skips
 		// cloning the body for such an instantiation (the clone would reference
 		// a nonexistent `<...>_copy`), so the call is rejected here with
 		// targeted guidance. Runs BEFORE the not-found fallback so the message
@@ -1021,11 +1021,11 @@ export function check_access_function_node(
 					status,
 					is_map
 						? "Map.copy() is not available when the key or value type is a class or trait — " +
-								"its store is a ClassBuffer with no copy, so the copy would share the stored " +
+								"its store is a HandleBuffer with no copy, so the copy would share the stored " +
 								"instances (a double free). Keep one mv map and index into it, or rebuild the " +
 								"map with fresh instances."
 						: "Set.copy() is not available when the element type is a class or trait — " +
-								"its store is a ClassBuffer with no copy, so the copy would share the stored " +
+								"its store is a HandleBuffer with no copy, so the copy would share the stored " +
 								"instances (a double free). Keep one mv set and index into it, or rebuild the " +
 								"set with fresh instances.",
 					node.start,

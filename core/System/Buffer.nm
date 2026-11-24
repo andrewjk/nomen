@@ -1,6 +1,6 @@
 // Buffer<T>: a flat buffer of value slots of type T. The value counterpart to
-// ClassBuffer<T>: no per-element freeing, store_int unconstrained. When T is a
-// class, the monomorphizer rewrites a Buffer<T> field to ClassBuffer<T>.
+// HandleBuffer<T>: no per-element freeing, store_int unconstrained. When T is a
+// class, the monomorphizer rewrites a Buffer<T> field to HandleBuffer<T>.
 //
 // Public API is the size-aware family (`alloc`/`grow`/`load`/`replace`/
 // `mv`/`modify`/`shift`/`slice` plus the readonly `cap`). `replace` is the
@@ -357,7 +357,7 @@ pub mv struct Buffer<T> {
 	// T_SIZE-aware primitives for value-struct elements. Slab is sized in
 	// multiples of T_SIZE; multi-word slots copy as one word pair at
 	// T_SIZE <= 16 (ldp/stp — no call) and via memcpy above that, so
-	// structs of any width work correctly. Classes route to ClassBuffer<T> (per-element destroy), so T
+	// structs of any width work correctly. Classes route to HandleBuffer<T> (per-element destroy), so T
 	// reaching here is always a value type (primitive or struct).
 
 	func alloc = (ref self {}, int size, out int: out >= size) {
@@ -599,7 +599,7 @@ pub mv struct Buffer<T> {
 	// buffer no longer holds a (possibly mv) copy. Declared `mv out T` so
 	// the result is treated as OWNED by the borrow checker — the slot is
 	// relinquished, so the caller is the sole remaining owner. The value
-	// counterpart of ClassBuffer.move_int — used by List.pop for any value T.
+	// counterpart of HandleBuffer.move_int — used by List.pop for any value T.
 	inline func move = (ref self {}, int i: i >= 0 && i < self.cap, mv out T) {
 		#if META.arch == "c" {
 			#raw {
@@ -769,7 +769,7 @@ pub mv struct Buffer<T> {
 	// mv value structs (with string fields), the build phase replaces this
 	// body with a specialised version that calls T_destroy on the old slot
 	// value, then deep-copies (strdup per string field). See
-	// owning_buffer_specialize.ts (both backends). ClassBuffer.replace
+	// owning_buffer_specialize.ts (both backends). HandleBuffer.replace
 	// destroys+frees class slots soundly.
 	inline func replace = (ref self {}, int i: i >= 0 && i < self.cap, T val) {
 		#if META.arch == "c" {
@@ -1098,7 +1098,7 @@ pub mv struct Buffer<T> {
 	// the same treatment a List<T>.copy slot does (the load materializes an
 	// owned copy, replace gives the destination its own). Class elements
 	// never reach this body (a `Buffer<T>` with T a class monomorphizes to
-	// `ClassBuffer<T>`, which has no copy).
+	// `HandleBuffer<T>`, which has no copy).
 	pub func copy = (self, out Buffer<T>: out.cap == self.cap) {
 		var dst = Buffer<T>()
 		if self.cap > 0 {

@@ -1983,7 +1983,7 @@ export default function build_declaration_node(
 	// — the concrete struct isn't statically known (the method's
 	// declared return type is the trait), so storage must be an 8-byte
 	// pointer dispatched through the trait vtable. The
-	// ClassBuffer<Trait> slot already stores a correct vtable-bearing
+	// HandleBuffer<Trait> slot already stores a correct vtable-bearing
 	// class pointer, so dispatch works once the local is tracked in
 	// trait_class_frames (build_access_node dereferences [&local] to
 	// reach the instance whose vtable lives at offset 0). Ownership

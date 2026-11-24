@@ -17,8 +17,8 @@ export function is_class_type(type_name: string, status: CheckStatus): boolean {
 /**
  * True if a value of `type_name` is stored in a container as an OWNED
  * 8-byte heap pointer that the container's `#destroy` will reclaim
- * per-element. That covers both classes (ClassBuffer<T> routing) and
- * traits (ClassBuffer<Trait> routing, dispatching destroy via the
+ * per-element. That covers both classes (HandleBuffer<T> routing) and
+ * traits (HandleBuffer<Trait> routing, dispatching destroy via the
  * vtable). Storing a BORROW of such a type into a `mv T` slot would
  * create shared ownership: the destination's destroy frees the pointer
  * while the source still references it (a runtime double-free, SIGABRT).
