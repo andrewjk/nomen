@@ -419,6 +419,7 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "switch": {
 				const switch_node = parse_switch(status);
+				switch_node.is_statement = true;
 				add_to_parent(switch_node, "Switch expression", status);
 				break;
 			}

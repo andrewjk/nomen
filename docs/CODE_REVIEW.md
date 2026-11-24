@@ -138,9 +138,6 @@ edges:
 
 ### 1.5 Statement and expression forms (P2)
 
-- `switch` in statement position accepts value arms (`case x > 100 ->
-"big"`, `SPEC.md:2314-2318`) and silently discards the value (verified, no
-  warning).
 - `else if` gives only `Expected {` (verified). Given how strongly the docs
   push `switch`, the parser should say "`else if` isn't supported — use
   `switch`".

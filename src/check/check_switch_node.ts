@@ -1,4 +1,7 @@
 import add_error from "../add_error.ts";
+import BaseNode from "../nodes/BaseNode.ts";
+import BranchNode from "../nodes/BranchNode.ts";
+import LetNode from "../nodes/LetNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import check_block_node from "./check_block_node.ts";
 import check_node from "./check_node.ts";
@@ -153,6 +156,39 @@ export default function check_switch_node(switch_node: SwitchNode, status: Check
 		const parent = status.stack.at(-1);
 		if (parent && (parent.node_type === "declare" || parent.node_type === "assign")) {
 			add_error(status, "Switch expression must have a 'case _' arm", switch_node.start);
+		}
+	}
+
+	// Statement-position switch: `->` arms produce the switch's value, and a
+	// switch used as a statement discards it. A void arm call is an effect,
+	// not a value — no warning. `=>` arms return from the function, block
+	// arms run statements, and value consumers (declare/assign/return) make
+	// it an expression switch — none of those discard.
+	if (switch_node.is_statement) {
+		const arms: { value: BaseNode; branch: BranchNode }[] = [];
+		for (const switch_case of switch_node.cases) {
+			const producer = switch_case.branch.statements[0];
+			if (producer?.node_type === "let") {
+				arms.push({ value: (producer as LetNode).value, branch: switch_case.branch });
+			}
+		}
+		if (switch_node.else_branch) {
+			const producer = switch_node.else_branch.statements[0];
+			if (producer?.node_type === "let") {
+				arms.push({ value: (producer as LetNode).value, branch: switch_node.else_branch });
+			}
+		}
+		for (const { value } of arms) {
+			const arm_type = type_from_value_node(value, status);
+			if (arm_type.name && arm_type.name !== "void") {
+				if (!status.warnings) status.warnings = [];
+				status.warnings.push({
+					message: `Switch arm value is discarded — bind it ('var x = switch { ... }') or use a block arm`,
+					start: value.start,
+					line: 0,
+					column: 0,
+				});
+			}
 		}
 	}
 }

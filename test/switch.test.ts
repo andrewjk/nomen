@@ -355,3 +355,52 @@ switch {
 		expect(parsed.errors).toEqual(expected);
 	});
 });
+
+describe("switch statement discarded arm values", () => {
+	function warnings(source: string): string[] {
+		return (parse(source).warnings ?? []).map((w) => w.message);
+	}
+
+	test("statement switch with value arms warns", () => {
+		const messages = warnings(`
+import System
+var x = 50
+switch {
+	case x > 100 -> "big"
+	case x > 10 -> "medium"
+	case _ -> "small"
+}
+`);
+		const hits = messages.filter((m) => m.includes("Switch arm value is discarded"));
+		expect(hits.length).toBe(3);
+	});
+
+	test("void arm calls do not warn", () => {
+		const messages = warnings(`
+import System
+var x = 50
+switch {
+	case x > 100 -> Console.write("big")
+	case _ -> Console.write("small")
+}
+`);
+		expect(messages.some((m) => m.includes("Switch arm value is discarded"))).toBe(false);
+	});
+
+	test("expression-position switches do not warn", () => {
+		const messages = warnings(`
+import System
+var x = 50
+const label = switch {
+	case x > 100 -> "big"
+	case _ -> "small"
+}
+var other = "x"
+other = switch {
+	case x > 100 -> "big"
+	case _ -> "small"
+}
+`);
+		expect(messages.some((m) => m.includes("Switch arm value is discarded"))).toBe(false);
+	});
+});

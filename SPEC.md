@@ -2524,11 +2524,19 @@ Switch evaluates independent boolean conditions:
 
 ```
 switch {
-    case x > 100 -> "big"
-    case x > 10 -> "medium"
-    case _ -> "small"
+    case x > 100 {
+        Console.write("big")
+    }
+    case x > 10 {
+        Console.write("medium")
+    }
+    case _ {
+        Console.write("small")
+    }
 }
 ```
+
+A `->` arm produces the switch's value — bind it (`var label = switch { ... }`) rather than letting a statement-position switch discard it.
 
 Unlike `match`, each `case` has its own boolean condition. A `case _` arm is required when using `switch` as an expression value.
 
