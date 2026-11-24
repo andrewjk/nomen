@@ -333,6 +333,18 @@ same fat `string` values Nomen code sees — a C `char*` is the explicit
 body. The only thin-`char*` boundary is `foreign func` (SPEC, Extern
 Functions).
 
+### Bump files
+
+- User-facing changes get a bump file in `.bumpy/` (see its README), added in
+  the same commit as the change (`pnpm bump:add`, or by hand)
+- The body is a **one-line** summary with the `Fix:`/`Feat:` prefix as the
+  commit's subject line and no longer than 100 characters
+- Breaking changes: prefix the commit subject with `!` (`!Fix: ...`) and add a
+  `BREAKING:` line to the bump file describing what breaks and what to use
+  instead
+- Longer context belongs in commit discussions, docs, or `FOLLOWUP.md`, not
+  the bump file
+
 ### When Making Changes
 
 #### Language Conventions
