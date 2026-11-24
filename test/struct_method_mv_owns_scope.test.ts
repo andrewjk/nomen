@@ -5,14 +5,13 @@ import build_and_check_output from "./build_and_check_output";
 // C backend: the mv-owns flag map (`c_mv_owns_flags`) is keyed by bare
 // variable NAME. `build_function_node` resets it per free function, but
 // `build_struct_functions` — the separate struct-method emission path — did
-// not, so a method's flag entry leaked into a LATER method's build: an
-// owning `mv`-struct local named `sb` in `early` registered `_mv_owns_sb`,
-// and the later `late` (whose `sb` is a plain struct that needs destroy but
-// is not owning, so it registers no flag of its own) emitted its scope-exit
-// destroy guarded by `if (!_mv_owns_sb)` with no declaration in its frame —
-// an undeclared-identifier compile error of the generated C (surfaced by
-// BigInt.mul_toom3's `var sb = BigInt()` vs Format.float_grouped's
-// StringBuilder `sb`). The test program must compile and run.
+// not, so a method's flag entry leaked into a LATER method's build (surfaced
+// by BigInt.mul_toom3's `var sb = BigInt()` vs Format.float_grouped's
+// StringBuilder `sb`). Note: a destructor requires the single-owner
+// (`mv struct`) form, so a destroy-bearing local is always owning and
+// registers its own flag — the original "destroy without owning" shape can no
+// longer be written. This test keeps the per-body flag discipline pinned with
+// same-named owning locals in two methods. It must compile and run.
 
 const SRC = `
 import System
@@ -23,9 +22,8 @@ mv struct Bag {
 	mv label = ""
 }
 
-// Needs a destroy walk (the user #destroy) but is NOT owning, so a local of
-// this type registers no flag — its scope-exit destroy is unconditional.
-struct Counter {
+// Destroy-bearing (hence single-owner — declared mv struct).
+mv struct Counter {
 	var n = 0
 
 	func bump = (ref self {}) {

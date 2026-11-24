@@ -135,6 +135,24 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	// deferred-call special form, not an ordinary constructor. The
 	// pre-pass already placed one for forward references — replace it when
 	// expansion changed the member shape.
+	//
+	// A destructor cannot be Copyable: copying a struct that declares
+	// `#destroy` would run the destructor once per copy, and every copy would
+	// release the same resource. The declaration is the ownership contract,
+	// so the Copyable claim is rejected here, naming the fix — the same
+	// posture as the mv-field verifier. Covers body-, extend-, `#if`-folded,
+	// and `#for`-generated destructors (all present by this point).
+	const destroy_func = struct.is_class
+		? undefined
+		: struct.functions.find((f) => f.name === "#destroy");
+	if (!struct.is_class && !struct.is_owning && destroy_func) {
+		add_error(
+			status,
+			`'${struct.name}' cannot be Copyable — it declares #destroy --> mark the struct \`mv struct ${struct.name}\`, or remove the destructor`,
+			destroy_func.start,
+		);
+	}
+
 	refresh_auto_init(struct);
 
 	// STRUCT_PLAN_3 B1 full cutover — compiler-generated tuple / anonymous

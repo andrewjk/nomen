@@ -34,7 +34,7 @@
  *	const bool ok     = File.exists("out.txt")
  *	File.delete("out.txt")
  **/
-pub struct File {
+pub mv struct File {
 	var uint64 handle = 0
 	pub var eof = false
 	// errno of the last operation; 0 = success. Raw #arch bodies set it,

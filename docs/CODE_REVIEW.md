@@ -16,7 +16,10 @@ program entry and exit codes, globals, and the full operator-precedence
 table) were filled the same day, so nothing is tracked here for them.
 The §1.1 flow-facts work (early-return zero-guards, `&&` conjunct guards,
 length non-negativity, and the `at_or_null` escape hatch — no `assert`, the
-`if` guard IS the assertion) also landed and is removed below. One §1.6 item was resolved by investigation rather than
+`if` guard IS the assertion) also landed and is removed below. So did the
+`#destroy` soundness fix: a Copyable struct declaring `#destroy` is now
+rejected with a named fix (`mv struct`), so a destructor can never run once
+per copy — that finding is removed from §0 and §1.2. One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -42,19 +45,14 @@ Priorities:
 
 ## 0. Top findings
 
-1. **Design: a Copyable `struct` may declare `#destroy`, and copying it runs
-   the destructor twice** on the C backend (verified: it prints
-   `destroy 3` twice). The JS backend doesn't run it at all. The README and
-   SPEC `Transaction` example shows exactly this resource-handle pattern on a
-   plain `struct`.
-2. **Static and instance methods look alike.** A method with no `self`
+1. **Static and instance methods look alike.** A method with no `self`
    parameter is static (`SPEC.md:4551`, "// static"). Yet the compiler
    accepts trait methods written without `self`
    (`to_string = (out string)`) and dispatches them on instances — whether a
    method is static depends on context. The docs were updated to always
    spell `self` on instance methods, but the compiler rule is still
    implicit.
-3. **The biggest missing features**: flow-sensitive facts for constraints
+2. **The biggest missing features**: flow-sensitive facts for constraints
    (early return, `len >= 0`), match guards and richer patterns, generic
    methods, a typed `Channel<T>`, comparison-operator overloading, and `[]`
    index sugar. Section 2 has the full list.
@@ -80,14 +78,8 @@ Recommendation: always require `self` for instance methods. Mark static
 methods explicitly (`static func`, or `Type.func`). Document `Self` and the
 `#self` placeholder in the Traits section.
 
-### 1.2 Copyable vs. `mv`, and destructors (P0 design)
+### 1.2 Copyable vs. `mv` ergonomics (P1)
 
-- A plain `struct` can declare `#destroy`, and copies duplicate it. On the C
-  backend the destructor runs once per copy (`destroy 3` printed twice,
-  verified). On the JS backend it doesn't run at all, which is a backend
-  divergence. Rust forbids `Copy + Drop` for this reason. Recommendation:
-  `#destroy` implies `mv struct`, or the verifier rejects it ("Copyable type
-  cannot have #destroy").
 - `string` is mv, but a plain `struct` can't hold one. Newcomers hit this
   immediately (`struct Person { var string name }` produces two errors:
   "cannot be Copyable" _and_ "declare it 'mv string name'"). Two
@@ -250,14 +242,13 @@ Ordered by rough priority within each tier. "Effort" is a guess.
 
 ## 3. Suggested order of work
 
-1. Make `#destroy` imply `mv` (§1.2). This is a soundness fix, not just docs.
-2. Decide the method receiver and static-method rule (§1.1), and the
+1. Decide the method receiver and static-method rule (§1.1), and the
    result-`match` flattening question (§1.3). Both affect many examples, so
    settle them before more docs are written.
-3. Work through the Tier 1 features in §2.
-4. Generate `test/readme/` and `test/spec/` inputs from the docs' fenced
+2. Work through the Tier 1 features in §2.
+3. Generate `test/readme/` and `test/spec/` inputs from the docs' fenced
    blocks (extract by heading), keeping hand-written expectations only for
    the blocks marked as errors — the doc/test drift this review found (and
    hand-fixed) then fails CI instead of hiding.
-5. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
+4. Rename `core/System/ClassBuffer.nm` — the last retired-`class` name in
    the tree.

@@ -77,7 +77,7 @@ c.count = 5
 describe("spec: destroy functions", () => {
 	test("struct #destroy", () => {
 		const input = `
-pub struct Transaction {
+pub mv struct Transaction {
     pub var int handle
 
     func #init = (ref self, int handle) {
@@ -89,6 +89,64 @@ pub struct Transaction {
 }
 `;
 		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("a Copyable struct declaring #destroy is rejected (named fix)", () => {
+		const input = `
+pub struct Transaction {
+    var int handle
+
+    func #destroy = (self) {
+    }
+}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) => e.message.includes("cannot be Copyable — it declares #destroy")),
+		).toBe(true);
+	});
+
+	test("the mv struct moves and copying it is an error", () => {
+		const input = `
+pub func main = () {
+    var t = Transaction(1)
+    mv t2 = t
+    Console.write("\\{t2.handle}")
+}
+
+pub mv struct Transaction {
+    var int handle
+
+    func #init = (ref self, int handle) {
+        self.handle = handle
+    }
+
+    func #destroy = (self) {
+    }
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("an extend-added #destroy requires the single-owner form too", () => {
+		const input = `
+struct Point {
+    var int x
+}
+
+extend struct Point {
+    func #destroy = (self) {
+    }
+}
+
+pub func main = () {
+    var p = Point(1)
+}
+`;
+		const errors = compile_module(input);
+		expect(
+			errors.some((e) => e.message.includes("cannot be Copyable — it declares #destroy")),
+		).toBe(true);
 	});
 });
 

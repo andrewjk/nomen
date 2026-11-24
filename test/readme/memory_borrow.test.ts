@@ -5,7 +5,7 @@ import { compile_module } from "./_helpers.ts";
 describe("readme: memory management", () => {
 	test("struct with custom #init and #destroy", () => {
 		const input = `
-struct Transaction {
+mv struct Transaction {
     var int handle
 
     func #init = (ref self, int handle) {

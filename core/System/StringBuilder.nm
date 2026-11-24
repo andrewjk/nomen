@@ -8,7 +8,7 @@
 /**
  * A growable byte buffer for incrementally building strings (O(1) amortized append)
  **/
-pub struct StringBuilder {
+pub mv struct StringBuilder {
 	var uint64 data = 0
 	var len = 0
 	var cap = 0

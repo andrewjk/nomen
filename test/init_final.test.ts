@@ -90,7 +90,7 @@ func #init = (int x) {
 describe("auto-destroy enforcement", () => {
 	test("auto-destroy runs at scope exit", async () => {
 		const input = `
-struct Resource {
+mv struct Resource {
     var int handle
 
     func #destroy = () {
@@ -106,7 +106,7 @@ Console.write("\\{r.handle}")
 
 	test("auto-destroy on second instance", async () => {
 		const input = `
-struct Resource {
+mv struct Resource {
     var int handle
 
     func #destroy = () {
@@ -142,7 +142,7 @@ Console.write("\\{c.count}")
 describe("mv on return", () => {
 	test("returning struct field does not mv the struct", async () => {
 		const input = `
-struct Resource {
+mv struct Resource {
     var int handle
 
     func #destroy = () {
@@ -164,7 +164,7 @@ Console.write("\\{get_handle()}")
 describe("ownership transfer", () => {
 	test("struct assigned to struct field via init", async () => {
 		const input = `
-struct Inner {
+mv struct Inner {
     var int value
 
     func #destroy = () {
@@ -172,13 +172,13 @@ struct Inner {
     }
 }
 
-struct Outer {
-    var Inner child
+mv struct Outer {
+    mv Inner child
 }
 
-const inner = Inner(42)
+var inner = Inner(42)
 var Outer outer
-outer.child = inner
+outer.child = mv inner
 Console.write("\\{outer.child.value}")
 `;
 		await build_and_check_output(input, "assign_to_field", "42");
@@ -186,7 +186,7 @@ Console.write("\\{outer.child.value}")
 
 	test("recursive destroy of struct fields", async () => {
 		const input = `
-struct File {
+mv struct File {
     var int handle
 
     func #destroy = () {
@@ -194,13 +194,13 @@ struct File {
     }
 }
 
-struct FileManager {
+mv struct FileManager {
     var int id
-    var File file
+    mv File file
 }
 
-const f = File(10)
-const mgr = FileManager(1, f)
+var f = File(10)
+const mgr = FileManager(1, mv f)
 Console.write("\\{mgr.id}")
 `;
 		await build_and_check_output(input, "recursive_destroy", "1");

@@ -5,7 +5,7 @@ import build_and_check_output from "./build_and_check_output";
 describe("memory UAF", () => {
 	test("struct with destroy: inner scope assigned to outer var", async () => {
 		const input = `
-struct Counter {
+mv struct Counter {
   var int count
 
   func #destroy = (ref self) {
@@ -16,16 +16,16 @@ struct Counter {
 var Counter c = Counter(0)
 if 1 == 1 {
   var Counter inner = Counter(5)
-  c = inner
+  c = mv inner
 }
 Console.write("\\{c.count}")
 `;
 		await build_and_check_output(input, "uaf_struct_scope", "5");
 	});
 
-	test("struct alias with destroy copies fields correctly", async () => {
+	test("struct with destroy transfers fields on an mv move", async () => {
 		const input = `
-struct Token {
+mv struct Token {
   var int id
 
   func #destroy = (ref self) {
@@ -34,8 +34,8 @@ struct Token {
 }
 
 var Token a = Token(1)
-var Token b = a
-Console.write("\\{a.id}")
+var Token b = mv a
+Console.write("\\{b.id}")
 Console.write("\\{b.id}")
 `;
 		await build_and_check_output(input, "uaf_struct_alias", "11");

@@ -7,7 +7,7 @@
 /**
  * A flat buffer of owned class pointers of type T — the backing store for collections of classes
  **/
-pub struct ClassBuffer<T> {
+pub mv struct ClassBuffer<T> {
 	internal var uint64 data = 0
 	// Publicly readable; grown only by ClassBuffer's own methods (`readonly`).
 	readonly cap = 0

@@ -272,8 +272,11 @@ mv struct Node {            // single-owner, move-only (bindings mv)
 
 Construct by calling the type name as a function: `Point(1, 2)`. A `struct`
 whose fields are not all Copyable is a compile error — mark it
-`mv struct`. Sharing a mv instance is spelled: `ref` (alias),
-`Box<T>` (owned heap slot), `WeakHandle<T>` (checked back-pointer).
+`mv struct`. Declaring `#destroy` requires the single-owner form (`mv
+struct`): a destructor cannot be Copyable — the Copyable spelling is
+rejected, and on the mv struct copies are move errors.
+Sharing a mv instance is spelled: `ref` (alias), `Box<T>` (owned heap slot),
+`WeakHandle<T>` (checked back-pointer).
 
 ### Strings
 

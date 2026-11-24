@@ -1045,7 +1045,7 @@ counting. The compiler inserts the frees for you. Two hooks let types
 participate:
 
 ```nomen
-struct Transaction {
+mv struct Transaction {
     var int handle
 
     func #init = (ref self, int handle) {
@@ -1053,13 +1053,15 @@ struct Transaction {
     }
 
     func #destroy = (self) {
-        // runs automatically when a Transaction goes out of scope
+        // runs automatically when the owned Transaction goes out of scope
     }
 }
 ```
 
 - `#init` customizes construction (an auto-generated one exists otherwise)
-- `#destroy` runs at scope exit for values that own resources
+- `#destroy` runs at scope exit for values that own resources — a destructor
+  requires `mv struct` (single-owner): copies are move errors and it runs
+  exactly once
 - Heap strings and owned values are freed automatically
 
 See [MEMORY.md](docs/MEMORY.md) for the full model.

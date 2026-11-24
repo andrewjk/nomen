@@ -617,8 +617,13 @@ pub struct Point {
 
 If a struct has a `#destroy` function, it runs automatically when the struct goes out of scope. The destroy function takes no parameters (besides `self`) and cannot be called manually.
 
+A struct declaring `#destroy` must be `mv struct` — the type is single-owner.
+A destructor on a Copyable struct would run once per copy, and every copy
+would release the same resource; the checker rejects the Copyable spelling,
+naming the fix.
+
 ```
-pub struct Transaction {
+pub mv struct Transaction {
     pub var int handle
 
     func #init = (ref self, int handle) {
@@ -635,9 +640,9 @@ pub struct Transaction {
 
 An `mv struct` is the single-owner escape hatch from Copyable structs: its
 bindings MOVE instead of copy, and the declaration — not a field walk — is the
-ownership contract. Heap resources (a `Box<T>`, a `List<T>`, an OS handle)
-live exactly as long as the binding that owns them, and `#destroy` runs at
-scope exit.
+ownership contract (a `#destroy` member requires the `mv struct` form).
+Heap resources (a `Box<T>`, a `List<T>`, an OS handle) live exactly as long
+as the binding that owns them, and `#destroy` runs at scope exit.
 
 ```
 mv struct Config {
@@ -2233,7 +2238,9 @@ const d = p.distance_from_origin()   // 3*3 + 4*4 = 25
 `mv struct` declares the type MOVE-ONLY: bindings move
 instead of copy, and the declaration — not a field walk — is the ownership
 contract. A bare `struct` is Copyable; the checker verifies that claim: a bare
-struct with a declared-`mv` field is rejected, naming the fix.
+struct with a declared-`mv` field is rejected, naming the fix. A struct
+declaring `#destroy` must be declared `mv struct` too — a destructor cannot
+be Copyable, and the checker rejects the Copyable spelling.
 
 ```
 mv struct Config {

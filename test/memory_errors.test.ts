@@ -230,9 +230,11 @@ var List<int> b = a
 		);
 	});
 
-	test("a struct whose #destroy only resets fields is copyable", () => {
-		// Token's #destroy just sets self.id = 0 -- no resource release, so the
-		// struct is a copyable value type.
+	test("a Copyable struct declaring #destroy is rejected (named fix)", () => {
+		// Token's #destroy just sets self.id = 0 -- no resource release -- but
+		// a destructor cannot be Copyable: copies would run it once per copy.
+		// The declaration is the ownership contract, so the struct must be
+		// declared `mv struct` (mirrors the mv-field verifier).
 		const input = `
 struct Token {
 	var int id
@@ -242,10 +244,11 @@ struct Token {
 	}
 }
 var Token a = Token(1)
-var Token b = a
 `;
 		const parsed = parse_with_imports(input, { arch: "aarch64" });
-		expect(parsed.errors).toEqual([]);
+		expect(parsed.errors.map((e) => e.message)).toContainEqual(
+			expect.stringContaining("cannot be Copyable — it declares #destroy"),
+		);
 	});
 
 	test("a #destroy that frees inside a switch case is still mv (copy rejected)", () => {
@@ -253,7 +256,7 @@ var Token b = a
 		// walk must see through the case list to find it, or a byte-copy of
 		// Filey would double-free.
 		const input = `
-struct Filey {
+mv struct Filey {
 	var int handle
 
 	func #destroy = (ref self) {
@@ -288,11 +291,12 @@ var Filey b = a
 		);
 	});
 
-	test("a copyable #destroy still runs on each independent copy", async () => {
-		// b is an independent copy of a; both are destroyed at scope exit and
-		// each resets its own id. No shared heap, so this is sound (audit clean).
+	test("a reset-only #destroy runs once on the moved owner", async () => {
+		// A destructor requires the single-owner form: `mv b = a` transfers
+		// the value, the donor is invalid, and the scope-exit destroy runs
+		// exactly once (audit clean).
 		const input = `
-struct Token {
+mv struct Token {
 	var int id
 
 	func #destroy = (ref self) {
@@ -300,7 +304,7 @@ struct Token {
 	}
 }
 var Token a = Token(7)
-var Token b = a
+var Token b = mv a
 Console.write("\\{b.id}")
 `;
 		await build_and_check_output(input, "copyable_destroy_runs", "7");
@@ -317,8 +321,9 @@ Console.write("\\{b.id}")
 //   - assignment:    `b = mv a`
 //
 // Requiring `mv` on both keeps the two sites consistent (previously an
-// assignment silently moved while a declaration was rejected). A struct whose
-// `#destroy` is benign (no raw block) is a value type and needs no `mv`.
+// assignment silently moved while a declaration was rejected). A struct
+// declaring `#destroy` must be `mv struct`: the declaration is the ownership
+// contract, and a Copyable destructor is rejected.
 describe("mv-struct moves (mv keyword)", () => {
 	test("declaration `var X b = mv a` transfers ownership (no double-free)", async () => {
 		// b takes the list; a is moved (not freed). Only b is destroyed, so the

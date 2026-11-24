@@ -135,7 +135,7 @@ Console.write(t)
 
 	test("break runs struct destroy in loop", async () => {
 		const input = `
-struct Resource {
+mv struct Resource {
   var int handle
 
   func #destroy = (ref self) {
@@ -164,7 +164,7 @@ Console.write("done")
 
 	test("continue runs struct destroy in loop", async () => {
 		const input = `
-struct Resource {
+mv struct Resource {
   var int handle
 
   func #destroy = (ref self) {

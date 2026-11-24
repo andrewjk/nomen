@@ -13,7 +13,7 @@
 /**
  * A flat, low-level buffer of value slots of type T — the backing store for arrays and collections
  **/
-pub struct Buffer<T> {
+pub mv struct Buffer<T> {
 	internal var uint64 data = 0
 	// Publicly readable capacity (`i < self.cap` guards every accessor), but
 	// only Buffer's own methods may grow it — `readonly`.
