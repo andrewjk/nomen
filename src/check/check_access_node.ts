@@ -1167,9 +1167,14 @@ export function check_access_function_node(
 					enforce_root_not_frozen(target_name, status, node.start);
 				}
 				// Record that this local is mutated through a ref-self call,
-				// so the warning pass doesn't recommend `const` for it.
+				// so the warning pass doesn't recommend `const` for it — and
+				// through a `ref` alias, the SOURCE binding's instance is the
+				// one being written, so it must stay `var` too.
 				status.mutated_local_names?.add(target_name);
 				const decl = status.values.findLast((v) => v.name === target_name);
+				if (decl?.ref_source) {
+					status.mutated_local_names?.add(decl.ref_source);
+				}
 				if (decl?.declaration === "const" && !decl?.type?.is_ref) {
 					add_error(status, `Update to const: ${target_name}`, node.start);
 					return false;

@@ -203,6 +203,11 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		// requires a mutable array. Reject it on a const binding.
 		if (for_loop.item_is_ref && list_type.is_array && for_loop.list.node_type === "value") {
 			const list_name = (for_loop.list as ValueNode).value;
+			// The `var` spelling is REQUIRED here (const would fail, if not
+			// now then at the first element write-back) — record the binding
+			// for the warning pass, which would otherwise recommend `const`
+			// for an array this loop borrows mutably.
+			status.mutated_local_names?.add(list_name);
 			// findLast: the innermost declaration wins (mirrors the read path).
 			const list_value = for_status.values.findLast((v) => v.name === list_name);
 			if (list_value && list_value.declaration !== "var") {

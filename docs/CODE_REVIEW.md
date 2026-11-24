@@ -31,7 +31,10 @@ must declare its receiver, capital-S `Self` is rejected in favour of the
 instance call forms are enforced at call sites (a receiver-less method is
 static, called on the type; there is no `static` keyword) — §1.1 and the
 §0 finding it fed are removed below, with error tests in
-`test/structs.test.ts` / `test/traits.test.ts`. One §1.6 item was resolved by investigation rather than
+`test/structs.test.ts` / `test/traits.test.ts`. Four of the §1.7 lint
+false positives landed the same way (the `for ref` const recommendation,
+mutations through `ref` aliases, and calls counting as callee reads); the
+section keeps only the `ref self {}` inference suggestion. One §1.6 item was resolved by investigation rather than
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
@@ -165,15 +168,13 @@ edges:
 
 ### 1.7 Lint false positives found while verifying (P2)
 
-These make doc examples noisy and will train users to ignore warnings:
+Four of these landed 2026-11-25 and are removed: a `for ref` iterable no
+longer gets the const recommendation (following it is an error), a mutation
+through a `ref` alias now marks the source binding (so `p` mutated only
+through `q` stays silent), and a call reads its callee — a called closure
+(`"\{f()}"`) and a `T: type` parameter constructed as `T()` count as used.
+Regression tests live in `test/warnings.test.ts`.
 
-- `Variable 'points' is never changed, consider using const` on an array used
-  by `for ref`. Following the advice is an error (`'ref' iteration requires a
-'var' array`).
-- `Variable 'p' is never changed` when `p` is mutated through a `ref` alias
-  `q` (SPEC `:528-530` example).
-- `Value 'f' is never used` for a closure that **is** called (`"\{f()}"`).
-- `Parameter 'T' is never used` for a `T: type` parameter used as `T()`.
 - `Method receiver 'self' mutates only value-type storage — declare '{}'` fires
   on every simple `ref self` setter (README Counter, SPEC `readonly`
   Counter). If `{}` can be inferred, infer it, rather than asking every user

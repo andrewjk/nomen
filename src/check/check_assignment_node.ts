@@ -355,6 +355,11 @@ export default function check_assignment_node(
 			// by a spawned task until the `async` block exits) writes the
 			// task's shared instance — block it at the alias too.
 			enforce_root_not_frozen(left_value.ref_source, status, assign.left_value!.start);
+			// The write lands in the SOURCE binding's instance, so the
+			// source must stay `var` — record it for the warning pass, which
+			// would otherwise recommend `const` for a binding this write
+			// (and every later one through the alias) mutates.
+			status.mutated_local_names?.add(left_value.ref_source);
 		}
 		if (!(left_value.ref_source && is_var_binding(left_value.ref_source, status))) {
 			add_error(

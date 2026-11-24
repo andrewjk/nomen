@@ -459,10 +459,17 @@ function collect_referenced_names(root: BaseNode): Set<string> {
 /**
  * Gather every value read and assignment target reachable from `func`,
  * descending into nested functions so closure captures count as uses.
+ * A call `f(...)` READS its callee binding — a func-typed local invoked
+ * through the call's name (the callee lives on the call node, not in a
+ * value node), and a `type T` parameter "called" as a constructor (`T()`)
+ * is a use of `T` — so the callee name counts here like any read.
  */
 function collect_reads(func: FunctionNode, locals: Locals): void {
 	for_each_node(func, (node) => {
 		if (node.node_type === "value") locals.reads.add((node as unknown as { value: string }).value);
+		if (node.node_type === "func_call") {
+			locals.reads.add((node as FunctionCallNode).name);
+		}
 		if (node.node_type === "assign") {
 			const name = value_from_value_node((node as AssignmentNode).left_value);
 			if (name !== "?") locals.assigned.add(name);

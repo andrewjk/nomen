@@ -273,6 +273,108 @@ main()
 			"Variable 'x' is never changed, consider using const",
 		);
 	});
+
+	test("a 'for ref' iterable is not recommended const", () => {
+		// `for ref p of points` requires a `var` array (the loop writes each
+		// element back), so the const recommendation would be an error if
+		// followed.
+		const input = `
+import System
+func main = () {
+	var points = [1, 2, 3]
+	for ref p of points {
+		Console.write("\\{p}")
+	}
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain(
+			"Variable 'points' is never changed, consider using const",
+		);
+	});
+
+	test("mutation through a 'ref' alias is not recommended const on the source", () => {
+		// `q.count = 5` writes p's instance through the alias — `const p`
+		// would fail ("cannot mutate through 'q' — source 'p' is not var").
+		const input = `
+import System
+mv struct Counter {
+	var int count
+	pub func #init = (ref self, int start) {
+		self.count = start
+	}
+}
+func main = () {
+	var p = Box<Counter>(Counter(1))
+	ref q = p
+	q.count = 5
+	Console.write("\\{p.count}")
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain(
+			"Variable 'p' is never changed, consider using const",
+		);
+	});
+
+	test("a mutating call through a 'ref' alias is not recommended const on the source", () => {
+		// `q.bump()` mutates p's instance through the alias — same var rule.
+		const input = `
+import System
+mv struct Counter {
+	var int count = 0
+	pub func bump = (ref self) {
+		self.count = self.count + 1
+	}
+}
+func main = () {
+	var p = Box<Counter>(Counter(1))
+	ref q = p
+	q.bump()
+	Console.write("\\{p.count}")
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain(
+			"Variable 'p' is never changed, consider using const",
+		);
+	});
+
+	test("a called func-typed local counts as used", () => {
+		// The callee of `f(...)` lives on the call node, not in a value node
+		// — the call is still a read of the binding.
+		const input = `
+import System
+func main = () {
+	var func (out int) f = () => 42
+	Console.write("\\{f()}")
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain("Value 'f' is never used");
+	});
+
+	test("a type parameter constructed as T() counts as used", () => {
+		const input = `
+import System
+mv struct Widget {
+	var int v
+	pub func #init = (ref self, int start) {
+		self.v = start
+	}
+}
+func spawn = (type T, int v, out T) {
+	var w = T(v)
+	return w
+}
+func main = () {
+	var w = spawn(Widget, 3)
+	Console.write("\\{w.v}")
+}
+main()
+`;
+		expect(warning_messages(input)).not.toContain("Parameter 'T' is never used");
+	});
 });
 
 describe("ownership spelling — owning fields require mv", () => {
