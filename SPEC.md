@@ -2574,9 +2574,7 @@ for i of 0..10 {
 ```
 
 Loop iterators are **const by default**. Use `for ref x of arr` to get mutable
-element access — the loop variable is a mutable copy whose fields you can
-change, and each element is written back to the array at the end of the
-iteration (including before `break`/`continue`):
+element access:
 
 ```
 var Point[] points = [Point(0, 0), Point(0, 0)]
@@ -2584,6 +2582,17 @@ for ref p of points {
     p.x = 1     // mutates the element in the array
 }
 ```
+
+The loop variable is a **borrow of the element**, not an independent copy.
+Where the shape allows it — a value-struct element in a slot-borrowable
+container (`List`, `StableList`) with a body that never touches the container
+and declares no nested functions — the variable binds directly to the
+element's slot: writes are visible immediately (to the container and to any
+alias), with no per-iteration copy or write-back. Other shapes (string and
+scalar elements, raw arrays, bodies that read or mutate the container) bind
+a mutable copy instead: field writes reach the element when the iteration
+ends (and before `break`/`continue`), and reads of the container inside the
+body see the values as of the last write-back.
 
 `for ref` requires a `var` array (a `const` array is rejected) and is only
 valid for arrays, not ranges or Enumerable types.

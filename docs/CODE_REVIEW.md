@@ -146,13 +146,15 @@ edges:
   The README works around it with parentheses (`:543`). New languages (Go,
   Swift, Rust) fixed this. It's worth fixing before 1.0, or at least making
   mixed bitwise/comparison expressions without parentheses an error.
-- `for ref p of points` borrows a value-struct element as a true slot alias
-  when the container and loop body allow it; writes are immediate. Other shapes
-  (including strings, scalar elements, raw arrays, and container-touching
-  bodies) retain copy-and-write-back behavior, now specified in SPEC
-  ([Loop Iteration]). Strings deliberately keep write-back because they have
-  no safe slot-alias store convention. A native pointer-borrow prototype for
-  the remaining shapes is tracked in `FOLLOWUP.md`.
+- `for ref p of points` was documented as a "mutable copy … written back at
+  the end of the iteration". Both halves of that landed or were documented
+  2026-11-25: the element-borrow binding already existed (a value-struct
+  element in a slot-borrowable container with a clean body binds as a true
+  slot alias — no copy, writes immediate), and the remaining shapes (string
+  and scalar elements, raw arrays, container-touching bodies) keep the
+  copy + write-back, now stated precisely in SPEC ([Loop Iteration]).
+  Strings keep the write-back deliberately: they have no safe store
+  convention for a slot alias.
 
 ### 1.6 Types (P2)
 
