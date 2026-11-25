@@ -154,6 +154,24 @@ Console.write("\\{result.length}")
 		await build_and_check_output(input, "array_with_length", "7");
 	});
 
+	test("multiple Array.with element types in one function resolve per call site", async () => {
+		// Each call must monomorphize to its own element type — the builders
+		// used to pick one `Array_*` mono by name prefix for every call in the
+		// program, so a second element type failed to compile.
+		const input = `
+struct Pt {
+	var x = 0
+	var y = 0
+}
+var Pt[] pts = Array.with(Pt(), 3)
+var int[] ints = Array.with(7, 4)
+var string[] strs = Array.with("hi", 2)
+Console.write("\\{pts.length} \\{ints.length} \\{strs.length}")
+Console.write(" \\{ints.at(1)} \\{strs.at(0)}")
+`;
+		await build_and_check_output(input, "array_with_mixed_monos", "3 4 2 7 hi");
+	});
+
 	test("array from Array.with() filled in a loop and iterated", async () => {
 		const input = `
 var length = 5

@@ -4,27 +4,14 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## Two codegen bugs found while microbenching `for ref`
+## A codegen bug found while microbenching (aarch64 string literal arrays)
 
-Both reproduce on pre-`for ref`-borrow revisions (they are not caused by the
-element-borrow change), found while timing the borrow against the old
-copy + write-back model:
-
-- **Multiple `Array.with` element types in one function all resolve to one
-  mono.** `Array.with(Point(), n)`, `Array.with(0, n)` and
-  `Array.with("abc", n)` in the same program emit
-  `Array_string_with(...)` for all three call sites (the declared mono type
-  is right; the call name is the last instantiation's — clang rejects the
-  mismatched argument types). Splitting each call into its own function
-  avoids it. Suspect the `Array.with` special case's mono-name rewrite in
-  `check_access_node` (the `Array` static-receiver gate) or a shared
-  mono-rewrite path.
 - **A 64-element string-literal array on aarch64 collides assembler labels.**
   `var string[] strs = ["abc", ...]` (64 identical literals) fails to
-  assemble: `.Lskip_hsa_strs_0 is already defined` (also
-  `_1`, `_2`, ...). The label counter behind the heap-string-array emission
-  (`hsa` = heap string array?) is reset or keyed per element without
-  uniquifying across the literal's elements. Smaller arrays (8) assemble.
+  assemble: `.Lskip_hsa_strs_0 is already defined` (also `_1`, `_2`, ...).
+  The label counter behind the heap-string-array emission (`hsa` = heap
+  string array?) is reset or keyed per element without uniquifying across
+  the literal's elements. Smaller arrays (8) assemble.
 
 ## Struct-plan residuals
 

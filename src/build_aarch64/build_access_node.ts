@@ -3031,20 +3031,31 @@ function build_access_method(
 		: mono_type_name(target_type);
 	// Static calls on a generic type without explicit type args (e.g.
 	// `Array.with(0, n)`) resolve to the generic name (`Array`), for which no
-	// monomorphized struct exists. Find the specialized struct that actually
-	// defines the method (e.g. `Array_int`), mirroring the C backend.
+	// monomorphized struct exists. The struct that OWNS the checker-resolved
+	// method is the call site's monomorphization (e.g. `Array_int`) — the
+	// name-prefix scan fallback cannot tell several element monos apart and
+	// would emit one mono's label for every `Array.with` call in the program.
 	if (
 		!access_func.mangled_name &&
 		mono_struct_name &&
 		!status.structs.find((s) => s.name === mono_struct_name && !s.is_generic)
 	) {
-		const specialized = status.structs.find(
-			(s) =>
-				s.name.startsWith(mono_struct_name + "_") &&
-				!s.is_generic &&
-				s.functions.find((f) => f.name === access_func.name),
-		);
-		if (specialized) mono_struct_name = specialized.name;
+		const owner = access_func.resolved_function
+			? status.structs.find(
+					(s) => !s.is_generic && s.functions.includes(access_func.resolved_function!),
+				)
+			: undefined;
+		if (owner) {
+			mono_struct_name = owner.name;
+		} else {
+			const specialized = status.structs.find(
+				(s) =>
+					s.name.startsWith(mono_struct_name + "_") &&
+					!s.is_generic &&
+					s.functions.find((f) => f.name === access_func.name),
+			);
+			if (specialized) mono_struct_name = specialized.name;
+		}
 	}
 	const method_name =
 		access_func.mangled_name || `${mono_struct_name}_${access_func.name.replace(/#/g, "")}`;

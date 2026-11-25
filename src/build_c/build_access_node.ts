@@ -1272,14 +1272,29 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					mono_struct_name &&
 					!status.structs.find((s) => s.name === mono_struct_name && !s.is_generic)
 				) {
-					const sname = mono_struct_name + "_";
-					const specialized = status.structs.find(
-						(s) =>
-							s.name.startsWith(sname) &&
-							!s.is_generic &&
-							s.functions.find((f) => f.name === access_func.name),
-					);
-					if (specialized) mono_struct_name = specialized.name;
+					// The checker resolved the call against THIS call site's
+					// monomorphization (`Array.with(Point(), n)` → Array_Point),
+					// so the struct that OWNS the resolved method is the truth.
+					// The name-prefix scan below cannot tell several element
+					// monos apart — with more than one `Array.with` element type
+					// in a program it emitted one mono's label for every call.
+					const owner = access_func.resolved_function
+						? status.structs.find(
+								(s) => !s.is_generic && s.functions.includes(access_func.resolved_function!),
+							)
+						: undefined;
+					if (owner) {
+						mono_struct_name = owner.name;
+					} else {
+						const sname = mono_struct_name + "_";
+						const specialized = status.structs.find(
+							(s) =>
+								s.name.startsWith(sname) &&
+								!s.is_generic &&
+								s.functions.find((f) => f.name === access_func.name),
+						);
+						if (specialized) mono_struct_name = specialized.name;
+					}
 				}
 				// Look up the target method to detect type erasure (class
 				// pointer passed to a type-erased long parameter, e.g.

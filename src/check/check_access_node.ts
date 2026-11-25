@@ -51,7 +51,10 @@ import {
 	is_owning_ref_type,
 	is_owning_struct_type_requiring_move,
 } from "./utils/ownership.ts";
-import resolve_declared_type from "./utils/resolve_declared_type.ts";
+import {
+	resolve_declared_struct,
+	default as resolve_declared_type,
+} from "./utils/resolve_declared_type.ts";
 import { enforce_detach_owns_captures, enforce_root_not_frozen } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import { clone_type } from "./utils/tuple_struct.ts";
@@ -795,8 +798,16 @@ export function check_access_function_node(
 					effective_type = new Type(mono.name);
 				}
 			} else if (node.params.length > 0 && node.name === "with") {
-				// No type args but calling with(): infer T from first arg
-				const arg_type = type_from_value_node(node.params[0], status);
+				// No type args but calling with(): infer T from first arg.
+				// The argument has NOT been checked yet, so a constructor call
+				// (`Array.with(Point(), n)`) has no stamped type — resolve the
+				// declared struct by name, the constructor's result type.
+				const first = node.params[0];
+				let arg_type = type_from_value_node(first, status);
+				if (!arg_type.name && first.node_type === "func_call") {
+					const declared = resolve_declared_struct((first as FunctionCallNode).name, status);
+					if (declared) arg_type = new Type(declared.name);
+				}
 				if (arg_type.name && !arg_type.is_array) {
 					const mono = monomorphize(array_struct, [arg_type], status);
 					if (mono) {
