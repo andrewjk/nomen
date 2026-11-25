@@ -62,10 +62,19 @@ The `T ! E` spelling question closed itself: `nomen format` canonicalizes
 flattening ask is folded into the §2 match-patterns row (settled there, not
 as a separate match-on-result sugar); the simple-result `??` leak was already
 fixed when re-verified, and the error-context gap was already tracked in §2.
-What remains below is the language-design and
-missing-features work. Line numbers in the remaining sections refer to the
-working tree as of the original review (before those fixes) and may have
-shifted.
+§1.4 Two spellings for one thing is also resolved and removed below: the
+`let`/`->` question was settled as FULL SYMMETRY (breaking — one-liners take
+`->`, block branches yield with `let`; `let` turned out to be load-bearing,
+the only way a block branch yields, not a synonym), the `in` typo diagnostic
+landed (`'in' is not Nomen — did you mean 'of'?`), and `T: type` retired in
+favour of `type T` (breaking, named fix). The `Array<T>`/`T[]` pair is a
+documented alias with a stated job (generic boundaries), so it stays; the
+lambda arrow/block split already has its teaching diagnostic. §1.5's `for
+ref` item was already done when re-verified — the SPEC states the
+element-borrow semantics outright and the runtime tests pin them. What
+remains below is the language-design and missing-features work. Line numbers
+in the remaining sections refer to the working tree as of the original
+review (before those fixes) and may have shifted.
 
 **How claims were verified.** Every "compiles" / "fails" statement below was
 run through the **repo** compiler (`npx tsx cli/src/index.ts check --in <file>`,
@@ -92,30 +101,6 @@ Priorities:
 ---
 
 ## 1. Language design consistency
-
-### 1.4 Two spellings for one thing (P2)
-
-- `let` vs `->` in branches (`SPEC.md:2418-2447`). Two keywords with
-  identical meaning, plus two paragraphs of rules about where `let` is _not_
-  allowed. Consider dropping `let`.
-- `type T` vs `T: type` (`SPEC.md:3784`), and `func f<T>(T seed)` with an
-  unused value only to bind `T` (`:587`, `:3376`) vs `type T`.
-- `Array<T>` vs `T[]`; `T[N]` fixed arrays vs `uint64[2048]` stacks.
-- Block vs arrow lambdas need different keywords (`func (x, out int) { … }`
-  vs `(x) => …`), and `(x) => { … }` is a syntax error (`SPEC.md:1874-1877`).
-  This surprises JS, Kotlin and Swift users.
-- `for x of xs` but `#for field of …` and ranges `0..n` vs `0 .. n`. These
-  are fine, but `in` is a common typo (see the README bug), so give it a
-  dedicated diagnostic ("did you mean `of`?").
-
-### 1.5 Statement and expression forms (P2)
-
-- `for ref p of points` was documented as a "mutable copy … written back at
-  the end of the iteration". It is now a true element borrow: the loop
-  variable is a pointer to the element's slot, writes land in the array
-  immediately (an in-body read of the array sees them), and the copy +
-  write-back machinery — including the string owns-flag regime — is gone.
-  The SPEC states the borrow semantics outright.
 
 ### 1.6 Types (P2)
 
