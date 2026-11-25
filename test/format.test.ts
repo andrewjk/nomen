@@ -47,13 +47,22 @@ test("strips a declared type when the literal infers exactly it", () => {
 	expect(format("var int n = 5.0\n")).toBe("var int n = 5.0\n");
 });
 
-test("keeps `!` spacing as written (prefix, postfix, result form)", () => {
-	// The `T ! E` result form keeps spaces on both sides — the formatter
-	// used to squash it to `!MathError`, reading the `!` as a prefix
-	// operator. `!` is triple-role (prefix not, postfix propagate, infix
-	// result separator), so its spacing is the author's, like `<`/`>`.
+test("canonicalizes the `T ! E` separator; operator `!` stays tight", () => {
+	// The `!` is triple-role (prefix not, postfix propagate, infix result
+	// separator) and its spacing is decided by ROLE, not by the author's
+	// whitespace: the separator canonicalizes to SPEC's spaced `T ! E`
+	// spelling (an early formatter squashed it to `!MathError`, reading the
+	// `!` as a prefix operator), and the operator roles stay tight.
 	expect(format("func divide = (int a, int b, out int ! MathError) {\n\treturn a / b\n}\n")).toBe(
 		"func divide = (int a, int b, out int ! MathError) {\n\treturn a / b\n}\n",
+	);
+	// The glued separator spelling canonicalizes on both sides.
+	expect(format("func divide = (int a, int b, out int !MathError) {\n\treturn a / b\n}\n")).toBe(
+		"func divide = (int a, int b, out int ! MathError) {\n\treturn a / b\n}\n",
+	);
+	// The unit-result form (`out ! E`) canonicalizes too.
+	expect(format("func close = (out !E) {\n\treturn\n}\n")).toBe(
+		"func close = (out ! E) {\n\treturn\n}\n",
 	);
 	// Prefix not stays tight.
 	expect(
@@ -63,8 +72,12 @@ test("keeps `!` spacing as written (prefix, postfix, result form)", () => {
 	).toBe(
 		"func f = (bool ready, out bool) {\n\tif !ready {\n\t\treturn false\n\t}\n\treturn true\n}\n",
 	);
-	// Postfix propagate stays tight.
+	// Postfix propagate stays tight — including before a keyword, which is
+	// a continuation (`expr! catch`), not an operand (`int ! E`).
 	expect(format("var e = divide(1, 2)!\n")).toBe("var e = divide(1, 2)!\n");
+	expect(format("try divide(1, 2)! catch {\n\treturn 0\n}\n")).toBe(
+		"try divide(1, 2)! catch {\n\treturn 0\n}\n",
+	);
 });
 
 test("reindents from spaces to tabs by default", () => {

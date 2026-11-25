@@ -22,15 +22,17 @@ const CALL_KEYWORDS = new Set([
 
 const NO_SPACE_BEFORE = new Set([",", ";", ")", "]", ":", "?", "::"]);
 // `!` is triple-role — prefix not (`!ready`), postfix propagate (`expr!`),
-// and the infix result-form separator (`T ! E`) — so its spacing is the
-// author's: normalization would guess, and the guess is what squashed
-// `out int ! MathError` to `out int !MathError`.
+// and the infix result-form separator (`T ! E`) — so its spacing is decided
+// by ROLE, not by the author's whitespace: the separator canonicalizes to
+// SPEC's spaced spelling (`T ! E`), and the operator roles stay tight (an
+// early formatter guessed by whitespace and squashed `out int ! MathError`
+// to `out int !MathError` — a role-first rule cannot repeat that).
 const NO_SPACE_AFTER = new Set(["(", "[", ".", "#", "...", "::"]);
 // `<` and `>` are both generic brackets and comparisons, `>>` is both a
-// nested-generic closer (`List<List<int>>`) and a shift, `..` is written
-// either `0..3` or `0 .. 3`, and `!` carries all three roles above. Rather
-// than guess, keep whatever was written.
-const KEEP_SPACING = new Set(["<", ">", ">>", "..", "!"]);
+// nested-generic closer (`List<List<int>>`) and a shift, and `..` is written
+// either `0..3` or `0 .. 3` — rather than guess, keep whatever was written.
+// (`!` left this set: its spacing is now role-decided — see `bang_spacing`.)
+const KEEP_SPACING = new Set(["<", ">", ">>", ".."]);
 
 // After these, a `+` or `-` is a sign rather than a subtraction. Getting this
 // wrong changes the token stream (`a -1` is not `a - 1`), which the safety
@@ -96,6 +98,10 @@ function needs_space(pieces: Piece[], i: number): boolean {
 	const previous = pieces[i - 1];
 	const current = pieces[i];
 
+	// A single `!` decides spacing on BOTH sides by role, so it is handled
+	// for itself (space before) and for the piece that follows it.
+	if (current.text === "!") return space_before_bang(pieces, i);
+	if (previous.text === "!") return space_after_bang(pieces, i);
 	if (KEEP_SPACING.has(current.text) || KEEP_SPACING.has(previous.text)) {
 		return current.space_before;
 	}
@@ -135,6 +141,55 @@ export function is_sign(pieces: Piece[], i: number): boolean {
 	if (!previous) return true;
 	if (PREFIX_POSITIONS.has(previous.text)) return true;
 	return previous.kind === "word" && KEYWORDS.has(previous.text);
+}
+
+/**
+ * The role of the single `!` at `i`, decided by SHAPE, never by the author's
+ * whitespace:
+ *
+ * - **infix** — the result-form separator: a value end on the left and a
+ *   word on the right (`int ! E`, `int!E`). Canonicalized to SPEC's spaced
+ *   spelling, spaces on both sides.
+ * - **prefix** — not: an operand word or `(` follows (`!ready`, `!(a)`).
+ * - **postfix** — propagate: a value end on the left and no word on the
+ *   right (`close(path)!`, `expr!` at a line end).
+ *
+ * Spacing never changes the token stream (`!E` and `! E` tokenize alike),
+ * so a misread role is cosmetic at worst — the safety check in `format`
+ * still guards the sign-folding cases that CAN change meaning. (The
+ * whitespace-guessing era squashed `out int ! MathError` to
+ * `out int !MathError`; a shape-first rule cannot repeat that.)
+ */
+function bang_role(pieces: Piece[], i: number): "infix" | "prefix" | "postfix" | "author" {
+	const previous = pieces[i - 1];
+	const next = pieces[i + 1];
+	// `out ! E` (and the `T ! E` form) — after the out modifier, `!` is
+	// always the result-form separator, never prefix-not.
+	if (previous?.text === "out") return "infix";
+	if (i > 0 && is_value_end(pieces, i - 1)) {
+		// An operand word follows (`int ! E`) — but a KEYWORD word (`expr!
+		// catch`) is a continuation, so the `!` is postfix propagate.
+		const operand_follows = !!next && next.kind === "word" && !KEYWORDS.has(next.text);
+		return operand_follows ? "infix" : "postfix";
+	}
+	if (next && (next.kind === "word" || next.text === "(")) return "prefix";
+	return "author";
+}
+
+function space_before_bang(pieces: Piece[], i: number): boolean {
+	if (bang_role(pieces, i) === "infix") return true;
+	// Every other role keeps the author's gap — the operators' tight
+	// spellings are already written tight (`!ready`, `a(p)!`).
+	return pieces[i].space_before;
+}
+
+function space_after_bang(pieces: Piece[], i: number): boolean {
+	const role = bang_role(pieces, i - 1);
+	if (role === "infix") return true;
+	if (role === "prefix") return false;
+	// Postfix (and anything unrecognized) keeps the author's gap after the
+	// `!` — the following piece is usually a closer, comma, or keyword.
+	return pieces[i].space_before;
 }
 
 /**
