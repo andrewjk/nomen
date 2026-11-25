@@ -1,9 +1,6 @@
 import add_error from "../add_error.ts";
 import BranchNode from "../nodes/BranchNode.ts";
-import { is_returning_node } from "../nodes/check_node_type.ts";
 import LetNode from "../nodes/LetNode.ts";
-import type ReturningNode from "../nodes/ReturningNode.ts";
-import ReturnNode from "../nodes/ReturnNode.ts";
 import SwitchNode from "../nodes/SwitchNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
@@ -75,6 +72,17 @@ export default function parse_switch(status: ParseStatus): SwitchNode {
 }
 
 function parse_case_branch(status: ParseStatus): BranchNode | null {
+	// `=>` is the LAMBDA introducer, never a switch arm — name the fix and
+	// recover as `->` (the one-line arm value) so the arm still yields.
+	const fat_arrow = peek_current(status) === "=>" ? get_index(status) : undefined;
+	if (fat_arrow !== undefined) {
+		add_error(
+			status,
+			`'=>' introduces a lambda — use '->' for a one-line branch value, or 'return' for a function return`,
+			fat_arrow,
+		);
+		accept("=>", status);
+	}
 	// Full `let`/`->` symmetry (see parse_match_branch): one-line arms take
 	// `->`; `let` yields a block branch — recover as `->`.
 	const let_start = peek_current(status) === "let" ? get_index(status) : undefined;
@@ -86,8 +94,7 @@ function parse_case_branch(status: ParseStatus): BranchNode | null {
 		);
 		accept("let", status);
 	}
-	const is_return = accept("=>", status);
-	if (is_return || let_start !== undefined || accept("->", status)) {
+	if (fat_arrow !== undefined || let_start !== undefined || accept("->", status)) {
 		const branch_start = get_index(status);
 		let value;
 		if (accept("(", status)) {
@@ -98,18 +105,7 @@ function parse_case_branch(status: ParseStatus): BranchNode | null {
 		}
 
 		const branch = new BranchNode(branch_start);
-		if (is_return) {
-			const ret = new ReturnNode(value.start, value);
-			branch.statements.push(ret);
-			for (let i = status.stack.length - 1; i >= 0; i--) {
-				if (is_returning_node(status.stack[i])) {
-					(status.stack[i] as ReturningNode).has_return = true;
-					if (status.stack[i].node_type === "func") break;
-				}
-			}
-		} else {
-			branch.statements.push(new LetNode(value.start, value));
-		}
+		branch.statements.push(new LetNode(value.start, value));
 		return branch;
 	}
 

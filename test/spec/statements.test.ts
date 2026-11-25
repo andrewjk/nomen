@@ -244,7 +244,7 @@ func describe = (Status r, out string) => match r {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("match enum with associated data (return in branch)", () => {
+	test("match enum with associated data (returned expression)", () => {
 		const input = `
 enum Status {
     case ok
@@ -253,7 +253,7 @@ enum Status {
 func code_of = (Status r, out int) {
     return match r {
         case .ok -> 0
-        case .fail(code) => code
+        case .fail(code) -> code
     }
 }
 `;

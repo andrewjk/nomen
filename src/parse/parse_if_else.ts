@@ -1,10 +1,7 @@
 import add_error from "../add_error.ts";
 import BranchNode from "../nodes/BranchNode.ts";
-import { is_returning_node } from "../nodes/check_node_type.ts";
 import IfElseNode from "../nodes/IfElseNode.ts";
 import LetNode from "../nodes/LetNode.ts";
-import type ReturningNode from "../nodes/ReturningNode.ts";
-import ReturnNode from "../nodes/ReturnNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -65,7 +62,19 @@ export default function parse_if_else(status: ParseStatus): IfElseNode {
 }
 
 function parse_if_branch(status: ParseStatus): BranchNode | null {
-	const is_return = accept("=>", status);
+	// `=>` is the LAMBDA introducer — never a branch. The old parser
+	// substituted it for `return` here (an undocumented return-from-branch
+	// form); name the fix and recover as `->` (the one-line branch value)
+	// so the branch still yields.
+	const fat_arrow = peek_current(status) === "=>" ? get_index(status) : undefined;
+	if (fat_arrow !== undefined) {
+		add_error(
+			status,
+			`'=>' introduces a lambda — use '->' for a one-line branch value, or 'return' for a function return`,
+			fat_arrow,
+		);
+		accept("=>", status);
+	}
 	// Full `let`/`->` symmetry: `->` introduces a ONE-LINE branch value and
 	// `let` yields a BLOCK branch's value (the twin of `return` in a lambda
 	// body) — so `if x let "yes"` is not a spelling. Match/switch arms
@@ -80,7 +89,7 @@ function parse_if_branch(status: ParseStatus): BranchNode | null {
 		);
 		accept("let", status);
 	}
-	if (is_return || let_start !== undefined || accept("->", status)) {
+	if (fat_arrow !== undefined || let_start !== undefined || accept("->", status)) {
 		const branch_start = get_index(status);
 		let value;
 		if (accept("(", status)) {
@@ -91,18 +100,7 @@ function parse_if_branch(status: ParseStatus): BranchNode | null {
 		}
 
 		const branch = new BranchNode(branch_start);
-		if (is_return) {
-			const ret = new ReturnNode(value.start, value);
-			branch.statements.push(ret);
-			for (let i = status.stack.length - 1; i >= 0; i--) {
-				if (is_returning_node(status.stack[i])) {
-					(status.stack[i] as ReturningNode).has_return = true;
-					if (status.stack[i].node_type === "func") break;
-				}
-			}
-		} else {
-			branch.statements.push(new LetNode(value.start, value));
-		}
+		branch.statements.push(new LetNode(value.start, value));
 		return branch;
 	}
 

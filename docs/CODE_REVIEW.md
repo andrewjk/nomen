@@ -69,7 +69,9 @@ the only way a block branch yields, not a synonym), the `in` typo diagnostic
 landed (`'in' is not Nomen — did you mean 'of'?`), and `T: type` retired in
 favour of `type T` (breaking, named fix). The `Array<T>`/`T[]` pair is a
 documented alias with a stated job (generic boundaries), so it stays; the
-lambda arrow/block split already has its teaching diagnostic. §1.5's `for
+lambda arrow/block split already has its teaching diagnostic, and `=>` is
+now lambda-only — the branch/statement/return substitutions were retired
+with named fixes. §1.5's `for
 ref` item was already done when re-verified — the SPEC states the
 element-borrow semantics outright and the runtime tests pin them. §1.6
 Types is also resolved and removed below: the widening rules are stated once

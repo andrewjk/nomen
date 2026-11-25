@@ -200,10 +200,10 @@ Console.write("\\{calc(3, 4)}")
 		await build_and_check_output(input, "function_expr_return", "14");
 	});
 
-	test("function with arrow return", async () => {
+	test("function with return", async () => {
 		const input = `
 func calc = (int a, int b, out int) {
-	=> a + b
+	return a + b
 }
 Console.write("\\{calc(3, 4)}")
 `;

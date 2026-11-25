@@ -1,10 +1,7 @@
 import add_error from "../add_error.ts";
-import { is_returning_node } from "../nodes/check_node_type.ts";
 import LetNode from "../nodes/LetNode.ts";
 import NestedBlockNode from "../nodes/NestedBlockNode.ts";
 import PragmaIfNode from "../nodes/PragmaIfNode.ts";
-import type ReturningNode from "../nodes/ReturningNode.ts";
-import ReturnNode from "../nodes/ReturnNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
@@ -114,16 +111,25 @@ function parse_pragma_block(status: ParseStatus, pragma: PragmaIfNode): NestedBl
 }
 
 /**
- * Parse one `#switch` case arm — the same three shapes a runtime switch
- * branch takes: `=> expr` (return), `-> expr` (value statement), or a
- * `{ ... }` block. Block arms go through the pragma's statement collector
- * (see parse_pragma_block); the expression forms synthesize their one
- * statement directly, exactly like parse_switch's parse_case_branch.
+ * Parse one `#switch` case arm — the same shapes a runtime switch branch
+ * takes: `-> expr` (value) or a `{ ... }` block. `=>` is the LAMBDA
+ * introducer, never an arm — it gets a named error and recovers as `->`.
+ * Block arms go through the pragma's statement collector (see
+ * parse_pragma_block); the expression form synthesizes its one statement
+ * directly, exactly like parse_switch's parse_case_branch.
  */
 function parse_pragma_case_arm(status: ParseStatus, pragma: PragmaIfNode): NestedBlockNode {
 	const block_start = get_index(status);
-	const is_return = accept("=>", status);
-	if (is_return || accept("->", status)) {
+	const fat_arrow = peek_current(status) === "=>" ? get_index(status) : undefined;
+	if (fat_arrow !== undefined) {
+		add_error(
+			status,
+			`'=>' introduces a lambda — use '->' for a one-line branch value, or 'return' for a function return`,
+			fat_arrow,
+		);
+		accept("=>", status);
+	}
+	if (fat_arrow !== undefined || accept("->", status)) {
 		let value;
 		if (accept("(", status)) {
 			value = parse_expression(status);
@@ -132,19 +138,8 @@ function parse_pragma_case_arm(status: ParseStatus, pragma: PragmaIfNode): Neste
 			value = parse_expression(status);
 		}
 
-		const statement = is_return
-			? new ReturnNode(value.start, value)
-			: new LetNode(value.start, value);
-		if (is_return) {
-			for (let i = status.stack.length - 1; i >= 0; i--) {
-				if (is_returning_node(status.stack[i])) {
-					(status.stack[i] as ReturningNode).has_return = true;
-					if (status.stack[i].node_type === "func") break;
-				}
-			}
-		}
 		pragma.statements = [];
-		return new NestedBlockNode(block_start, [statement]);
+		return new NestedBlockNode(block_start, [new LetNode(value.start, value)]);
 	}
 
 	expect("{", status);

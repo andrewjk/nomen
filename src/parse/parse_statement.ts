@@ -465,7 +465,19 @@ export default function parse_statement(status: ParseStatus) {
 				add_to_parent(ret, "Let expression", status);
 				break;
 			}
-			case "=>":
+			case "=>": {
+				// `=>` is the LAMBDA introducer — never a statement. The old
+				// dispatch substituted it for `return`; name the fix and
+				// recover as a return of the expression (no cascades).
+				add_error(
+					status,
+					`'=>' introduces a lambda — use 'return' to return a value`,
+					get_index(status),
+				);
+				accept("=>", status);
+				parse_return(status);
+				break;
+			}
 			case "return": {
 				parse_return(status);
 				break;
