@@ -2860,10 +2860,6 @@ Prefix operators bind their operand's full postfix chain (`!a.b.c()` is
 operators bind **tighter** than the comparisons: `flags & mask == mask`
 reads as `(flags & mask) == mask`, with no parentheses required.
 
-Unlike C, the bitwise operators bind **tighter** than the comparisons
-(the Go/Rust order): `flags & mask == mask` reads as
-`(flags & mask) == mask`, with no parentheses required.
-
 #### Operator Overloading
 
 Structs can define custom behavior for operators using `#`-prefixed function names:
