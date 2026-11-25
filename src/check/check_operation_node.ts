@@ -35,6 +35,7 @@ import {
 import get_null_check_var from "./utils/get_null_check_var.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import { is_owning_struct_type } from "./utils/ownership.ts";
+import { find_result_enum, result_display_name } from "./utils/result_display.ts";
 import { maybe_mark_borrow_to_string_operand } from "./utils/string_mutation_scan.ts";
 import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
@@ -241,7 +242,11 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	const is_equality = op.op === "==" || op.op === "!=";
 	const is_null_coalesce = op.op === "??";
 	const old_allow_null = status.allow_null_value;
-	if (is_equality || is_null_coalesce) {
+	// `!!` joins the allow-null set: a nullable left read must reach the
+	// `!!` arm below so its own diagnostic (with the `??` hint) fires —
+	// without it, the bare read rejects first ("Variable 'x' may be null")
+	// and the operator never explains itself.
+	if (is_equality || is_null_coalesce || op.op === "!!") {
 		status.allow_null_value = true;
 	}
 
@@ -304,11 +309,21 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			return false;
 		}
 		if (result_enum?.template_name !== "Result" || !ok_case?.params[0]) {
-			add_error(
-				status,
-				`'!!' needs a 'T ! E' result on the left — '${left_type.name || "value"}' is not a result type`,
-				op.start,
-			);
+			if (left_type.is_nullable) {
+				// The sibling-operator hint: `!!` is the RESULT coalesce —
+				// a nullable left wanted `??` (the review's §1.3 trap).
+				add_error(
+					status,
+					`'!!' coalesces results — use '??' for a nullable ('${type_name(left_type)}')`,
+					op.start,
+				);
+			} else {
+				add_error(
+					status,
+					`'!!' needs a 'T ! E' result on the left — '${left_type.name || "value"}' is not a result type`,
+					op.start,
+				);
+			}
 			status.allow_null_value = old_allow_null;
 			return false;
 		}
@@ -581,9 +596,14 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 			// type (`mk(7)?.inner.value` types `int`), so the chain test is
 			// structural, not type-driven.
 			if (!left_type.is_nullable && !has_null_chain(op.left_value)) {
+				// A result left is the sibling-operator trap (`x ?? 4` on a
+				// `T ! E` result): point at `!!`, and render composed sets
+				// readably instead of leaking the generated mono name.
+				const display = result_display_name(left_type.name, status) ?? type_name(left_type);
+				const hint = find_result_enum(left_type.name, status) ? " (use '!!' for results)" : "";
 				add_error(
 					status,
-					`'??' needs a nullable left — '${type_name(left_type)}' is not nullable; the fallback could never run`,
+					`'??' needs a nullable left — '${display}' is not nullable; the fallback could never run${hint}`,
 					op.start,
 				);
 				return false;

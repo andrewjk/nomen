@@ -398,6 +398,109 @@ pub func main = () {
 		]);
 	});
 
+	test("`!!` on a nullable points at the sibling operator", () => {
+		const input = `import System
+
+pub func main = () {
+	var int? a = null
+	var b = a !! 3
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(input, "'!!' coalesces results — use '??' for a nullable ('int?')", 5, 10),
+		]);
+	});
+
+	test("`??` on a result names the sibling operator", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (out int ! FetchError) {
+	return 7
+}
+
+pub func main = () {
+	var x = fetch()
+	var y = x ?? 4
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'??' needs a nullable left — 'Result<int, FetchError>' is not nullable; the fallback could never run (use '!!' for results)",
+				13,
+				10,
+			),
+			test_error(input, "Type mismatch in operation: int (expected Result_int_FetchError)", 13, 15),
+		]);
+	});
+
+	test("`??` on a composed-set result renders the member enums", () => {
+		// The generated set mono (`Result_int__AnonEnum_…`) is compiler
+		// internals — the diagnostic renders the member enums instead.
+		const input = `import System
+
+error LoadError {
+	case offline
+}
+
+error ParseError {
+	case notfound
+}
+
+func load = (out int ! LoadError, ParseError) {
+	return 7
+}
+
+pub func main = () {
+	var x = load()
+	var y = x ?? 4
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"'??' needs a nullable left — 'Result<int, (LoadError, ParseError)>' is not nullable; the fallback could never run (use '!!' for results)",
+				17,
+				10,
+			),
+			test_error(
+				input,
+				"Type mismatch in operation: int (expected Result_int__AnonEnum_LoadError_LoadError__ParseError_ParseError)",
+				17,
+				15,
+			),
+		]);
+	});
+
+	test("a plain return against an explicit Result teaches the lifting rule", () => {
+		const input = `import System
+
+error FetchError {
+	case notfound
+}
+
+func fetch = (out Result<int, FetchError>) {
+	return 7
+}
+`;
+		const parsed = parse(input, core, undefined, { allow_internal: true });
+		expect(parsed.errors).toEqual([
+			test_error(
+				input,
+				"Type mismatch in return: int (expected Result_int_FetchError) — an explicit 'out Result<T, E>' does not lift: return '.ok(...)' or '.fail(...)', or declare the function 'out T ! E'",
+				8,
+				9,
+			),
+		]);
+	});
+
 	test("`!!` rejects a fallback of the wrong type", () => {
 		const input = `import System
 

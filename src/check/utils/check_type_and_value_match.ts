@@ -13,6 +13,7 @@ import { parse_int_literal, parse_int_literal_bigint } from "../../int_literal.t
 import Type from "../../nodes/Type.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { is_class_type } from "./ownership.ts";
+import { find_result_enum } from "./result_display.ts";
 import type_name from "./type_name.ts";
 
 export default function check_type_and_value_match(
@@ -100,6 +101,13 @@ function add_error_message(
 	let message = `Type mismatch in ${node_type}: ${value_type}`;
 	if (expected_type) {
 		message += ` (expected ${expected_type})`;
+	}
+	// Returning a plain value against an explicit `out Result<T, E>` does
+	// not lift — only the `!` spelling lifts (SPEC, the `T ! E` Result
+	// Form). The two spellings type the same mono, so the bare mismatch
+	// reads as a contradiction; teach both fixes instead.
+	if (node_type === "return" && expected_type && find_result_enum(expected_type, status)) {
+		message += ` — an explicit 'out Result<T, E>' does not lift: return '.ok(...)' or '.fail(...)', or declare the function 'out T ! E'`;
 	}
 	add_error(status, message, i);
 }
