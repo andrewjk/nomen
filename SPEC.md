@@ -112,7 +112,7 @@ those forms in PascalCase (`View`), which was never reserved.
 ### Basic Types
 
 - **Integers**: `int`, `uint`, `int8`, `int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64`
-- **Floating-point**: `float`, `ufloat`, `float32`, `ufloat32`, `float64`, `ufloat64` (the `u` variants are unsigned)
+- **Floating-point**: `float`, `float32`, `float64`
 - **String**: `string` (a fat `(ptr, len)` pair pointing at a heap buffer — `.length` is the byte count)
 - **Character**: `char` (an 8-bit character; string indexing and `.length` count bytes, not code points)
 - **Boolean**: `bool`
@@ -120,13 +120,13 @@ those forms in PascalCase (`View`), which was never reserved.
 - **Void**: `void` (used for functions with no return value)
 
 Numeric literals coerce into sized numeric types when the value fits. Unsigned
-types (`uint*`, `ufloat*`) reject negative literals:
+types (`uint*`) reject negative literals:
 
 ```
 const int16 small = 300
 const int doubled = small * 2
-const ufloat ratio = 0.5
-const ufloat scaled = ratio * 2.0
+const ratio = 0.5
+const scaled = ratio * 2.0
 Console.write("\{doubled} \{scaled}\n")
 ```
 

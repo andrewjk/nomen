@@ -84,11 +84,8 @@
 	"int64",
 	"uint64",
 	"float",
-	"ufloat",
 	"float32",
-	"ufloat32",
 	"float64",
-	"ufloat64",
 	"char",
 	"string",
 	"func"

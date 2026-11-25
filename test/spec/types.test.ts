@@ -7,8 +7,8 @@ describe("spec: basic types", () => {
 		const input = `
 const int16 small = 300
 const int doubled = small * 2
-const ufloat ratio = 0.5
-const ufloat scaled = ratio * 2.0
+const ratio = 0.5
+const scaled = ratio * 2.0
 Console.write("\\{doubled} \\{scaled}\\n")
 `;
 		expect(compile_main(input)).toEqual([]);
@@ -16,7 +16,7 @@ Console.write("\\{doubled} \\{scaled}\\n")
 
 	test("negative literals are rejected for unsigned types", () => {
 		const input = `
-const ufloat ratio = -0.5
+const uint32 ratio = -0.5
 `;
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("Type mismatch"))).toBe(true);

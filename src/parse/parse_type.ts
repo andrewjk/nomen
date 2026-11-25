@@ -91,7 +91,22 @@ function parse_type_base(status: ParseStatus): Type {
 	const is_ref = accept("ref", status);
 	const start = get_index(status);
 	// `Controls::Button` — qualified references flatten to the bare name
-	const { base } = parse_qualified_name(status, consume(status), start);
+	const { base: base_in } = parse_qualified_name(status, consume(status), start);
+	// The unsigned float family is retired: it enforced nothing beyond its
+	// literals (a `ufloat` happily holds `2.0 - 4.0`), so the float family
+	// is the fix. Recover as the mapped float type so the rest of the
+	// declaration checks clean.
+	const RETIRED_FLOAT_TYPES: Record<string, string> = {
+		ufloat: "float",
+		ufloat32: "float32",
+		ufloat64: "float64",
+	};
+	let base = base_in;
+	const retired = RETIRED_FLOAT_TYPES[base];
+	if (retired) {
+		add_error(status, `'${base}' has retired — use '${retired}'`, start);
+		base = retired;
+	}
 	// `Self` is reserved (and undocumented) — the struct's own type spells
 	// `#self` (the placeholder trait signatures and generated members use).
 	// Rejecting here catches the trait-declaration path, whose body-less

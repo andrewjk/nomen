@@ -40,9 +40,6 @@ function foreign_supported_type(type: Type): boolean {
 		"float",
 		"float32",
 		"float64",
-		"ufloat",
-		"ufloat32",
-		"ufloat64",
 	];
 	return scalars.includes(type.name) || type.name === "string";
 }

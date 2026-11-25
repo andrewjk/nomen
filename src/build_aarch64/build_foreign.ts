@@ -55,9 +55,7 @@ export default function build_foreign(
 			: undefined;
 	const symbol = audit_wrapped ?? raw_symbol;
 
-	const float_params = node.params.filter(
-		(p) => !p.is_variadic && (p.type.name.startsWith("float") || p.type.name.startsWith("ufloat")),
-	);
+	const float_params = node.params.filter((p) => !p.is_variadic && p.type.name.startsWith("float"));
 	const use_float = float_params.length === 1 && node.params.length === 1;
 
 	emit_asm(status, `.p2align 2\n`);
@@ -108,10 +106,7 @@ export default function build_foreign(
 			emit_asm(status, `bl ${prefix}strlen\n`);
 			emit_asm(status, `mov x1, x0\n`);
 			emit_asm(status, `ldp x0, x30, [sp], #16\n`);
-		} else if (
-			node.return_type.name.startsWith("float") ||
-			node.return_type.name.startsWith("ufloat")
-		) {
+		} else if (node.return_type.name.startsWith("float")) {
 			// A float-returning foreign returns d0 — mv the bits back to x0.
 			emit_asm(status, `fmov x0, d0\n`);
 		}

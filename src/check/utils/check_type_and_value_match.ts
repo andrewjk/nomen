@@ -130,9 +130,8 @@ function can_coerce(target_type: string, value_type: string, value: string | und
 		return is_unsigned_int_type(target_type) ? uint_is_valid(num, bits) : int_is_valid(num, bits);
 	}
 	if (is_float_type(target_type) && is_numeric_literal(value)) {
-		// A numeric literal coerces into any float width; unsigned floats
-		// (`ufloat*`) only accept non-negative literals.
-		return is_signed_float_type(target_type) || !value.trimStart().startsWith("-");
+		// A numeric literal coerces into any float width; floats are signed.
+		return true;
 	}
 	return can_coerce_type(target_type, value_type);
 }

@@ -14,8 +14,8 @@ export interface BuiltInTypeInfo {
 	/** Coarse category most classifications derive from. */
 	kind: "bool" | "int" | "float" | "char" | "string" | "func";
 	/**
-	 * Arithmetic signedness: signed ints and floats are true; `uint*` /
-	 * `ufloat*`, bool, char, string, and func are false. Drives
+	 * Arithmetic signedness: signed ints and floats are true; `uint*`,
+	 * bool, char, string, and func are false. Drives
 	 * sign-extending loads (floats load through the signed ladder) but NOT
 	 * unary minus — `uint` is negatable even though it is unsigned (it
 	 * wraps), see `is_negatable_type`.
@@ -63,11 +63,8 @@ const TYPE_INFO: BuiltInTypeInfo[] = [
 	},
 	// Floats: all widths share 8-byte double storage/ABI on supported targets
 	{ name: "float", kind: "float", signed: true, bytes: 8, c_type: "double" },
-	{ name: "ufloat", kind: "float", signed: false, bytes: 8, c_type: "double" },
 	{ name: "float32", kind: "float", signed: true, bytes: 8, c_type: "double" },
-	{ name: "ufloat32", kind: "float", signed: false, bytes: 8, c_type: "double" },
 	{ name: "float64", kind: "float", signed: true, bytes: 8, c_type: "double" },
-	{ name: "ufloat64", kind: "float", signed: false, bytes: 8, c_type: "double" },
 	// Char -- an unsigned 8-bit code point
 	{ name: "char", kind: "char", signed: false, bytes: 1, c_type: "unsigned char" },
 	// String -- type depends on how it's defined
@@ -113,8 +110,8 @@ export const ALL_INT_TYPES = [...INT_TYPES, ...UINT_TYPES];
 /** Signed floats. `can_implicit_cast` only widens ints into signed floats. */
 export const SIGNED_FLOAT_TYPES = ["float", "float32", "float64"];
 
-/** All floats including unsigned ones — the full float register model. */
-export const ALL_FLOAT_TYPES = ["float", "ufloat", "float32", "ufloat32", "float64", "ufloat64"];
+/** All floats — the full float register model. */
+export const ALL_FLOAT_TYPES = ["float", "float32", "float64"];
 
 /** Every numeric scalar plus bool/char: values that live in a single
  *  register pair (x regs) or FP register (d regs). Used by loop codegen to

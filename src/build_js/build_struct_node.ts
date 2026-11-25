@@ -119,7 +119,6 @@ function zero_value(type_name: string): string {
 		case "float":
 		case "float32":
 		case "float64":
-		case "ufloat":
 			return "0";
 		case "bool":
 			return "false";

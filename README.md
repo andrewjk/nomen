@@ -121,7 +121,7 @@ an earlier one.
 bool
 int     // and int8, int16, int32 and int64
 uint    // and uint8, uint16, uint32 and uint64
-float   // and float32 and float64, plus the unsigned ufloat variants
+float   // and float32 and float64
 string
 char
 null

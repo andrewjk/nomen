@@ -188,7 +188,7 @@ export function check_c_fallback(
  * types are 64-bit doubles (`c_type: "double"`).
  */
 function is_float_type_name(name: string): boolean {
-	return name.startsWith("float") || name.startsWith("ufloat");
+	return name.startsWith("float");
 }
 
 /** Any float param, or a float return? (see emit_c_abi_thunk case 2) */
