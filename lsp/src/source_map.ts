@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { resolve_src_module, strip_main_functions } from "../../../src/join.ts";
-import type { Library } from "../../../src/lib.ts";
-import { resolve_linked_types } from "../../../src/parse.ts";
+import { resolve_src_module, strip_main_functions } from "../../src/join.ts";
+import type { Library } from "../../src/lib.ts";
+import { resolve_linked_types } from "../../src/parse.ts";
 
 /** A slice of the combined parse source that came from one file on disk. */
 export interface SourceSegment {

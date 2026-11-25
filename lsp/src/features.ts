@@ -20,8 +20,8 @@ import type {
 } from "vscode-languageserver";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 
-import type QuickFix from "../../../src/check/utils/QuickFix.ts";
-import { format_source } from "../../../src/format.ts";
+import type QuickFix from "../../src/check/utils/QuickFix.ts";
+import { format_source } from "../../src/format.ts";
 import {
 	all_members,
 	def_at,

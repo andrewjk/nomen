@@ -4,12 +4,12 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
-import { analyze, ref_at } from "../cli/src/lsp/analysis.ts";
-import { build_source_map, map_offset } from "../cli/src/lsp/source_map.ts";
-import { get_library } from "../src/lib";
-import parse from "../src/parse";
+import { get_library } from "../../src/lib.ts";
+import parse from "../../src/parse.ts";
+import { analyze, ref_at } from "../src/analysis.ts";
+import { build_source_map, map_offset } from "../src/source_map.ts";
 
-const system = get_library(path.resolve(import.meta.dirname, "../core"));
+const system = get_library(path.resolve(import.meta.dirname, "../../core"));
 
 function make_project(files: Record<string, string>): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-ext-"));

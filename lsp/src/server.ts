@@ -10,7 +10,6 @@ import {
 	createConnection,
 } from "vscode-languageserver/node.js";
 
-import { find_bundled } from "../init.ts";
 import { forget_document, invalidate_all, uri_to_path } from "./documents.ts";
 import {
 	code_actions,
@@ -54,8 +53,8 @@ function read_settings(raw: unknown): Settings {
 }
 
 export interface ServerOptions {
-	/** Where the System library lives for files with no local one. Defaults
-	 *  to the copy bundled with the CLI. */
+	/** Where the System library lives for files with no local one — the
+	 *  copy bundled with the CLI, which passes it in. */
 	bundled_lib_dir?: string;
 }
 
@@ -75,7 +74,7 @@ export function start_server(
 	);
 	const documents = new TextDocuments(TextDocument);
 
-	set_bundled_lib_dir(options.bundled_lib_dir ?? find_bundled("core"));
+	set_bundled_lib_dir(options.bundled_lib_dir);
 
 	let settings: Settings = DEFAULT_SETTINGS;
 	let pull_configuration = false;

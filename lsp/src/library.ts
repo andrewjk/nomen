@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { get_library } from "../../../src/lib.ts";
-import type { Library } from "../../../src/lib.ts";
+import { get_library } from "../../src/lib.ts";
+import type { Library } from "../../src/lib.ts";
 import { parse_jsonc } from "./config.ts";
 
 const library_cache = new Map<string, Library>();

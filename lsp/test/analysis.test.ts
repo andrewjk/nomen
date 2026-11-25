@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vite-plus/test";
 
+import parse from "../../src/parse.ts";
 import {
 	all_members,
 	analyze,
@@ -10,9 +11,8 @@ import {
 	refs_to,
 	resolve_chain,
 	symbol_at,
-} from "../cli/src/lsp/analysis";
-import type { Analysis } from "../cli/src/lsp/analysis";
-import parse from "../src/parse";
+} from "../src/analysis.ts";
+import type { Analysis } from "../src/analysis.ts";
 
 // The editor extension indexes the parsed tree to answer hover, go to
 // definition, find references and member completion. These tests exercise that

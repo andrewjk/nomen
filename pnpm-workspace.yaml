@@ -2,6 +2,7 @@ packages:
   - cli
   - extension
   - grammars
+  - lsp
   - shiki
   - site
 allowBuilds:

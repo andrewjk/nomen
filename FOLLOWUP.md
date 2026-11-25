@@ -840,7 +840,7 @@ Recorded 2026-11-25 while building `nomen lsp` (pre-existing in the old
 extension too). A parse error the parser reports at end-of-input — e.g. an
 unfinished `const q = 1 +` inside `main` — carries a `start` offset at the end
 of the COMBINED parse source (document + siblings + inlined System library,
-`cli/src/lsp/source_map.ts`), so `diagnostics_for` in `cli/src/lsp/features.ts`
+`lsp/src/source_map.ts`), so `diagnostics_for` in `lsp/src/features.ts`
 drops it as "outside the document" and the editor shows nothing. Either the
 parser should clamp end-of-input errors to the end of the user's segment, or
 the server should map an error past `doc_end` with no source segment to the

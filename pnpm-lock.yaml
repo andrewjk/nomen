@@ -41,6 +41,9 @@ importers:
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
+      nomen-lsp:
+        specifier: workspace:^
+        version: link:../lsp
       tsx:
         specifier: ^4.23.12
         version: 4.23.13
@@ -50,12 +53,6 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.9(@types/node@26.4.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.13)(typescript@7.0.2))(esbuild@0.28.2)(tsx@4.23.13)(typescript@7.0.2)
-      vscode-languageserver:
-        specifier: ^9.0.1
-        version: 9.0.1
-      vscode-languageserver-textdocument:
-        specifier: ^1.0.12
-        version: 1.0.12
 
   extension:
     devDependencies:
@@ -79,6 +76,15 @@ importers:
         version: 9.0.1
 
   grammars: {}
+
+  lsp:
+    dependencies:
+      vscode-languageserver:
+        specifier: ^9.0.1
+        version: 9.0.1
+      vscode-languageserver-textdocument:
+        specifier: ^1.0.12
+        version: 1.0.12
 
   shiki:
     dependencies:

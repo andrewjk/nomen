@@ -27,7 +27,7 @@ export default class LspClient {
 	applied_edits: any[] = [];
 
 	constructor(
-		private input: Readable,
+		input: Readable,
 		private output: Writable,
 	) {
 		input.on("data", (chunk: Buffer) => this.receive(chunk));

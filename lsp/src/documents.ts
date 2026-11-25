@@ -2,8 +2,8 @@ import { fileURLToPath } from "node:url";
 
 import type { TextDocument } from "vscode-languageserver-textdocument";
 
-import parse from "../../../src/parse.ts";
-import type CompileError from "../../../src/types/CompileError.ts";
+import parse from "../../src/parse.ts";
+import type CompileError from "../../src/types/CompileError.ts";
 import { analyze } from "./analysis.ts";
 import type { Analysis } from "./analysis.ts";
 import { load_library } from "./library.ts";

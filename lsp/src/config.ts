@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { FormatOptions } from "../../../src/format.ts";
+import type { FormatOptions } from "../../src/format.ts";
 
 // Strip `//` line and `/* */` block comments so a .jsonc file parses as JSON.
 export function parse_jsonc(text: string): any {

@@ -10,6 +10,9 @@ nomen lsp        # speaks LSP (JSON-RPC) over stdin/stdout
 
 `nomen lsp` accepts (and ignores) `--stdio`, which some clients append.
 
+The server's source is the top-level [`lsp/`](../lsp) package; the CLI
+bundles it.
+
 ## Features
 
 | Feature                      | LSP method                                            |

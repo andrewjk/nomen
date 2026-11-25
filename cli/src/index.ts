@@ -233,8 +233,11 @@ async function run_lsp(): Promise<never> {
 	// stdout is the JSON-RPC channel — route any stray logging to stderr.
 	console.log = console.error;
 	console.info = console.error;
-	const { start_server } = await import("./lsp/server.ts");
-	const connection = start_server();
+	// The server itself lives in the top-level `lsp/` package (bundled in).
+	const { start_server } = await import("nomen-lsp");
+	const connection = start_server(process.stdin, process.stdout, {
+		bundled_lib_dir: find_bundled("core"),
+	});
 	connection.onExit(() => process.exit(0));
 	process.stdin.on("end", () => process.exit(0));
 	process.stdin.on("close", () => process.exit(0));

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,12 +6,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterAll, beforeAll, expect, test } from "vite-plus/test";
 
-import { start_server } from "../src/lsp/server.ts";
+import { start_server } from "../src/server.ts";
 import LspClient from "./lsp_client.ts";
 
 // Drives the Nomen language server over JSON-RPC exactly as an editor would:
 // Content-Length framed messages on a pair of byte streams. The server runs
-// in-process for speed; the last test spawns the real `nomen lsp` command.
+// in-process for speed; cli/test/lsp_command.test.ts spawns the real
+// `nomen lsp` command.
 
 const SOURCE = `import System
 
@@ -50,7 +50,10 @@ const at = (line: number, character: number) => ({
 beforeAll(async () => {
 	const to_server = new PassThrough();
 	const from_server = new PassThrough();
-	const connection = start_server(to_server, from_server);
+	const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+	const connection = start_server(to_server, from_server, {
+		bundled_lib_dir: path.join(repo, "core"),
+	});
 	dispose = () => connection.dispose();
 	client = new LspClient(from_server, to_server);
 	client.settings = { diagnostics: "onType", format: { force: false } };
@@ -253,31 +256,4 @@ test("diagnostics can be switched off via configuration", async () => {
 	);
 	expect(p.diagnostics).toEqual([]);
 	client.settings = { diagnostics: "onType" };
-});
-
-test("`nomen lsp` speaks LSP over stdio", async () => {
-	const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-	const tsx = path.join(cli, "node_modules", ".bin", "tsx");
-	const child = spawn(tsx, [path.join(cli, "src", "index.ts"), "lsp", "--stdio"], {
-		stdio: ["pipe", "pipe", "pipe"],
-	});
-	try {
-		const stdio = new LspClient(child.stdout!, child.stdin!);
-		const init = await stdio.request("initialize", { processId: null, capabilities: {} });
-		expect(init.serverInfo.name).toBe("nomen");
-		stdio.notify("initialized", {});
-		stdio.notify("textDocument/didOpen", {
-			textDocument: { uri, languageId: "nomen", version: 1, text: SOURCE },
-		});
-		const diags = await stdio.wait_for("textDocument/publishDiagnostics");
-		expect(diags.uri).toBe(uri);
-		const hover = await stdio.request("textDocument/hover", at(14, 22));
-		expect(hover.contents.value).toContain("pub func total");
-		await stdio.request("shutdown", null);
-		const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
-		stdio.notify("exit", null);
-		expect(await exited).toBe(0);
-	} finally {
-		child.kill();
-	}
 });

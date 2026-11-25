@@ -33,10 +33,9 @@
 	"devDependencies": {
 		"@types/node": "^26.2.0",
 		"chokidar": "^5.0.0",
+		"nomen-lsp": "workspace:^",
 		"tsx": "^4.23.12",
 		"typescript": "^7.0.2",
-		"vite-plus": "catalog:",
-		"vscode-languageserver": "^9.0.1",
-		"vscode-languageserver-textdocument": "^1.0.12"
+		"vite-plus": "catalog:"
 	}
 }
