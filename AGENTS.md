@@ -333,6 +333,12 @@ same fat `string` values Nomen code sees — a C `char*` is the explicit
 body. The only thin-`char*` boundary is `foreign func` (SPEC, Extern
 Functions).
 
+### Git commits
+
+- Subject only: **< 50 characters**, starting with a type prefix (`Fix:` or `Feat:`, e.g. `!Fix:` for breaking changes)
+- No commit body/description
+- Include test `output.txt` files if any
+
 ### Bump files
 
 - User-facing changes get a bump file in `.bumpy/` (see its README), added in

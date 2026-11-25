@@ -43,13 +43,13 @@ Console.write("\\{y}")
 		await build_and_check_output(input, "if_else_if_else_expression", "50");
 	});
 
-	test("if else expression with arrows", async () => {
+	test("if else expression with block yields", async () => {
 		const input = `
 const x = 10
 const y = if x > 5 {
-  -> 50
+  let 50
 } else {
-  -> 0
+  let 0
 }
 Console.write("\\{y}")
 `;
@@ -59,7 +59,7 @@ Console.write("\\{y}")
 	test("medium if else expression", async () => {
 		const input = `
 const x = 10
-const y = if x > 5 let 50 else let 0
+const y = if x > 5 -> 50 else -> 0
 Console.write("\\{y}")
 `;
 		await build_and_check_output(input, "if_else_medium_if_else_expression", "50");
@@ -68,7 +68,7 @@ Console.write("\\{y}")
 	test("medium if else expression with statements", async () => {
 		const input = `
 const x = 10
-const y = if x > 5 let (x + 1) else let x - 1
+const y = if x > 5 -> (x + 1) else -> x - 1
 Console.write("\\{y}")
 `;
 		await build_and_check_output(input, "if_else_if_else_short_expression", "11");
@@ -165,10 +165,10 @@ Console.write("\\{x}")
 		await build_and_check_output(input, "if_else_not_equal", "10");
 	});
 
-	test("let in if, -> in else", async () => {
+	test("block yields in if, in else", async () => {
 		const input = `
 const x = 10
-const y = if x > 5 { let 50 } else { -> 0 }
+const y = if x > 5 { let 50 } else { let 0 }
 Console.write("\\{y}")
 `;
 		await build_and_check_output(input, "if_else_let_arrow_mixed", "50");
@@ -195,7 +195,7 @@ Console.write("\\n")
 	test("if else expression with false", async () => {
 		const input = `
 const x = 3
-const y = if x > 5 let 50 else let 0
+const y = if x > 5 -> 50 else -> 0
 Console.write("\\{y}")
 `;
 		await build_and_check_output(input, "if_else_expression_false", "0");

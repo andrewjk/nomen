@@ -75,8 +75,19 @@ export default function parse_switch(status: ParseStatus): SwitchNode {
 }
 
 function parse_case_branch(status: ParseStatus): BranchNode | null {
+	// Full `let`/`->` symmetry (see parse_match_branch): one-line arms take
+	// `->`; `let` yields a block branch — recover as `->`.
+	const let_start = peek_current(status) === "let" ? get_index(status) : undefined;
+	if (let_start !== undefined) {
+		add_error(
+			status,
+			`'let' yields a block branch — use '->' for a one-line branch value`,
+			let_start,
+		);
+		accept("let", status);
+	}
 	const is_return = accept("=>", status);
-	if (is_return || accept("->", status)) {
+	if (is_return || let_start !== undefined || accept("->", status)) {
 		const branch_start = get_index(status);
 		let value;
 		if (accept("(", status)) {

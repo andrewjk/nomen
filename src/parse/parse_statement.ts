@@ -446,6 +446,19 @@ export default function parse_statement(status: ParseStatus) {
 			}
 			case "->":
 			case "let": {
+				// Full `let`/`->` symmetry: `let` yields a block branch's
+				// value (the twin of `return` in a lambda body); `->`
+				// introduces a ONE-LINE branch value, so a statement-level
+				// `->` is the one mistake — named, and recovered as `let`
+				// so the enclosing branch still sees its yield.
+				const yield_start = get_index(status);
+				if (value === "->") {
+					add_error(
+						status,
+						`'->' doesn't yield a block — use 'let' for a branch value, or 'return' in a function body`,
+						yield_start,
+					);
+				}
 				accept(value, status);
 				const expr = parse_expression(status);
 				const ret = new LetNode(get_index(status), expr);

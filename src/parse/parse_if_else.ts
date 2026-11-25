@@ -66,7 +66,21 @@ export default function parse_if_else(status: ParseStatus): IfElseNode {
 
 function parse_if_branch(status: ParseStatus): BranchNode | null {
 	const is_return = accept("=>", status);
-	if (is_return || accept("->", status) || accept("let", status)) {
+	// Full `let`/`->` symmetry: `->` introduces a ONE-LINE branch value and
+	// `let` yields a BLOCK branch's value (the twin of `return` in a lambda
+	// body) — so `if x let "yes"` is not a spelling. Match/switch arms
+	// already reject it; the error recovers by parsing the branch as `->`
+	// so nothing downstream cascades.
+	const let_start = peek_current(status) === "let" ? get_index(status) : undefined;
+	if (let_start !== undefined) {
+		add_error(
+			status,
+			`'let' yields a block branch — use '->' for a one-line branch value`,
+			let_start,
+		);
+		accept("let", status);
+	}
+	if (is_return || let_start !== undefined || accept("->", status)) {
 		const branch_start = get_index(status);
 		let value;
 		if (accept("(", status)) {

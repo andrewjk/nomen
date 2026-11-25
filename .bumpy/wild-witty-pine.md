@@ -3,4 +3,5 @@ nomen-lang: minor
 nomen: minor
 ---
 
-Perf: exact min/max NEON reductions (mandelbrot +12% at n=1000); FMINNM/FMAXNM vector accumulate under a comparison-only-use exactness gate
+!Fix: let yields blocks, -> one-liners only
+BREAKING: `let` no longer introduces a one-line branch value (`if x let "yes"` → `if x -> "yes"`, match/switch arms already rejected it), and `->` no longer yields a block branch (`{ -> "yes" }` → `{ let "yes" }`) — one-line branches take `->`, block branches yield with `let`

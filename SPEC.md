@@ -2259,8 +2259,9 @@ const verdict = if ok -> "yes"
 
 Exhaustiveness rules (see [Match Statement](#match-statement) and
 [Switch Statement](#switch-statement)) apply identically whether the construct
-is used as a statement or as an expression. `let` and `->` are interchangeable
-for the branch value (see [Let and Arrow Shorthand](#let-and-arrow-shorthand)).
+is used as a statement or as an expression. One-line arms introduce their
+value with `->`; block arms yield theirs with `let` (see
+[Branch Values](#branch-values)).
 
 ### Structs
 
@@ -2471,7 +2472,7 @@ its own reflection default the same way.
 ### If/Else
 
 The condition must be a `bool`. The `else` branch is optional. Both branches may
-be a single expression (using `->` or `let`) or a block (`{ }`):
+be a single expression (introduced with `->`) or a block (`{ }`):
 
 ```
 if x > 0 {
@@ -2689,36 +2690,27 @@ A `return` inside a nested block returns from the enclosing function.
 return value
 ```
 
-### `let` vs `->` Outside Expressions
+### Branch Values
 
-`let` and `->` are interchangeable in expression position (if/match/switch
-branches, see [Let and Arrow Shorthand](#let-and-arrow-shorthand)). `let` is
-**not** an implicit `return`: a function must use an explicit `return` to
-produce its value:
-
-```
-func build = (int x, out string) {
-    return "value is \{x}"
-}
-Console.write(build(7))
-```
-
-A standalone `let` statement outside of expression position (e.g. at the top
-level of a function body, not as an `if`/`match`/`switch` branch) is a compile
-error. `let` in a non-returning scope (e.g. the top level or a plain block) is
-also a compile error, since there is no enclosing expression to bind it to.
-
-### Let and Arrow Shorthand
-
-Both `let` and `->` can be used as alternatives to `return` in expression position (e.g. in `if`, `match`, or `switch` branches):
+One-line branches introduce their value with `->`; a block branch yields its
+value with `let` — the block twin of `return` in a lambda body (a bare
+expression in a block does not yield):
 
 ```
 const result = if x > 0 -> "yes"
                else -> "no"
 
-const result = if x > 0 let "yes"
-               else let "no"
+const grade = if score > 90 {
+    var bonus = 2
+    let "A+\{bonus}"
+} else {
+    let "B"
+}
 ```
+
+`let` is not an implicit `return`: a function must use an explicit `return`
+to produce its value, and a `let` outside a branch (a plain function body or
+block) is a compile error.
 
 ### Panic
 

@@ -597,16 +597,46 @@ func build = (int x, out string) {
 	});
 });
 
-describe("spec: let and arrow shorthand", () => {
-	test("let and -> interchangeable in expression position", () => {
+describe("spec: branch values", () => {
+	test("one-line arms take `->`; block arms yield with `let`", () => {
 		const input = `
 var x = 1
 const a = if x > 0 -> "yes"
           else -> "no"
+const b = if x > 0 {
+    let "yes"
+} else {
+    let "no"
+}
+const c = match x {
+    case 1 -> "one"
+    case _ -> "other"
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
+	test("`let` in a one-line branch names the `->` fix", () => {
+		const input = `
+var x = 1
 const b = if x > 0 let "yes"
           else let "no"
 `;
-		expect(compile_main(input)).toEqual([]);
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("'let' yields a block branch"))).toBe(true);
+	});
+
+	test("`->` in a block branch names the `let` fix", () => {
+		const input = `
+var x = 1
+const b = if x > 0 {
+    -> "yes"
+} else {
+    -> "no"
+}
+`;
+		const errors = compile_main(input);
+		expect(errors.some((e) => e.message.includes("'->' doesn't yield a block"))).toBe(true);
 	});
 });
 
