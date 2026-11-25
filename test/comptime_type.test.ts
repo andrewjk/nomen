@@ -67,21 +67,22 @@ test("type T over a struct: the constructor runs, the signature drops the param"
 	expect(lines).toEqual(["0,0"]);
 });
 
-test("the T: type spelling parses to the same thing", () => {
-	const lines = run_js(`
-		func zero_a = (type T, out T) {
-			var T x = T()
-			return x
-		}
+test("the T: type spelling is retired, naming the `type T` fix", () => {
+	const parsed = parse_src(`
 		func zero_b = (T: type, out T) {
 			var T x = T()
 			return x
 		}
 		pub func main = () {
-			Console.write_line("\\{zero_a(int)} \\{zero_b(int)}")
+			Console.write_line("\\{zero_b(int)}")
 		}
 	`);
-	expect(lines).toEqual(["0 0"]);
+	// Recovered as a `type T` parameter: the retirement error is the only
+	// diagnostic — the body and the call site still check.
+	expect(parsed.errors.length).toBe(1);
+	expect(parsed.errors[0].message).toBe(
+		"'T: type' has retired — declare it 'type T' (the ordinary 'Type name' order)",
+	);
 });
 
 test("specializations memoize: one clone per distinct type", () => {

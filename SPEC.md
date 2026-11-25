@@ -4104,7 +4104,7 @@ func probe = () {
 ### Type Parameters (`type T`)
 
 A free function can take a **type** as a parameter. Spell it `type T` (the
-ordinary `Type name` order) or `T: type`; the argument at the call site is
+ordinary `Type name` order); the argument at the call site is
 the bare type name. The parameter exists only at compile time — it has no
 runtime slot, and each specialization's signature omits it entirely:
 
@@ -4166,7 +4166,7 @@ func f = (type T, out int) {
     return 0
 }
 const int bad = f("Point")
-// Error: a 'type' parameter takes a bare type name — f(T: type)
+// Error: a 'type' parameter takes a bare type name — f(type T)
 ```
 
 An instantiation argument flattens to the mono name, so it composes with

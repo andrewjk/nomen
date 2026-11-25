@@ -478,10 +478,18 @@ function parse_function_parameter(parent: BaseNode, func: FunctionNode, status: 
 				);
 			}
 			if (at_type_param_colon) {
+				// The reversed `T: type` spelling is retired — `type T` (the
+				// ordinary `Type name` order) is the one spelling. Recover by
+				// binding the same type parameter so nothing cascades.
+				add_error(
+					status,
+					`'T: type' has retired — declare it 'type T' (the ordinary 'Type name' order)`,
+					param.start,
+				);
+				param.type_start = get_index(status);
 				param.name_start = get_index(status);
 				param.name = consume_name(status);
 				accept(":", status);
-				param.type_start = get_index(status);
 				consume(status);
 			} else {
 				param.type_start = get_index(status);

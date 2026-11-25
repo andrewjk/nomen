@@ -3305,7 +3305,7 @@ function specialize_function(
 			) {
 				add_error(
 					status,
-					`a 'type' parameter takes a bare type name — ${generic_func.name}(${param.name}: type)`,
+					`a 'type' parameter takes a bare type name — ${generic_func.name}(type ${param.name})`,
 					arg?.start ?? call_node.start,
 				);
 				return null;
