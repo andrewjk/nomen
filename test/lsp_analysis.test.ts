@@ -10,8 +10,8 @@ import {
 	refs_to,
 	resolve_chain,
 	symbol_at,
-} from "../extension/src/analysis";
-import type { Analysis } from "../extension/src/analysis";
+} from "../cli/src/lsp/analysis";
+import type { Analysis } from "../cli/src/lsp/analysis";
 import parse from "../src/parse";
 
 // The editor extension indexes the parsed tree to answer hover, go to

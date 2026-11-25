@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
-import { analyze } from "../extension/src/analysis";
-import { build_source_map } from "../extension/src/source_map";
+import { analyze } from "../cli/src/lsp/analysis";
+import { build_source_map } from "../cli/src/lsp/source_map";
 import parse from "../src/parse";
 
 // `build_source_map` is what the editor extension feeds into `parse`: the

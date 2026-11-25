@@ -1,0 +1,13 @@
+{
+	"name": "nomen-grammars",
+	"version": "0.0.1",
+	"private": true,
+	"description": "Editor grammars for the Nomen programming language (TextMate).",
+	"license": "ISC",
+	"files": [
+		"nomen.tmLanguage.json"
+	],
+	"exports": {
+		"./nomen.tmLanguage.json": "./nomen.tmLanguage.json"
+	}
+}

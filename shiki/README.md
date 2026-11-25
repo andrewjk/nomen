@@ -1,7 +1,7 @@
 # nomen-shiki
 
-Shiki highlighting for Nomen, using the VS Code extension's TextMate grammar
-(`extension/syntaxes/nomen.tmLanguage.json`) as the single source of truth.
+Shiki highlighting for Nomen, using the shared TextMate grammar
+(`grammars/nomen.tmLanguage.json`, the `nomen-grammars` workspace package) as the single source of truth.
 
 ```ts
 import { codeToHtml } from "nomen-shiki";

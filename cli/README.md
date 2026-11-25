@@ -22,3 +22,11 @@ Target a specific backend:
 nomen --in path/to/program.nm --arch c         # emit C
 nomen --in path/to/program.nm --arch aarch64   # emit AArch64 assembly (default)
 ```
+
+### Editor Support
+
+`nomen lsp` starts a Language Server Protocol server over stdio — diagnostics,
+hover, go to definition, references, completion, formatting and quick fixes for
+any LSP editor. See
+[docs/EDITORS.md](https://github.com/andrewjk/nomen/blob/main/docs/EDITORS.md)
+for Neovim, Helix and Zed setup.

@@ -3,131 +3,94 @@ import fs from "node:fs";
 import path from "node:path";
 
 import * as vscode from "vscode";
+import { LanguageClient, State } from "vscode-languageclient/node";
+import type { LanguageClientOptions, ServerOptions } from "vscode-languageclient/node";
 
-import { forget_document, get_analysis, invalidate_all } from "./documents.ts";
-import {
-	bundled_lib_completed,
-	resolve_lib_dir,
-	set_bundled_lib_dir,
-	workspace_folder_of,
-} from "./library.ts";
-import {
-	NomenCompletionProvider,
-	NomenDefinitionProvider,
-	NomenDocumentFormattingProvider,
-	NomenHoverProvider,
-	NomenQuickFixProvider,
-	NomenReferenceProvider,
-	format_edits,
-} from "./providers.ts";
+// Every language feature (diagnostics, hover, definition, references,
+// completion, formatting, quick fixes, Run/Audit code lenses) comes from the
+// Nomen language server, `nomen lsp`, shipped with the CLI. This extension
+// launches it and adds the VS Code-only pieces: the Run/Audit terminal
+// commands and the force-format command.
 
-const ECHO_LANGUAGE = "nomen";
+const LANGUAGE_ID = "nomen";
 const TERMINAL_NAME = "Nomen";
-const DEBOUNCE_MS = 350;
-
-// Matches `func main` at the start of a line, optionally preceded by `pub`.
-const MAIN_FUNC = /^\s*(?:pub\s+)?func\s+main\b/;
+/** The server's executeCommand behind "Nomen: Force Format File". */
+const SERVER_FORCE_FORMAT = "nomen.server.forceFormat";
 
 let terminal: vscode.Terminal | undefined;
-let diagnostics: vscode.DiagnosticCollection;
+let client: LanguageClient | undefined;
 
-const debounce_timers = new Map<string, ReturnType<typeof setTimeout>>();
-
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	terminal = undefined;
-	diagnostics = vscode.languages.createDiagnosticCollection("nomen");
-
-	const selector = { language: ECHO_LANGUAGE };
 
 	context.subscriptions.push(
-		vscode.languages.registerCodeLensProvider(selector, new NomenCodeLensProvider()),
-		vscode.languages.registerHoverProvider(selector, new NomenHoverProvider()),
-		vscode.languages.registerDefinitionProvider(selector, new NomenDefinitionProvider()),
-		vscode.languages.registerReferenceProvider(selector, new NomenReferenceProvider()),
-		vscode.languages.registerDocumentFormattingEditProvider(
-			selector,
-			new NomenDocumentFormattingProvider(),
+		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri | string) =>
+			runNomen(uri, false),
 		),
-		vscode.languages.registerCompletionItemProvider(selector, new NomenCompletionProvider(), "."),
-		vscode.languages.registerCodeActionsProvider(selector, new NomenQuickFixProvider(), {
-			providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
-		}),
-		vscode.commands.registerCommand("nomen.run", (uri?: vscode.Uri) => runNomen(uri, false)),
-		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri) => runNomen(uri, true)),
+		vscode.commands.registerCommand("nomen.audit", (uri?: vscode.Uri | string) =>
+			runNomen(uri, true),
+		),
 		vscode.commands.registerCommand("nomen.format.force", () => forceFormat()),
 		vscode.window.onDidCloseTerminal((t) => {
 			if (t === terminal) terminal = undefined;
 		}),
-		diagnostics,
-		vscode.workspace.onDidOpenTextDocument(maybe_update_diagnostics),
-		vscode.workspace.onDidSaveTextDocument(maybe_update_diagnostics),
-		vscode.window.onDidChangeActiveTextEditor((editor) => {
-			if (editor) maybe_update_diagnostics(editor.document);
+		vscode.workspace.onDidChangeConfiguration(async (event) => {
+			// The executable is baked into the server launch; restart to pick
+			// up a new one. Other settings reach the running server through
+			// `workspace/didChangeConfiguration`.
+			if (event.affectsConfiguration("nomen.executable")) await restart_client();
 		}),
-		vscode.workspace.onDidChangeTextDocument((event) => {
-			if (diagnostics_mode() !== "onType") return;
-			schedule_diagnostics(event.document, DEBOUNCE_MS);
-		}),
-		vscode.workspace.onDidCloseTextDocument((document) => {
-			diagnostics.delete(document.uri);
-			clear_timer(document.uri);
-			forget_document(document.uri);
-		}),
-		vscode.workspace.onDidChangeConfiguration((event) => {
-			if (event.affectsConfiguration("nomen.diagnostics")) {
-				for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
-			}
-		}),
+		{ dispose: () => void client?.stop() },
 	);
 
-	for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
-
-	// Locate the System library bundled with the CLI, so editor features
-	// (completion, hover, diagnostics) work for projects without a local
-	// `core/`. Deferred so we don't block activation; the error fires once.
-	setTimeout(discover_bundled_lib, 0);
-}
-
-export function deactivate(): void {
-	terminal = undefined;
-}
-
-// Run `nomen lib-path` to find the System library bundled with the CLI. If
-// the CLI isn't installed (or the lookup fails), surface a one-time error so
-// the user knows editor features will be limited.
-function discover_bundled_lib(): void {
+	// GUI-launched VS Code may not see the PATH entry the CLI was installed
+	// to; resolve it before launching the server.
 	resolve_shell_path();
+	await start_client();
+}
+
+export async function deactivate(): Promise<void> {
+	terminal = undefined;
+	await client?.stop();
+	client = undefined;
+}
+
+async function start_client(): Promise<void> {
 	const dummy_uri = vscode.window.activeTextEditor?.document.uri ?? vscode.Uri.file("/");
 	const executable = resolve_executable(dummy_uri);
-	let found = false;
+
+	// `executable` may itself carry arguments (`node '/path/index.mjs'`), so
+	// launch through the shell.
+	const server: ServerOptions = {
+		command: `${executable} lsp`,
+		options: { shell: true },
+	};
+	const options: LanguageClientOptions = {
+		documentSelector: [{ language: LANGUAGE_ID }],
+		synchronize: {
+			configurationSection: "nomen",
+			fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.nm,package.jsonc}"),
+		},
+		// The server only sends Run/Audit code lenses to clients that
+		// implement those commands.
+		initializationOptions: { runCommands: true },
+	};
+
+	client = new LanguageClient("nomen", "Nomen Language Server", server, options);
 	try {
-		const result = execSync(`${executable} lib-path`, {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-			timeout: 5000,
-		}).trim();
-		// The path is the last non-empty line of output, so older CLIs that
-		// print a banner to stdout still resolve correctly.
-		const lines = result.split("\n").filter((line) => line.trim().length > 0);
-		const lib_dir = lines.length > 0 ? lines[lines.length - 1].trim() : "";
-		if (lib_dir && fs.existsSync(path.join(lib_dir, "package.jsonc"))) {
-			set_bundled_lib_dir(lib_dir);
-			found = true;
-		}
+		await client.start();
 	} catch {
-		// CLI missing, on PATH under a different name, or errored.
-	}
-	if (!found) {
-		set_bundled_lib_dir(undefined);
-		vscode.window.showErrorMessage(
-			"Nomen: CLI not found. Editor features (completion, hover, diagnostics) need the Nomen CLI — install it with `npm i -g nomen-lang`.",
+		void vscode.window.showErrorMessage(
+			`Nomen: could not start the language server (\`${executable} lsp\`). Editor features (completion, hover, diagnostics) need the Nomen CLI 0.17 or newer — install it with \`npm i -g nomen-lang\`.`,
 		);
 	}
-	// `maybe_update_diagnostics` held off until the bundled lib lookup
-	// finished; the lookup is now complete, so analyze every open document
-	// (and drop any pre-lookup cached analyses).
-	invalidate_all();
-	for (const doc of vscode.workspace.textDocuments) maybe_update_diagnostics(doc);
+}
+
+async function restart_client(): Promise<void> {
+	const previous = client;
+	client = undefined;
+	if (previous && previous.state !== State.Stopped) await previous.stop();
+	await start_client();
 }
 
 // GUI-launched VS Code on macOS/Linux inherits a minimal PATH that excludes
@@ -156,53 +119,34 @@ function resolve_shell_path(): void {
 			process.env.PATH = result + path.delimiter + (process.env.PATH ?? "");
 		}
 	} catch {
-		// Shell failed or timed out — leave PATH untouched and let the caller
-		// surface the "CLI not found" error if applicable.
-	}
-}
-
-class NomenCodeLensProvider implements vscode.CodeLensProvider {
-	provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-		const lenses: vscode.CodeLens[] = [];
-		for (let i = 0; i < document.lineCount; i++) {
-			const line = document.lineAt(i);
-			if (MAIN_FUNC.test(line.text)) {
-				const range = new vscode.Range(i, 0, i, line.text.length);
-				lenses.push(
-					new vscode.CodeLens(range, {
-						title: "Run",
-						command: "nomen.run",
-						arguments: [document.uri],
-					}),
-					new vscode.CodeLens(range, {
-						title: "Audit",
-						command: "nomen.audit",
-						arguments: [document.uri],
-					}),
-				);
-			}
-		}
-		return lenses;
+		// Shell failed or timed out — leave PATH untouched and let the
+		// client surface the "could not start" error if applicable.
 	}
 }
 
 async function forceFormat(): Promise<void> {
 	const document = vscode.window.activeTextEditor?.document;
-	if (!document || document.languageId !== ECHO_LANGUAGE) {
-		vscode.window.showErrorMessage("Nomen: No active Nomen file to format.");
+	if (!document || document.languageId !== LANGUAGE_ID) {
+		void vscode.window.showErrorMessage("Nomen: No active Nomen file to format.");
 		return;
 	}
-	const edits = format_edits(document, true);
-	if (!edits.length) return;
-	const edit = new vscode.WorkspaceEdit();
-	edit.set(document.uri, edits);
-	await vscode.workspace.applyEdit(edit);
+	if (!client?.isRunning()) {
+		void vscode.window.showErrorMessage("Nomen: the language server is not running.");
+		return;
+	}
+	// The server answers with a `workspace/applyEdit`, which the client applies.
+	await client.sendRequest("workspace/executeCommand", {
+		command: SERVER_FORCE_FORMAT,
+		arguments: [document.uri.toString()],
+	});
 }
 
-async function runNomen(uri: vscode.Uri | undefined, audit: boolean): Promise<void> {
+async function runNomen(target: vscode.Uri | string | undefined, audit: boolean): Promise<void> {
+	// Code lenses from the server pass the document URI as a string.
+	const uri = typeof target === "string" ? vscode.Uri.parse(target) : target;
 	const document = resolveDocument(uri);
 	if (!document) {
-		vscode.window.showErrorMessage("Nomen: No active Nomen file to run.");
+		void vscode.window.showErrorMessage("Nomen: No active Nomen file to run.");
 		return;
 	}
 
@@ -237,6 +181,10 @@ function resolveDocument(uri: vscode.Uri | undefined): vscode.TextDocument | und
 	return vscode.window.activeTextEditor?.document;
 }
 
+function workspace_folder_of(uri: vscode.Uri): string {
+	return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath ?? "";
+}
+
 function resolve_executable(uri: vscode.Uri): string {
 	const workspace_folder = workspace_folder_of(uri);
 
@@ -253,6 +201,40 @@ function resolve_executable(uri: vscode.Uri): string {
 	}
 
 	return "nomen";
+}
+
+/** The System library to pass to `nomen run --lib`: a local
+ *  `imports.System` or `core/` at or above the file, else the workspace's
+ *  `core/`. Without one, the CLI falls back to its bundled library itself. */
+function resolve_lib_dir(uri: vscode.Uri): string | undefined {
+	let dir = path.dirname(uri.fsPath);
+	for (let i = 0; i < 20; i++) {
+		const config_path = path.join(dir, "package.jsonc");
+		if (fs.existsSync(config_path)) {
+			try {
+				const raw = fs
+					.readFileSync(config_path, "utf8")
+					.replace(/\/\/.*$/gm, "")
+					.replace(/\/\*[\s\S]*?\*\//g, "");
+				const parsed = JSON.parse(raw);
+				if (parsed.imports?.System) return path.resolve(dir, parsed.imports.System);
+			} catch {
+				// ignore malformed package.jsonc and keep searching
+			}
+		}
+		const lib_config = path.join(dir, "core", "package.jsonc");
+		if (fs.existsSync(lib_config)) return path.join(dir, "core");
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+
+	const workspace_folder = workspace_folder_of(uri);
+	if (workspace_folder) {
+		const fallback = path.join(workspace_folder, "core");
+		if (fs.existsSync(path.join(fallback, "package.jsonc"))) return fallback;
+	}
+	return undefined;
 }
 
 function resolve_audit_runtime(uri: vscode.Uri): string | undefined {
@@ -299,101 +281,4 @@ function get_config<T>(key: string, fallback: T): T {
 
 function shell_quote(value: string): string {
 	return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-// --- Diagnostics -------------------------------------------------------------
-
-function diagnostics_mode(): "onType" | "onSave" | "off" {
-	return get_config<"onType" | "onSave" | "off">("diagnostics", "onType");
-}
-
-function is_nomen(document: vscode.TextDocument): boolean {
-	return document.languageId === ECHO_LANGUAGE;
-}
-
-function maybe_update_diagnostics(document: vscode.TextDocument): void {
-	if (diagnostics_mode() === "off") {
-		diagnostics.delete(document.uri);
-		return;
-	}
-	if (!is_nomen(document)) return;
-	// Until the bundled System library lookup completes, defer diagnosing
-	// files that have no local library: analyzing them early flashes
-	// "unknown type/value" errors that vanish once the library resolves.
-	// Files with a local `core/` or `imports.System` can be diagnosed at once.
-	if (!resolve_lib_dir(document.uri) && !bundled_lib_completed()) return;
-	update_diagnostics(document);
-}
-
-function schedule_diagnostics(document: vscode.TextDocument, delay: number): void {
-	if (!is_nomen(document)) return;
-	const key = document.uri.toString();
-	const existing = debounce_timers.get(key);
-	if (existing) clearTimeout(existing);
-	debounce_timers.set(
-		key,
-		setTimeout(() => {
-			debounce_timers.delete(key);
-			update_diagnostics(document);
-		}, delay),
-	);
-}
-
-function clear_timer(uri: vscode.Uri): void {
-	const timer = debounce_timers.get(uri.toString());
-	if (timer) {
-		clearTimeout(timer);
-		debounce_timers.delete(uri.toString());
-	}
-}
-
-function update_diagnostics(document: vscode.TextDocument): void {
-	if (!is_nomen(document)) return;
-
-	const state = get_analysis(document);
-	if (!state) return;
-
-	if (state.fatal) {
-		diagnostics.set(document.uri, [
-			new vscode.Diagnostic(zero_range(), `Nomen: ${state.fatal}`, vscode.DiagnosticSeverity.Error),
-		]);
-		return;
-	}
-
-	const text = document.getText();
-	const in_file = state.errors.filter((e) => e.start >= 0 && e.start < text.length);
-	const diags = in_file.map(
-		(e) =>
-			new vscode.Diagnostic(
-				error_range(document, text, e.start),
-				e.message,
-				vscode.DiagnosticSeverity.Error,
-			),
-	);
-	// Surface lint warnings (unused declarations, var-never-changed) as hints so
-	// they're visible without competing with real errors. Only those that fall
-	// within the document itself (not the inlined library source).
-	for (const w of state.warnings) {
-		if (w.start < 0 || w.start >= text.length) continue;
-		diags.push(
-			new vscode.Diagnostic(
-				error_range(document, text, w.start),
-				w.message,
-				vscode.DiagnosticSeverity.Warning,
-			),
-		);
-	}
-	diagnostics.set(document.uri, diags);
-}
-
-function error_range(document: vscode.TextDocument, text: string, start: number): vscode.Range {
-	let end = start;
-	while (end < text.length && /[A-Za-z0-9_]/.test(text[end])) end++;
-	if (end === start && start < text.length) end = start + 1;
-	return new vscode.Range(document.positionAt(start), document.positionAt(end));
-}
-
-function zero_range(): vscode.Range {
-	const position = new vscode.Position(0, 0);
-	return new vscode.Range(position, position);
 }

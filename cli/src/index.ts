@@ -68,12 +68,19 @@ function collect_nm_files(folder: string): string[] {
 	return out;
 }
 
-console.error("\n~ NOMEN ~\n");
-
 const args: Args = parse_args();
 const command = args.command;
 
+// `nomen lsp` speaks JSON-RPC on stdout and its stderr is an editor's log, so
+// it skips the banner.
+if (command !== "lsp") console.error("\n~ NOMEN ~\n");
+
 try {
+	// `nomen lsp` runs the language server until the client exits.
+	if (command === "lsp") {
+		await run_lsp();
+	}
+
 	// `nomen init <name>` scaffolds a new project under ./<name>.
 	if (command === "init") {
 		run_init(args.name);
@@ -216,6 +223,22 @@ try {
 	}
 } catch (err) {
 	console.log("UH", err);
+}
+
+/**
+ * Serve the Language Server Protocol over stdio (see docs/EDITORS.md). Never
+ * returns: the process ends when the client sends `exit` or closes stdin.
+ */
+async function run_lsp(): Promise<never> {
+	// stdout is the JSON-RPC channel — route any stray logging to stderr.
+	console.log = console.error;
+	console.info = console.error;
+	const { start_server } = await import("./lsp/server.ts");
+	const connection = start_server();
+	connection.onExit(() => process.exit(0));
+	process.stdin.on("end", () => process.exit(0));
+	process.stdin.on("close", () => process.exit(0));
+	return new Promise<never>(() => {});
 }
 
 function resolve_input(): string | undefined {

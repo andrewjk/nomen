@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { FormatOptions } from "../../src/format.ts";
+import type { FormatOptions } from "../../../src/format.ts";
 
 // Strip `//` line and `/* */` block comments so a .jsonc file parses as JSON.
 export function parse_jsonc(text: string): any {
@@ -17,7 +17,8 @@ export function parse_jsonc(text: string): any {
  * formatter falls back to its defaults.
  */
 export function load_format_options(from: string): Partial<FormatOptions> {
-	let dir = fs.lstatSync(from).isDirectory() ? from : path.dirname(from);
+	// `from` may be an unsaved (not-yet-on-disk) document path.
+	let dir = fs.existsSync(from) && fs.lstatSync(from).isDirectory() ? from : path.dirname(from);
 	for (let i = 0; i < 20; i++) {
 		const config_path = path.join(dir, "package.jsonc");
 		if (fs.existsSync(config_path)) {

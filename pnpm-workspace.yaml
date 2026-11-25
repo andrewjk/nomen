@@ -1,6 +1,7 @@
 packages:
   - cli
   - extension
+  - grammars
   - shiki
   - site
 allowBuilds:

@@ -10,6 +10,7 @@
 	"dependencies": {
 		"@shikijs/langs": "^4.6.0",
 		"@shikijs/themes": "^4.6.0",
+		"nomen-grammars": "workspace:^",
 		"shiki": "^4.6.0"
 	}
 }

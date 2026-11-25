@@ -1,4 +1,20 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import * as esbuild from "esbuild";
+
+// The TextMate grammar lives in the shared `grammars/` package (also used by
+// nomen-shiki and the site). Copy it into `syntaxes/` so `contributes.grammars`
+// and `vsce package` (which only ships files under this folder) find it.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const grammar_src = path.join(here, "..", "grammars", "nomen.tmLanguage.json");
+const grammar_dest = path.join(here, "syntaxes", "nomen.tmLanguage.json");
+function copy_grammar() {
+	fs.mkdirSync(path.dirname(grammar_dest), { recursive: true });
+	fs.copyFileSync(grammar_src, grammar_dest);
+}
+copy_grammar();
 
 const watch = process.argv.includes("--watch");
 const minify = process.argv.includes("--minify");
@@ -12,19 +28,13 @@ const options = {
 	target: "node18",
 	outfile: "dist/extension.js",
 	external: ["vscode"],
-	// In CJS output esbuild's `import.meta` shim leaves `.url` undefined, so
-	// `import.meta.url` (used by bundled src/join.ts) would crash the extension
-	// at load. Point it at a banner-defined global carrying the real URL.
-	define: { "import.meta.url": "import_meta_url" },
-	banner: {
-		js: "const import_meta_url = require('url').pathToFileURL(__filename).href;",
-	},
 	sourcemap: true,
 	minify,
 	logLevel: "info",
 };
 
 if (watch) {
+	fs.watchFile(grammar_src, { interval: 500 }, copy_grammar);
 	const ctx = await esbuild.context(options);
 	await ctx.watch();
 } else {

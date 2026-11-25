@@ -35,6 +35,8 @@
 		"chokidar": "^5.0.0",
 		"tsx": "^4.23.12",
 		"typescript": "^7.0.2",
-		"vite-plus": "catalog:"
+		"vite-plus": "catalog:",
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.12"
 	}
 }

@@ -18,6 +18,8 @@ export interface Args {
 	/** Opt in to FP reassociation: float reductions vectorize under NEON
 	 *  (results may differ in the last ulp vs the scalar loop). */
 	fast_math: boolean;
+	/** Accepted (and ignored) for `nomen lsp --stdio`, which editors pass. */
+	stdio?: boolean;
 	// Everything after a bare `--` on the command line — forwarded verbatim to
 	// the compiled program by `nomen run`. Lets a program receive its own argv
 	// (`nomen run --in app/main.nm -- arg1 arg2`).
@@ -53,6 +55,8 @@ const BOOLEAN_OPTIONS: Map<string, string> = new Map([
 	["release", "release"],
 	["r", "release"],
 	["fast-math", "fast_math"],
+	// `nomen lsp` always speaks over stdio; accept the flag editors append.
+	["stdio", "stdio"],
 ]);
 
 const DEFAULTS: Partial<Args> = {
@@ -167,6 +171,7 @@ export function print_help(): void {
 			"  nomen test [--in folder]          Discover and run *.test.nm files (binary CWD = --in folder)",
 			"  nomen init <name>                 Scaffold a new project in ./<name>",
 			"  nomen lib-path                    Print the bundled System library path",
+			"  nomen lsp                         Start the language server (LSP over stdio)",
 			"",
 			"Options:",
 			"  --in, -i <path>         Input file or folder",

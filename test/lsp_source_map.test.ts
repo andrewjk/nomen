@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vite-plus/test";
 
-import { analyze, ref_at } from "../extension/src/analysis.ts";
-import { build_source_map, map_offset } from "../extension/src/source_map.ts";
+import { analyze, ref_at } from "../cli/src/lsp/analysis.ts";
+import { build_source_map, map_offset } from "../cli/src/lsp/source_map.ts";
 import { get_library } from "../src/lib";
 import parse from "../src/parse";
 

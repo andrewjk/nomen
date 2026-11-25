@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { resolve_src_module, strip_main_functions } from "../../src/join.ts";
-import type { Library } from "../../src/lib.ts";
-import { resolve_linked_types } from "../../src/parse.ts";
+import { resolve_src_module, strip_main_functions } from "../../../src/join.ts";
+import type { Library } from "../../../src/lib.ts";
+import { resolve_linked_types } from "../../../src/parse.ts";
 
 /** A slice of the combined parse source that came from one file on disk. */
 export interface SourceSegment {
@@ -103,9 +103,13 @@ export function is_within(child: string, parent: string): boolean {
 	return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
+const FILE_MARKER = "// file://";
+
 // The library portion is the unique library file sources joined with "\n" (see
-// `resolve_types_with_deps`), so walking it and matching each file's source in
-// turn recovers the file each declaration came from.
+// `resolve_types_with_deps`), each preceded by a `// file://<path>` marker
+// line, so walking it and matching each file's source in turn recovers the
+// file each declaration came from. Unmarked files (older layouts) are
+// matched by content alone.
 function add_library_segments(
 	segments: SourceSegment[],
 	source: string,
@@ -113,13 +117,32 @@ function add_library_segments(
 	library: Library,
 ): void {
 	const files = new Map<string, string>();
+	const by_path = new Map<string, string>();
 	for (const type of library.types.values()) {
-		if (type.source.length && !files.has(type.source)) files.set(type.source, type.path);
+		if (!type.source.length) continue;
+		if (!files.has(type.source)) files.set(type.source, type.path);
+		if (!by_path.has(type.path)) by_path.set(type.path, type.source);
 	}
 	const ordered = [...files].sort((a, b) => b[0].length - a[0].length);
 
 	let pos = base;
 	while (pos < source.length) {
+		if (source.startsWith(FILE_MARKER, pos)) {
+			const line_end = source.indexOf("\n", pos);
+			if (line_end === -1) break;
+			const file_path = source.slice(pos + FILE_MARKER.length, line_end);
+			const start = line_end + 1;
+			const text = by_path.get(file_path);
+			// The source between this marker and the next is this file's text.
+			let end = text !== undefined && source.startsWith(text, start) ? start + text.length : -1;
+			if (end === -1) {
+				const next = source.indexOf("\n" + FILE_MARKER, start);
+				end = next === -1 ? source.length : next;
+			}
+			segments.push({ start, end, path: file_path });
+			pos = end + 1;
+			continue;
+		}
 		const match = ordered.find(([text]) => source.startsWith(text, pos));
 		if (!match) break;
 		segments.push({ start: pos, end: pos + match[0].length, path: match[1] });

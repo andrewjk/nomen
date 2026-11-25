@@ -33,7 +33,7 @@ Try it in your browser at [nomenlang.dev](https://nomenlang.dev) — no install 
 - **FFI** — body-less `foreign func` declarations call C functions directly
 - **Core System Library** - small but growing, with data structures that remove the need for you to fight with the borrow checker
 - **GUI System** - a top-down/bottom-up layout system and a few different native controls (WIP)
-- **VS Code Extension** - with syntax highlighting for `.nm` files as well as the usual LSP niceties
+- **Editor Support** - a language server (`nomen lsp`) for any LSP editor, plus a VS Code extension with syntax highlighting for `.nm` files
 
 ## Quick Start
 
@@ -45,7 +45,7 @@ Install the Nomen CLI using npm (or your preferred package manager):
 npm i -g nomen-lang
 ```
 
-There is also a VS Code extension that you can install by searching for `Nomen`. It requires that you have the CLI installed first.
+There is also a VS Code extension that you can install by searching for `Nomen`. It requires that you have the CLI installed first. Other editors (Neovim, Helix, Zed, …) can use the CLI's built-in language server, `nomen lsp` — see [docs/EDITORS.md](docs/EDITORS.md).
 
 ### Run a Program
 
