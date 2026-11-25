@@ -15,6 +15,79 @@
 
 
 
+
+## 0.16.0
+<sub>2026-11-25</sub>
+
+-  *(minor)* - Feat: mv is legal only for owning types (fields, bindings, stores)
+-  *(minor)* - Ownership spelling: mv required on owning fields and field stores; fresh initializers never take mv
+-  *(minor)* - Ownership-spelling quick fixes on the three mv diagnostics (field requirement, store marker, fresh initializer)
+-  *(minor)* - nomen format applies the ownership-spelling spellings (check-adjacent pass: field mv, store marker, fresh initializer)
+-  *(minor)* - Retire the private keyword: visibility is pub/internal plus the implicit tight scope; trait members default pub
+-  *(minor)* - Comptime string interpolation folds (and #error takes an interpolated comptime message)
+-  *(minor)*
+  Perf: value-level lane allocator — resident NEON kernels hold lane state in v-registers across the enclosing loop (mandelbrot -32/-33% aarch64); checker literal-bound discharge; vector-scratch register discipline
+-  *(minor)*
+  !Fix: let yields blocks, -> one-liners only
+  BREAKING: `let` no longer introduces a one-line branch value (`if x let "yes"` → `if x -> "yes"`, match/switch arms already rejected it), and `->` no longer yields a block branch (`{ -> "yes" }` → `{ let "yes" }`) — one-line branches take `->`, block branches yield with `let`
+-  *(minor)*
+  Namespace-scoped visibility: pub/internal/unmarked resolve against file namespaces (docs/SCOPING.md); namespace imports grant their own names only
+-  *(minor)*
+  Language: panic and todo require parentheses around their message (panic("msg")) — the bare panic "msg" form is now a parse error
+-  *(minor)*
+  Language: match/switch catch-all arm moves inside the braces as 'case _' — the '} else' spelling is removed (catch-all must be the last arm, at most once)
+-  *(minor)*
+  Reserved-word reservation narrowed: enum and bitset case names join function and type names as exempt, so 'case todo'-style declarations are allowed
+-  *(minor)*
+  Reserved-word reservation narrowed: type names (struct/trait/enum/bitset/error) join function names as exempt, so `struct view`-style declarations are allowed
+-  *(minor)*
+  Constraint flow facts: early-return zero-guards, compound-guard conjuncts, and length non-negativity discharge index/divisor contracts; at_or_null(i) joins the runtime-checked access family
+-  *(minor)*
+  Copyable structs declaring #destroy are rejected with a named fix (declare it mv struct); destructors can no longer run per copy
+-  *(minor)*
+  Rename core/System/ClassBuffer.nm -> HandleBuffer.nm (ClassBuffer<T> -> HandleBuffer<T>), the last retired-class name in the tree
+-  *(minor)*
+  Method receivers: instance methods (and #destroy/#init) must declare self, ref self is required to write fields — including in #init — capital-S Self is rejected in favour of #self, and the static/instance call forms are enforced at call sites (no static keyword)
+-  *(minor)*
+  Value-struct ref self receivers derive the empty field set: every field a Copyable can declare is value storage, so wildcard receivers provably displace nothing — they compose with {}-narrowed ref params, the {} lint fires only on mv struct setters, and lifecycle receivers keep the permissive wildcard
+-  *(minor)*
+  !Fix: bitwise ops bind tighter than comparisons (the Go/Rust order)
+  BREAKING: expressions mixing bitwise ops with comparisons without parentheses change meaning — `flags & mask == mask` now reads as `(flags & mask) == mask`; parenthesize the old grouping (`x == (a | b)`) to keep it
+-  *(minor)*
+  !Feat: for ref is a native element borrow
+  BREAKING: the loop variable now aliases the element slot — writes land in the array immediately (an in-body read of the array sees them) instead of at the iteration's end; programs relying on the deferred write-back see the new value sooner
+-  *(minor)*
+  !Fix: retire the ufloat family — use float
+  BREAKING: the `ufloat`, `ufloat32`, and `ufloat64` types no longer exist — they enforced nothing beyond their literals (a `ufloat` happily held `2.0 - 4.0` = `-2.0`). Use the signed `float` family; declarations get a named retirement diagnostic and recover
+-  *(minor)*
+  !Fix: => is lambda-only; branches use ->
+  BREAKING: `=>` no longer substitutes for `return` in branch or statement positions (`if x => y`, `case .a => y`, `#switch` arms, a bare `=> expr`, and `return => expr`) — it is the lambda introducer only; use `->` for a one-line branch value or `return` for a function return
+-  *(minor)* - Feat: string element borrows store through slots
+-  *(patch)* - Fix: accept mv string parameters without the System library
+-  *(patch)* - Fix: highlight the contextual 'type' keyword in the grammar
+-  *(patch)*
+  Perf: edigits divide-and-conquer radix conversion (byte-identical output, 1.41x aarch64 / 1.13x C at n=50000) + check_output argv pass-through for the split-path golden test
+-  *(patch)*
+  Perf: BigInt Knuth-D restructure — one product per quotient digit, per-target D4 shape (fused mul-sub on C, two-pass on aarch64/js); edigits 1.56x/1.62x at n=50000, pidigits -6%/-16%; new divrem invariant test
+-  *(patch)*
+  Perf: aarch64 duplicate-FPR-load CSE + float fcsel conversion — mandelbrot -9% (escape check ~25% -> ~14% of kernel); new asm_load_cse pass + tests
+-  *(patch)*
+  Lint fixes: for ref iterables and ref-alias sources no longer get the const recommendation, and a call counts as a read of its callee (called func-typed locals, type params constructed as T())
+-  *(patch)*
+  view-keyword fields (view T name) on plain structs are accepted: the Copyable verifier now honors the view keyword before the mv demand — a view member is a (ptr, len) borrow, never an owner
+-  *(patch)* - Fix: statement switches warn when a -> arm value is discarded
+-  *(patch)* - Fix: else if gets a dedicated diagnostic naming the switch fix
+-  *(patch)* - Fix: Array.with resolves its mono per call site
+-  *(patch)* - Fix: unique aarch64 string-array cleanup labels
+-  *(patch)* - Fix: one Copyable-verifier error naming both fixes; SPEC copy/move/borrow table
+-  *(patch)* - Fix: result/nullable diagnostics name the sibling operator
+-  *(patch)* - Feat: format canonicalizes the T ! E result form
+-  *(patch)* - Fix: 'in' in a for header names the 'of' fix
+-  *(patch)*
+  !Fix: retire T: type — spell type params type T
+  BREAKING: the reversed `T: type` spelling no longer parses — declare comptime type parameters `type T` (the ordinary `Type name` order); existing declarations get a named retirement diagnostic and recover
+-  *(patch)* - Fix: ref string element borrows name usable spellings
+
 ## 0.15.0
 <sub>2026-11-20</sub>
 
