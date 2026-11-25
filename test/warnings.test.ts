@@ -390,7 +390,7 @@ mv struct Pair {
 }
 `;
 
-	test("var on an owning field errors, naming the mv spelling", () => {
+	test("var on an owning field in a bare struct is ONE error naming both edits", () => {
 		const input = `
 ${owning_struct}
 struct Holder {
@@ -399,6 +399,9 @@ struct Holder {
 `;
 		const messages = [...warning_messages(input), ...parse_raw(input).errors.map((e) => e.message)];
 		expect(messages).toContain(
+			"'Holder' cannot be Copyable — field 'items' owns heap memory --> mark the struct `mv struct Holder` and declare the field `mv List<int> items`, or remove the field",
+		);
+		expect(messages).not.toContain(
 			"field 'items' owns memory — declare it 'mv List<int> items' (plain 'var' is for non-owning types)",
 		);
 	});

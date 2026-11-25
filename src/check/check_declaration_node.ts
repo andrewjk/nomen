@@ -769,9 +769,17 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 				(slot_load as AccessFunctionCallNode).type = pointee;
 			} else {
 				if (decl.type.name && !is_class_type(decl.type.name, status)) {
+					// The `view` suggestion is only real for types that HAVE
+					// slices (string/array) — `view P` is not a binding form
+					// for a value struct or scalar, so the fallback names the
+					// actual fixes: a plain binding, or `Box<T>` if the alias
+					// (shared writes) was the point.
+					const sliceable = decl.type.name === "string" || decl.type.is_array;
 					add_error(
 						status,
-						`'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of '${decl.type.name}'`,
+						sliceable
+							? `'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of '${decl.type.name}'`
+							: `'ref' binds an alias to a heap-resident instance (a Box<T>) — use a plain binding, or 'Box<${decl.type.name}>' if you need an alias`,
 						decl.start,
 					);
 				}

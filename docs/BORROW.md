@@ -60,9 +60,11 @@ mv struct Holder {
 ```
 
 - A bare `struct` is Copyable, so it cannot hold these fields — the Copyable
-  verifier rejects it, naming the fix:
+  verifier rejects it, naming the fix (the field clause appears when the field
+  itself still needs the `mv` spelling):
   `'Wrapper' cannot be Copyable — field 'c' owns heap memory --> mark the
-struct `mv struct Wrapper`, or remove the field`.
+struct `mv struct Wrapper`and declare the field`mv Config c`, or remove the
+field`.
 - `mv` is allowed on class, trait, and mv struct types. `mv int` or `mv Point`
   (a Copyable struct) is a compile error:
   "mv is only allowed for class, trait, or mv struct types, not 'Point'".

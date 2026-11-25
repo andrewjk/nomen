@@ -265,7 +265,7 @@ ref func (out int) g = f
 		);
 	});
 
-	test("'ref' requires a reference type (value structs use view)", () => {
+	test("'ref' requires a reference type (value structs get the Box/plain-binding fix)", () => {
 		const input = `
 struct P {
 	var int v
@@ -276,8 +276,26 @@ ref P r = origin
 		const expected = [
 			test_error(
 				input,
-				"'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of 'P'",
+				"'ref' binds an alias to a heap-resident instance (a Box<T>) — use a plain binding, or 'Box<P>' if you need an alias",
 				6,
+				1,
+			),
+		];
+		expect(check(input)).toEqual(expected);
+	});
+
+	test("the 'view' slice suggestion is kept for sliceable sources", () => {
+		const input = `
+import System
+
+var name = "nomen"
+ref string r = name
+`;
+		const expected = [
+			test_error(
+				input,
+				"'ref' binds an alias to a heap-resident instance (a Box<T>); use 'view' for a slice of 'string'",
+				5,
 				1,
 			),
 		];

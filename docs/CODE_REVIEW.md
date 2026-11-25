@@ -44,10 +44,17 @@ order outright (no other-language comparisons). One §1.6 item was resolved by i
 by an edit: struct members really do default to `pub` (verified
 cross-namespace), and the System library's own house style is to spell
 `pub var` on members anyway — so the examples were left explicit and match
-the library. What remains below is the language-design and
-missing-features work. Line numbers in the remaining sections refer to the
-working tree as of the original review (before those fixes) and may have
-shifted.
+the library. §1.2 Copyable-vs-`mv` ergonomics also landed and is removed
+below: the Copyable verifier and the field-spelling rule now report as ONE
+error naming both edits (`mark the struct `mv struct X`and declare the
+field`mv T f``), the by-type × by-operation copy/move/borrow table it
+asked for is in the SPEC ("Copies, Moves and Borrows"), with every cell
+verified through the repo compiler, and the auto-infer-`mv` proposal was
+considered and **rejected** (the declaration is the ownership contract —
+`mv` stays spelled wherever a move happens). What remains below is the
+language-design and missing-features work. Line numbers in the remaining
+sections refer to the working tree as of the original review (before those
+fixes) and may have shifted.
 
 **How claims were verified.** Every "compiles" / "fails" statement below was
 run through the **repo** compiler (`npx tsx cli/src/index.ts check --in <file>`,
@@ -74,26 +81,6 @@ Priorities:
 ---
 
 ## 1. Language design consistency
-
-### 1.2 Copyable vs. `mv` ergonomics (P1)
-
-- `string` is mv, but a plain `struct` can't hold one. Newcomers hit this
-  immediately (`struct Person { var string name }` produces two errors:
-  "cannot be Copyable" _and_ "declare it 'mv string name'"). Two
-  improvements: (a) emit one error with one fix; (b) consider auto-inferring
-  `mv struct` for structs with owning fields, reserving the explicit keyword
-  for public API, which matches the "implicit with type inference" philosophy
-  stated at `SPEC.md:2083`. Today the rule is the reverse: the `mv` on the
-  field _and_ on the struct are both mandatory, and inferred-type fields
-  (`var label = ""`) are rejected.
-- Copying semantics vary by type in ways that are hard to predict. Bare
-  struct assignment copies; string assignment is an error unless `mv` or
-  `.copy()`; closure capture copies scalars but **moves** strings
-  (`SPEC.md:1885`); tuple and array element reads need `.copy()`; struct
-  destructuring binds views, but anonymous-struct destructuring of a string
-  field errors. A single table ("what happens when I write `x = y` / pass /
-  capture / destructure, by type kind") would help, both as documentation and
-  as a design consistency check.
 
 ### 1.3 Results, errors and nullables (P1)
 

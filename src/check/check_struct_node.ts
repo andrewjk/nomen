@@ -1,4 +1,5 @@
 import add_error from "../add_error.ts";
+import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import FunctionNode from "../nodes/FunctionNode.ts";
 import ParameterNode from "../nodes/ParameterNode.ts";
@@ -34,6 +35,26 @@ function params_differ(a: FunctionNode, b: FunctionNode): boolean {
 		if (a_params[i].type.name !== b_params[i].type.name) return true;
 	}
 	return false;
+}
+
+/**
+ * Whether the ownership-spelling loop (below) demands `mv` from this field —
+ * shared with the Copyable verdict so the two never report as two errors: a
+ * bare `struct` with an un-spelled owning field is ONE error naming BOTH
+ * edits (the struct keyword and the field spelling), and the spelling loop
+ * stands down for fields already folded into the verdict.
+ */
+function field_spelling_needs_mv(
+	field: DeclarationNode,
+	struct: StructNode,
+	status: CheckStatus,
+): boolean {
+	if (field.declaration === "mv" || field.declaration === "const") return false;
+	// The same stand-downs as the spelling loop: monomorphized clones and
+	// `#for`-generated members keep the template's spelling.
+	if (struct.source_type_args?.length) return false;
+	if (struct.spawn_of !== undefined || field.spawn_of !== undefined) return false;
+	return slot_requires_mv(field.type, status);
 }
 
 /**
@@ -256,6 +277,7 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	}
 
 	const values_length_before_fields = status.values.length;
+	const spelling_folded_fields = new Set<string>();
 	for (let decl of struct.fields) {
 		decl.scope = struct;
 		// A `ref` field would be a non-mv borrow stored in a struct with
@@ -332,9 +354,18 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// mv slot (transfer-on-store), so the field is accepted.
 		if (!struct.is_class && type_owns_heap(decl.type, status)) {
 			if (!struct.is_owning) {
+				// ONE error for the newcomer's first owning struct: the
+				// verdict names BOTH edits — the struct keyword, and the
+				// field spelling when the field still needs it — instead of
+				// the verdict plus a separate spelling error on the same
+				// line. The spelling loop stands down for this field.
+				spelling_folded_fields.add(decl.name);
+				const field_fix = field_spelling_needs_mv(decl, struct, status)
+					? ` and declare the field \`mv ${type_name(decl.type)} ${decl.name}\``
+					: "";
 				add_error(
 					status,
-					`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`mv struct ${struct.name}\`, or remove the field`,
+					`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`mv struct ${struct.name}\`${field_fix}, or remove the field`,
 					decl.start,
 				);
 			} else {
@@ -376,6 +407,9 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 	// fields (a const's value is fixed at its fresh initializer — no transfer
 	// ever spells).
 	for (const field of struct.fields) {
+		// Fields whose spelling is already folded into the Copyable verdict
+		// error above: one error, one fix.
+		if (spelling_folded_fields.has(field.name)) continue;
 		if (field.declaration === "mv" || field.declaration === "const") continue;
 		// A monomorphized clone stands down: the template was validated with
 		// its type params in scope, and a substituted `mv T` field whose

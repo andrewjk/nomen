@@ -688,6 +688,53 @@ independent copy.
 See [Move-Only Structs](#move-only-structs) for the field rules, the Copyable
 verifier, `Box<T>`, and the nullable lowerings.
 
+### Copies, Moves and Borrows
+
+The model is two rules. **Reads are free**: a bare argument, an element or
+field read, a capture from a temporary — none of them demand a decision, and
+the source stays valid. **Creating a new owner from an existing value is
+spelled**: a binding, an assignment, an owning-field store, or a `mv`
+parameter pass spells `mv` to transfer (the source is invalidated — using it
+again is a "used after mv" error) or `.copy()` to duplicate it. A fresh
+temporary — a constructor call, a literal, a call result, an element read —
+moves in implicitly: it exists only to initialize. The table is the per-type
+detail of those two rules (which types can copy at all, and what each
+operation does); the compiler's error messages name the fix whenever a silent
+copy of an owning value is rejected:
+
+| Type                                                | Binding / assignment — creates an owner                                                                            | Argument pass — a read unless the parameter spells `mv`                                            | Lambda capture — taken once, at creation                    | Destructure / element read                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Scalars (`int`, `float`, `bool`, `char`)            | copy                                                                                                               | copy                                                                                               | copied at capture — a later write to the source is not seen | copies out                                                                                          |
+| `string`                                            | move only: `mv t = s`, or `t = s.copy()`                                                                           | bare copies; a `mv string` parameter + `mv s` takes ownership                                      | moved — the donor is invalidated                            | needs `mv` / `.copy()` when the source outlives the read; `.at(i)` copies the element out           |
+| Copyable `struct` (value-only tuples, anon structs) | copies the fields                                                                                                  | copy                                                                                               | copied at capture                                           | binds views into the source                                                                         |
+| `mv struct`, `mv enum`, owning tuple                | move only: `mv`, or `.copy()` where the type has one                                                               | bare is a read-only borrow; `mv` transfers and invalidates the donor                               | moved — the donor is invalidated                            | owning fields need `mv` (or `.copy()` the base first); a temporary right-hand side moves implicitly |
+| `Box<T>`                                            | move only: `mv t = b`                                                                                              | no bare form — the parameter itself spells `mv` (transfer) or `ref` (alias)                        | moved — the donor is invalidated                            | — (field access is transparent through the box)                                                     |
+| Array (`T[]`)                                       | copy                                                                                                               | passes (the parameter is const — mutation needs `ref`)                                             | banned — arrays are heap-backed                             | `.at(i)` copies the element out                                                                     |
+| `ref` (an alias to a heap instance)                 | aliases a `Box<T>`/class held in a `var` — both names see writes; no ownership through it (`mv` the owner instead) | only into a `ref` parameter, `ref` spelled at the call site — writes land in the caller's variable | banned — borrowed references are not owned                  | —                                                                                                   |
+| `view` (a borrowed slice)                           | re-binds the borrow                                                                                                | only into a `view T` parameter — `.to_string()` materializes an owned copy for `T`                 | banned — views are borrowed slices                          | —                                                                                                   |
+| Closure / func value                                | moves implicitly — the donor is invalidated; no `mv` spelling                                                      | passes (the donor keeps it)                                                                        | moved — the donor is invalidated                            | —                                                                                                   |
+
+- **Bare passes are reads.** A bare argument never changes the caller's
+  ownership — the donor stays valid — so the pass column only differs from
+  binding where the pass isn't an ownership change. A plain parameter is the
+  callee-side `const`: a read-only slot that never takes the caller's value,
+  which is why a bare call site has no decision to make. The ownership
+  spelling is a binding rule because a `const`/`var` binding declares an
+  owner (it frees or replaces its state); `ref`/`view` bindings are the
+  borrow spellings, mirroring the parameter forms. That is what keeps reads
+  of owning values cheap: `f(config)`, `c.name`, and `xs.at(i)` never copy
+  or invalidate. `Box<T>` is the deliberate exception — a bare `Box`
+  parameter would be ambiguous about who owns the pointee, so it must spell
+  `mv` or `ref`.
+- **Destructuring without `mv` binds views** for value fields; owning fields
+  must spell `mv` (or read from a `.copy()`) — the same rule for named
+  structs, anonymous structs, and tuples (see [Destructuring](#destructuring)
+  and [Move Destructuring](#move-destructuring-and-literal-transfers)).
+- **Closures capture once, at creation** (see
+  [Anonymous Functions (Lambdas)](#anonymous-functions-lambdas)): owning
+  values move in and the donor is invalidated; arrays and views cannot be
+  captured at all.
+
 ### Generic Structs
 
 Structs can declare type parameters using `<T>` syntax. The compiler
@@ -2270,7 +2317,8 @@ mv struct Config {
 
 struct Wrapper {          // Error: 'Wrapper' cannot be Copyable — field 'c'
     var Config c          //   owns heap memory --> mark the struct
-}                         //   `mv struct Wrapper`, or remove the field
+}                         //   `mv struct Wrapper` and declare the field
+                          //   `mv Config c`, or remove the field
 ```
 
 The same verifier applies to enums: a bare `enum` with a case payload typed a

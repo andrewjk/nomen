@@ -67,6 +67,49 @@ struct Point {
 			const parsed = parse(input);
 			expect(without_fix(parsed.errors)).toEqual([]);
 		});
+
+		test("un-spelled owning field is ONE error naming both edits", () => {
+			// The verdict and the spelling rule must not report as two errors
+			// on the same line — the first owning struct names both fixes in
+			// one diagnostic, and the spelling loop stands down.
+			const input = `
+mv struct Box {
+  var int value
+}
+struct Holder {
+  var Box content
+}
+`;
+			const parsed = parse(input);
+			expect(without_fix(parsed.errors)).toEqual([
+				test_error(
+					input,
+					"'Holder' cannot be Copyable — field 'content' owns heap memory --> mark the struct `mv struct Holder` and declare the field `mv Box content`, or remove the field",
+					6,
+					3,
+				),
+			]);
+		});
+
+		test("after marking the struct mv, the spelling error carries the next fix", () => {
+			const input = `
+mv struct Box {
+  var int value
+}
+mv struct Holder {
+  var Box content
+}
+`;
+			const parsed = parse(input);
+			expect(without_fix(parsed.errors)).toEqual([
+				test_error(
+					input,
+					"field 'content' owns memory — declare it 'mv Box content' (plain 'var' is for non-owning types)",
+					6,
+					3,
+				),
+			]);
+		});
 	});
 
 	describe("trait-typed fields are not supported yet", () => {

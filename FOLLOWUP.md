@@ -581,6 +581,26 @@ synchronously rather than being skipped:
 These are semantic divergences, not crashes: a cross-compiled program runs
 deterministically, single-threaded.
 
+## JS backend: array assignment aliases, native deep-copies
+
+Recorded 2026-11-25. `var ys = xs` on an array binds a second name for the
+SAME JS array on the js backend — `ys.set(0, 99)` is visible through `xs`.
+The C/aarch64 backends deep-copy the element storage, so the same program
+prints the original value natively and the mutated one on js. The SPEC's
+"Copies, Moves and Borrows" table documents the native contract ("copy");
+the js mapping needs a copy-on-bind (or an alias model with shared-ownership
+checks) to match.
+
+## JS backend: scalar closure capture sees later writes
+
+Recorded 2026-11-25. The SPEC (and the native backends) copy scalars into a
+closure at capture — a later write to the donating local is not seen. The js
+backend's closure environment reads the live variable, so `var a = 1; var
+func (out int) f = () => a; a = 2; f()` returns 2 on js and 1 natively.
+Verified against the native build (prints 1) and `run --arch js` (prints 2).
+The fix is to snapshot captured scalars into the closure object at creation,
+matching the "capture is taken once" contract.
+
 ## Use Fira Code in the bitmap share-card fallback
 
 Recorded 2026-11-11. Share cards are rendered by Browser Run with Fira Code

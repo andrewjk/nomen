@@ -390,8 +390,8 @@ verified by probe (all rejected at compile time):
   assign mv field 'X' from another owner, use move with swap";
 - a mv-typed field on a bare `struct` is the Copyable-verifier error
   ("'S' cannot be Copyable — field 'f' owns heap memory --> mark the struct
-  `mv struct S`, or remove the field"), so no struct can carry owned state
-  silently.
+  `mv struct S` and declare the field `mv T f`, or remove the field"), so no
+  struct can carry owned state silently.
 
 The sanctioned escapes transfer ownership and are sound: `mv` (with swap)
 out of a field, `move_T`/`pop` out of a container, and `field = owned_local`,
