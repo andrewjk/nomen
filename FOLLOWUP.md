@@ -656,14 +656,6 @@ the META layout surface trivial. Revisit only if small-struct array density
 becomes a MEASURED problem (today's escape hatch is packing small fields
 into fixed arrays or explicit numeric fields).
 
-## `parse_let.ts` is unreferenced dead code
-
-Recorded 2026-11-25. `src/parse/parse_let.ts` has no importers — the
-statement dispatch in `parse_statement.ts` handles `let` inline (and the
-branch parsers build their own `LetNode`s). Safe to delete in a cleanup
-pass; left untouched rather than mixing an unrelated deletion into the
-arrow-introducer fix.
-
 ## Share-card tokenizer: replace Shiki on the server
 
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
