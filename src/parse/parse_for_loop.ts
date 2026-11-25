@@ -1,3 +1,4 @@
+import add_error from "../add_error.ts";
 import ForLoopNode from "../nodes/ForLoopNode.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import parse_expression from "./parse_expression.ts";
@@ -24,24 +25,30 @@ export default function parse_for_loop(status: ParseStatus) {
 	const value = peek_current(status) === "of" ? consume(status) : consume_name(status);
 	const item = new ValueNode(start, value);
 	// TODO: index option?
-	if (expect("of", status)) {
-		const list = parse_expression(status);
+	// `in` is THE muscle-memory typo (Python/JS/Rust all iterate with it):
+	// name it, then recover as `of` so the rest of the header parses clean.
+	if (peek_current(status) === "in") {
+		add_error(status, `'in' is not Nomen — did you mean 'of'?`, get_index(status));
+		accept("in", status);
+	} else {
+		expect("of", status);
+	}
+	const list = parse_expression(status);
 
-		let update;
-		if (accept(";", status)) {
-			update = parse_expression(status);
-		}
+	let update;
+	if (accept(";", status)) {
+		update = parse_expression(status);
+	}
 
-		if (expect("{", status)) {
-			const for_loop = new ForLoopNode(for_start, item, list, undefined, update);
-			for_loop.item_is_ref = item_is_ref;
+	if (expect("{", status)) {
+		const for_loop = new ForLoopNode(for_start, item, list, undefined, update);
+		for_loop.item_is_ref = item_is_ref;
 
-			status.stack.push(for_loop);
-			parse_statement(status);
-			expect("}", status);
-			status.stack.pop();
+		status.stack.push(for_loop);
+		parse_statement(status);
+		expect("}", status);
+		status.stack.pop();
 
-			add_to_parent(for_loop, "For loop", status);
-		}
+		add_to_parent(for_loop, "For loop", status);
 	}
 }

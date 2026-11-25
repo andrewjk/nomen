@@ -4,9 +4,11 @@ import PragmaForNode from "../nodes/PragmaForNode.ts";
 import parse_expression from "./parse_expression.ts";
 import parse_statement from "./parse_statement.ts";
 import type ParseStatus from "./ParseStatus.ts";
+import accept from "./utils/accept.ts";
 import consume from "./utils/consume.ts";
 import expect from "./utils/expect.ts";
 import get_index from "./utils/get_index.ts";
+import peek_current from "./utils/peek_current.ts";
 
 /**
  * `#for <binding> of <iterable> { ... }` — the compile-time field loop
@@ -35,7 +37,14 @@ export default function parse_pragma_for(status: ParseStatus): PragmaForNode {
 	const binding = binding_token ? binding_token.value : "_";
 	consume(status); // binding
 
-	expect("of", status);
+	// `in` is THE muscle-memory typo (Python/JS/Rust all iterate with it):
+	// name it, then recover as `of` so the rest of the header parses clean.
+	if (peek_current(status) === "in") {
+		add_error(status, `'in' is not Nomen — did you mean 'of'?`, get_index(status));
+		accept("in", status);
+	} else {
+		expect("of", status);
+	}
 	const iterable = parse_expression(status);
 
 	const block = new NestedBlockNode(get_index(status));

@@ -350,6 +350,17 @@ Console.write("\\{total(xs)}")
 
 // ERRORS
 describe("for loop errors", () => {
+	test("`in` names the `of` fix", () => {
+		const input = `
+for x in xs {
+  // ...
+}
+`;
+		const expected = [test_error(input, "'in' is not Nomen — did you mean 'of'?", 2, 7)];
+		const parsed = parse(input);
+		expect(parsed.errors).toEqual(expected);
+	});
+
 	test("string list", () => {
 		const input = `
 for x of "hi" {
