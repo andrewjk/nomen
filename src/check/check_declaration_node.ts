@@ -740,13 +740,14 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		if (is_ref_keyword) {
 			const slot_load = element_slot_load(decl.value, status);
 			if (slot_load && decl.type.name === "string") {
-				// A string slot borrow has no safe store convention (writing
+				// A string slot borrow has no safe store convention yet (writing
 				// through would need the strdup-and-free-old slot discipline,
-				// and repointing would strand the borrow) — the owning `get`
-				// remains the string read.
+				// and repointing would strand the borrow) — see FOLLOWUP.md,
+				// "`ref` element borrows of string values". The owning read and
+				// the container's `set` are the spellings until then.
 				add_error(
 					status,
-					`'ref' element borrows of string values are not supported — bind an owning copy with 'var'`,
+					`'ref' element borrows of string values are not supported — bind an owning copy with 'var', or write through the container ('set')`,
 					decl.start,
 				);
 			} else if (slot_load) {

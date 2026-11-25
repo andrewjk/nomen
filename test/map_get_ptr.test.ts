@@ -101,7 +101,7 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "map_elem_borrow_readonly", "9900", true);
 	});
 
-	test("string value element borrows are rejected", () => {
+	test("string value element borrows are rejected with the usable spellings", () => {
 		const parsed = parse_with_imports(`
 var m = Map<int, string>()
 m.set(1, "a")
@@ -111,6 +111,8 @@ Console.write(s)
 		expect(parsed.errors.some((e) => e.message.includes("string values are not supported"))).toBe(
 			true,
 		);
+		expect(parsed.errors.some((e) => e.message.includes("owning copy with 'var'"))).toBe(true);
+		expect(parsed.errors.some((e) => e.message.includes("container ('set')"))).toBe(true);
 	});
 
 	test("a set through the map after the lookup invalidates the borrow", () => {

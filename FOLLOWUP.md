@@ -411,6 +411,49 @@ controls at runtime) wants generation-checked views: reuse the
 view whose owner is gone is detected at use instead of pointing at freed
 state. Split out of the on_click work (2026-10-20).
 
+## `ref` element borrows of string values (the slot-store gap)
+
+`ref string s = list.at(i)` / `map.get_or_panic(k)` is rejected at the checker
+(`src/check/check_declaration_node.ts`, the string arm next to
+`element_slot_load`), and `element_type_is_borrowable`
+(`src/check/check_for_loop_node.ts`) excludes strings, so `for ref s in
+list_of_strings` binds owning copies too. Every other element type gets the
+slot alias (`slot_ptr` / `get_ptr`) — scalars and mv structs; strings are the
+one holdout.
+
+Why: a `List<string>` / `Map<K, string>` slot holds a fat, container-owned
+`nomen_string` (ptr + len) that the container destroys. A mutable alias must
+WRITE THROUGH (`*v = new_pair`), which needs the displaced pair reclaimed and
+the RHS owned — the strdup-and-free-old slot discipline, materialized
+temp-first so `s = s.replace_first(...)` doesn't free what the RHS just read.
+Repointing (`v = &rhs`, the C non-scalar fallback) would silently strand the
+alias, so it is not an option.
+
+The plan, if the gap is ever closed: it is the write-through arm, mirroring
+the machinery that already exists elsewhere —
+
+- C: the `for ref` loop-item store branch
+  (`src/build_c/build_assignment_node.ts`, the `loop_borrowed` arm) already
+  materializes the new pair into a temp and reclaims the displaced row; the
+  `ref_slot_vars` store branch right below it is the element-slot analogue
+  and excludes `string` explicitly. Extend that branch with the string store.
+- aarch64: reuse the old-pair capture the `for ref` item store and
+  `ref string` args already use (`build_aarch64/build_assignment_node.ts`,
+  `build_function_call_node.ts`), then write the pair into the slot.
+- Checker: drop the string arm above and let `string` through
+  `element_slot_load` / `element_type_is_borrowable`.
+
+Provenance is the EASY case here: `List`/`Map` slots own their elements
+(`push`/`set` dup), so "destroy the displaced pair" is unconditionally sound
+— unlike `ref string` params, where the callee cannot know whether the
+caller's slot was owned and the displaced value is deliberately leaked.
+
+`view` does not cover this: a `view string` is a byte slice of a string, not
+a view of a string element, and there is no other zero-copy read spelling
+today. Until someone needs in-place string element mutation (or `for ref`
+over strings), the owning `var` copy for reads and the container's `set` for
+writes are the spellings, and the rejection message names both.
+
 ## Bounds-contract discharge residuals (indexed reads and element borrows)
 
 `List.at`'s parameter contract (`i >= 0 && i < self.length`) is verified at

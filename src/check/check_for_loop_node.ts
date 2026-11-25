@@ -362,8 +362,9 @@ function body_references_or_nests_funcs(statements: BaseNode[], name: string): b
  * Whether an element type can take the element-borrow loop binding: a plain
  * (non-nullable, non-array, non-view) value struct with a concrete
  * (non-generic, non-class) layout — the shapes whose per-read copy is the
- * owning load the borrow elides. Strings have no safe store convention,
- * scalars have no copy to elide, and unresolved generics defer.
+ * owning load the borrow elides. Strings have no slot-store convention yet
+ * (FOLLOWUP.md, "`ref` element borrows of string values"), scalars have no
+ * copy to elide, and unresolved generics defer.
  */
 function element_type_is_borrowable(t: Type, status: CheckStatus): boolean {
 	if (!t.name || t.name === "string") return false;
