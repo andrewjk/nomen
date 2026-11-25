@@ -833,22 +833,3 @@ per-group sync hoist (~~+5%). The scaffolding (region/reduce planners, the
 comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
-
-## LSP: syntax errors at the end of a body produce no diagnostic
-
-Recorded 2026-11-25 while building `nomen lsp` (pre-existing in the old
-extension too). A parse error the parser reports at end-of-input — e.g. an
-unfinished `const q = 1 +` inside `main` — carries a `start` offset at the end
-of the COMBINED parse source (document + siblings + inlined System library,
-`lsp/src/source_map.ts`), so `diagnostics_for` in `lsp/src/features.ts`
-drops it as "outside the document" and the editor shows nothing. Either the
-parser should clamp end-of-input errors to the end of the user's segment, or
-the server should map an error past `doc_end` with no source segment to the
-document's last character.
-
-Related, also pre-existing: member completion after `.` falls back to the last
-clean analysis, whose offsets are from the PREVIOUS text. Typing `p.` on the
-last line of a body shifts the cursor past the old scope end, so `p` no
-longer resolves and completion is empty (`completions` in the same file).
-Shifting the lookup offset by the edit delta (or re-parsing with the dangling
-`.` stripped) would fix both.

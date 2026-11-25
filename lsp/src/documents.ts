@@ -42,9 +42,23 @@ export function get_analysis(document: TextDocument): DocumentAnalysis {
 	const cached = cache.get(key);
 	if (cached && cached.version === document.version) return cached;
 
+	const state = analyze_text(document, document.getText());
+	cache.set(key, state);
+	if (!state.fatal && !state.errors.some((e) => e.start >= 0 && e.start < state.map.doc_end)) {
+		clean_cache.set(key, state.analysis);
+	}
+	return state;
+}
+
+/**
+ * Parse and index `text` as if it were `document`'s contents, without
+ * caching — e.g. the document with a dangling `.` blanked out, so member
+ * completion can resolve the receiver at unchanged offsets.
+ */
+export function analyze_text(document: TextDocument, text: string): DocumentAnalysis {
 	const file_path = uri_to_path(document.uri);
 	const library = load_library(file_path);
-	const map = build_source_map(file_path, document.getText(), library);
+	const map = build_source_map(file_path, text, library);
 
 	let errors: CompileError[] = [];
 	let warnings: CompileError[] = [];
@@ -52,14 +66,14 @@ export function get_analysis(document: TextDocument): DocumentAnalysis {
 	let fatal: string | undefined;
 	try {
 		const parsed = parse(map.source.slice(0, map.user_end), library, file_path);
-		errors = parsed.errors;
+		errors = attribute_end_of_input(parsed.errors, map, text, file_path);
 		warnings = parsed.warnings;
 		analysis = analyze(parsed.root, map.source);
 	} catch (err) {
 		fatal = err instanceof Error ? err.message : String(err);
 	}
 
-	const state: DocumentAnalysis = {
+	return {
 		document,
 		uri: document.uri,
 		version: document.version,
@@ -69,11 +83,54 @@ export function get_analysis(document: TextDocument): DocumentAnalysis {
 		warnings,
 		fatal,
 	};
-	cache.set(key, state);
-	if (!fatal && !errors.some((e) => e.start >= 0 && e.start < map.doc_end)) {
-		clean_cache.set(key, analysis);
+}
+
+/**
+ * The parser reports an unterminated construct (`const q = 1 +`, a missing
+ * `}`) as an error at the end of its input. Here that input is the COMBINED
+ * source — document, sibling modules, inlined System library — so the error
+ * lands past the document and would be dropped as belonging to another file.
+ * Parse the document on its own to see whether the unterminated construct is
+ * its own; if so, report the error on the document's last character instead.
+ * (An end-of-input error the document alone doesn't reproduce comes from a
+ * sibling module and stays out of this document's diagnostics.)
+ */
+function attribute_end_of_input(
+	errors: CompileError[],
+	map: SourceMap,
+	text: string,
+	file_path: string,
+): CompileError[] {
+	const input_end = map.source.trimEnd().length;
+	const doc_end = text.trimEnd().length;
+	const at_end = (e: CompileError, end: number) => e.start >= end;
+	if (!errors.some((e) => at_end(e, input_end)) || doc_end === 0) return errors;
+
+	// Already the document's own end (no siblings or library appended).
+	const own = map.source.length === text.length;
+	let reproduced: CompileError | undefined;
+	if (!own) {
+		try {
+			reproduced = parse(text, undefined, file_path).errors.find((e) => at_end(e, doc_end));
+		} catch {
+			// A throwing doc-only parse tells us nothing; leave errors as they are.
+		}
+		if (!reproduced) return errors;
 	}
-	return state;
+
+	const last = doc_end - 1;
+	const out: CompileError[] = [];
+	let placed = false;
+	for (const e of errors) {
+		if (!at_end(e, own ? doc_end : input_end)) {
+			out.push(e);
+			continue;
+		}
+		if (placed) continue;
+		placed = true;
+		out.push({ ...e, message: `${e.message} (reached end of file)`, start: last });
+	}
+	return out;
 }
 
 /** The most recent error-free analysis of `document`, if there was one. */

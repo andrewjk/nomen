@@ -33,7 +33,7 @@ import {
 } from "./analysis.ts";
 import type { Analysis, Def, TypeInfo } from "./analysis.ts";
 import { load_format_options } from "./config.ts";
-import { get_analysis, get_fallback_analysis, uri_to_path } from "./documents.ts";
+import { analyze_text, get_analysis, get_fallback_analysis, uri_to_path } from "./documents.ts";
 import type { DocumentAnalysis } from "./documents.ts";
 import { map_offset } from "./source_map.ts";
 
@@ -184,17 +184,27 @@ export function completions(
 	if (!match) return [];
 	const chain = match[1].split(".").map((part) => part.trim());
 
-	// Typing `.` usually breaks the parse, so fall back to the last analysis
-	// of this document that came out clean.
-	const state = get_analysis(document);
-	let resolved = resolve_chain(state.analysis, chain, offset);
-	let analysis: Analysis | undefined = state.analysis;
-	if (!resolved) {
-		const fallback = get_fallback_analysis(document);
-		if (fallback) {
-			resolved = resolve_chain(fallback, chain, offset);
-			analysis = fallback;
-		}
+	// Typing `.` usually breaks the parse. Re-parse with that dangling `.`
+	// blanked to a space — same length, so every offset (the cursor's scope
+	// included) still lines up — and only then fall back to the last clean
+	// analysis, whose offsets predate the edit.
+	const text = document.getText();
+	const candidates: (() => Analysis | undefined)[] = [
+		() => get_analysis(document).analysis,
+		() => {
+			const dot = line_start + line.lastIndexOf(".");
+			const blanked = text.slice(0, dot) + " " + text.slice(dot + 1);
+			const state = analyze_text(document, blanked);
+			return state.fatal ? undefined : state.analysis;
+		},
+		() => get_fallback_analysis(document),
+	];
+	let resolved: ReturnType<typeof resolve_chain>;
+	let analysis: Analysis | undefined;
+	for (const candidate of candidates) {
+		analysis = candidate();
+		resolved = analysis ? resolve_chain(analysis, chain, offset) : undefined;
+		if (resolved) break;
 	}
 	if (!resolved || !analysis) return [];
 

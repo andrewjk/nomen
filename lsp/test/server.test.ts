@@ -246,6 +246,96 @@ test("formatting re-indents, and force-format applies via executeCommand", async
 	expect(cleared.diagnostics).toEqual([]);
 });
 
+/** Open `text` as `name` in its own temp folder (plus any sibling files) and
+ *  wait for its first diagnostics. */
+async function open_fresh(
+	name: string,
+	text: string,
+	siblings: Record<string, string> = {},
+): Promise<{ uri: string; diagnostics: any[] }> {
+	const folder = fs.mkdtempSync(path.join(os.tmpdir(), "nomen-lsp-fresh-"));
+	for (const [file_name, body] of Object.entries(siblings)) {
+		fs.writeFileSync(path.join(folder, file_name), body);
+	}
+	const fresh_uri = pathToFileURL(path.join(folder, name)).href;
+	client.notify("textDocument/didOpen", {
+		textDocument: { uri: fresh_uri, languageId: "nomen", version: 1, text },
+	});
+	const published = await client.wait_for(
+		"textDocument/publishDiagnostics",
+		(p) => p.uri === fresh_uri && p.version === 1,
+	);
+	return { uri: fresh_uri, diagnostics: published.diagnostics };
+}
+
+test("an unterminated statement at the end of a body is reported in the file", async () => {
+	// The parser reports this at the end of its (document + System library)
+	// input; the server attributes it to the document's last character.
+	const text = "import System\n\npub func main = (Init init) {\n\tconst q = 1 +\n}\n";
+	const { diagnostics } = await open_fresh("main.nm", text);
+	const eof = diagnostics.find((d: any) => d.message.includes("end of file"));
+	expect(eof).toBeDefined();
+	expect(eof.severity).toBe(1);
+	expect(eof.message).toBe("Expected token (reached end of file)");
+	expect(eof.range.start).toEqual({ line: 4, character: 0 });
+});
+
+test("a missing closing brace is reported in the file", async () => {
+	const text = "import System\n\npub func main = (Init init) {\n\tif true {\n\t\tconst a = 1\n}\n";
+	const { diagnostics } = await open_fresh("main.nm", text);
+	expect(diagnostics.map((d: any) => d.message)).toContain("Expected token (reached end of file)");
+});
+
+test("an unterminated sibling module is not blamed on the document", async () => {
+	const text = 'import System\n\npub func main = (Init init) {\n\tConsole.write("hi")\n}\n';
+	const { diagnostics } = await open_fresh("main.nm", text, {
+		"broken.nm": "func helper = () {\n\tconst q = 1 +\n",
+	});
+	expect(diagnostics.filter((d: any) => d.message.includes("end of file"))).toEqual([]);
+});
+
+const POINT = `struct Point {
+	var int x
+	var int y
+}
+
+pub func main = () {
+	var p = Point(2, 3)
+	p.x = 4
+}
+`;
+
+test("completion works on the last line of a body after an edit", async () => {
+	// The fallback analysis predates the edit; blanking the dangling `.`
+	// re-parses at the current offsets, so `p` still resolves past the old
+	// end of `main`.
+	const { uri: fresh_uri } = await open_fresh("main.nm", POINT);
+	client.notify("textDocument/didChange", {
+		textDocument: { uri: fresh_uri, version: 2 },
+		contentChanges: [
+			{
+				range: { start: { line: 7, character: 8 }, end: { line: 7, character: 8 } },
+				text: "\n\tp.",
+			},
+		],
+	});
+	const items = await client.request("textDocument/completion", {
+		textDocument: { uri: fresh_uri },
+		position: { line: 8, character: 3 },
+	});
+	expect(items.map((i: any) => i.label).sort()).toEqual(["x", "y"]);
+});
+
+test("completion works in a file that has never parsed cleanly", async () => {
+	const text = POINT.replace("\tp.x = 4\n", "\tp.x = 4\n\tp.\n");
+	const { uri: fresh_uri } = await open_fresh("main.nm", text);
+	const items = await client.request("textDocument/completion", {
+		textDocument: { uri: fresh_uri },
+		position: { line: 8, character: 3 },
+	});
+	expect(items.map((i: any) => i.label).sort()).toEqual(["x", "y"]);
+});
+
 test("diagnostics can be switched off via configuration", async () => {
 	client.settings = { diagnostics: "off" };
 	const before = client.notifications.length;
