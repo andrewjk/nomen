@@ -132,7 +132,6 @@ func load = (string path, out int ! LoadError, ParseError) {
     var int y
 }`,
 	"SPEC.md|Nomen Language Specification > Statements > For Loop|3": "const int[] items = [1, 2, 3]",
-	"SPEC.md|Nomen Language Specification > Statements > For Loop|3": "const int[] items = [1, 2, 3]",
 	"SPEC.md|Nomen Language Specification > Statements > Branch Values|0":
 		"var x = 1\nvar score = 95",
 	"SPEC.md|Nomen Language Specification > Expressions > String Operations|0":
