@@ -642,6 +642,19 @@ use?
 
 ## Share-card tokenizer: replace Shiki on the server
 
+## The undocumented `=>` branch-return form
+
+Recorded 2026-11-25 while landing the `let`/`->` symmetry. All three branch
+parsers (`parse_if_else`, `parse_match`, `parse_switch`) accept `=>` before a
+one-line branch and build a RETURN from the enclosing function (`is_return`
+→ `ReturnNode`) — so `if cond => expr` returns from the function, which is
+undocumented and sits oddly next to `=>`'s lambda meaning ("the lambda
+returns implicitly"). Kept untouched (out of scope for the symmetry change);
+when picked up, either document it as the spelled return-from-branch form or
+retire it with a named fix like `class`/`let` got. Related trivia:
+`src/parse/parse_let.ts` is unreferenced dead code (the statement dispatch
+handles `let` inline).
+
 Recorded 2026-11-11. `/s/<code>/card.png` tokenises with `nomen-shiki` on the
 server, but a card only needs the dark-plus token colours. If the Worker bundle
 needs to shrink further, a small Nomen-specific tokenizer could replace it.
