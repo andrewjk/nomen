@@ -51,10 +51,21 @@ field`mv T f``), the by-type × by-operation copy/move/borrow table it
 asked for is in the SPEC ("Copies, Moves and Borrows"), with every cell
 verified through the repo compiler, and the auto-infer-`mv` proposal was
 considered and **rejected** (the declaration is the ownership contract —
-`mv` stays spelled wherever a move happens). What remains below is the
-language-design and missing-features work. Line numbers in the remaining
-sections refer to the working tree as of the original review (before those
-fixes) and may have shifted.
+`mv` stays spelled wherever a move happens). §1.3 Results, errors and
+nullables is also resolved and removed below: the sibling-operator
+diagnostics landed (`??` on a result now renders composed sets readably —
+`Result<int, (A, B)>`, not the generated mono — and points at `!!`; `!!` on a
+nullable points at `??`), and returning a plain value against an explicit
+`out Result<T, E>` now teaches the lifting rule instead of a bare mismatch.
+The `T ! E` spelling question closed itself: `nomen format` canonicalizes
+`T ! E` by role, so the docs and the formatter agree. The match/catch
+flattening ask is folded into the §2 match-patterns row (settled there, not
+as a separate match-on-result sugar); the simple-result `??` leak was already
+fixed when re-verified, and the error-context gap was already tracked in §2.
+What remains below is the language-design and
+missing-features work. Line numbers in the remaining sections refer to the
+working tree as of the original review (before those fixes) and may have
+shifted.
 
 **How claims were verified.** Every "compiles" / "fails" statement below was
 run through the **repo** compiler (`npx tsx cli/src/index.ts check --in <file>`,
@@ -81,35 +92,6 @@ Priorities:
 ---
 
 ## 1. Language design consistency
-
-### 1.3 Results, errors and nullables (P1)
-
-The design is mostly coherent (`?.`/`??` mirror `!`/`!!`), with a few sharp
-edges:
-
-- **`match` vs `try … catch` split.** `match` arms must be `.ok`/`.fail`, and
-  `catch` arms must be error cases. So the natural "handle success and each
-  error in one place" needs `match` + nested `match` (`SPEC.md:1288-1295`,
-  `:1404-1421`, three levels deep for a composed set). Allow `match` on a
-  result to flatten error cases (`case .ok(v)`, `case .notfound`), or give
-  `try … catch` an optional `else`/`ok` arm. The old CLI's behaviour (it
-  accepts flattened arms) suggests users already expect this.
-- **Unit results can't use `try` in expression position**, while `T ! E` can.
-  This is reasonable, but the statement form differs (no `->` arms), and that
-  asymmetry is easy to trip on.
-- **Errors must be `error` enums**: no payload-carrying struct errors and no
-  `error` trait for context or messages. There's also no way to wrap a lower
-  error with context without declaring a composed set.
-- **Diagnostics that leak internals**: `x ?? 4` on a result reports
-  `'Result_int__AnonEnum_notfound__offline' is not nullable` (verified).
-  `a !! 3` on an `int?` reports "Variable 'a' may be null" rather than "use
-  `??` for nullables". Both should point at the sibling operator.
-- **Spelling**: SPEC writes `out T ! E` while `nomen format` writes `T !E`
-  (FOLLOWUP). Decide which and make the formatter and docs agree.
-- **Two ways to write a Result type**: `out Result<T,E>` (no lifting) vs
-  `out T ! E` (lifting) (`SPEC.md:1282`). The subtle semantic difference
-  between two spellings of the same type is a trap. Lift in both cases, or
-  reject `Result<…, error-enum>` in `out` position in favour of `!`.
 
 ### 1.4 Two spellings for one thing (P2)
 
@@ -222,6 +204,5 @@ Ordered by rough priority within each tier. "Effort" is a guess.
 
 ## 3. Suggested order of work
 
-1. Decide the result-`match` flattening question (§1.3) — it affects many
-   examples, so settle it before more docs are written.
-2. Work through the Tier 1 features in §2.
+1. Work through the Tier 1 features in §2 (the former §1.3 result-match
+   flattening ask rides on the match-patterns row).
