@@ -1,0 +1,9 @@
+node_modules/
+build/
+*.dylib
+*.so
+*.dll
+*.wasm
+log.html
+# The repo root ignores *.h; the generated parser headers are part of the grammar.
+!src/tree_sitter/*.h

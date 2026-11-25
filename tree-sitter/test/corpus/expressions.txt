@@ -1,0 +1,440 @@
+================================================================================
+Operators and precedence
+================================================================================
+
+const a = 1 + 2 * 3
+const b = flags & mask == mask
+const c = !a.b.c()
+const d = x ?? y && z
+const e = load(path)!
+const f = fetch("u") !! 0
+const g = x as float
+const h = -5
+const i = mv self.keys swap Buffer<int>()
+const j = a << 2 | b >> 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (number)
+      (binary_expression
+        (number)
+        (number))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (identifier))
+      (identifier)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (unary_expression
+      (call_expression
+        (member_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (field_identifier))
+        (argument_list))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (identifier)
+      (binary_expression
+        (identifier)
+        (identifier))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (propagate_expression
+      (call_expression
+        (identifier)
+        (argument_list
+          (identifier)))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (call_expression
+        (identifier)
+        (argument_list
+          (string
+            (string_content))))
+      (number)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (cast_expression
+      (identifier)
+      (type_identifier)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (unary_expression
+      (number)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (unary_expression
+        (member_expression
+          (self)
+          (field_identifier)))
+      (call_expression
+        (generic_name
+          (identifier)
+          (type_arguments
+            (type_identifier)))
+        (argument_list))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (number))
+      (binary_expression
+        (identifier)
+        (number)))))
+
+================================================================================
+Generic calls versus comparisons
+================================================================================
+
+var numbers = List<int>()
+const strs = Array<string>.with("x", 2)
+const name = name_of(List<List<int>>)
+const lt = a < b
+const both = i<n && x>y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (generic_name
+        (identifier)
+        (type_arguments
+          (type_identifier)))
+      (argument_list)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (member_expression
+        (generic_name
+          (identifier)
+          (type_arguments
+            (type_identifier)))
+        (field_identifier))
+      (argument_list
+        (string
+          (string_content))
+        (number))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (generic_name
+          (identifier)
+          (type_arguments
+            (generic_type
+              (type_identifier)
+              (type_arguments
+                (type_identifier))))))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (identifier)
+      (identifier)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (binary_expression
+        (identifier)
+        (identifier))
+      (binary_expression
+        (identifier)
+        (identifier)))))
+
+================================================================================
+Members and nullable chaining
+================================================================================
+
+const s = p?.score ?? 0
+const t = things._0
+const u = Text::Regex.test("a+b", "aaab")
+const v = Regex.match("[0-9]+", "abc")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (number)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (member_expression
+      (identifier)
+      (field_identifier)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (member_expression
+        (qualified_identifier
+          (identifier)
+          (identifier))
+        (field_identifier))
+      (argument_list
+        (string
+          (string_content))
+        (string
+          (string_content)))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (string
+          (string_content))
+        (string
+          (string_content))))))
+
+================================================================================
+Literals
+================================================================================
+
+const a = 42
+const b = 3.14
+const hex = 0xCAFE_F00D
+const oct = 0o377
+const bin = 0b1010_1010
+const big = 1_000_000
+const exp = 1.5e-3
+const ch = 'h'
+const nl = '\n'
+const flag = true
+var int? nothing = null
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (char))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (char))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (boolean))
+  (variable_declaration
+    (declaration_kind)
+    (nullable_type
+      (type_identifier))
+    (identifier)
+    (null)))
+
+================================================================================
+Array and struct literals
+================================================================================
+
+const numbers = [1, 2, 3]
+const empty = []
+const p = [ name = "bob", age = 5 ]
+const LayoutParams DEF = [ .. LayoutParams(), grow = 2 ]
+const t = [42, "answer"]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (array_literal
+      (number)
+      (number)
+      (number)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (array_literal))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (struct_literal
+      (field_initializer
+        (identifier)
+        (string
+          (string_content)))
+      (field_initializer
+        (identifier)
+        (number))))
+  (variable_declaration
+    (declaration_kind)
+    (type_identifier)
+    (identifier)
+    (struct_literal
+      (spread_element
+        (call_expression
+          (identifier)
+          (argument_list)))
+      (field_initializer
+        (identifier)
+        (number))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (array_literal
+      (number)
+      (string
+        (string_content)))))
+
+================================================================================
+Enum shorthand
+================================================================================
+
+var Direction dir = .east
+const shape = .rect(10, 20)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (type_identifier)
+    (identifier)
+    (enum_shorthand
+      (identifier)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (enum_shorthand
+        (identifier))
+      (argument_list
+        (number)
+        (number)))))
+
+================================================================================
+Ranges
+================================================================================
+
+const r = 0..10
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (range_expression
+      (number)
+      (number))))
+
+================================================================================
+Named and borrowed arguments
+================================================================================
+
+make_five(ref num)
+run_fetch(mv done)
+Nursery(timeout: 2000, mode: race)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (call_expression
+      (identifier)
+      (argument_list
+        (unary_expression
+          (identifier)))))
+  (expression_statement
+    (call_expression
+      (identifier)
+      (argument_list
+        (unary_expression
+          (identifier)))))
+  (expression_statement
+    (call_expression
+      (identifier)
+      (argument_list
+        (named_argument
+          (identifier)
+          (number))
+        (named_argument
+          (identifier)
+          (identifier))))))
+
+================================================================================
+Embed file
+================================================================================
+
+const banner = #embed_file("assets/banner.txt")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (hash_identifier)
+      (argument_list
+        (string
+          (string_content))))))

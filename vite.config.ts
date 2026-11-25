@@ -12,13 +12,23 @@ export default defineConfig({
 		// Generated backend artifacts (the JS backend's `main.mjs` output
 		// lives here too) are test data, not source. The site embeds the
 		// System library as a generated data module.
-		ignorePatterns: ["test/out/**", "site/src/lib/core-library.generated.ts"],
+		ignorePatterns: [
+			"test/out/**",
+			"site/src/lib/core-library.generated.ts",
+			// tree-sitter generate output
+			"tree-sitter/src/**",
+		],
 	},
 	fmt: {
 		printWidth: 100,
 		sortImports: true,
 		useTabs: true,
-		ignorePatterns: ["test/out/**", "site/src/lib/core-library.generated.ts"],
+		ignorePatterns: [
+			"test/out/**",
+			"site/src/lib/core-library.generated.ts",
+			// tree-sitter generate output
+			"tree-sitter/src/**",
+		],
 		overrides: [
 			{
 				files: ["*.json", "*.jsonc"],

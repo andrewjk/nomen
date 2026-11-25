@@ -1,0 +1,186 @@
+================================================================================
+Plain string
+================================================================================
+
+const s = "Hello, World!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (string
+      (string_content))))
+
+================================================================================
+Escapes
+================================================================================
+
+const s = "tab\tquote\" back\\ hex\x41"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (string
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence))))
+
+================================================================================
+Interpolation
+================================================================================
+
+Console.write("Hello, \{name}. You are \{age + 1} years old.")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (string
+          (string_content)
+          (interpolation
+            (identifier))
+          (string_content)
+          (interpolation
+            (binary_expression
+              (identifier)
+              (number)))
+          (string_content))))))
+
+================================================================================
+Format specs
+================================================================================
+
+Console.write("[\{label:>8}] [\{count:03}] [\{flags:x}] \{total:#,##0.00;(#,##0.00)}")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (string
+          (string_content)
+          (interpolation
+            (identifier)
+            (format_spec))
+          (string_content)
+          (interpolation
+            (identifier)
+            (format_spec))
+          (string_content)
+          (interpolation
+            (identifier)
+            (format_spec))
+          (string_content)
+          (interpolation
+            (identifier)
+            (format_spec)))))))
+
+================================================================================
+Namespace path in interpolation
+================================================================================
+
+Console.write("\{Text::Regex.test(x)}")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (string
+          (interpolation
+            (call_expression
+              (member_expression
+                (qualified_identifier
+                  (identifier)
+                  (identifier))
+                (field_identifier))
+              (argument_list
+                (identifier)))))))))
+
+================================================================================
+Nested string in interpolation
+================================================================================
+
+Console.write("a \{join(", ", xs)} b")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (string
+          (string_content)
+          (interpolation
+            (call_expression
+              (identifier)
+              (argument_list
+                (string
+                  (string_content))
+                (identifier))))
+          (string_content))))))
+
+================================================================================
+Multi-line string
+================================================================================
+
+const multi =
+	"Line 1
+	"Line 2
+const after = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (string
+      (string_content)
+      (string_continuation)
+      (string_content)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number)))
+
+================================================================================
+Braces in a string
+================================================================================
+
+const s = "{not interpolation}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (string
+      (string_content))))

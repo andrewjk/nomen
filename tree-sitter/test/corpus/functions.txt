@@ -1,0 +1,327 @@
+================================================================================
+Function forms
+================================================================================
+
+pub func greet = (string name = "world") {
+	Console.write("Hello, \{name}.")
+}
+
+pub func double = (int x, out int) => x * 2
+
+foreign func atoi = (string s, out int)
+
+unsafe func decode = (ref self, int i, out char) {
+	return (self as ptr char)[i]
+}
+
+func default_of<T> = (T seed, out T) {
+	return T()
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (modifier)
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier)
+        (string
+          (string_content))))
+    (block
+      (expression_statement
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (string
+              (string_content)
+              (interpolation
+                (identifier))
+              (string_content)))))))
+  (function_declaration
+    (modifier)
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)))
+    (expression_body
+      (binary_expression
+        (identifier)
+        (number))))
+  (function_declaration
+    (modifier)
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier))))
+  (function_declaration
+    (modifier)
+    (identifier)
+    (parameter_list
+      (self_parameter)
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)))
+    (block
+      (return_statement
+        (index_expression
+          (parenthesized_expression
+            (cast_expression
+              (self)
+              (pointer_type
+                (type_identifier))))
+          (identifier)))))
+  (function_declaration
+    (identifier)
+    (type_parameters
+      (type_parameter
+        (type_identifier)))
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)))
+    (block
+      (return_statement
+        (call_expression
+          (identifier)
+          (argument_list))))))
+
+================================================================================
+Parameters
+================================================================================
+
+func f = (
+	ref Item item { stats },
+	ref self {},
+	...int numbers,
+	...[int, int] pairs,
+	type T,
+	int i: i >= 0 && i < source.length,
+	mv out Tagged,
+)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (reference_type
+          (type_identifier))
+        (identifier)
+        (field_set
+          (identifier)))
+      (self_parameter
+        (field_set))
+      (variadic_parameter
+        (type_identifier)
+        (identifier))
+      (variadic_parameter
+        (tuple_type
+          (type_identifier)
+          (type_identifier))
+        (identifier))
+      (type_parameter_declaration
+        (identifier))
+      (parameter
+        (type_identifier)
+        (identifier)
+        (constraint
+          (binary_expression
+            (binary_expression
+              (identifier)
+              (number))
+            (binary_expression
+              (identifier)
+              (member_expression
+                (identifier)
+                (field_identifier))))))
+      (return_parameter
+        (type_identifier)))))
+
+================================================================================
+Result return types
+================================================================================
+
+func load = (string path, out int ! LoadError, ParseError) { }
+func close = (string path, out ! CloseError) { }
+func alloc = (ref self {}, int size, out int: out >= size) { }
+func fetch = (string url, out int ! [.notfound, .offline]) { }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)
+        (error_types
+          (type_identifier)
+          (type_identifier))))
+    (block))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (error_types
+          (type_identifier))))
+    (block))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (self_parameter
+        (field_set))
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)
+        (constraint
+          (binary_expression
+            (identifier)
+            (identifier)))))
+    (block))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)
+        (error_types
+          (anonymous_enum_type
+            (enum_variant
+              (identifier))
+            (enum_variant
+              (identifier))))))
+    (block)))
+
+================================================================================
+Function types
+================================================================================
+
+func apply = (func (int, out int) mapper, func? (out int) callback, out func (out int)) { }
+var func (func (out int), out int) g = run
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (function_type
+          (type_identifier)
+          (return_parameter
+            (type_identifier)))
+        (identifier))
+      (parameter
+        (function_type
+          (return_parameter
+            (type_identifier)))
+        (identifier))
+      (return_parameter
+        (function_type
+          (return_parameter
+            (type_identifier)))))
+    (block))
+  (variable_declaration
+    (declaration_kind)
+    (function_type
+      (function_type
+        (return_parameter
+          (type_identifier)))
+      (return_parameter
+        (type_identifier)))
+    (identifier)
+    (identifier)))
+
+================================================================================
+Lambdas
+================================================================================
+
+var func (int, int, out int) adder = (a, b, out int) => a + b
+var three = () => 3
+var log = func (int x) {
+	Console.write("\{x}")
+}
+apply(() => a + b)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (function_type
+      (type_identifier)
+      (type_identifier)
+      (return_parameter
+        (type_identifier)))
+    (identifier)
+    (lambda_expression
+      (lambda_parameters
+        (lambda_parameter
+          (identifier))
+        (lambda_parameter
+          (identifier))
+        (return_parameter
+          (type_identifier)))
+      (binary_expression
+        (identifier)
+        (identifier))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (lambda_expression
+      (lambda_parameters)
+      (number)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (function_literal
+      (parameter_list
+        (parameter
+          (type_identifier)
+          (identifier)))
+      (block
+        (expression_statement
+          (call_expression
+            (member_expression
+              (identifier)
+              (field_identifier))
+            (argument_list
+              (string
+                (interpolation
+                  (identifier)))))))))
+  (expression_statement
+    (call_expression
+      (identifier)
+      (argument_list
+        (lambda_expression
+          (lambda_parameters)
+          (binary_expression
+            (identifier)
+            (identifier)))))))

@@ -1,0 +1,82 @@
+================================================================================
+Raw block per target
+================================================================================
+
+func get = (self, int i, out uint32) {
+	#if META.arch == "c" {
+		#raw {
+			return ((unsigned int*)(unsigned long long)self->data)[i];
+		}
+	}
+	#if META.arch == "aarch64" {
+		#raw {
+			ldr x0, [x19, #8]
+			lsl x1, x1, #2
+		}
+	}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (self_parameter)
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)))
+    (block
+      (pragma_if
+        (binary_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (string
+            (string_content)))
+        (block
+          (raw_block
+            (raw_body))))
+      (pragma_if
+        (binary_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (string
+            (string_content)))
+        (block
+          (raw_block
+            (raw_body)))))))
+
+================================================================================
+Raw C block with braces in strings and comments
+================================================================================
+
+#raw("c", "file") {
+	// release it { later
+	static const char *enc = "v@:@@{NSSize=dd}";
+	/* } */
+	if (x) { y(); }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (raw_block
+    (string)
+    (string)
+    (raw_body)))
+
+================================================================================
+Empty raw block
+================================================================================
+
+#raw("file") {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (raw_block
+    (string)))

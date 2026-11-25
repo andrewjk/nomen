@@ -1,0 +1,208 @@
+================================================================================
+Pragma if
+================================================================================
+
+#if META.arch == "c" && META.platform == "macos" {
+	Console.write_line("portable path")
+} else {
+	Console.write_line("not c")
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (pragma_if
+    (binary_expression
+      (binary_expression
+        (member_expression
+          (identifier)
+          (field_identifier))
+        (string
+          (string_content)))
+      (binary_expression
+        (member_expression
+          (identifier)
+          (field_identifier))
+        (string
+          (string_content))))
+    (block
+      (expression_statement
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (string
+              (string_content))))))
+    (block
+      (expression_statement
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (string
+              (string_content))))))))
+
+================================================================================
+Pragma switch
+================================================================================
+
+#switch {
+	case META.arch == "aarch64" -> Console.write_line("arm")
+	case META.arch == "c" { Console.write_line("c target") }
+} else {
+	Console.write_line("other")
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (pragma_switch
+    (pragma_case
+      (binary_expression
+        (member_expression
+          (identifier)
+          (field_identifier))
+        (string
+          (string_content)))
+      (arrow_branch
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (string
+              (string_content))))))
+    (pragma_case
+      (binary_expression
+        (member_expression
+          (identifier)
+          (field_identifier))
+        (string
+          (string_content)))
+      (block
+        (expression_statement
+          (call_expression
+            (member_expression
+              (identifier)
+              (field_identifier))
+            (argument_list
+              (string
+                (string_content)))))))
+    (block
+      (expression_statement
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (string
+              (string_content))))))))
+
+================================================================================
+Pragma for and error
+================================================================================
+
+#for field of META.info(Point).fields {
+	#error "field \{field.name} is not allowed here"
+}
+
+#for i of 0..4 {
+	pub func slot_#{i} = (out int) {
+		return #i * 100
+	}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (pragma_for
+    (identifier)
+    (member_expression
+      (call_expression
+        (member_expression
+          (identifier)
+          (field_identifier))
+        (argument_list
+          (identifier)))
+      (field_identifier))
+    (block
+      (pragma_error
+        (string
+          (string_content)
+          (interpolation
+            (member_expression
+              (identifier)
+              (field_identifier)))
+          (string_content)))))
+  (pragma_for
+    (identifier)
+    (range_expression
+      (number)
+      (number))
+    (block
+      (function_declaration
+        (modifier)
+        (template_name
+          (template_text)
+          (splice
+            (identifier)))
+        (parameter_list
+          (return_parameter
+            (type_identifier)))
+        (block
+          (return_statement
+            (binary_expression
+              (hash_identifier)
+              (number))))))))
+
+================================================================================
+Pragma for over enum cases
+================================================================================
+
+mv enum Mirror {
+	#for c of META.info(Shape).cases {
+		case #{c.name}(#{c.params[0]}, #{c.params[1]})
+	}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    (type_identifier)
+    (block
+      (pragma_for
+        (identifier)
+        (member_expression
+          (call_expression
+            (member_expression
+              (identifier)
+              (field_identifier))
+            (argument_list
+              (identifier)))
+          (field_identifier))
+        (block
+          (enum_case
+            (template_name
+              (splice
+                (member_expression
+                  (identifier)
+                  (field_identifier))))
+            (case_parameter
+              (template_name
+                (splice
+                  (index_expression
+                    (member_expression
+                      (identifier)
+                      (field_identifier))
+                    (number)))))
+            (case_parameter
+              (template_name
+                (splice
+                  (index_expression
+                    (member_expression
+                      (identifier)
+                      (field_identifier))
+                    (number)))))))))))

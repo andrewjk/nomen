@@ -1,0 +1,36 @@
+{
+	"name": "tree-sitter-nomen",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Tree-sitter grammar for the Nomen programming language",
+	"keywords": [
+		"nomen",
+		"parser",
+		"tree-sitter"
+	],
+	"license": "ISC",
+	"files": [
+		"grammar.js",
+		"tree-sitter.json",
+		"src/**",
+		"queries/**"
+	],
+	"main": "bindings/node",
+	"scripts": {
+		"generate": "tree-sitter generate",
+		"test": "tree-sitter test",
+		"parse-all": "node scripts/parse-all.mjs"
+	},
+	"devDependencies": {
+		"tree-sitter-cli": "0.27.2"
+	},
+	"tree-sitter": [
+		{
+			"scope": "source.nomen",
+			"file-types": [
+				"nm"
+			],
+			"injection-regex": "^(nomen|nm)$"
+		}
+	]
+}

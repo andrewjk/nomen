@@ -1,0 +1,442 @@
+================================================================================
+If, else and arrow branches
+================================================================================
+
+if x > 0 {
+	Console.write("positive")
+} else {
+	Console.write("zero")
+}
+
+const result = if x > 0 -> "positive"
+               else -> "zero"
+
+const grade = if score > 90 {
+	let "A"
+} else {
+	let "B"
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (if_expression
+      (binary_expression
+        (identifier)
+        (number))
+      (block
+        (expression_statement
+          (call_expression
+            (member_expression
+              (identifier)
+              (field_identifier))
+            (argument_list
+              (string
+                (string_content))))))
+      (block
+        (expression_statement
+          (call_expression
+            (member_expression
+              (identifier)
+              (field_identifier))
+            (argument_list
+              (string
+                (string_content))))))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (if_expression
+      (binary_expression
+        (identifier)
+        (number))
+      (arrow_branch
+        (string
+          (string_content)))
+      (arrow_branch
+        (string
+          (string_content)))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (if_expression
+      (binary_expression
+        (identifier)
+        (number))
+      (block
+        (let_statement
+          (string
+            (string_content))))
+      (block
+        (let_statement
+          (string
+            (string_content)))))))
+
+================================================================================
+Switch
+================================================================================
+
+switch {
+	case x > 100 -> Console.write("big")
+	case x > 10 {
+		Console.write("medium")
+	}
+	case _ -> Console.write("small")
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (switch_expression
+      (match_body
+        (match_arm
+          (binary_expression
+            (identifier)
+            (number))
+          (arrow_branch
+            (call_expression
+              (member_expression
+                (identifier)
+                (field_identifier))
+              (argument_list
+                (string
+                  (string_content))))))
+        (match_arm
+          (binary_expression
+            (identifier)
+            (number))
+          (block
+            (expression_statement
+              (call_expression
+                (member_expression
+                  (identifier)
+                  (field_identifier))
+                (argument_list
+                  (string
+                    (string_content)))))))
+        (match_arm
+          (identifier)
+          (arrow_branch
+            (call_expression
+              (member_expression
+                (identifier)
+                (field_identifier))
+              (argument_list
+                (string
+                  (string_content))))))))))
+
+================================================================================
+Match
+================================================================================
+
+const label = match result {
+	case .ok -> "it is ok"
+	case .fail(code) -> "error \{code}"
+	case Direction.north, Direction.south -> "ns"
+	case _ -> "other"
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (match_expression
+      (identifier)
+      (match_body
+        (match_arm
+          (enum_shorthand
+            (identifier))
+          (arrow_branch
+            (string
+              (string_content))))
+        (match_arm
+          (call_expression
+            (enum_shorthand
+              (identifier))
+            (argument_list
+              (identifier)))
+          (arrow_branch
+            (string
+              (string_content)
+              (interpolation
+                (identifier)))))
+        (match_arm
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (arrow_branch
+            (string
+              (string_content))))
+        (match_arm
+          (identifier)
+          (arrow_branch
+            (string
+              (string_content))))))))
+
+================================================================================
+Try and catch
+================================================================================
+
+func describe = (string url, out string) {
+	return try fetch(url) catch {
+		case .notfound -> "missing"
+		case LoadError.timeout -> "slow"
+	}
+}
+
+try close("a") catch {
+	case .denied { return }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)))
+    (block
+      (return_statement
+        (try_expression
+          (call_expression
+            (identifier)
+            (argument_list
+              (identifier)))
+          (match_body
+            (match_arm
+              (enum_shorthand
+                (identifier))
+              (arrow_branch
+                (string
+                  (string_content))))
+            (match_arm
+              (member_expression
+                (identifier)
+                (field_identifier))
+              (arrow_branch
+                (string
+                  (string_content)))))))))
+  (expression_statement
+    (try_expression
+      (call_expression
+        (identifier)
+        (argument_list
+          (string
+            (string_content))))
+      (match_body
+        (match_arm
+          (enum_shorthand
+            (identifier))
+          (block
+            (return_statement)))))))
+
+================================================================================
+Loops
+================================================================================
+
+while x < 10; x += 1 {
+	if done {
+		break
+	}
+	continue
+}
+
+for ref p of points {
+	p.x = 1
+}
+
+for item of items; total += item { }
+
+for i of 0..10 { }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (while_statement
+    (binary_expression
+      (identifier)
+      (number))
+    (assignment_statement
+      (identifier)
+      (number))
+    (block
+      (expression_statement
+        (if_expression
+          (identifier)
+          (block
+            (break_statement))))
+      (continue_statement)))
+  (for_statement
+    (identifier)
+    (identifier)
+    (block
+      (assignment_statement
+        (member_expression
+          (identifier)
+          (field_identifier))
+        (number))))
+  (for_statement
+    (identifier)
+    (identifier)
+    (assignment_statement
+      (identifier)
+      (identifier))
+    (block))
+  (for_statement
+    (identifier)
+    (range_expression
+      (number)
+      (number))
+    (block)))
+
+================================================================================
+Assignment
+================================================================================
+
+x = 5
+total += 1
+self.cap = size
+p[i] = v
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (assignment_statement
+    (identifier)
+    (number))
+  (assignment_statement
+    (identifier)
+    (number))
+  (assignment_statement
+    (member_expression
+      (self)
+      (field_identifier))
+    (identifier))
+  (assignment_statement
+    (index_expression
+      (identifier)
+      (identifier))
+    (identifier)))
+
+================================================================================
+Async and unsafe blocks
+================================================================================
+
+async {
+	Thread(fetch_one(done, "A")).start()
+}
+
+async(mode: race, timeout: 500) { }
+
+async pool = Nursery(timeout: 2000) {
+	pool.start(Thread(work()))
+}
+
+unsafe {
+	var p = 0
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (async_block
+    (block
+      (expression_statement
+        (call_expression
+          (member_expression
+            (call_expression
+              (identifier)
+              (argument_list
+                (call_expression
+                  (identifier)
+                  (argument_list
+                    (identifier)
+                    (string
+                      (string_content))))))
+            (field_identifier))
+          (argument_list)))))
+  (async_block
+    (argument_list
+      (named_argument
+        (identifier)
+        (identifier))
+      (named_argument
+        (identifier)
+        (number)))
+    (block))
+  (async_block
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (named_argument
+          (identifier)
+          (number))))
+    (block
+      (expression_statement
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (call_expression
+              (identifier)
+              (argument_list
+                (call_expression
+                  (identifier)
+                  (argument_list)))))))))
+  (unsafe_block
+    (block
+      (variable_declaration
+        (declaration_kind)
+        (identifier)
+        (number)))))
+
+================================================================================
+Nested block
+================================================================================
+
+{
+	var temp = "x"
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block
+    (variable_declaration
+      (declaration_kind)
+      (identifier)
+      (string
+        (string_content)))))
+
+================================================================================
+Panic and todo
+================================================================================
+
+panic("something went wrong")
+todo("not implemented yet")
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (expression_statement
+    (panic_expression
+      (argument_list
+        (string
+          (string_content)))))
+  (expression_statement
+    (panic_expression
+      (argument_list
+        (string
+          (string_content))))))

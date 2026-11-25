@@ -1,0 +1,85 @@
+================================================================================
+Types
+================================================================================
+
+var int[] a
+var int[10] b
+var int[][] grid
+var [int, bool][] flags
+var Array<[int, bool]> same
+var [.ok(int), .error(string)] result
+var Res.ok ok
+var System::Controls::Size size
+var ptr uint64 p
+var func? (int) close_node = null
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (array_type
+      (type_identifier))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (array_type
+      (type_identifier)
+      (number))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (array_type
+      (array_type
+        (type_identifier)))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (array_type
+      (tuple_type
+        (type_identifier)
+        (type_identifier)))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (tuple_type
+          (type_identifier)
+          (type_identifier))))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (anonymous_enum_type
+      (enum_variant
+        (identifier)
+        (type_identifier))
+      (enum_variant
+        (identifier)
+        (type_identifier)))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (scoped_type
+      (type_identifier)
+      (identifier))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (qualified_type
+      (identifier)
+      (identifier)
+      (identifier))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (pointer_type
+      (type_identifier))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (function_type
+      (type_identifier))
+    (identifier)
+    (null)))

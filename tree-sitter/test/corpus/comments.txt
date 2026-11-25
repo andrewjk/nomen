@@ -1,0 +1,52 @@
+================================================================================
+Line and block comments
+================================================================================
+
+// a line comment
+/* a block
+   /* nested */ comment */
+const x = 1 // trailing
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (line_comment)
+  (block_comment)
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (number))
+  (line_comment))
+
+================================================================================
+Doc comment
+================================================================================
+
+/**
+ * Returns the sum of two ints
+ **/
+pub func add = (int a, int b, out int) {
+	return a + b
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block_comment)
+  (function_declaration
+    (modifier)
+    (identifier)
+    (parameter_list
+      (parameter
+        (type_identifier)
+        (identifier))
+      (parameter
+        (type_identifier)
+        (identifier))
+      (return_parameter
+        (type_identifier)))
+    (block
+      (return_statement
+        (binary_expression
+          (identifier)
+          (identifier))))))

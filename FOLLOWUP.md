@@ -833,3 +833,28 @@ per-group sync hoist (~~+5%). The scaffolding (region/reduce planners, the
 comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
+
+## tree-sitter grammar: remaining gaps (2026-11-25)
+
+The tree-sitter grammar (`tree-sitter/`) parses every `.nm` file in
+`core/`, `demos/` and `bench/` and every Nomen block in README.md/SPEC.md
+cleanly (`npm run parse-all` there), except two doc blocks that are not
+code: SPEC.md's `ref int` / `ref Node?` type list (under "Reference Types")
+and the `async nursery { … }` placeholder block (under "Nursery"). README.md's
+"Value Types" block (a bare list of type names) parses but is flagged as
+value statements. Labelling those three fences ```text would make them
+explicit non-code; their `test/spec`/`test/readme` coverage would need
+checking first.
+
+Not done in the grammar itself:
+
+- Newlines are whitespace, so a line starting with `-`, `(` or `[` after a
+  complete expression continues it. A newline-aware external scanner
+  (automatic statement terminators, like tree-sitter-swift) would fix this if
+  in-progress edits ever produce bad trees in practice.
+- Helix (first-match-wins) colours member calls as properties; a
+  Helix-specific `highlights.scm` (and Helix-style `indents.scm`) and a
+  ready-made Zed extension folder are not shipped — the README gives setup
+  snippets instead.
+- `#raw` injection only follows an `#if`/`#switch` arm when the raw block is
+  a direct child of the arm's body.

@@ -1,0 +1,549 @@
+================================================================================
+Import
+================================================================================
+
+import System
+import System::Controls
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_declaration
+    (import_path
+      (identifier)))
+  (import_declaration
+    (import_path
+      (identifier)
+      (identifier))))
+
+================================================================================
+Struct with fields and methods
+================================================================================
+
+pub struct Point: Printable {
+	pub var int x
+	readonly count = 0
+	const view string label = "p"
+
+	pub func add = (self, Point other, out Point) {
+		return Point(self.x + other.x, self.y + other.y)
+	}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (modifier)
+    (type_identifier)
+    (trait_list
+      (type_identifier))
+    (block
+      (variable_declaration
+        (modifier)
+        (declaration_kind)
+        (type_identifier)
+        (identifier))
+      (variable_declaration
+        (declaration_kind)
+        (identifier)
+        (number))
+      (variable_declaration
+        (declaration_kind)
+        (type_identifier)
+        (identifier)
+        (string
+          (string_content)))
+      (function_declaration
+        (modifier)
+        (identifier)
+        (parameter_list
+          (self_parameter)
+          (parameter
+            (type_identifier)
+            (identifier))
+          (return_parameter
+            (type_identifier)))
+        (block
+          (return_statement
+            (call_expression
+              (identifier)
+              (argument_list
+                (binary_expression
+                  (member_expression
+                    (self)
+                    (field_identifier))
+                  (member_expression
+                    (identifier)
+                    (field_identifier)))
+                (binary_expression
+                  (member_expression
+                    (self)
+                    (field_identifier))
+                  (member_expression
+                    (identifier)
+                    (field_identifier)))))))))))
+
+================================================================================
+Move-only generic struct
+================================================================================
+
+pub mv struct List<T> {
+	mv Box<Node>? next
+	internal var uint64 data = 0
+
+	func #init = (ref self, int x) { }
+	func #destroy = (self) { }
+	#handle = () { }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (modifier)
+    (type_identifier)
+    (type_parameters
+      (type_parameter
+        (type_identifier)))
+    (block
+      (variable_declaration
+        (declaration_kind)
+        (nullable_type
+          (generic_type
+            (type_identifier)
+            (type_arguments
+              (type_identifier))))
+        (identifier))
+      (variable_declaration
+        (modifier)
+        (declaration_kind)
+        (type_identifier)
+        (identifier)
+        (number))
+      (function_declaration
+        (hash_identifier)
+        (parameter_list
+          (self_parameter)
+          (parameter
+            (type_identifier)
+            (identifier)))
+        (block))
+      (function_declaration
+        (hash_identifier)
+        (parameter_list
+          (self_parameter))
+        (block))
+      (hook_declaration
+        (hash_identifier)
+        (parameter_list)
+        (block)))))
+
+================================================================================
+Field constraints
+================================================================================
+
+struct Config {
+	var int retries: retries >= 0 = 3
+	var int x: x > 0
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (type_identifier)
+    (block
+      (variable_declaration
+        (declaration_kind)
+        (type_identifier)
+        (identifier)
+        (constraint
+          (binary_expression
+            (identifier)
+            (number)))
+        (number))
+      (variable_declaration
+        (declaration_kind)
+        (type_identifier)
+        (identifier)
+        (constraint
+          (binary_expression
+            (identifier)
+            (number)))))))
+
+================================================================================
+Enum, error and bitset
+================================================================================
+
+pub checked enum Result<T, E> {
+	case ok(T value)
+	case fail(E err)
+}
+
+mv error ParseError {
+	case syntax(string message)
+}
+
+pub bitset Permissions {
+	case read
+	case todo
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    (modifier)
+    (modifier)
+    (type_identifier)
+    (type_parameters
+      (type_parameter
+        (type_identifier))
+      (type_parameter
+        (type_identifier)))
+    (block
+      (enum_case
+        (identifier)
+        (case_parameter
+          (type_identifier)
+          (identifier)))
+      (enum_case
+        (identifier)
+        (case_parameter
+          (type_identifier)
+          (identifier)))))
+  (enum_declaration
+    (type_identifier)
+    (block
+      (enum_case
+        (identifier)
+        (case_parameter
+          (type_identifier)
+          (identifier)))))
+  (enum_declaration
+    (modifier)
+    (type_identifier)
+    (block
+      (enum_case
+        (identifier))
+      (enum_case
+        (identifier)))))
+
+================================================================================
+Trait and extend
+================================================================================
+
+pub trait Addable: Equatable {
+	func add = (self, #self other, out #self)
+}
+
+extend struct Circle : Describable, Named {
+	func to_string = (self, out string) => "Circle"
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_declaration
+    (modifier)
+    (type_identifier)
+    (trait_list
+      (type_identifier))
+    (block
+      (function_declaration
+        (identifier)
+        (parameter_list
+          (self_parameter)
+          (parameter
+            (hash_identifier)
+            (identifier))
+          (return_parameter
+            (hash_identifier))))))
+  (extend_declaration
+    (type_identifier)
+    (trait_list
+      (type_identifier)
+      (type_identifier))
+    (block
+      (function_declaration
+        (identifier)
+        (parameter_list
+          (self_parameter)
+          (return_parameter
+            (type_identifier)))
+        (expression_body
+          (string
+            (string_content)))))))
+
+================================================================================
+Attributes
+================================================================================
+
+@sql_table("users")
+pub mv struct User {
+	@rename("user_name"), @sql_type("VARCHAR")
+	mv string user_name
+	@deprecated
+	var int age
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (attribute_list
+      (attribute
+        (identifier)
+        (argument_list
+          (string
+            (string_content)))))
+    (modifier)
+    (type_identifier)
+    (block
+      (variable_declaration
+        (attribute_list
+          (attribute
+            (identifier)
+            (argument_list
+              (string
+                (string_content))))
+          (attribute
+            (identifier)
+            (argument_list
+              (string
+                (string_content)))))
+        (declaration_kind)
+        (type_identifier)
+        (identifier))
+      (variable_declaration
+        (attribute_list
+          (attribute
+            (identifier)))
+        (declaration_kind)
+        (type_identifier)
+        (identifier)))))
+
+================================================================================
+Variable declarations
+================================================================================
+
+const name = "Alice"
+var uint count = 10
+var int? x = null
+mv c2 = c
+ref Box<Node> q = p
+view hi = greeting.slice(0, 5)
+var view cursor = greeting.slice(0, 3)
+var int x: x > 5 = 10
+var [int, string] things
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (string
+      (string_content)))
+  (variable_declaration
+    (declaration_kind)
+    (type_identifier)
+    (identifier)
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (nullable_type
+      (type_identifier))
+    (identifier)
+    (null))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)))
+    (identifier)
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (number)
+        (number))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (member_expression
+        (identifier)
+        (field_identifier))
+      (argument_list
+        (number)
+        (number))))
+  (variable_declaration
+    (declaration_kind)
+    (type_identifier)
+    (identifier)
+    (constraint
+      (binary_expression
+        (identifier)
+        (number)))
+    (number))
+  (variable_declaration
+    (declaration_kind)
+    (tuple_type
+      (type_identifier)
+      (type_identifier))
+    (identifier)))
+
+================================================================================
+Destructuring
+================================================================================
+
+var [first, _, last] = nums
+var [x = px, y = py] = p
+var [count = mv n, mv t] = c
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (destructuring_pattern
+      (destructuring_element
+        (identifier))
+      (destructuring_element
+        (identifier))
+      (destructuring_element
+        (identifier)))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (destructuring_pattern
+      (destructuring_element
+        (identifier)
+        (identifier))
+      (destructuring_element
+        (identifier)
+        (identifier)))
+    (identifier))
+  (variable_declaration
+    (declaration_kind)
+    (destructuring_pattern
+      (destructuring_element
+        (identifier)
+        (identifier))
+      (destructuring_element
+        (identifier)))
+    (identifier)))
+
+================================================================================
+Template names
+================================================================================
+
+pub var #{field.name}_count = 0
+pub var #{field.type.name} mirrored
+pub func get_#{field.name} = (self, out string) {
+	return field.name
+}
+mv struct S_#{w.name} { }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (modifier)
+    (declaration_kind)
+    (template_name
+      (splice
+        (member_expression
+          (identifier)
+          (field_identifier)))
+      (template_text))
+    (number))
+  (variable_declaration
+    (modifier)
+    (declaration_kind)
+    (template_name
+      (splice
+        (member_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (field_identifier))))
+    (identifier))
+  (function_declaration
+    (modifier)
+    (template_name
+      (template_text)
+      (splice
+        (member_expression
+          (identifier)
+          (field_identifier))))
+    (parameter_list
+      (self_parameter)
+      (return_parameter
+        (type_identifier)))
+    (block
+      (return_statement
+        (member_expression
+          (identifier)
+          (field_identifier)))))
+  (struct_declaration
+    (template_name
+      (template_text)
+      (splice
+        (member_expression
+          (identifier)
+          (field_identifier))))
+    (block)))
+
+================================================================================
+Hooks and receiver constraints
+================================================================================
+
+mv struct Task {
+	internal #init = (self) { }
+	#spawn = () { }
+	pub func first = (self: self.length > 0, out T) { }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (type_identifier)
+    (block
+      (hook_declaration
+        (modifier)
+        (hash_identifier)
+        (parameter_list
+          (self_parameter))
+        (block))
+      (hook_declaration
+        (hash_identifier)
+        (parameter_list)
+        (block))
+      (function_declaration
+        (modifier)
+        (identifier)
+        (parameter_list
+          (self_parameter
+            (constraint
+              (binary_expression
+                (member_expression
+                  (self)
+                  (field_identifier))
+                (number))))
+          (return_parameter
+            (type_identifier)))
+        (block)))))
