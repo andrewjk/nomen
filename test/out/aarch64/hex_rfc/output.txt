@@ -1,0 +1,14 @@
+[]
+[66]
+[666f]
+[666f6f]
+[666f6f62]
+[666f6f6261]
+[666f6f626172]
+007f80ff
+ok foobar
+ok foobar
+ok 
+invalid_length
+invalid_character 1
+invalid_character 0

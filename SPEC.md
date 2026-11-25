@@ -4290,34 +4290,38 @@ collection of small, focused modules — one line each, with a link to the
 source (the source files carry doc comments, so `nomen docs` renders the full
 reference):
 
-| Item                                          | Description                                                             |
-| --------------------------------------------- | ----------------------------------------------------------------------- |
-| [List](core/System/List.nm)                   | growable, ordered list of values (`push`/`pop`/`at`)                    |
-| [Map](core/System/Map.nm)                     | ordered key-value map; keys must be `Hashable` + `Equatable`            |
-| [Set](core/System/Set.nm)                     | ordered set of unique values; elements `Hashable` + `Equatable`         |
-| [StableList](core/System/StableList.nm)       | grow-only list whose element addresses survive `push`                   |
-| [StringBuilder](core/System/StringBuilder.nm) | growable byte buffer for building strings incrementally                 |
-| [Option](core/System/Option.nm)               | `Option<T>` — `some(T)` or `none`                                       |
-| [Result](core/System/Result.nm)               | `Result<T, E>` — the checked `ok`/`fail` enum behind `T ! E`            |
-| [Math](core/System/Math.nm)                   | math helpers (`power`, `sqrt`, `log`, …) — `import System::Math`        |
-| [Time](core/System/Time.nm)                   | wall-clock time and sleeping (static members)                           |
-| [Random](core/System/Random.nm)               | fast splitmix64 pseudo-random generator                                 |
-| [Arena](core/System/Arena.nm)                 | generational arena — one owner, cheap copyable `ArenaRef<T>` handles    |
-| [LinkedList](core/System/LinkedList.nm)       | arena-backed doubly-linked list (stable int node ids)                   |
-| [Tree](core/System/Tree.nm)                   | arena-backed binary tree (stable int node ids)                          |
-| [Graph](core/System/Graph.nm)                 | arena-backed directed graph (stable int node/edge ids)                  |
-| [BigInt](core/System/BigInt.nm)               | arbitrary-precision integer (sign-magnitude)                            |
-| [Text::Regex](core/System/Text/Regex.nm)      | regular-expression `test`/`match`/`replace_all` — `import System::Text` |
-| [Text::Json](core/System/Text/Json.nm)        | the `json_decode_into` / `json_encode` implementation                   |
-| [Buffer](core/System/Buffer.nm)               | internal growable slab — the backing store containers delegate to       |
-| [File](core/System/Stream/File.nm)            | file handle for reading and writing, plus static one-shot helpers       |
-| [Directory](core/System/Stream/Directory.nm)  | helpers for working with filesystem directories                         |
-| [Tcp](core/System/Stream/Tcp.nm)              | non-blocking sockets that park fibers while they wait                   |
-| [Http](core/System/Stream/Http.nm)            | minimal HTTP/1.1 client built on `Tcp`                                  |
+| Item                                           | Description                                                             |
+| ---------------------------------------------- | ----------------------------------------------------------------------- |
+| [List](core/System/List.nm)                    | growable, ordered list of values (`push`/`pop`/`at`)                    |
+| [Map](core/System/Map.nm)                      | ordered key-value map; keys must be `Hashable` + `Equatable`            |
+| [Set](core/System/Set.nm)                      | ordered set of unique values; elements `Hashable` + `Equatable`         |
+| [StableList](core/System/StableList.nm)        | grow-only list whose element addresses survive `push`                   |
+| [StringBuilder](core/System/StringBuilder.nm)  | growable byte buffer for building strings incrementally                 |
+| [Option](core/System/Option.nm)                | `Option<T>` — `some(T)` or `none`                                       |
+| [Result](core/System/Result.nm)                | `Result<T, E>` — the checked `ok`/`fail` enum behind `T ! E`            |
+| [Math](core/System/Math.nm)                    | math helpers (`power`, `sqrt`, `log`, …) — `import System::Math`        |
+| [Time](core/System/Time.nm)                    | wall-clock time and sleeping (static members)                           |
+| [Random](core/System/Random.nm)                | fast splitmix64 pseudo-random generator                                 |
+| [Arena](core/System/Arena.nm)                  | generational arena — one owner, cheap copyable `ArenaRef<T>` handles    |
+| [LinkedList](core/System/LinkedList.nm)        | arena-backed doubly-linked list (stable int node ids)                   |
+| [Tree](core/System/Tree.nm)                    | arena-backed binary tree (stable int node ids)                          |
+| [Graph](core/System/Graph.nm)                  | arena-backed directed graph (stable int node/edge ids)                  |
+| [BigInt](core/System/BigInt.nm)                | arbitrary-precision integer (sign-magnitude)                            |
+| [Text::Regex](core/System/Text/Regex.nm)       | regular-expression `test`/`match`/`replace_all` — `import System::Text` |
+| [Text::Json](core/System/Text/Json.nm)         | the `json_decode_into` / `json_encode` implementation                   |
+| [Text::Base64](core/System/Text/Base64.nm)     | RFC 4648 base64, standard and URL-safe — `encode`/`decode` (`T ! E`)    |
+| [Text::Hex](core/System/Text/Hex.nm)           | hex (base16) `encode`/`decode` of bytes, e.g. digests                   |
+| [Crypto::Sha256](core/System/Crypto/Sha256.nm) | SHA-256 digests — incremental `update`/`finish` or one-shot `hash`      |
+| [Crypto::Hmac](core/System/Crypto/Hmac.nm)     | HMAC-SHA256 tags — `Hmac(key)` + `update`/`finish`, or `Hmac.sha256`    |
+| [Buffer](core/System/Buffer.nm)                | internal growable slab — the backing store containers delegate to       |
+| [File](core/System/Stream/File.nm)             | file handle for reading and writing, plus static one-shot helpers       |
+| [Directory](core/System/Stream/Directory.nm)   | helpers for working with filesystem directories                         |
+| [Tcp](core/System/Stream/Tcp.nm)               | non-blocking sockets that park fibers while they wait                   |
+| [Http](core/System/Stream/Http.nm)             | minimal HTTP/1.1 client built on `Tcp`                                  |
 
-Names in nested folders (`Math`, `Text`, `Controls`, `Stream`) need their
-namespace imported: `import System::Math`, `import System::Text`, and so on —
-`import System` grants only `System`'s own names (see
+Names in nested folders (`Math`, `Text`, `Crypto`, `Controls`, `Stream`) need
+their namespace imported: `import System::Math`, `import System::Text`, and so
+on — `import System` grants only `System`'s own names (see
 [Visibility Modifiers](#visibility-modifiers)).
 
 ### Console

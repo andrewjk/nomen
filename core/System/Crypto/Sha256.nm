@@ -1,0 +1,205 @@
+// SHA-256 (FIPS 180-4), in pure Nomen.
+//
+// Every 32-bit word is held in an `int` and masked back to 32 bits after
+// each addition, so the arithmetic is the same on every backend (the JS
+// backend's integers are bigints, the native ones 64-bit registers).
+//
+// Whole 64-byte blocks are compressed straight from the input; only a
+// trailing partial block is buffered between updates.
+
+const int[64] SHA256_K = [
+	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+	0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+	0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+	0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+	0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+	0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+	0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]
+
+/**
+ * Incremental SHA-256 hasher (FIPS 180-4) — feed bytes with `update`, then `finish` for the 32-byte digest
+ *
+ *	var hasher = Sha256()
+ *	hasher.update("ab")
+ *	hasher.update("c")
+ *	const digest = hasher.finish()          // 32 raw bytes
+ *	Console.write(Hex.encode(digest))       // "ba7816bf…15ad"
+ *
+ *	const same = Sha256.hash("abc")         // one-shot
+ *
+ * Digests are raw bytes in a `string`; `Text::Hex.encode` or
+ * `Text::Base64.encode` turn them into text. `finish` resets the hasher,
+ * so one instance can hash several messages in turn.
+ **/
+pub mv struct Sha256 {
+	// The chaining value H0..H7.
+	internal var h0 = 0
+	internal var h1 = 0
+	internal var h2 = 0
+	internal var h3 = 0
+	internal var h4 = 0
+	internal var h5 = 0
+	internal var h6 = 0
+	internal var h7 = 0
+	// The pending partial block (0..63 bytes) between updates.
+	internal mv pending = StringBuilder()
+	// Total message length so far, in bytes.
+	internal var total = 0
+
+	pub func #init = (ref self) {
+		self.reset()
+	}
+
+	// Discard any input and start a new message.
+	pub func reset = (ref self { pending }) {
+		self.h0 = 0x6a09e667
+		self.h1 = 0xbb67ae85
+		self.h2 = 0x3c6ef372
+		self.h3 = 0xa54ff53a
+		self.h4 = 0x510e527f
+		self.h5 = 0x9b05688c
+		self.h6 = 0x1f83d9ab
+		self.h7 = 0x5be0cd19
+		self.pending.truncate(0)
+		self.total = 0
+	}
+
+	// Append bytes to the message.
+	pub func update = (ref self { pending }, view string data) {
+		const len = data.length
+		var i = 0
+		// Top up a partial block from an earlier update first.
+		if self.pending.length() > 0 {
+			while i < len && self.pending.length() < 64; i += 1 {
+				self.pending.append_char(data.at(i))
+			}
+			if self.pending.length() == 64 {
+				const block = self.pending.to_string()
+				self.compress(block, 0)
+			}
+		}
+		// Whole blocks compress straight from the input.
+		while len - i >= 64; i += 64 {
+			self.compress(data, i)
+		}
+		while i < len; i += 1 {
+			self.pending.append_char(data.at(i))
+		}
+		self.total += len
+	}
+
+	// Finish the message and return its 32-byte digest, then reset.
+	pub func finish = (ref self { pending }, mv out string) {
+		// Padding: a 1 bit, zeros up to 56 bytes into a block, then the
+		// message length in bits as a big-endian 64-bit integer.
+		const bit_len = self.total * 8
+		var pad = StringBuilder()
+		pad.append_char(0x80 as char)
+		var used = (self.total + 1) % 64
+		while used != 56; used = (used + 1) % 64 {
+			pad.append_char(0 as char)
+		}
+		var shift = 56
+		while shift >= 0; shift -= 8 {
+			const b = (bit_len >> shift) & 0xFF
+			pad.append_char(b as char)
+		}
+		const tail = pad.to_string()
+		self.update(tail)
+		var sb = StringBuilder()
+		append_word(ref sb, self.h0)
+		append_word(ref sb, self.h1)
+		append_word(ref sb, self.h2)
+		append_word(ref sb, self.h3)
+		append_word(ref sb, self.h4)
+		append_word(ref sb, self.h5)
+		append_word(ref sb, self.h6)
+		append_word(ref sb, self.h7)
+		self.reset()
+		return sb.to_string()
+	}
+
+	// The SHA-256 digest of data (32 raw bytes) in one call.
+	pub func hash = (view string data, mv out string) {
+		var hasher = Sha256()
+		hasher.update(data)
+		return hasher.finish()
+	}
+
+	// Run the compression function over the 64-byte block at data[offset].
+	internal func compress = (ref self {}, view string data, int offset) {
+		var int[64] w = [
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		]
+		for i of 0 .. 16 {
+			const p = offset + i * 4
+			const b0 = data.char_code_at_or(p, 0)
+			const b1 = data.char_code_at_or(p + 1, 0)
+			const b2 = data.char_code_at_or(p + 2, 0)
+			const b3 = data.char_code_at_or(p + 3, 0)
+			w.set(i, (b0 << 24) | (b1 << 16) | (b2 << 8) | b3)
+		}
+		var t = 16
+		while t < 64; t += 1 {
+			const w15 = w.at(t - 15)
+			const w2 = w.at(t - 2)
+			const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >> 3)
+			const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >> 10)
+			w.set(t, (w.at(t - 16) + s0 + w.at(t - 7) + s1) & 0xFFFFFFFF)
+		}
+		var a = self.h0
+		var b = self.h1
+		var c = self.h2
+		var d = self.h3
+		var e = self.h4
+		var f = self.h5
+		var g = self.h6
+		var h = self.h7
+		for i of 0 .. 64 {
+			const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)
+			const ch = (e & f) ^ ((e ^ 0xFFFFFFFF) & g)
+			const t1 = (h + s1 + ch + SHA256_K.at(i) + w.at(i)) & 0xFFFFFFFF
+			const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)
+			const maj = (a & b) ^ (a & c) ^ (b & c)
+			const t2 = (s0 + maj) & 0xFFFFFFFF
+			h = g
+			g = f
+			f = e
+			e = (d + t1) & 0xFFFFFFFF
+			d = c
+			c = b
+			b = a
+			a = (t1 + t2) & 0xFFFFFFFF
+		}
+		self.h0 = (self.h0 + a) & 0xFFFFFFFF
+		self.h1 = (self.h1 + b) & 0xFFFFFFFF
+		self.h2 = (self.h2 + c) & 0xFFFFFFFF
+		self.h3 = (self.h3 + d) & 0xFFFFFFFF
+		self.h4 = (self.h4 + e) & 0xFFFFFFFF
+		self.h5 = (self.h5 + f) & 0xFFFFFFFF
+		self.h6 = (self.h6 + g) & 0xFFFFFFFF
+		self.h7 = (self.h7 + h) & 0xFFFFFFFF
+	}
+}
+
+// Append a 32-bit word to sb as four big-endian bytes.
+func append_word = (ref StringBuilder sb {}, int word) {
+	const b0 = (word >> 24) & 0xFF
+	const b1 = (word >> 16) & 0xFF
+	const b2 = (word >> 8) & 0xFF
+	const b3 = word & 0xFF
+	sb.append_char(b0 as char)
+	sb.append_char(b1 as char)
+	sb.append_char(b2 as char)
+	sb.append_char(b3 as char)
+}
+
+// Rotate a 32-bit word right by n (1..31) bits.
+func rotr = (int x, int n, out int) {
+	return ((x >> n) | (x << (32 - n))) & 0xFFFFFFFF
+}

@@ -90,6 +90,7 @@ const DECLARATION_MODIFIERS = new Set([
 	"async",
 	"foreign",
 	"readonly",
+	"checked",
 ]);
 
 function is_declaration_prefix(gap: string): boolean {

@@ -833,3 +833,43 @@ per-group sync hoist (~~+5%). The scaffolding (region/reduce planners, the
 comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
+
+## Native string copies are not binary-safe (NUL bytes truncate)
+
+Seen while adding `System::Crypto` / `Text::Base64` / `Text::Hex`. On the C
+and aarch64 backends a deep string copy duplicates only the `ptr` half with
+`strdup`, keeping the old `len`, so a string holding a `0x00` byte comes
+out truncated at the first NUL and zero-filled/garbage past it. The JS
+backend is unaffected. The visible symptom: `Base64.decode("AAEC")` or
+`Hex.decode("000102")` returns `"\x00\x00\x00"` natively, because the
+`ok` payload is copied into the `Result` with `strdup`.
+
+- C: the enum constructor and `_copy` in `src/build_c/build_enum_node.ts`
+  (`r._data._<case>.<p>.ptr = strdup(<p>.ptr)`, two sites), and
+  `nomen_str_dup` in the C prelude (`src/build.ts`, "static nomen_string
+  nomen_str_dup") — the latter should `malloc(len + 1)` + `memcpy` +
+  NUL-terminate. Many other `strdup(x.ptr)` sites in `src/build_c/` have
+  the same shape.
+- aarch64: `emit_strdup` (`src/build_aarch64/utils/audit.ts`) already
+  keeps `len` in x1 across the call, so a length-based copy there
+  (`malloc(len + 1)`, `memcpy`, store the NUL) is the natural single
+  fix — after checking every caller really has `len` in x1.
+
+Strings that never pass through a copy (digests returned by `Sha256.hash`
+/ `Hmac.sha256`, values fed to `update`, keys passed to `Hmac`) are fine,
+and are tested with NUL-containing bytes. `test/base64.test.ts` keeps NUL
+bytes out of decoded results until this is fixed.
+
+## Fixed-length array fields and `Array` fields in library structs
+
+Seen while writing `core/System/Crypto/Sha256.nm` (which now avoids both):
+
+- `var int[8] h = Array.with(0, 8)` or `= [0, 0, …]` as a struct field
+  default: the C backend emits `self.h = Array_int_with(...)` (array type
+  not assignable) or `self.h = ;`, and the aarch64 backend emits the
+  literal's elements as an instruction ("asm: unparseable instruction
+  [in Sha256_init] — 0, 0, …"). JS works.
+- A dynamic `var Array<int> block = Array.with(0, 16)` field: C passes
+  `&self->block` (an `Array_int **`) to `Array_int_set`, which crashes at
+  run time; the JS backend has no lowering for `Array.at_or`
+  ("js backend: skipping unavailable feature: array.at_or").

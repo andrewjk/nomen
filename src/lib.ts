@@ -155,7 +155,7 @@ function extract_type_names(source: string): string[] {
 	for (let line of source.split("\n")) {
 		const trimmed = line.trim();
 		const m = trimmed.match(
-			/^(?:pub|internal) (?:checked )?(?:mv )?(?:struct|class|trait|enum|bitset) (\w+)/,
+			/^(?:pub|internal) (?:checked )?(?:mv )?(?:struct|class|trait|enum|bitset|error) (\w+)/,
 		);
 		if (m) names.push(m[1]);
 	}
@@ -228,7 +228,26 @@ function build_type_map(
 		const dep_set = new Set(deps);
 		const type_names = file_type_names.get(f)!;
 		const free_funcs = file_free_funcs.get(f)!;
-		for (const token of tokenize(source)) {
+		const tokens = tokenize(source);
+		for (let i = 0; i < tokens.length; i++) {
+			const token = tokens[i];
+			// The `T ! E` / `out ! E` result forms desugar to `Result` /
+			// `UnitResult` at parse time, so the source never names them —
+			// the same rule parse.ts applies to user programs.
+			if (
+				token.value === "!" &&
+				i > 0 &&
+				i < tokens.length - 1 &&
+				(/^\w+$/.test(tokens[i - 1].value) || tokens[i - 1].value === "]") &&
+				(/^\w+$/.test(tokens[i + 1].value) || tokens[i + 1].value === "[")
+			) {
+				const result = tokens[i - 1].value === "out" ? "UnitResult" : "Result";
+				if (!dep_set.has(result) && all_type_names.has(result)) {
+					deps.push(result);
+					dep_set.add(result);
+				}
+				continue;
+			}
 			if (dep_set.has(token.value)) continue;
 			if (all_type_names.has(token.value)) {
 				deps.push(token.value);
@@ -260,9 +279,9 @@ function build_type_map(
 				// monomorphized yet (declares_mv_shallow), so an
 				// unregistered `List<string>` element still classifies as
 				// owning from the template's declaration.
-				is_owning: new RegExp(`(^|\\n)\\s*(pub\\s+)?mv\\s+(struct|enum)\\s+${name}([\\s<{])`).test(
-					source,
-				),
+				is_owning: new RegExp(
+					`(^|\\n)\\s*(pub\\s+)?mv\\s+(struct|enum|error)\\s+${name}([\\s<{])`,
+				).test(source),
 			});
 		}
 		// Index the file's free `pub func`s so user programs can pull the

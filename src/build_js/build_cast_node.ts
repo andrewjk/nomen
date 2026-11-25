@@ -1,5 +1,6 @@
 import { get_built_in_type } from "../built_in_types.ts";
 import type CastNode from "../nodes/CastNode.ts";
+import type GroupedNode from "../nodes/GroupedNode.ts";
 import { expr } from "./build_node.ts";
 import type BuildStatus from "./BuildStatus.ts";
 import { method_label } from "./names.ts";
@@ -10,7 +11,11 @@ import { kind_of } from "./types.ts";
  *  C backend's truncation. */
 export default function build_cast_node(node: CastNode, status: BuildStatus): string {
 	const value = expr(node.value, status);
-	const from = kind_of(node.value);
+	// Parentheses carry no stamped type: read the kind of the expression
+	// they wrap, so `(48 + n) as char` converts like `code as char`.
+	let inner = node.value;
+	while (inner?.node_type === "grouped") inner = (inner as GroupedNode).value;
+	const from = kind_of(inner);
 	const to = kind_of(node);
 	const target = node.target_type;
 

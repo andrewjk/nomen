@@ -2,6 +2,7 @@
 	"name": "System",
 	"exports": [
 		"./System/*",
+		"./System/Crypto/*",
 		"./System/Stream/*",
 		"./System/Controls/*",
 		"./System/Test/*",

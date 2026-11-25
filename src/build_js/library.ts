@@ -387,7 +387,9 @@ export function string_builder_method(
 		case "length":
 			return `BigInt(${sb}.s.length)`;
 		case "to_string":
-			return `${sb}.s`;
+			// Finalizing hands the bytes over and leaves an empty builder,
+			// as on the native backends (StringBuilder.nm `to_string`).
+			return `((__sbs) => ((${sb}.s = ""), __sbs))(${sb}.s)`;
 		case "truncate":
 			return `(${sb}.s = ${sb}.s.slice(0, Number(${args[0]})))`;
 		case "chomp":

@@ -1,0 +1,77 @@
+// HMAC-SHA256 (RFC 2104 / FIPS 198-1), in pure Nomen, built on Sha256.
+
+/**
+ * HMAC-SHA256 message authentication — incremental (`update`/`finish`) or one-shot `Hmac.sha256(key, message)`
+ *
+ *	const tag = Hmac.sha256("key", "The quick brown fox jumps over the lazy dog")
+ *	Console.write(Hex.encode(tag))   // "f7bc83f4…b9d8"
+ *
+ *	var mac = Hmac("key")
+ *	mac.update("The quick brown fox ")
+ *	mac.update("jumps over the lazy dog")
+ *	const same = mac.finish()
+ *
+ * Keys and tags are raw bytes in a `string`. Keys longer than the 64-byte
+ * block are hashed first, as the standard requires. `finish` returns the
+ * 32-byte tag and re-arms the instance for another message under the same
+ * key.
+ **/
+pub mv struct Hmac {
+	// The key, padded (or hashed, then padded) to one 64-byte block.
+	internal mv key_block = ""
+	// Hashes `(key ^ ipad) || message`.
+	internal mv inner = Sha256()
+
+	pub func #init = (ref self, view string key) {
+		var sb = StringBuilder()
+		if key.length > 64 {
+			sb.append_string(Sha256.hash(key))
+		}
+		if key.length <= 64 {
+			sb.append_string_view(key)
+		}
+		while sb.length() < 64 {
+			sb.append_char(0 as char)
+		}
+		self.key_block = sb.to_string()
+		self.start()
+	}
+
+	// Append bytes to the message.
+	pub func update = (ref self { inner }, view string data) {
+		self.inner.update(data)
+	}
+
+	// Finish the message and return its 32-byte tag, then start a new
+	// message under the same key.
+	pub func finish = (ref self { inner }, mv out string) {
+		const inner_digest = self.inner.finish()
+		var outer = Sha256()
+		outer.update(pad_key(self.key_block, 0x5c))
+		outer.update(inner_digest)
+		self.start()
+		return outer.finish()
+	}
+
+	// The HMAC-SHA256 tag (32 raw bytes) of message under key, in one call.
+	pub func sha256 = (view string key, view string message, mv out string) {
+		var mac = Hmac(key)
+		mac.update(message)
+		return mac.finish()
+	}
+
+	// Prime the inner hash with the inner-padded key block.
+	internal func start = (ref self { inner }) {
+		self.inner.reset()
+		self.inner.update(pad_key(self.key_block, 0x36))
+	}
+}
+
+// The 64-byte key block XORed with a pad byte.
+func pad_key = (view string key_block, int pad, mv out string) {
+	var sb = StringBuilder()
+	for i of 0 .. 64 {
+		sb.append_char((key_block.char_code_at_or(i, 0) ^ pad) as char)
+	}
+	return sb.to_string()
+}

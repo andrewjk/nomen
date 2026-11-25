@@ -639,6 +639,7 @@ export function resolve_linked_types(source: string, library: Library, file_path
 		needed,
 		library,
 		is_library_file ? file_path : undefined,
+		user_defined,
 	);
 	if (!resolved) return source;
 
@@ -695,6 +696,7 @@ function resolve_types_with_deps(
 	needed: Set<string>,
 	library: Library,
 	self_path?: string,
+	shadowed: Set<string> = new Set(),
 ): string {
 	const resolved = new Set<string>();
 	const pushed = new Set<string>();
@@ -703,6 +705,9 @@ function resolve_types_with_deps(
 	function resolve(name: string) {
 		if (resolved.has(name)) return;
 		resolved.add(name);
+		// A user declaration shadows the library type for transitive
+		// dependencies too (a library file's `T ! E` pulls `Result`).
+		if (shadowed.has(name)) return;
 		const entry = library.types.get(name) ?? library.functions.get(name);
 		if (!entry) {
 			// `name` may be a module-path import rather than a type name. Expand
