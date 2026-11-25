@@ -3082,11 +3082,10 @@ const cat = dog as Cat
 
 #### Implicit Casting
 
-Automatic widening is allowed without `as` — the same rules as
-[Type-to-Type Coercion](#type-to-type-coercion) below:
-
-- Smaller int types to larger int types of same signedness
-- Unsigned to signed if target is larger
+Automatic widening is allowed without `as` — the rules are exactly
+[Type-to-Type Coercion](#type-to-type-coercion) (larger or same-size type of
+the same signedness, unsigned to signed if the target is larger, signed never
+to unsigned).
 
 ### String Operations
 

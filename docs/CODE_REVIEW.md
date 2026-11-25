@@ -71,7 +71,16 @@ favour of `type T` (breaking, named fix). The `Array<T>`/`T[]` pair is a
 documented alias with a stated job (generic boundaries), so it stays; the
 lambda arrow/block split already has its teaching diagnostic. §1.5's `for
 ref` item was already done when re-verified — the SPEC states the
-element-borrow semantics outright and the runtime tests pin them. What
+element-borrow semantics outright and the runtime tests pin them. §1.6
+Types is also resolved and removed below: the widening rules are stated once
+(SPEC's Type-to-Type Coercion is the canonical statement; Implicit Casting
+points at it), the `ufloat` family is RETIRED (breaking — it enforced
+nothing beyond its literals: `2.0 - 4.0` on a `ufloat` held `-2.0`; the fix
+is `float*`), the vtable-word layout tradeoff is recorded as
+considered-and-deferred in FOLLOWUP.md (SPEC's Layout Introspection section
+already states the layout explicitly), and the untyped-`Channel` gap was
+already §2's `typed Channel<T>` row.
+What
 remains below is the language-design and missing-features work. Line numbers
 in the remaining sections refer to the working tree as of the original
 review (before those fixes) and may have shifted.
@@ -101,21 +110,6 @@ Priorities:
 ---
 
 ## 1. Language design consistency
-
-### 1.6 Types (P2)
-
-- `ufloat` family: unsigned floats are unusual, and their semantics
-  (negative results from subtraction? NaN?) aren't specified.
-- Implicit widening rules are stated twice with slightly different wording
-  (`SPEC.md:2776-2779` and `:3142-3146`).
-- `Channel` is untyped (`uint64` values plus `send_string`) because "Nomen
-  values are pointer-sized" (`SPEC.md:4071`). That's out of step with the rest
-  of a statically typed language. See §2.
-- Struct layout puts an 8-byte vtable word in **every** struct
-  (`SPEC.md:3727`), so `Pair { int64, int32 }` is 24 bytes and
-  `offset_of(Pair, "b") == 16`. This is a performance and FFI design choice
-  worth stating explicitly (and possibly reconsidering for structs with no
-  trait conformance).
 
 ### 1.7 Lint false positives found while verifying (P2)
 

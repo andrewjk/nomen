@@ -640,6 +640,22 @@ lift (the binding types `T`, checked-ness discharges at the lift)? And does
 `r = expr!` compose with the in-flight-binding machinery the initializers
 use?
 
+## Struct layout: the 8-byte vtable word on every struct
+
+Recorded 2026-11-25 (from the docs review's §1.6, verified against
+`META.size_of`). Every struct value starts with an 8-byte vtable word —
+SPEC's "Layout Introspection" states it, and the compiler matches it
+exactly (`Pair { int64, int32 }` is 24 bytes, `offset_of(Pair, "b")` is 16,
+`META.size_of(int)` is 8). Considered and DEFERRED: dropping the word for
+structs with no trait conformance would split the struct ABI — trait casts
+need the vtable AT the value, and out-of-line `extend` conformance means a
+struct's trait set isn't fully known at declaration time, so "vtable only
+when it conforms" forces upfront conformance declarations or boxing. The
+uniform 8-byte prefix is what makes `extend` conformance, trait casts, and
+the META layout surface trivial. Revisit only if small-struct array density
+becomes a MEASURED problem (today's escape hatch is packing small fields
+into fixed arrays or explicit numeric fields).
+
 ## Share-card tokenizer: replace Shiki on the server
 
 ## The undocumented `=>` branch-return form
