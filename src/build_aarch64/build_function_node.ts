@@ -552,6 +552,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	const old_function_param_vars = status.function_param_vars;
 	const old_function_array_params = status.function_array_params;
 	const old_function_ref_params = status.function_ref_params;
+	const old_ref_slot_vars = status.ref_slot_vars;
 	const old_ref_class_slots = status.ref_class_slots;
 	const old_struct_param_slots = status.function_struct_param_slots;
 	const old_function_param_types = status.function_param_types;
@@ -567,6 +568,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = new Set();
 	status.function_array_params = new Set();
 	status.function_ref_params = new Set();
+	status.ref_slot_vars = new Set();
 	status.ref_class_slots = new Map();
 	const old_ref_trait_slots = status.ref_trait_slots;
 	const old_ref_trait_param_traits = status.ref_trait_param_traits;
@@ -1597,6 +1599,7 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 	status.function_param_vars = old_function_param_vars;
 	status.function_array_params = old_function_array_params;
 	status.function_ref_params = old_function_ref_params;
+	status.ref_slot_vars = old_ref_slot_vars;
 	status.ref_class_slots = old_ref_class_slots;
 	status.ref_trait_slots = old_ref_trait_slots;
 	status.ref_trait_param_traits = old_ref_trait_param_traits;

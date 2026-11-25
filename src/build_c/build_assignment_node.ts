@@ -1917,7 +1917,13 @@ export default function build_assignment_node(
 			lhs_type?.name === "string" &&
 			!lhs_type.is_array &&
 			!!status.function_ref_params?.has(lhs_name) &&
-			!status.ref_class_params?.has(lhs_name);
+			!status.ref_class_params?.has(lhs_name) &&
+			// An ELEMENT BORROW local (`ref string s = list.at(i)`) is also in
+			// function_ref_params, but its slot is container-OWNED — it takes
+			// the reclaiming slot store below, not the param's leak convention.
+			// (`for ref` items stay here: the loop_borrowed arm inside handles
+			// their owned array rows.)
+			!status.ref_slot_vars?.has(lhs_name);
 		if (lhs_is_ref_string_param) {
 			const fresh_heap = is_owned_heap_temp(node.right_value, status);
 			const loop_borrowed = !!status.loop_ref_borrow_items?.has(lhs_name);
@@ -2007,11 +2013,40 @@ export default function build_assignment_node(
 	) {
 		const lhs_name = (node.left_value as ValueNode).value;
 		const lhs_type = status.variable_types?.get(lhs_name);
+		// The STRING slot store (`ref string s = list.at(i)`, then `s = …`):
+		// the slot holds a fat, container-OWNED pair, so the store writes
+		// through with the strdup-and-free-old slot discipline — the new pair
+		// is materialized into a temp FIRST (the RHS may read the alias:
+		// `s = s.replace_first(...)` reads the old pair), then the displaced
+		// pair is freed and the temp stored. The displaced free is
+		// unconditionally sound here — List/Map slots own their elements
+		// (push/set dup) — unlike a `ref string` param, whose caller-side
+		// ownership the callee cannot know (that store leaks instead).
+		if (
+			status.ref_slot_vars?.has(lhs_name) === true &&
+			!!lhs_type &&
+			!lhs_type.is_array &&
+			lhs_type.name === "string"
+		) {
+			const fresh_heap = is_owned_heap_temp(node.right_value, status);
+			const tmp = `_store_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+			status.code += `nomen_string ${tmp} = `;
+			if (!fresh_heap) {
+				status.code += `nomen_str_dup(`;
+			}
+			emit_rhs_value(node.right_value, nir_rhs, status);
+			if (!fresh_heap) {
+				status.code += `)`;
+			}
+			status.code += `;\n`;
+			status.code += `free((*${lhs_name}).ptr);\n`;
+			status.code += `*${lhs_name} = ${tmp};\n`;
+			return;
+		}
 		const is_scalar_slot_borrow =
 			status.ref_slot_vars?.has(lhs_name) === true &&
 			!!lhs_type &&
 			!lhs_type.is_array &&
-			lhs_type.name !== "string" &&
 			!status.structs.some((s) => s.name === lhs_type.name && !s.is_simple_type);
 		if (is_scalar_slot_borrow) {
 			status.code += `*${lhs_name} = `;

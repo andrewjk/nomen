@@ -1531,6 +1531,15 @@ export default function build_declaration_node(
 		}
 		if (!status.function_ref_params) status.function_ref_params = new Set();
 		status.function_ref_params.add(node.name);
+		// An ELEMENT BORROW local (`ref T x = list.at(i)` — the slot-load
+		// rewrite): the pointee is a container-OWNED slot, so a `string`
+		// store through the alias must reclaim the displaced pair before
+		// overwriting (build_assignment_node's owned-slot arm). Reset
+		// per-body alongside function_ref_params.
+		if (init_is_slot_load) {
+			if (!status.ref_slot_vars) status.ref_slot_vars = new Set();
+			status.ref_slot_vars.add(node.name);
+		}
 		return;
 	}
 

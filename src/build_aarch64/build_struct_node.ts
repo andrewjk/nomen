@@ -1986,6 +1986,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		}
 
 		const old_ref_params = status.function_ref_params;
+		const old_ref_slot_vars = status.ref_slot_vars;
 		const old_ref_class_slots = status.ref_class_slots;
 		const old_view_params = status.function_view_params;
 		const old_function_param_types = status.function_param_types;
@@ -1993,6 +1994,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_param_regs = new Map();
 		status.function_param_vars = new Set();
 		status.function_ref_params = new Set();
+		status.ref_slot_vars = new Set();
 		status.ref_class_slots = new Map();
 		status.function_view_params = new Set();
 		status.function_param_types = new Map();
@@ -2701,6 +2703,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 		status.function_param_regs = old_param_regs;
 		status.function_param_vars = old_param_vars;
 		status.function_ref_params = old_ref_params;
+		status.ref_slot_vars = old_ref_slot_vars;
 		status.ref_class_slots = old_ref_class_slots;
 		status.function_view_params = old_view_params;
 		status.function_param_types = old_function_param_types;
@@ -2777,6 +2780,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			const old_param_vars = status.function_param_vars;
 			const old_return_label = status.function_return_label;
 			const old_ref_params = status.function_ref_params;
+			const old_ref_slot_vars = status.ref_slot_vars;
 			const old_ref_class_slots = status.ref_class_slots;
 			const old_view_params = status.function_view_params;
 			const old_function_param_types = status.function_param_types;
@@ -2830,6 +2834,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.function_param_regs = new Map();
 			status.function_param_vars = new Set();
 			status.function_ref_params = new Set();
+			status.ref_slot_vars = new Set();
 			status.ref_class_slots = new Map();
 			status.function_view_params = new Set();
 
@@ -3073,6 +3078,7 @@ function build_trait_functions(node: StructNode, status: BuildStatus) {
 			status.function_param_vars = old_param_vars;
 			status.function_return_label = old_return_label;
 			status.function_ref_params = old_ref_params;
+			status.ref_slot_vars = old_ref_slot_vars;
 			status.ref_class_slots = old_ref_class_slots;
 			status.function_view_params = old_view_params;
 			status.function_param_types = old_function_param_types;

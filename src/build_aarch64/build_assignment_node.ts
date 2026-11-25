@@ -2466,17 +2466,19 @@ export default function build_assignment_node(
 				if (ref_size === 16) {
 					// Fat string: write BOTH halves through the caller's
 					// pointer (ptr at +0, len at +8).
+					// An OWNED slot pointee — a `for ref` item's array row or a
+					// List/Map element slot (`ref_slot_vars`, the `ref string s =
+					// list.at(i)` element borrow) — must reclaim the displaced
+					// pair before the overwrite; the new pair is parked across
+					// the free (emit_free's `bl` clobbers x0/x1, and x2 is
+					// caller-saved), so it parks in x19 with them (the
+					// writeback's parking convention); x2 is RELOADED from x19
+					// after the call, before the final stores. An ordinary
+					// `ref string` param can't free: the caller's ownership is
+					// unknown, so its store leaks instead.
 					const loop_borrowed = !!status.loop_ref_borrow_items?.has(name);
-					if (loop_borrowed) {
-						// A `for ref` item's pointee is an OWNED array row —
-						// reclaim the displaced pair before overwriting (an
-						// ordinary `ref string` param can't: the caller's
-						// ownership is unknown, so its store leaks instead).
-						// The new pair is parked across the free — emit_free's
-						// `bl` clobbers x0/x1 — and x2 is caller-saved too, so
-						// it parks in x19 with them (the writeback's parking
-						// convention). x2 is RELOADED from x19 after the call
-						// before the final stores.
+					const owned_slot_borrow = loop_borrowed || status.ref_slot_vars?.has(name) === true;
+					if (owned_slot_borrow) {
 						emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
 						emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
 						emit_asm(status, `mov x19, x2\n`);

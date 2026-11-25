@@ -101,18 +101,61 @@ pub func main = (Init init) {
 		await build_and_check_output(input, "map_elem_borrow_readonly", "9900", true);
 	});
 
-	test("string value element borrows are rejected with the usable spellings", () => {
-		const parsed = parse_with_imports(`
-var m = Map<int, string>()
-m.set(1, "a")
-ref string s = m.get_or_panic(1)
-Console.write(s)
-`);
-		expect(parsed.errors.some((e) => e.message.includes("string values are not supported"))).toBe(
+	test("string value: the borrow aliases the slot, a write through it is visible to get", async () => {
+		// The slot-store gap, closed: a `ref string` value borrow binds the
+		// Map's own value slot (`get_ptr`), so a write through it replaces the
+		// slot's pair (temp-first, displaced pair reclaimed — the slot owns
+		// its element). The alias read sees the live value and `get` sees the
+		// write.
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var m = Map<int, string>()
+	m.set(1, "one")
+	ref string v = m.get_or_panic(1)
+	Console.write(v)
+	v = v + "-uno"
+	Console.write(" ")
+	Console.write(v)
+	Console.write(" ")
+	Console.write(m.get_or(1, "?"))
+}
+`;
+		await build_and_check_output(
+			input,
+			"map_elem_borrow_string_store",
+			"one one-uno one-uno",
 			true,
 		);
-		expect(parsed.errors.some((e) => e.message.includes("owning copy with 'var'"))).toBe(true);
-		expect(parsed.errors.some((e) => e.message.includes("container ('set')"))).toBe(true);
+	});
+
+	test("string value: a literal store through the borrow stays balanced", async () => {
+		// The literal RHS is non-heap (rodata/adopted bytes), so the store must
+		// strdup it into the slot — twice over, to prove the displaced free
+		// keeps the slot's ownership invariant (audit on: every pair balances).
+		const input = `
+import System
+
+pub func main = (Init init) {
+	var m = Map<int, string>()
+	m.set(1, "seed")
+	ref string v = m.get_or_panic(1)
+	v = "first"
+	Console.write(v)
+	v = "second"
+	Console.write(" ")
+	Console.write(v)
+	Console.write(" ")
+	Console.write(m.get_or(1, "?"))
+}
+`;
+		await build_and_check_output(
+			input,
+			"map_elem_borrow_string_literal",
+			"first second second",
+			true,
+		);
 	});
 
 	test("a set through the map after the lookup invalidates the borrow", () => {

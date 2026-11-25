@@ -507,9 +507,11 @@ pre-existing gaps, fixed here:
   `v = &rhs`; for a slot borrow that strands the alias (and cannot even
   compile — `&` of an rvalue). Slot-borrow locals are now tracked
   (`ref_slot_vars`) and a scalar store lands in the slot (`*v = rhs`); the
-  aarch64 backend already wrote through. String values are rejected at the
-  checker (`ref string` element borrows have no safe store convention —
-  write-through would need the strdup-and-free-old slot discipline).
+  aarch64 backend already wrote through. (Strings joined later, when the
+  slot-store convention landed — 2026-11-25: a string store through the
+  alias materializes the new pair temp-first and reclaims the displaced
+  pair, so `ref string` element borrows and the for-of string elision are
+  spelled like every other element type.)
 - **Element borrows of non-destroy-bearing elements were unpoliced.**
   `borrow_owner_of` only rooted a borrow at the container when the element
   was a destroy-bearing struct (`is_element_load_pure_borrow`), so `ref int
@@ -520,9 +522,9 @@ v = map.get_or_panic(k)` recorded no owner and `map.set(...)` after the
 
 Six runtime/emission tests in `test/map_get_ptr.test.ts` (both backends,
 audit on: alias write-through visible via `get`, compound assignment,
-struct-value zero-copy aliasing, trap shape, string rejection, borrow
-invalidation, and the emitted one-probe body); the full suite (522 files,
-both backends) passes with no new failures.
+struct-value zero-copy aliasing, trap shape, string-value slot stores,
+borrow invalidation, and the emitted one-probe body); the full suite (522
+files, both backends) passes with no new failures.
 
 **Measured.** Shape micro-benches, n from argv, Apple Silicon, best-of-5
 plus interleaved rounds, audit off, identical outputs:

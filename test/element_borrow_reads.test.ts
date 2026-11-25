@@ -153,6 +153,35 @@ pub func main = (Init init) {
 			true,
 		);
 	});
+
+	test("string elements read through the slot alias without a per-iteration copy", async () => {
+		// The string half of the elision: the loop binding aliases the
+		// container's slot (strings join the element borrow once the slot
+		// store landed), so reads see every element without the strdup per
+		// iteration. A mutating body keeps the owning copy (the reference
+		// gate below), so the alias is safe in the shapes it fires.
+		await build_and_check_output(
+			`
+import System
+pub func main = (Init init) {
+	var List<string> ss = List<string>()
+	for i of 0..5 {
+		ss.push("w\\{i}")
+	}
+	var string acc = ""
+	var int n = 0
+	for s of ss {
+		acc = acc + s + "|"
+		n += s.length
+	}
+	Console.write("\\{n} \\{acc}")
+}
+`,
+			"for_of_borrow_string_reads",
+			"10 w0|w1|w2|w3|w4|",
+			true,
+		);
+	});
 });
 
 describe("for-of element borrow (emitted shape)", () => {
@@ -179,7 +208,7 @@ pub func main = (Init init) {
 		expect(a).not.toContain("bl List_Rec_at");
 	});
 
-	test("string elements keep the owning load", () => {
+	test("string elements borrow the slot too (the store convention landed)", () => {
 		const c = build_c(`
 import System
 pub func main = (Init init) {
@@ -192,8 +221,21 @@ pub func main = (Init init) {
 	Console.write(acc)
 }
 `);
-		expect(c).not.toContain("List_string_slot_ptr(&ss, __for_idx_s");
-		expect(c).toContain("List_string_at(&ss, __for_idx_s");
+		expect(c).toContain("nomen_string *s = List_string_slot_ptr(&ss, __for_idx_s)");
+		expect(c).not.toContain("List_string_at(&ss, __for_idx_s");
+		const a = build_aarch64(`
+import System
+pub func main = (Init init) {
+	var List<string> ss = List<string>()
+	ss.push("a")
+	var string acc = ""
+	for s of ss {
+		acc = acc + s
+	}
+	Console.write(acc)
+}
+`);
+		expect(a).toContain("bl List_string_slot_ptr");
 	});
 
 	test("a body that references the container keeps the owning load", () => {

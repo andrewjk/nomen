@@ -219,6 +219,7 @@ export default function build_inline_method(
 	const old_local_types = status.function_local_types;
 	const old_return_label = status.function_return_label;
 	const old_ref_params = status.function_ref_params;
+	const old_ref_slot_vars = status.ref_slot_vars;
 	const old_struct_return_buffer = status.struct_return_buffer;
 	const old_return_buffer_offset = status.return_buffer_stack_offset;
 	const old_function_return_type = status.function_return_type;
@@ -331,6 +332,7 @@ export default function build_inline_method(
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_ref_params = new Set();
+	status.ref_slot_vars = new Set();
 	// Inline params live in callee-saved registers / spill slots (never
 	// stack_offsets), so an inline body's loops never resolve param types —
 	// swap in a FRESH map so the caller's types can't bleed into a
@@ -499,6 +501,7 @@ export default function build_inline_method(
 	status.function_param_types = old_param_types;
 	status.function_local_types = old_local_types;
 	status.function_ref_params = old_ref_params;
+	status.ref_slot_vars = old_ref_slot_vars;
 	status.function_return_label = old_return_label;
 	status.stack_offsets = old_stack_offsets;
 	status.struct_return_buffer = old_struct_return_buffer;
@@ -546,6 +549,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	const old_local_types = status.function_local_types;
 	const old_return_label = status.function_return_label;
 	const old_ref_params = status.function_ref_params;
+	const old_ref_slot_vars = status.ref_slot_vars;
 	const old_struct_return_buffer = status.struct_return_buffer;
 	const old_return_buffer_offset = status.return_buffer_stack_offset;
 	const old_function_return_type = status.function_return_type;
@@ -625,6 +629,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.function_param_regs = new Map();
 	status.function_param_vars = new Set();
 	status.function_ref_params = new Set();
+	status.ref_slot_vars = new Set();
 	// Inline params live in callee-saved registers / spill slots (never
 	// stack_offsets), so an inline body's loops never resolve param types —
 	// swap in a FRESH map so the caller's types can't bleed into a
@@ -754,6 +759,7 @@ export function build_inline_function(func: FunctionNode, status: BuildStatus) {
 	status.function_param_types = old_param_types;
 	status.function_local_types = old_local_types;
 	status.function_ref_params = old_ref_params;
+	status.ref_slot_vars = old_ref_slot_vars;
 	status.function_return_label = old_return_label;
 	status.stack_offsets = old_stack_offsets;
 	status.struct_return_buffer = old_struct_return_buffer;
