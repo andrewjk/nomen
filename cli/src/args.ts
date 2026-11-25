@@ -20,6 +20,8 @@ export interface Args {
 	fast_math: boolean;
 	/** Accepted (and ignored) for `nomen lsp --stdio`, which editors pass. */
 	stdio?: boolean;
+	/** `nomen docs`: also write the structured model to `docs/api.json`. */
+	json: boolean;
 	// Everything after a bare `--` on the command line — forwarded verbatim to
 	// the compiled program by `nomen run`. Lets a program receive its own argv
 	// (`nomen run --in app/main.nm -- arg1 arg2`).
@@ -57,6 +59,7 @@ const BOOLEAN_OPTIONS: Map<string, string> = new Map([
 	["fast-math", "fast_math"],
 	// `nomen lsp` always speaks over stdio; accept the flag editors append.
 	["stdio", "stdio"],
+	["json", "json"],
 ]);
 
 const DEFAULTS: Partial<Args> = {
@@ -66,6 +69,7 @@ const DEFAULTS: Partial<Args> = {
 	check: false,
 	release: false,
 	fast_math: false,
+	json: false,
 };
 
 function set(args: Args, key: string, value: string | boolean): void {
@@ -188,6 +192,7 @@ export function print_help(): void {
 			"  --release, -r           Build with optimizations (clang -O2; aarch64 asm cleanup passes)",
 			"  --fast-math             Allow FP reassociation (float loop reductions vectorize on aarch64)",
 			"  --check                 For `nomen format`: report files that would change",
+			"  --json                  For `nomen docs`: also write docs/api.json (the structured model)",
 			"  -h, --help              Show this help",
 		].join("\n"),
 	);

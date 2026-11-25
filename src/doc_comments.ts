@@ -46,7 +46,7 @@ export function clean_doc_comment(raw: string): string {
 	const lines = body.split("\n").map((line) => line.replace(/^\s*\* ?/, ""));
 	while (lines.length && lines[0].trim() === "") lines.shift();
 	while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
-	return lines.join("\n").trimEnd();
+	return lines.join("\n").trim();
 }
 
 /**
@@ -66,19 +66,37 @@ export function attach_doc_comments(root: RootNode, source: string): void {
 		for (const doc of docs) {
 			if (doc.end <= node.start && (!best || doc.end > best.end)) best = doc;
 		}
-		// ...but only if nothing but whitespace (and line comments) sits between
-		// them — otherwise the doc belongs to an earlier declaration and would
-		// falsely leak across the concatenated library source.
-		if (
-			best &&
-			source
-				.substring(best.end, node.start)
-				.replace(/\/\/[^\n]*/g, "")
-				.trim() === ""
-		) {
+		// ...but only if nothing but whitespace, line comments, attributes and
+		// declaration modifiers sits between them — otherwise the doc belongs
+		// to an earlier declaration and would falsely leak across the
+		// concatenated library source. (A declaration's `start` can sit past
+		// its modifiers: `pub mv struct List` starts at `struct`.)
+		if (best && is_declaration_prefix(source.substring(best.end, node.start))) {
 			node.doc = clean_doc_comment(best.raw);
 		}
 	}
+}
+
+// Words that may sit between a doc comment and the token a declaration node
+// starts at.
+const DECLARATION_MODIFIERS = new Set([
+	"pub",
+	"internal",
+	"mv",
+	"inline",
+	"unsafe",
+	"async",
+	"foreign",
+	"readonly",
+]);
+
+function is_declaration_prefix(gap: string): boolean {
+	const words = gap
+		.replace(/\/\/[^\n]*/g, "")
+		.replace(/@[A-Za-z_]\w*(\([^)]*\))?/g, "")
+		.split(/\s+/)
+		.filter((w) => w !== "");
+	return words.every((w) => DECLARATION_MODIFIERS.has(w));
 }
 
 // Gather every declaration node that can carry a doc comment: top-level

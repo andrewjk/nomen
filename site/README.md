@@ -7,6 +7,8 @@ The Nomen website:
   features) with an "Open in playground" share link.
 - `/readme` and `/spec` — `README.md` and `SPEC.md`, rendered with highlighted
   code blocks and a contents sidebar.
+- `/docs` — the System library API reference: an index, one page per
+  namespace (`/docs/System/Text`) and one per type (`/docs/System/Text/Json`).
 - `/playground` — a Nomen program editor that compiles on the server and runs
   the emitted JavaScript in a sandboxed Worker.
 
@@ -18,6 +20,19 @@ and `src/assets/highlight.generated.css` (both gitignored). Shiki's inline
 colours are folded into a handful of classes to keep the HTML small. Links
 between the two docs stay on the site; links to other repository files go to
 GitHub.
+
+The API reference is prerendered too. `scripts/render-api.ts` (`pnpm api`;
+`dev`/`build` run it automatically) reads `core/` through `nomen docs`'s
+structured model (`collect_docs` in `cli/src/docs.ts`), so it documents
+whatever the library contains: each `pub` type's doc comment, fields, cases,
+constructors, methods and conformances. Doc comments are Markdown (Allmark);
+signatures and code blocks are highlighted with `nomen-shiki`, and type names
+in them link to their pages. It writes `src/lib/docs/api-pages.generated.ts`
+(page HTML, loaded only on the server), `src/lib/docs/api-nav.generated.ts`
+(the sidebar) and `src/assets/api-highlight.generated.css`. Torp's `[...path]`
+splat can't carry a server endpoint, so `src/routes/docs/[a]`, `[a]/[b]` and
+`[a]/[b]/[c]` share `src/lib/api-server.ts`; the script fails if a namespace
+nests deeper than that.
 
 It is a [Torpor](https://torpor.dev) site deployed to **Cloudflare Workers**
 (with static assets). Compilation happens inside the Worker; the System library

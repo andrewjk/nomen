@@ -1,4 +1,5 @@
 @import "./highlight.generated.css";
+@import "./api-highlight.generated.css";
 
 :root {
 	color-scheme: dark;
@@ -498,6 +499,19 @@ code {
 	align-items: center;
 }
 
+/* Five links and the toggle don't fit a phone at desktop spacing. */
+@media (max-width: 480px) {
+	#site-nav {
+		padding: 0.75rem 1rem 0;
+	}
+
+	#site-nav .links {
+		flex-wrap: wrap;
+		gap: 0.5rem 0.8rem;
+		font-size: 0.85rem;
+	}
+}
+
 /* Light/dark toggle: dark is the default, so the button offers the sun;
  * `html.light` swaps to the moon. Pure CSS — the click handler only flips
  * the class and stores the choice. */
@@ -766,6 +780,191 @@ pre.shiki code {
 	.prose h1 {
 		margin-top: 1.5rem;
 		font-size: 1.9rem;
+	}
+}
+
+/* The API reference (scripts/render-api.ts): breadcrumbs, signatures, member
+ * lists, and a sidebar of every namespace and type. */
+.api-page .crumbs {
+	margin-bottom: 0.75rem;
+	color: var(--muted);
+	font-size: 0.85rem;
+}
+
+.api-page .crumbs a {
+	color: var(--muted);
+	text-decoration: none;
+}
+
+.api-page .crumbs a:hover {
+	color: var(--text);
+}
+
+.api-page .crumbs .sep {
+	margin: 0 0.4rem;
+	opacity: 0.6;
+}
+
+.api-page h1 {
+	margin-bottom: 1rem;
+	overflow-wrap: anywhere;
+}
+
+.api-page .kind {
+	display: inline-block;
+	padding: 0.1rem 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	color: var(--muted);
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	vertical-align: middle;
+}
+
+/* Signatures wrap instead of scrolling: a long parameter list stays readable
+ * on a phone. */
+pre.shiki.sig {
+	margin: 0.5rem 0 0.75rem;
+	padding: 0.6rem 0.85rem;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+pre.shiki a {
+	color: inherit;
+	text-decoration: underline;
+	text-decoration-color: rgba(212, 212, 212, 0.35);
+	text-underline-offset: 2px;
+}
+
+pre.shiki a:hover {
+	text-decoration-color: currentColor;
+}
+
+.api-page .conforms {
+	color: var(--muted);
+}
+
+.api-page .source-line,
+.api-page .undocumented {
+	color: var(--muted);
+	font-size: 0.85rem;
+}
+
+.api-page .source-line code {
+	overflow-wrap: anywhere;
+}
+
+.api-page a.source {
+	margin-left: 0.75rem;
+	color: var(--muted);
+	font-family: var(--sans);
+	font-size: 0.75rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	text-decoration: none;
+}
+
+.api-page a.source:hover {
+	color: var(--accent);
+}
+
+.api-page .source-line a.source {
+	margin-left: 0;
+	font-size: inherit;
+}
+
+.api-page .member {
+	margin: 1.75rem 0;
+	scroll-margin-top: 1rem;
+}
+
+.api-page .member.compact {
+	margin: 0.5rem 0;
+}
+
+.api-page .member-name {
+	margin: 0;
+	font-family: var(--mono);
+	font-size: 1rem;
+	overflow-wrap: anywhere;
+}
+
+.api-page .member-doc > :first-child {
+	margin-top: 0;
+}
+
+.api-page .type-list {
+	margin: 0.5rem 0 1rem;
+	padding: 0;
+	list-style: none;
+}
+
+.api-page .type-list li {
+	display: grid;
+	grid-template-columns: minmax(8rem, 14rem) 5rem minmax(0, 1fr);
+	gap: 0.75rem;
+	align-items: baseline;
+	margin: 0;
+	padding: 0.45rem 0;
+	border-bottom: 1px solid var(--border);
+}
+
+.api-page .type-list .kind {
+	justify-self: start;
+}
+
+.api-page .type-list code {
+	overflow-wrap: anywhere;
+}
+
+.api-page .type-list .summary {
+	color: var(--muted);
+	font-size: 0.9rem;
+}
+
+#doc.api .toc .on-page {
+	margin-bottom: 1rem;
+	padding-bottom: 0.75rem;
+	border-bottom: 1px solid var(--border);
+}
+
+#doc.api .toc .library .namespace {
+	padding-top: 0.6rem;
+}
+
+#doc.api .toc .library .namespace > a {
+	color: var(--text);
+	font-weight: 600;
+}
+
+#doc.api .toc .library ul {
+	padding-left: 0.9rem;
+}
+
+#doc.api .toc li.current > a {
+	color: var(--accent);
+}
+
+/* On a phone the contents box sits above the page: list the page's own
+ * sections and the namespaces, not every type (the breadcrumbs and namespace
+ * pages lead to those). */
+@media (max-width: 900px) {
+	#doc.api .toc .library .namespace > ul {
+		display: none;
+	}
+}
+
+@media (max-width: 600px) {
+	.api-page .type-list li {
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.25rem 0.75rem;
+	}
+
+	.api-page .type-list .summary {
+		grid-column: 1 / -1;
 	}
 }
 

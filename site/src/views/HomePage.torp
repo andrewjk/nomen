@@ -17,6 +17,7 @@ export default function HomePage() {
 					<a class="button" href="/playground">Try the playground</a>
 					<a class="button ghost" href="/readme">Read the readme</a>
 					<a class="button ghost" href="/spec">Language spec</a>
+					<a class="button ghost" href="/docs">Library API</a>
 				</div>
 			</header>
 			<div class="home-columns">

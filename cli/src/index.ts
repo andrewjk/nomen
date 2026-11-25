@@ -102,7 +102,7 @@ try {
 
 	// `nomen docs` generates markdown documentation instead of compiling.
 	if (command === "docs") {
-		run_docs(args.in);
+		run_docs(args.in, { json: args.json });
 		process.exit(0);
 	}
 

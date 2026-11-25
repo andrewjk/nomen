@@ -2,7 +2,7 @@
 import Moon from "phosphor-torpor/lib/Moon";
 import Sun from "phosphor-torpor/lib/Sun";
 
-export default function SiteNav($props: { current?: "home" | "readme" | "spec" | "playground" }) {
+export default function SiteNav($props: { current?: "home" | "readme" | "spec" | "api" | "playground" }) {
 	function cls(name: string): string {
 		return $props.current === name ? "current" : "";
 	}
@@ -23,6 +23,7 @@ export default function SiteNav($props: { current?: "home" | "readme" | "spec" |
 			<div class="links">
 				<a class={cls("readme")} href="/readme">Readme</a>
 				<a class={cls("spec")} href="/spec">Spec</a>
+				<a class={cls("api")} href="/docs">API</a>
 				<a class={cls("playground")} href="/playground">Playground</a>
 				<a href="https://github.com/andrewjk/nomen" rel="noopener">GitHub</a>
 				<button class="theme-toggle" title="Toggle light/dark" onclick={toggle_theme}>

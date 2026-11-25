@@ -7,9 +7,10 @@
 	"scripts": {
 		"bundle:core": "tsx scripts/bundle-core.ts",
 		"docs": "tsx scripts/render-docs.ts",
-		"predev": "tsx scripts/bundle-core.ts && tsx scripts/render-docs.ts && tsx scripts/generate-favicons.ts",
+		"api": "tsx scripts/render-api.ts",
+		"predev": "tsx scripts/bundle-core.ts && tsx scripts/render-docs.ts && tsx scripts/render-api.ts && tsx scripts/generate-favicons.ts",
 		"dev": "tb --dev",
-		"prebuild": "tsx scripts/bundle-core.ts && tsx scripts/render-docs.ts && tsx scripts/generate-favicons.ts",
+		"prebuild": "tsx scripts/bundle-core.ts && tsx scripts/render-docs.ts && tsx scripts/render-api.ts && tsx scripts/generate-favicons.ts",
 		"build": "tb --build",
 		"preview": "tb --build && wrangler dev --config wrangler.jsonc",
 		"deploy": "tb --build && wrangler deploy",

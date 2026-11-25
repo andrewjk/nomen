@@ -1,0 +1,62 @@
+import type { ApiPage as Page } from "@/lib/api";
+import nav from "@/lib/docs/api-nav.generated";
+
+import SiteNav from "./parts/SiteNav.torp";
+
+/** A page of the System library API reference: the index, a namespace or a
+ *  type. The HTML is generated at build time by `scripts/render-api.ts`; the
+ *  sidebar lists the page's own sections, then every namespace and type. */
+export default function ApiPage($props: { data: { page?: Page } }) {
+	function here(href: string): string {
+		return $props.data.page && href === `/docs/${$props.data.page.path}`.replace(/\/$/, "")
+			? "current"
+			: "";
+	}
+
+	@render {
+		<SiteNav current="api" />
+		<div id="doc" class="api">
+			<aside class="toc">
+				<details open>
+					<summary>Contents</summary>
+					@if ($props.data.page?.toc.length) {
+						<ul class="on-page">
+							@for (let entry of $props.data.page.toc) {
+								<li class={`depth-${entry.depth}`}>
+									<a href={`#${entry.id}`}>{entry.text}</a>
+								</li>
+							}
+						</ul>
+					}
+					<ul class="library">
+						<li class={`namespace ${here("/docs")}`}>
+							<a href="/docs">All namespaces</a>
+						</li>
+						@for (let ns of nav) {
+							<li class={`namespace ${here(ns.href)}`}>
+								<a href={ns.href}>{ns.name}</a>
+								<ul>
+									@for (let type of ns.types) {
+										<li class={here(type.href)}>
+											<a href={type.href}>{type.name}</a>
+										</li>
+									}
+								</ul>
+							</li>
+						}
+					</ul>
+				</details>
+			</aside>
+			<article class="prose api-page">
+				@if ($props.data.page) {
+					@html($props.data.page.html)
+				} else {
+					<h1>Not found</h1>
+					<p>
+						There is no API page here. See <a href="/docs">all namespaces</a>.
+					</p>
+				}
+			</article>
+		</div>
+	}
+}
