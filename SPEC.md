@@ -2583,16 +2583,11 @@ for ref p of points {
 }
 ```
 
-The loop variable is a **borrow of the element**, not an independent copy.
-Where the shape allows it — a value-struct element in a slot-borrowable
-container (`List`, `StableList`) with a body that never touches the container
-and declares no nested functions — the variable binds directly to the
-element's slot: writes are visible immediately (to the container and to any
-alias), with no per-iteration copy or write-back. Other shapes (string and
-scalar elements, raw arrays, bodies that read or mutate the container) bind
-a mutable copy instead: field writes reach the element when the iteration
-ends (and before `break`/`continue`), and reads of the container inside the
-body see the values as of the last write-back.
+The loop variable is a **borrow of the element**, not an independent copy:
+it binds to the element's slot, so writes land in the array immediately —
+visible to later reads of the array (and to any alias) inside the same
+iteration, with no write-back step at the iteration's end. Arrays are
+fixed-length, so the slot address is stable for the loop's lifetime.
 
 `for ref` requires a `var` array (a `const` array is rejected) and is only
 valid for arrays, not ranges or Enumerable types.

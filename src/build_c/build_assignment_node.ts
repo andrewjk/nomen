@@ -1920,6 +1920,32 @@ export default function build_assignment_node(
 			!status.ref_class_params?.has(lhs_name);
 		if (lhs_is_ref_string_param) {
 			const fresh_heap = is_owned_heap_temp(node.right_value, status);
+			const loop_borrowed = !!status.loop_ref_borrow_items?.has(lhs_name);
+			if (loop_borrowed) {
+				// A `for ref` item aliases an OWNED array row (the literal
+				// initializer strdup'd each row), so the store must reclaim
+				// the displaced row — but only AFTER the RHS evaluates (the
+				// RHS may read the item: `x = x.replace_first(...)`), so
+				// materialize the new value into a temp first, then swap.
+				// No runtime owns-flag: with the item a pointer to the slot
+				// itself, the store is immediate — there is nothing deferred.
+				const tmp = `_store_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+				status.code += `nomen_string ${tmp} = `;
+				if (!fresh_heap) {
+					status.code += `nomen_str_dup(`;
+				}
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				if (!fresh_heap) {
+					status.code += `)`;
+				}
+				status.code += `;\n`;
+				status.code += `free((`;
+				build_node(node.left_value, status);
+				status.code += `).ptr);\n`;
+				build_node(node.left_value, status);
+				status.code += ` = ${tmp};\n`;
+				return;
+			}
 			build_node(node.left_value, status);
 			status.code += ` = `;
 			if (!fresh_heap) {

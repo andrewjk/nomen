@@ -189,6 +189,15 @@ export default interface BuildStatus {
 	 */
 	loop_writebacks?: ((() => void) | undefined)[];
 	/**
+	 * `for ref` item names currently borrowing their array slot (a true
+	 * element borrow — the item is a `T*` to the slot, registered in
+	 * function_ref_params). A string store through such an item must
+	 * reclaim the displaced row before overwriting: rows are heap-owned by
+	 * the array literal, unlike an ordinary `ref string` param whose
+	 * caller-side ownership is unknown. Restored with the loop body.
+	 */
+	loop_ref_borrow_items?: Set<string>;
+	/**
 	 * Per-function set of string variable names that are reassigned ONLY to
 	 * borrowed values (e.g. `filename = init.args.at(1)`). For such a
 	 * variable, `var string x = "literal"` skips strdup'ing the literal — the

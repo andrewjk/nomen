@@ -2466,8 +2466,31 @@ export default function build_assignment_node(
 				if (ref_size === 16) {
 					// Fat string: write BOTH halves through the caller's
 					// pointer (ptr at +0, len at +8).
-					emit_asm(status, `str x0, [x2]\n`);
-					emit_asm(status, `str x1, [x2, #8]\n`);
+					const loop_borrowed = !!status.loop_ref_borrow_items?.has(name);
+					if (loop_borrowed) {
+						// A `for ref` item's pointee is an OWNED array row —
+						// reclaim the displaced pair before overwriting (an
+						// ordinary `ref string` param can't: the caller's
+						// ownership is unknown, so its store leaks instead).
+						// The new pair is parked across the free — emit_free's
+						// `bl` clobbers x0/x1 — and x2 is caller-saved too, so
+						// it parks in x19 with them (the writeback's parking
+						// convention). x2 is RELOADED from x19 after the call
+						// before the final stores.
+						emit_asm(status, `stp x0, x1, [sp, #-16]!\n`);
+						emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+						emit_asm(status, `mov x19, x2\n`);
+						emit_asm(status, `ldr x0, [x19]\n`);
+						emit_free(status);
+						emit_asm(status, `mov x2, x19\n`);
+						emit_asm(status, `ldp x19, x20, [sp], #16\n`);
+						emit_asm(status, `ldp x0, x1, [sp], #16\n`);
+						emit_asm(status, `str x0, [x2]\n`);
+						emit_asm(status, `str x1, [x2, #8]\n`);
+					} else {
+						emit_asm(status, `str x0, [x2]\n`);
+						emit_asm(status, `str x1, [x2, #8]\n`);
+					}
 				} else {
 					emit_asm(status, `${ref_store_op} ${ref_store_reg}, [x2]\n`);
 				}

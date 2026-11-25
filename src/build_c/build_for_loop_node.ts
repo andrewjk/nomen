@@ -26,15 +26,13 @@ export default function build_for_loop_node(
 	status.deferred_frees = [];
 	push_c_loop_frame(status);
 
-	let ref_writeback: (() => void) | undefined;
-	// The `for ref x of strings` item registered for this loop's body build
-	// (undefined for non-ref / non-string loops), and whether the name was
-	// ALREADY registered by an enclosing loop (a nested same-name loop must
-	// not drop the outer registration at its own exit — the outer body and
-	// writeback continue to use it, and C block scoping resolves the flag
-	// name to whichever loop's declaration is in scope there).
+	// The `for ref` borrow registrations this loop made for its body build —
+	// restored at exit so a later build never sees a stale entry. Nested
+	// same-name loops must not drop an enclosing loop's registration, so each
+	// flag records whether the name was ALREADY registered before this loop.
 	let registered_ref_item: string | undefined;
-	let registered_ref_item_nested = false;
+	let registered_ref_param_nested = false;
+	let registered_borrow_item_nested = false;
 
 	if (node.item && node.list) {
 		if (node.list.node_type == "range") {
@@ -152,7 +150,38 @@ export default function build_for_loop_node(
 			// instead of `T item` (which would be a by-value struct).
 			const elem_struct = status.structs.find((s) => s.name === element_type && !s.is_simple_type);
 			const elem_is_class = !!elem_struct?.is_class;
-			if (elem_is_class) {
+			if (node.item_is_ref) {
+				// TRUE ELEMENT BORROW (the `ref`-param shape): the item is a
+				// POINTER to its array slot — reads and writes go through it,
+				// so a store lands in the array immediately (visible to
+				// `arr[i]` reads and any alias in the same body). No
+				// end-of-iteration write-back exists: arrays are
+				// fixed-length, so the slot address is stable for the loop's
+				// lifetime and the borrow needs no invalidation. Body
+				// accesses deref through `function_ref_params`, exactly like
+				// a `ref T` parameter or the `ref T x = list.at(i)` element
+				// borrow.
+				if (!status.function_ref_params) status.function_ref_params = new Set();
+				registered_ref_param_nested = status.function_ref_params.has(node.item.value);
+				status.function_ref_params.add(node.item.value);
+				if (element_type === "string") {
+					if (!status.loop_ref_borrow_items) status.loop_ref_borrow_items = new Set();
+					registered_borrow_item_nested = status.loop_ref_borrow_items.has(node.item.value);
+					status.loop_ref_borrow_items.add(node.item.value);
+					registered_ref_item = node.item.value;
+				}
+				const elem_c = elem_struct ? `struct ${element_type}` : c_type(element_type);
+				const elem_ptr = elem_is_class ? `struct ${element_type} **` : `${elem_c} *`;
+				status.code += `${elem_ptr}${node.item.value} = `;
+				if (is_heap) {
+					status.code += `((${elem_ptr})((char *)`;
+					emit_list_ref();
+					status.code += ` + sizeof(struct Array_${element_type}))) + ${idx_var};\n`;
+				} else {
+					emit_list_ref();
+					status.code += ` + ${idx_var};\n`;
+				}
+			} else if (elem_is_class) {
 				status.code += `struct ${element_type} *${node.item.value} = `;
 				if (!status.class_vars) status.class_vars = new Set();
 				status.class_vars.add(node.item.value);
@@ -161,83 +190,30 @@ export default function build_for_loop_node(
 			} else {
 				status.code += `${c_type(element_type)} ${node.item.value} = `;
 			}
-			if (is_heap) {
-				// Data lives just past the Array_<T> header: index into it.
-				// Class elements are stored as pointers (struct T **); struct
-				// and primitive elements are stored by-value (T *).
-				const elem_ptr = elem_is_class
-					? `struct ${element_type} **`
-					: `${elem_struct ? `struct ${element_type}` : c_type(element_type)} *`;
-				status.code += `((${elem_ptr})((char *)`;
-				emit_list_ref();
-				status.code += ` + sizeof(struct Array_${element_type})))[${idx_var}];\n`;
-			} else {
-				emit_list_ref();
-				status.code += `[${idx_var}];\n`;
-			}
-			// The ref-for string item's runtime owns-flag: 0 = the item aliases
-			// the array row (just copied), 1 = a body assignment stored an
-			// owned value into it. Declared inside the loop braces so it is
-			// re-initialized every iteration (the reassignment may sit in a
-			// branch the iteration skips) and scoped per loop (nested
-			// same-name loops shadow cleanly in C).
-			if (node.item_is_ref && element_type === "string") {
-				status.code += `unsigned char _owned_${node.item.value} = 0;\n`;
-			}
-
-			// For `for ref x of arr`, build the write-back snippet that persists
-			// the (possibly mutated) loop variable back into its array slot.
-			// Emitted after the body and before break/continue.
-			if (node.item_is_ref) {
-				let wb_target: string;
+			if (!node.item_is_ref) {
 				if (is_heap) {
-					const ref_name = temp_list ?? list_name;
+					// Data lives just past the Array_<T> header: index into it.
+					// Class elements are stored as pointers (struct T **); struct
+					// and primitive elements are stored by-value (T *).
 					const elem_ptr = elem_is_class
 						? `struct ${element_type} **`
 						: `${elem_struct ? `struct ${element_type}` : c_type(element_type)} *`;
-					wb_target = `((${elem_ptr})((char *)${ref_name} + sizeof(struct Array_${element_type})))[${idx_var}]`;
+					status.code += `((${elem_ptr})((char *)`;
+					emit_list_ref();
+					status.code += ` + sizeof(struct Array_${element_type})))[${idx_var}];\n`;
 				} else {
-					wb_target = `${list_name}[${idx_var}]`;
-				}
-				// A string slot is heap-OWNED (the literal initializer strdup'd
-				// each row; the scope-exit walk frees them), so the writeback is
-				// the deep-copy store: reclaim the displaced row, strdup the
-				// item (a borrow — a rodata literal or the old slot's bytes).
-				// A raw pair store would leak the displaced row and leave the
-				// slot aliasing bytes the item's own teardown frees.
-				// RUNTIME OWNERSHIP: a body reassignment (`x = x.replace_first
-				// (...)`) stores a FRESH heap value into the item — strdup'ing
-				// it into the slot above leaked that value (one allocation per
-				// reassigned iteration). The `_owned_x` flag (declared at the
-				// loop head, reset every iteration, set by the assignment
-				// builder) says whether the item owns its pair: set → transfer
-				// the pair into the slot verbatim (no dup, no leak); clear →
-				// the item still aliases the row → today's strdup copy.
-				const wb_code =
-					element_type === "string"
-						? `{ if (_owned_${node.item.value}) { free(${wb_target}.ptr); ${wb_target} = ${node.item.value}; } else { nomen_string _wb_t = nomen_str_dup(${node.item.value}); free(${wb_target}.ptr); ${wb_target} = _wb_t; } }\n`
-						: `${wb_target} = ${node.item.value};\n`;
-				ref_writeback = () => {
-					status.code += wb_code;
-				};
-				if (element_type === "string") {
-					// Register the item for the body build: the assignment
-					// builder owns-ifies every store into it and maintains the
-					// flag; the return-path reclaim frees an owned pair under
-					// the flag. Restored after the body build (below) so the
-					// registration is live exactly while the item is in scope.
-					registered_ref_item_nested = status.ref_for_string_items?.has(node.item.value) ?? false;
-					if (!status.ref_for_string_items) status.ref_for_string_items = new Set();
-					status.ref_for_string_items.add(node.item.value);
-					registered_ref_item = node.item.value;
+					emit_list_ref();
+					status.code += `[${idx_var}];\n`;
 				}
 			}
 		}
 	}
 
 	// Push the ref write-back so break/continue emit it before jumping.
+	// (`for ref` loops push `undefined` — the pointer-borrow item writes
+	// through its slot pointer directly; nothing is deferred.)
 	if (!status.loop_writebacks) status.loop_writebacks = [];
-	status.loop_writebacks.push(ref_writeback);
+	status.loop_writebacks.push(undefined);
 
 	build_block_with_cursor(node, nir?.body, status);
 
@@ -246,9 +222,6 @@ export default function build_for_loop_node(
 		build_node(node.update, status);
 		status.code += ";\n";
 	}
-
-	// Write the (possibly mutated) loop variable back into its array slot.
-	if (ref_writeback) ref_writeback();
 
 	build_auto_free(status);
 
@@ -266,11 +239,14 @@ export default function build_for_loop_node(
 	leave_c_scope(status);
 	status.scoped_declarations = old_scoped_declarations;
 	status.deferred_frees = old_deferred_frees;
-	// The ref-for item's registration dies with its loop body: a return
-	// outside the loop must not free the (out-of-scope) item, and a nested
-	// build never sees a stale entry. An enclosing loop's registration stays.
-	if (registered_ref_item !== undefined && !registered_ref_item_nested) {
-		status.ref_for_string_items?.delete(registered_ref_item);
+	// The loop-borrow registrations die with the loop body: a later build
+	// must not treat an out-of-scope name as a borrowed array slot. An
+	// enclosing loop's registration stays (the nested flags).
+	if (!registered_ref_param_nested) {
+		status.function_ref_params?.delete(node.item?.value ?? "");
+	}
+	if (registered_ref_item !== undefined && !registered_borrow_item_nested) {
+		status.loop_ref_borrow_items?.delete(registered_ref_item);
 	}
 }
 

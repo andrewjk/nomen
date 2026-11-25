@@ -159,10 +159,9 @@ carrying a compile-time bounds contract (the user-suggested
 `entity_id: entity_id >= 0 && entity_id < world.entities.length`). The
 contract discharges the bounds checks inside the body and is proven at the
 call site by flow analysis (a length guard, a loop range); unprovable call
-sites are rejected outright. Because element reads are copies, the mutated
-element is written back at the end — the one step Rust doesn't need, and in
-exchange no re-fetch per use (a copy can't be invalidated the way a `&mut`
-must be dropped). Prints `0` (10 + 1 − 11):
+sites are rejected outright. The loop binds the element's slot directly, so
+writes land in place and there is no re-fetch per use — a plain pointer
+can't be invalidated the way a `&mut` must be dropped. Prints `0` (10 + 1 − 11):
 
 ```nomen
 import System
@@ -355,12 +354,12 @@ pub func main = () {
 ```
 
 **3. `step(world, entity)`** — mutate one element while reading the world.
-Same signature shape as the Rust contrast in the post: the world plus an
-index, with a compile-time bounds contract in place of Rust's panic check.
+Same signature shape as the contrasting example in the post: the world plus
+an index, with a compile-time bounds contract in place of a panic-check.
 The contract discharges the `at`/`set` bounds checks in the body and is
-proven at the call site; the mutated copy is written back at the end
-(the one step Rust skips — but Nomen never re-fetches, because a copy
-can't be invalidated). Prints `0` (10 + 1 − 11):
+proven at the call site; the loop binds the element's slot directly —
+Nomen never re-fetches, because the borrow is a plain pointer rather than a
+checked `&mut`. Prints `0` (10 + 1 − 11):
 
 ```nomen
 import System

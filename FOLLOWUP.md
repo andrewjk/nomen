@@ -4,54 +4,6 @@ Recorded issues that were deliberately not fixed inline (out of scope for the
 task that surfaced them). Each entry: what was seen, where, and any context
 needed to pick it up later.
 
-## Native pointer-borrow for the remaining `for ref` shapes
-
-`for ref x of arr` over a raw array binds the loop variable as a copy with a
-deferred write-back (`x` copied out per iteration, the slot re-stored at the
-iteration's end and before `break`/`continue`). The checker's element-borrow
-desugar (`desugar_array_for_loop`'s `loop_borrow`) already binds a TRUE slot
-alias for the safe shapes (value-struct elements of slot-borrowable
-containers with bodies that never touch the container), and that elision is
-observationally invisible. The remaining copy shapes are strings, scalars,
-and container-touching bodies over raw arrays.
-
-A native pointer-item prototype (2026-11-25, not landed) made the builder's
-loop item a `T*` to the slot registered in `function_ref_params`:
-
-- **C: worked end to end.** The loop head emits `T* x = &arr[idx]`; body
-  reads/writes deref via `function_ref_params`; the write-back machinery and
-  the `_owned` flag regime are deleted. The one required store-path change:
-  a store through a LOOP-BORROWED string item must reclaim the displaced row
-  (rows are heap-owned by the array literal), with the RHS materialized into
-  a temp FIRST (the RHS may read the item), keyed on a
-  `loop_ref_borrow_items` status set pushed with the loop body. All string
-  `for ref` tests passed audit-clean.
-- **aarch64: segfaulted; root causes partially diagnosed.** (1) The loop
-  item is a promotion candidate (`promote_loop_locals`'s "genuinely unknown"
-  int default — "for-loop items legitimately promote through it") — a
-  borrowed item promoted into scratch `x0` breaks write-through (x0 is
-  clobbered by every call) and folds the loop-head address store
-  (`emit_var_store` no-ops when `reg === alloc_reg`). Needs: an
-  `exclude` option on `promote_loop_locals` (candidate-loop skip) plus
-  dropping any stale `register_allocations` entry for the item before the
-  body. (2) Even with the item's slot holding the address, one store of
-  `x0` into the item slot was emitted AFTER the `if n > 0` condition's
-  compare and before its branch — an emission-order interaction between the
-  loop-head store and the if's direct-branch lowering (`emit_cond_branch`)
-  that static reading could not pin down. Both the loop head AND the NIR
-  body's desugared `ref x = arr.at(__idx)` declaration emit item stores, so
-  the loop head should own nothing: delete the builder's item store entirely
-  and let the NIR body's declaration be the only writer.
-- lldb attach to the spawned binary fails in this environment ("could not
-  pause execution"), which blocked live debugging; crash reports confirmed
-  a near-null read (`KERN_INVALID_ADDRESS at 0x143`) consistent with the
-  uninitialized-slot read above.
-
-Next steps: re-apply the C shape (it was audit-clean) and the aarch64
-promote-exclusion + no-loop-head-store restructure, then debug the remaining
-aarch64 emission-order interaction with lldb available. Backends must stay
-aligned: landing C-only would diverge mid-body container-read visibility.
-
 ## Struct-plan residuals
 
 (The plan documents are consolidated in [`docs/STRUCTS.md`](./docs/STRUCTS.md);

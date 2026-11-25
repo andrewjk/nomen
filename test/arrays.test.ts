@@ -1082,4 +1082,54 @@ Console.write(take())
 `;
 		await build_and_check_output(input, "array_string_for_ref_return_owned", "ab");
 	});
+
+	// TRUE ELEMENT BORROW: the loop item is a pointer to its slot, so a store
+	// through it lands in the array immediately — an in-body read of the
+	// array sees the write (a copy + end-of-iteration write-back would read
+	// the pre-write value).
+	test("for ref is a true element borrow for struct elements", async () => {
+		const input = `
+struct Point {
+	var int x = 0
+	var int y = 0
+}
+var Point[] arr = [Point(), Point()]
+for ref p of arr {
+	p.x = 9
+	if arr.at(0).x == 9 {
+		Console.write("live")
+	}
+}
+`;
+		await build_and_check_output(input, "array_for_ref_true_borrow_struct", "livelive");
+	});
+
+	test("for ref over an annotated array borrows natively too", async () => {
+		// The annotation makes the type carry an element + length, which used
+		// to take the desugar's copy + `arr.set` write-back path; `for ref`
+		// now skips the desugar so every array shape binds the same borrow.
+		const input = `
+var string[] arr = ["a", "b"]
+for ref s of arr {
+	s = "z"
+	if arr.at(0) == "z" {
+		Console.write("live")
+	}
+}
+`;
+		await build_and_check_output(input, "array_for_ref_annotated_borrow", "livelive");
+	});
+
+	test("for ref over a scalar array is a true borrow", async () => {
+		const input = `
+var ints = [1, 2]
+for ref n of ints {
+	n = 7
+	if ints.at(0) == 7 {
+		Console.write("live")
+	}
+}
+`;
+		await build_and_check_output(input, "array_for_ref_scalar_borrow", "livelive");
+	});
 });

@@ -162,7 +162,7 @@ export function promote_loop_locals(
 	status: BuildStatus,
 	scoped_declarations: DeclarationNode[],
 	sources: { condition?: BaseNode; statements: BaseNode[]; update?: BaseNode | null },
-	options?: { call_free?: boolean; int_ext?: boolean },
+	options?: { call_free?: boolean; int_ext?: boolean; exclude?: Set<string> },
 ): PromotedVar[] {
 	const promoted: PromotedVar[] = [];
 	const all_refs = new Map<string, { reads: number; address_taken: boolean }>();
@@ -335,6 +335,7 @@ export function promote_loop_locals(
 		}
 		// Aliasing-aware exclusions (critical for accumulator eligibility —
 		// a promoted alias/ref breaks write-through semantics):
+		if (options?.exclude?.has(name)) continue;
 		if (status.function_ref_params?.has(name)) continue;
 		if (status.function_ref_params?.has(`&${name}`)) continue;
 		if (status.heap_strings?.has(name)) continue;

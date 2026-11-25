@@ -141,20 +141,12 @@ edges:
 
 ### 1.5 Statement and expression forms (P2)
 
-- **C precedence trap preserved**: `&`, `|` and `^` bind looser than `==`
-  (`SPEC.md:2578-2581`), so `flags & X == X` parses as `flags & (X == X)`.
-  The README works around it with parentheses (`:543`). New languages (Go,
-  Swift, Rust) fixed this. It's worth fixing before 1.0, or at least making
-  mixed bitwise/comparison expressions without parentheses an error.
 - `for ref p of points` was documented as a "mutable copy … written back at
-  the end of the iteration". Both halves of that landed or were documented
-  2026-11-25: the element-borrow binding already existed (a value-struct
-  element in a slot-borrowable container with a clean body binds as a true
-  slot alias — no copy, writes immediate), and the remaining shapes (string
-  and scalar elements, raw arrays, container-touching bodies) keep the
-  copy + write-back, now stated precisely in SPEC ([Loop Iteration]).
-  Strings keep the write-back deliberately: they have no safe store
-  convention for a slot alias.
+  the end of the iteration". It is now a true element borrow: the loop
+  variable is a pointer to the element's slot, writes land in the array
+  immediately (an in-body read of the array sees them), and the copy +
+  write-back machinery — including the string owns-flag regime — is gone.
+  The SPEC states the borrow semantics outright.
 
 ### 1.6 Types (P2)
 
