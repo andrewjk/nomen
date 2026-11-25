@@ -82,11 +82,12 @@ targets.
   seam, and `Fiber.detach()` is the fire-and-forget form (launch and drop
   the handle). `Fiber.yield()` yields cooperatively,
   `Fiber.is_fiber()` reports fiber context, and
-  `Fiber(fn(args)).start_on(buf)` is validated at compile time to take a
-  fixed-size array stack buffer (>= 16 KB) — the caller-provided-stack
-  execution itself is the one open gap (the buffer's storage and byte size
-  have no representation in a method body yet, so the fiber runs on a heap
-  stack; see FOLLOWUP.md, "`Fiber.start_on(buf)` runs on a heap stack").
+  `Fiber(fn(args)).start_on(buf)` is validated at compile time to require a
+  fixed-size array stack buffer (>= 16 KB); the buffer argument is then
+  dropped, so the fiber runs on a heap stack. The caller-provided-stack
+  execution is the one open gap (the buffer's storage and byte size have no
+  representation in a method body yet; see FOLLOWUP.md,
+  "`Fiber.start_on(buf)` runs on a heap stack").
   `Fiber.set_cooperative(true)` runs fibers on the
   calling thread and starts no worker threads: they execute at would-block
   waits or process exit (single-threaded/bare-metal mode). A fiber spawned

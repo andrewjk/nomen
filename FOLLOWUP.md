@@ -187,11 +187,13 @@ The async migration made `Thread.start`/`.detach` and `Fiber.start`
 ordinary library methods, but `Fiber.start_on(buf)` remains special-cased:
 the checker validates the compile-time stack buffer (`check_spawn_start_on`
 — fixed-size array, ≥ 16 KB) and then REWRITES the access to the ordinary
-`Fiber.start` (`src/check/check_access_node.ts` — the
-`target_type.name === "Fiber" && node.name === "start_on"` arm). The
+`Fiber.start`, dropping the buffer argument (the checker's
+`target_type.name === "Fiber" && node.name === "start_on"` arm in
+`src/check/check_access_node.ts`). The
 fiber therefore runs on a HEAP stack, never the caller's buffer — on both
-backends, and it always did. The SPEC's "caller-provided fixed-size array
-stack" sentence (SPEC.md, Fiber section) is the documented-but-untrue bit.
+backends, and it always did. SPEC.md and docs/ASYNC.md now state that
+outright (the old "caller-provided fixed-size array stack" description was
+corrected 2026-11-25); what remains below is the implementation.
 
 Two things are missing to make it real:
 

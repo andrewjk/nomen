@@ -4736,17 +4736,18 @@ The spawns ride the `async` nursery: `ch` crosses as a checked region
 borrow (the join at the closing brace bounds it), and the block joins
 both fibers before `main` continues.
 
-`start_on(buf)` takes a caller-provided fixed-size array stack (at least
-16 KB — the size/fixed-array shape is validated at compile time) intended for
-running the fiber off the heap. The validation is enforced today; the fiber
-itself currently always runs on a heap stack (the caller-provided storage is
-not wired through yet):
+`start_on(buf)` requires a fixed-size array buffer of at least 16 KB (the
+fixed-array shape and the size minimum are checked at compile time). The
+buffer is **not used**: the call lowers to a plain `Fiber.start` and the
+argument is dropped, so the fiber runs on a heap stack either way. The
+caller-provided-stack path is unimplemented — it needs storage for a no-init
+`T[N]` declaration and a compile-time byte size for the parameter:
 
 ```
 import System
 
 func work = (uint64 n) {
-    Console.write_line("static stack")
+    Console.write_line("ran")
 }
 
 pub func main = () {
@@ -4755,6 +4756,10 @@ pub func main = () {
     f.wait()
 }
 ```
+
+`stack_buf` is advisory: the declaration only satisfies the validation (the
+no-init `T[N]` form does not materialize storage today), and the fiber never
+sees it.
 
 `Fiber.set_cooperative(true)` (before the first fiber spawn) runs fibers on
 the calling thread and never starts worker threads: fibers execute when the

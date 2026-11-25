@@ -1,1 +1,1 @@
-static stack ok
+start_on ok

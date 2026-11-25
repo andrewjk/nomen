@@ -513,13 +513,14 @@ pub func main = () {
 		expect(compile_module(input)).toEqual([]);
 	});
 
-	test("start_on runs a fiber on a caller-provided stack", () => {
-		// The start_on surface (fixed-array + >= 16 KB validation) compiles;
-		// the fiber currently runs on a heap stack either way — see
-		// FOLLOWUP.md, "Fiber.start_on(buf) runs on a heap stack".
+	test("start_on validates the buffer but runs the fiber on a heap stack", () => {
+		// The start_on surface (fixed-array + >= 16 KB validation) compiles,
+		// but the buffer argument is dropped and the fiber runs on a heap
+		// stack — see SPEC.md and FOLLOWUP.md, "Fiber.start_on(buf) runs on a
+		// heap stack".
 		const input = `
 func work = (uint64 n) {
-	Console.write_line("static stack")
+	Console.write_line("ran")
 }
 
 pub func main = () {

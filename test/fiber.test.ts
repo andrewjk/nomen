@@ -114,11 +114,14 @@ pub func main = () {
 		await build_and_check_output(input, "fiber_is_fiber", "main not fiber\nfiber is fiber\n", true);
 	});
 
-	test("start_on runs a fiber on a caller-provided static stack", async () => {
-		// 64 * 8 bytes would be too small; use a healthy fixed buffer. This
-		// is the caller-provided-stack path. The >=16 KB buffer pushes the
-		// later frame offsets past the aarch64 imm12 encodings — the
-		// large-frame access shims (asm_large_frame.ts) keep it assemblable.
+	test("start_on validates the buffer, then runs the fiber on a heap stack", async () => {
+		// 64 * 8 bytes would be too small; use a healthy fixed buffer. The
+		// buffer is COMPILE-TIME VALIDATED only — the call lowers to plain
+		// Fiber.start and the argument is dropped, so this exercises the
+		// heap-stack execution path (SPEC.md, "Fiber.start_on"). The >= 16 KB
+		// buffer still pushes the later frame offsets past the aarch64 imm12
+		// encodings — the large-frame access shims (asm_large_frame.ts) keep
+		// it assemblable.
 		const input = `
 import System
 
@@ -135,12 +138,12 @@ pub func main = () {
 		var uint64 r = f.result_uint64()
 		var uint64 v = ch.receive()
 		if v == 42 {
-			Console.write_line("static stack ok")
+			Console.write_line("start_on ok")
 		}
 	}
 }
 `;
-		await build_and_check_output(input, "fiber_start_on", "static stack ok\n", true);
+		await build_and_check_output(input, "fiber_start_on", "start_on ok\n", true);
 	});
 
 	test("fibers spawned inside a nursery are joined at block exit", async () => {
