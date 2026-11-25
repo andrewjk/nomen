@@ -3,7 +3,7 @@
 The Language Server Protocol server for Nomen. Editors run it through the CLI,
 `nomen lsp` (stdio), which bundles this package — see
 [docs/EDITORS.md](../docs/EDITORS.md) for editor setup, settings and the
-feature list. The VS Code extension (`extension/`) is a thin client that
+feature list. The VS Code extension (`vscode/`) is a thin client that
 launches `nomen lsp`.
 
 ## Layout

@@ -84,11 +84,11 @@ await fs.writeFile(path.join(publicDir, "apple-touch-icon.png"), png(180, "#1111
 // runtime grid layout (Window.set_icon) has resolution to spare. Both track
 // the SVG.
 const logo_512 = png(512);
-await fs.writeFile(path.resolve(root, "../extension/logo.png"), logo_512);
+await fs.writeFile(path.resolve(root, "../vscode/logo.png"), logo_512);
 const core_icon = path.resolve(root, "../core/assets/nomen.png");
 await fs.mkdir(path.dirname(core_icon), { recursive: true });
 await fs.writeFile(core_icon, app_icon_png(1024));
 
 console.log(
-	`icons: wrote favicon.ico (${small.map((frame) => frame.size).join("/")}) and PNGs, extension/logo.png @ 512, core/assets/nomen.png @ 1024`,
+	`icons: wrote favicon.ico (${small.map((frame) => frame.size).join("/")}) and PNGs, vscode/logo.png @ 512, core/assets/nomen.png @ 1024`,
 );

@@ -49,7 +49,7 @@ The project also has uvu configured:
 
 Releases are managed with [bumpy](https://github.com/dmno-dev/bumpy/). Two
 packages are released: `nomen-lang` (the CLI, published to npm) and `nomen`
-(the VSCode extension, published to the marketplace).
+(the VSCode extension in `vscode/`, published to the marketplace).
 
 - Create a bump file as part of any PR that changes a released package:
   `pnpm exec bumpy add` (non-interactive: `pnpm exec bumpy add --packages "nomen-lang:patch" --message "..."`)

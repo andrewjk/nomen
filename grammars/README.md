@@ -3,8 +3,8 @@
 The TextMate grammar for Nomen, `nomen.tmLanguage.json` (scope `source.nm`).
 It is the single source of truth for syntax highlighting across the repo:
 
-- **VS Code extension** — `extension/esbuild.mjs` copies it to
-  `extension/syntaxes/` (git-ignored) on every build, so `vsce package` ships it
+- **VS Code extension** — `vscode/esbuild.mjs` copies it to
+  `vscode/syntaxes/` (git-ignored) on every build, so `vsce package` ships it
   inside the `.vsix`.
 - **[`nomen-shiki`](../shiki)** — imports it as
   `nomen-grammars/nomen.tmLanguage.json` (a workspace dependency).

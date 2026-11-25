@@ -1,6 +1,6 @@
 packages:
   - cli
-  - extension
+  - vscode
   - grammars
   - lsp
   - shiki

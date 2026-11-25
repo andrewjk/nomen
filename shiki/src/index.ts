@@ -2,7 +2,7 @@ import { createBundledHighlighter, createSingletonShorthands } from "shiki/core"
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
 /**
- * A Shiki highlighter for Nomen (`source.nm`), using the VS Code extension's
+ * A Shiki highlighter for Nomen (`source.nm`), using the shared
  * TextMate grammar.
  *
  * The JavaScript regex engine is used instead of the Oniguruma WASM build, so
