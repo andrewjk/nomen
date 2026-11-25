@@ -2327,6 +2327,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// every free — the audited free wrapper traps on a null pointer.
 			const registered = status.heap_string_arrays.get(decl.name)!;
 			const len = Math.abs(registered);
+			// Unique per EMISSION: this walk can run more than once for the
+			// same declaration (the scope exit and the return-path cleanup),
+			// and a bare name+index label collided (".Lskip_hsa_strs_0 is
+			// already defined" — a large string-literal array failed to
+			// assemble).
+			const skip_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 			// Negative len = INLINE storage (the elements sit at the var's
 			// frame offset — literal inits); positive = a heap base pointer
 			// (call inits). The heap-slots fast-path variant of this walk
@@ -2337,7 +2343,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				for (let j = 0; j < len; j++) {
 					emit_var_load(status, "x0", decl.name, 8);
 					emit_asm(status, `ldr x0, [x0, #${8 + j * 16}]\n`);
-					const skip = `.Lskip_hsa_${decl.name}_${j}`;
+					const skip = `.Lskip_hsa_${decl.name}_${skip_id}_${j}`;
 					emit_asm(status, `cbz x0, ${skip}\n`);
 					emit_free(status);
 					emit_asm(status, `${skip}:\n`);
@@ -2350,7 +2356,7 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				for (let j = 0; j < len; j++) {
 					emit_var_address(status, "x0", decl.name);
 					emit_asm(status, `ldr x0, [x0, #${j * 16}]\n`);
-					const skip = `.Lskip_hsa_${decl.name}_${j}`;
+					const skip = `.Lskip_hsa_${decl.name}_${skip_id}_${j}`;
 					emit_asm(status, `cbz x0, ${skip}\n`);
 					emit_free(status);
 					emit_asm(status, `${skip}:\n`);

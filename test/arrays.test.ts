@@ -209,6 +209,23 @@ Console.write("\\{result.at(0)} \\{result.at(1)} \\{result.at(2)} \\{result.at(3
 		await build_and_check_output(input, "array_with_literal_count_ints", "10 20 30 40");
 	});
 
+	test("large string-literal array assembles (aarch64 cleanup labels are unique)", async () => {
+		// The scope-exit free walk runs more than once per declaration (scope
+		// exit + return-path cleanup) and its skip labels were keyed on
+		// name+element index only, so a big literal array produced duplicate
+		// `.Lskip_hsa_<name>_<j>` symbols and failed to assemble on aarch64.
+		const literals = Array.from({ length: 64 }, () => '"abc"').join(", ");
+		const input = `
+var words = [${literals}]
+var total = 0
+for word of words {
+  total = total + word.length
+}
+Console.write("\\{total}")
+`;
+		await build_and_check_output(input, "string_literal_array_large", "192");
+	});
+
 	test("Array.set on a local persists across a re-read", async () => {
 		const input = `
 var Array<int> v = Array<int>.with(0, 5)
