@@ -2,7 +2,16 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
 	test: {
-		exclude: ["**/node_modules/**", "**/dist/**", "./temp/**", "./tests/**", "./test/out/**"],
+		// `.claude/` holds the agent worktrees (full repo copies): without this,
+		// a run from the main checkout collects every worktree's tests too.
+		exclude: [
+			"**/node_modules/**",
+			"**/dist/**",
+			"./temp/**",
+			"./tests/**",
+			"./test/out/**",
+			"**/.claude/**",
+		],
 		// Build the single precompiled system.o once before all tests; every
 		// C-backend test links it instead of recompiling System per test.
 		globalSetup: ["./test/system_lib_setup.ts"],

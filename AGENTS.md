@@ -58,6 +58,11 @@ L=/Users/andrewjk/Source/nomen/.git/nomen-full-test.lock; until mkdir "$L" 2>/de
 - Never delete the lock unless you created it. If it looks stale (no vitest
   process running for it), tell the user instead of removing it.
 - Single files and directories don't need the lock.
+- The same command works from the main checkout or any worktree: the Vitest
+  config excludes `.claude/**`, so a run from the main checkout doesn't also
+  collect the worktree copies under `.claude/worktrees/`. A run rewrites
+  tracked test artifacts (`test/out/system_lib/*/.hash*`, some
+  `output.txt`); restore any you didn't mean to change before committing.
 
 ### Alternative Test Framework
 
