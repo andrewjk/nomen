@@ -2261,7 +2261,7 @@ export default function check_function_call(
 				// A heap `Array<T>` temp handed to a `mv` param (an owning
 				// struct's auto-init field): the new owner frees the buffer,
 				// so the temp's own scope-exit free is skipped.
-				if (param_is_heap_array && !func_param.type.is_ref) hoisted.transferred_to_outer = true;
+				if (param_is_heap_array && !func_param.type.is_ref) hoisted.moved_to_owner = true;
 				if (!(node as FunctionCallNode).move_param_indices)
 					(node as FunctionCallNode).move_param_indices = [];
 				if (!(node as FunctionCallNode).move_param_indices!.includes(i))

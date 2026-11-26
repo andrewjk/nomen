@@ -682,7 +682,7 @@ export function free_scoped_declarations(
 		) {
 			// A hoisted nested-array inner temp: its buffer was TRANSFERRED to
 			// the outer array (which frees each inner buffer at scope exit).
-			if (dec.transferred_to_outer) continue;
+			if (dec.transferred_to_outer || dec.moved_to_owner) continue;
 			if (!commented) {
 				status.code += "\n// Auto-free\n";
 				commented = true;

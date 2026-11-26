@@ -157,7 +157,7 @@ Console.write("\\{g.at(0).at(1)} \\{g.length}")
 
 	test("nested array in a struct field (literal-seeded)", async () => {
 		const input = `
-struct Board {
+mv struct Board {
 	var int[][] grid
 }
 var b = Board([[1, 2], [3]])

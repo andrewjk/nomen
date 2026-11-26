@@ -633,7 +633,9 @@ export function emit_heap_array_buffer_free(status: BuildStatus, type: Type): vo
 	const elem_is_string = type.name === "string" && !type.elem;
 	const elem_is_class =
 		!type.elem && !!status.structs.find((st) => st.name === type.name && st.is_class);
-	if (elem_is_string || elem_is_class) {
+	// A nested array's slots are row buffers, each freed recursively.
+	const elem_row = type.elem as Type | undefined;
+	if (elem_is_string || elem_is_class || elem_row) {
 		const stride = elem_is_string ? 16 : 8;
 		const loop = `.Lhaf_loop_${id}`;
 		const done = `.Lhaf_done_${id}`;
@@ -644,7 +646,8 @@ export function emit_heap_array_buffer_free(status: BuildStatus, type: Type): vo
 		emit_asm(status, `${loop}:\n`);
 		emit_asm(status, `cbz x20, ${done}\n`);
 		emit_asm(status, `ldr x0, [x19]\n`);
-		emit_free(status);
+		if (elem_row) emit_heap_array_buffer_free(status, elem_row);
+		else emit_free(status);
 		emit_asm(status, `add x19, x19, #${stride}\n`);
 		emit_asm(status, `sub x20, x20, #1\n`);
 		emit_asm(status, `b ${loop}\n`);
@@ -1448,6 +1451,9 @@ function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): b
  */
 function emit_fixed_array_local_destroys(status: BuildStatus, decl: DeclarationNode): boolean {
 	if (!decl.type.is_array || !decl.type.length) return false;
+	// The rows moved with the buffer into a new owner (an owning struct's
+	// `Array<T>` field), which frees them.
+	if (decl.moved_to_owner) return true;
 	const arr_len = parseInt((decl.type.length as unknown as { value?: string }).value || "0");
 	// A NESTED array's slots are inner HEAP buffers (`Array_<T>*`) owned by
 	// this outer row: free each buffer at scope exit (a string inner also
@@ -2247,7 +2253,11 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			// with ANY class anchor slot takes THIS walk, and a heap array
 			// temp in the same scope used to leak here (the arm only existed
 			// in the no-slots walk).
-			if (status.heap_array_vars?.has(decl.name) && !decl.transferred_to_outer) {
+			if (
+				status.heap_array_vars?.has(decl.name) &&
+				!decl.transferred_to_outer &&
+				!decl.moved_to_owner
+			) {
 				if (status.heap_nested_array_types?.has(decl.name)) {
 					emit_asm(status, `str x19, [sp, #-16]!\n`);
 					emit_nested_heap_decl_destroy(status, decl.name);
@@ -2456,7 +2466,11 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 		// the variable holds a malloc'd buffer pointer ([ptr]=length, data
 		// follows). Free the buffer. Class/string element arrays are handled
 		// by heap_class_arrays/heap_string_arrays above (which `continue`).
-		if (status.heap_array_vars?.has(decl.name) && !decl.transferred_to_outer) {
+		if (
+			status.heap_array_vars?.has(decl.name) &&
+			!decl.transferred_to_outer &&
+			!decl.moved_to_owner
+		) {
 			if (status.heap_nested_array_types?.has(decl.name)) {
 				emit_asm(status, `str x19, [sp, #-16]!\n`);
 				emit_nested_heap_decl_destroy(status, decl.name);
@@ -2714,7 +2728,7 @@ export function mark_moved_if_struct(
 		const decl = all_scope_frames(status)
 			.flat()
 			.find((d) => d.name === var_name);
-		if (decl) decl.transferred_to_outer = true;
+		if (decl) decl.moved_to_owner = true;
 		return;
 	}
 	const is_struct = is_struct_type(var_type.name, status);

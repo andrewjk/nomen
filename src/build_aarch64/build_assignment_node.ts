@@ -3002,7 +3002,7 @@ export default function build_assignment_node(
 					const decl = all_scope_frames(status)
 						.flat()
 						.find((d) => d.name === donor);
-					if (decl) decl.transferred_to_outer = true;
+					if (decl) decl.moved_to_owner = true;
 				}
 				emit_rhs_value(node.right_value, nir_rhs, status);
 				ensure_newline(status);

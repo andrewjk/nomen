@@ -140,6 +140,11 @@ export default class DeclarationNode extends BaseNode {
 	 *  transfer doesn't double-free. Set at check time by the nested-array
 	 *  literal checking; consumed by both backends' auto-free. */
 	transferred_to_outer?: boolean;
+	/** True for a heap `Array<T>` local or hoisted temp whose buffer moved
+	 *  into a new owner (an owning struct's auto-init field). Only its
+	 *  scope-exit free is skipped — unlike `transferred_to_outer`, the
+	 *  declaration still lowers as a heap array. */
+	moved_to_owner?: boolean;
 	/** True for a root `const string[] = [...]` declaration: Mach-O arm64
 	 *  forbids pointer relocations in data sections, so the file-scope data
 	 *  emission lays out only the length word + zeroed element space, and the
