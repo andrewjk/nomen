@@ -38,6 +38,27 @@ npm test tests/function/build.test.ts
 npm test tests/function/
 ```
 
+### Running the Full Suite (shared lock)
+
+Several worktrees share this machine, and full-suite runs that overlap slow
+each other badly and fail spuriously (timeouts). Run the full suite (`npm test`
+or `vp test` with no filter) **one at a time across all worktrees**, inside the
+shared lock in the repository's common git dir:
+
+```bash
+L=/Users/andrewjk/Source/nomen/.git/nomen-full-test.lock; until mkdir "$L" 2>/dev/null; do sleep 30; done; trap 'rmdir "$L"' EXIT; npm test > full.log 2>&1; grep -E "FAIL|Test Files|Tests " full.log
+```
+
+- The lock is a directory: `mkdir` takes it atomically, and the `trap`
+  removes it when the run ends. The path is the common git dir
+  (`git rev-parse --git-common-dir`), so every worktree sees the same lock.
+- Run it in the background and wait for it to finish; it waits for any run
+  already holding the lock.
+- Save the whole log (not `tail`), so a failure has a name.
+- Never delete the lock unless you created it. If it looks stale (no vitest
+  process running for it), tell the user instead of removing it.
+- Single files and directories don't need the lock.
+
 ### Alternative Test Framework
 
 The project also has uvu configured:
