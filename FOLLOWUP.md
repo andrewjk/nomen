@@ -876,14 +876,6 @@ mono (`Array_Array_int`, docs/ARRAY_NESTED_MONO.md steps 1, 3, 4).
 `at_or_null` still can't: its result would be `Array<int>?`, and nullable
 heap arrays aren't supported yet (`var Array<int>? x = null` is rejected).
 
-## mv-struct row literal as a nested `at_or` fallback
-
-`r.at_or(i, [Rec("z")])` on an `Array<Array<Rec>>` (Rec has a string field)
-is rejected: "Cannot pass an array of mv value struct 'Rec' (string fields)
-to 'Array<Rec>' parameter 'fallback'". This is the general rule for
-mv-struct array literals passed to `Array<T>` params (check_function_call),
-which now applies because nested `at_or` calls the row-keyed library mono.
-
 ## `view string` parameters can't hold a string array's view
 
 A `view string` parameter always means a view of a string's chars, so

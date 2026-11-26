@@ -914,25 +914,61 @@ const s = names(v)
 		);
 	});
 
-	test("mv value-struct literal to Array param is rejected", () => {
+	// A literal's elements are fresh instances, so the heap materialisation
+	// owns their strings outright (a stack-array VARIABLE is still rejected
+	// above: its copy would share the caller's strings).
+	test("mv value-struct literal to Array param", async () => {
 		const input = `
-struct Person {
+import System
+mv struct Person {
   mv string name
   var int age
 }
 func names = (Array<Person> xs, out string) {
   var result = ""
   for p of xs {
-    result = result + p.name
+    result = result + p.name + "\\{p.age}"
   }
   return result
 }
-const s = names([Person("Alice", 30)])
+pub func main = () {
+  const s = names([Person("Alice", 30), Person("Bob", 4)])
+  Console.write_line(s)
+}
 `;
-		const parsed = parse_with_imports(input);
-		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Cannot pass an array of mv value struct 'Person' (string fields) to 'Array<Person>' parameter 'xs' — the materialised heap copy would share the element strings. Use 'List<Person>' instead: its Buffer deep-copies mv elements soundly",
-		);
+		await build_and_check_output(input, "array_mv_struct_literal_arg", "Alice30Bob4", true, {
+			audit: true,
+			js: true,
+		});
+	});
+
+	// Nested `at_or` calls the row-keyed library mono, so its row-literal
+	// fallback is an `Array<Rec>` argument like any other.
+	test("mv value-struct row literal as a nested at_or fallback", async () => {
+		const input = `
+import System
+mv struct Rec {
+  mv string name
+}
+func names = (Array<Rec> a, out string) {
+  var o = ""
+  for q of a {
+    o = o + q.name
+  }
+  return o
+}
+pub func main = () {
+  const r = [[Rec("a"), Rec("b")], [Rec("c")]]
+  const x = r.at_or(5, [Rec("z")])
+  const y = r.at_or(1, [Rec("q"), Rec("w")])
+  const v = Rec("v")
+  Console.write_line(names(x) + names(y) + "\\{y.length} " + names([v.copy()]) + v.name)
+}
+`;
+		await build_and_check_output(input, "array_nested_at_or_mv_row", "zc1 vv", true, {
+			audit: true,
+			js: true,
+		});
 	});
 
 	// An `Array<string>` (or `string[]`) built from a literal used to hold the

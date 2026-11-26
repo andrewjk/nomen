@@ -1008,9 +1008,10 @@ export default function check_function_call(
 		//   2. class-element stack-array variables — the heap copy would
 		//      share the instances with the caller's array (whose cleanup
 		//      frees each element) — a double-free.
-		//   3. mv value-struct elements (string fields) — the copy would
-		//      share the strings (List<T>'s Buffer deep-copies them; Array
-		//      materialisation does not own element strings yet).
+		//   3. mv value-struct elements (string fields) of a stack-array
+		//      VARIABLE — the copy would share the caller's strings (List<T>'s
+		//      Buffer deep-copies them). A literal's elements are fresh
+		//      instances, so its heap materialisation owns them outright.
 		if (
 			func_param &&
 			is_heap_array_type(func_param.type) &&
@@ -1044,7 +1045,7 @@ export default function check_function_call(
 				);
 			} else if (
 				!func_param.type.is_ref &&
-				(arg_is_stack_array_var || arg_is_literal) &&
+				arg_is_stack_array_var &&
 				elem_struct &&
 				!elem_struct.is_simple_type &&
 				!elem_struct.is_class &&
