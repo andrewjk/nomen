@@ -9,5 +9,5 @@ repository = "https://github.com/andrewjk/nomen"
 [grammars.nomen]
 repository = "https://github.com/andrewjk/nomen"
 # The commit whose tree-sitter/ grammar these queries were generated for.
-rev = "GRAMMAR_REV"
+rev = "718eb7050475ce87409f914c7e019508773f822a"
 path = "tree-sitter"
