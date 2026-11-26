@@ -877,12 +877,3 @@ would read its elements as chars. Local views know which they are
 (`Type.view_of_elements`, set by `slice` on an array), but a parameter
 annotation has no spelling for "a view of strings". Needs syntax, e.g. a
 distinct element-view annotation. Seen while adding `for ... of` over views.
-
-## Binding a heap array to another name (`const w = q`)
-
-`const Array<int> q = [7, 8]` then `const w = q; w.length` fails on C with
-"member reference base type 'long' is not a structure or union": the
-declaration from a plain heap-array read is emitted as `long *w`. The
-ownership question is open too (alias or copy). Stores into an existing
-heap-array local now require a fresh array, `mv`, or `.copy()`, but plain
-declarations were not changed. Seen while adding `Array<T>?`.

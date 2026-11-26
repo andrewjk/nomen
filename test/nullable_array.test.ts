@@ -164,7 +164,7 @@ pub func main = () {
 
 	test("a nullable array cannot be used as a plain one", () => {
 		const parsed = parse_with_imports(`var Array<int>? a = [1]
-const Array<int> b = a`);
+const Array<int> b = mv a`);
 		expect(parsed.errors.map((e) => e.message)).toEqual([
 			"Type mismatch in declaration: Array<int>? (expected Array<int>)",
 		]);

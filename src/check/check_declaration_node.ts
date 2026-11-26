@@ -410,6 +410,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 		instantiate_generic_type(decl.type, status);
 
 		if (decl.value) {
+			if (!check_heap_array_binding(decl, status)) return false;
 			status.stack.push(decl);
 
 			const old_expected_type = status.expected_type;
@@ -1620,4 +1621,28 @@ function decl_starts_null(decl: DeclarationNode, status: CheckStatus): boolean {
 	// null, whatever the declared type allows.
 	const t = type_from_value_node(value, status);
 	return !!t && (!!t.is_nullable_array || (!!t.is_nullable && !t.is_array));
+}
+
+/**
+ * Binding an existing heap array to a new name creates a new owner, which
+ * must be spelled (SPEC, "Copies, Moves and Borrows"): `mv q` transfers it,
+ * `q.copy()` duplicates it. A bare `const w = q` would share the buffer
+ * (both owners free it), so it is rejected. `view` / `ref` bindings borrow.
+ */
+function check_heap_array_binding(decl: DeclarationNode, status: CheckStatus): boolean {
+	const value = decl.value;
+	if (!value || value.node_type !== "value" || value.is_moved) return true;
+	if (decl.declaration !== "const" && decl.declaration !== "var") return true;
+	if (decl.type.is_view || decl.type.is_ref) return true;
+	const name = (value as ValueNode).value;
+	const sv = status.values.findLast((v) => v.name === name);
+	const t = sv?.type;
+	if (!t || t.storage_kind !== "heap_array" || t.is_ref || t.is_view) return true;
+	const copy = t.is_nullable_array ? `${name}?.copy()` : `${name}.copy()`;
+	add_error(
+		status,
+		`Binding '${name}' to '${decl.name}' would share its buffer --> transfer it with \`mv ${name}\`, or bind a copy (\`${copy}\`)`,
+		value.start,
+	);
+	return false;
 }

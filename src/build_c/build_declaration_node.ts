@@ -1113,7 +1113,11 @@ export default function build_declaration_node(
 				(node.value?.node_type === "access" &&
 					(node.value as AccessNode).access.node_type === "access_func") ||
 				(node.value?.node_type === "op" &&
-					!!(node.value as OperationNode).operator_func?.struct_name?.startsWith("Array")));
+					!!(node.value as OperationNode).operator_func?.struct_name?.startsWith("Array")) ||
+				// `const w = mv q`: the donor's buffer transfers to the binding.
+				(node.value?.node_type === "value" &&
+					!!node.value.is_moved &&
+					node.type.storage_kind === "heap_array"));
 		const is_null_init =
 			!node.value ||
 			(node.value.node_type === "value" && (node.value as ValueNode).value === "null");

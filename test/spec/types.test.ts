@@ -100,6 +100,18 @@ var grid2 = grid.copy()
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("binding an array is spelled", () => {
+		const input = `
+var Array<int> q = [1, 2]
+const w = q
+var c = q.copy()
+const m = mv q
+`;
+		expect(compile_main(input).map((e) => e.message)).toEqual([
+			"Binding 'q' to 'w' would share its buffer --> transfer it with `mv q`, or bind a copy (`q.copy()`)",
+		]);
+	});
+
 	test("struct fields need an mv struct", () => {
 		const input = `
 mv struct Blocks {

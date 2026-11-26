@@ -188,6 +188,17 @@ const grid = [[1, 2], [3, 4]]
 var grid2 = grid.copy()             // new rows too
 ```
 
+Binding or storing an existing heap array creates a second owner, so it must
+be spelled: `mv` transfers the buffer, and `.copy()` duplicates it. A bare
+binding would share the buffer, so it is an error:
+
+```
+var Array<int> q = [1, 2]
+const w = q            // Error: Binding 'q' to 'w' would share its buffer
+var c = q.copy()       // OK: an independent copy
+const m = mv q         // OK: q can no longer be used
+```
+
 Internally `Array<T>` is identical to `T[]`; casts, indexing (`.at`/`.set`),
 and `.length` behave the same. `Array<T>` is the canonical spelled-out form
 used throughout this document wherever a typed array is needed (e.g. tuples

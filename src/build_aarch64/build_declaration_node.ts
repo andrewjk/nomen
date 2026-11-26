@@ -73,6 +73,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import aarch64_type from "./utils/aarch64_type.ts";
 import { emit_strdup, emit_malloc } from "./utils/audit.ts";
 import {
+	all_scope_frames,
 	anchor_heap_pointer,
 	alloc_string_owns_flag,
 	clear_heap_string_fields,
@@ -125,12 +126,14 @@ import {
  * donor uses its dedicated transfer path, a struct/enum/trait/class value
  * the generic moved-struct helper.
  */
-export function mark_moved_array_element(value: BaseNode, status: BuildStatus): void {
-	if (value.node_type !== "value" || !(value as ValueNode).is_moved) return;
+/** Returns true when a heap-owned string donor was transferred (its buffer
+ *  now belongs to the slot). */
+export function mark_moved_array_element(value: BaseNode, status: BuildStatus): boolean {
+	if (value.node_type !== "value" || !(value as ValueNode).is_moved) return false;
 	const name = (value as ValueNode).value;
-	if (!transfer_string_donor(status, name)) {
-		mark_moved_if_struct(value, status);
-	}
+	if (transfer_string_donor(status, name)) return true;
+	mark_moved_if_struct(value, status);
+	return false;
 }
 
 /**
@@ -2214,6 +2217,34 @@ export default function build_declaration_node(
 	}
 
 	if (
+		node.value?.node_type === "value" &&
+		node.value.is_moved &&
+		node.type.storage_kind === "heap_array" &&
+		status.function_return_label
+	) {
+		// `const w = mv q`: the donor's buffer transfers to the binding (the
+		// donor is no longer freed at scope exit).
+		const donor = (node.value as ValueNode).value;
+		const donor_decl = all_scope_frames(status)
+			.flat()
+			.find((d) => d.name === donor);
+		if (donor_decl) donor_decl.moved_to_owner = true;
+		emit_var_load(status, "x0", donor, 8);
+		ensure_newline(status);
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+		emit_asm(status, `str x0, [x29, #${offset}]\n`);
+		if (!status.heap_array_vars) status.heap_array_vars = new Set();
+		status.heap_array_vars.add(node.name);
+		if (node.type.elem) {
+			if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+			status.heap_nested_array_types.set(node.name, node.type);
+		} else {
+			register_owned_array_elements(node.name, node.type, status);
+		}
+		return;
+	}
+	if (
 		node.value?.node_type === "null_access" &&
 		node.type.is_nullable_array &&
 		status.function_return_label
@@ -2378,7 +2409,7 @@ export default function build_declaration_node(
 				emit_asm(status, `str x0, [x9]\n`);
 				values.forEach((value, i) => {
 					const slot = 8 + i * element_size;
-					mark_moved_array_element(value as BaseNode, status);
+					const heap_donor = mark_moved_array_element(value as BaseNode, status);
 					const raw = is_range ? value : resolve_static_value(value as BaseNode, status);
 					if (typeof raw === "string" && raw.startsWith('"')) {
 						// strdup the label ptr: the buffer OWNS its rows (the
@@ -2418,6 +2449,26 @@ export default function build_declaration_node(
 						}
 						emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
 						emit_asm(status, `str x0, [x9, #${slot}]\n`);
+					} else if (node.type.name === "string" && element_size === 16 && !struct_element) {
+						// A computed string element (`["a" + b, s]`): the value is
+						// the (ptr, len) pair in x0/x1. The buffer OWNS its
+						// rows (the scope-exit walk frees each ptr half), so a
+						// borrowed read (or an `mv` of a non-heap string) is
+						// dup'd; a fresh result or a heap donor's `mv` transfers.
+						const v = value as BaseNode;
+						emit_init_value(v, nir_array_element(nir_init, array_literal_node, i), status);
+						ensure_newline(status);
+						const producer =
+							heap_donor ||
+							v.node_type === "op" ||
+							v.node_type === "func_call" ||
+							(v.node_type === "access" && (v as AccessNode).access.node_type === "access_func");
+						if (!producer) {
+							emit_strdup(status);
+							ensure_newline(status);
+						}
+						emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
+						emit_asm(status, `stp x0, x1, [x9, #${slot}]\n`);
 					} else if (element_size > 8 && struct_element && !struct_element.is_class) {
 						// Value-struct element: a bare local's value load yields
 						// only the struct's FIRST word (the vtable pointer), so
