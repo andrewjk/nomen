@@ -347,4 +347,47 @@ pub func main = () {
 			js: true,
 		});
 	});
+
+	test("slice views the rows", async () => {
+		const input = `import System
+mv struct Rec {
+	mv string name
+}
+pub func main = () {
+	const g = [[1, 2], [3], [4, 5, 6]]
+	view v = g.slice(1, 3)
+	const row = v.at(1)
+	Console.write("\\{v.length} \\{v.at(1).length} \\{v.at(1).at(2)} \\{row.at_or(0, 0)} ")
+	Console.write("\\{g.slice(0, 2).at(1).at(0)} \\{g.slice(1, 1).length} ")
+	const w = [["a", "b"], ["c"]]
+	const r = [[Rec("x")], [Rec("y"), Rec("z")]]
+	view vw = w.slice(0, 1)
+	view vr = r.slice(1, 2)
+	Console.write(vw.at(0).at(1) + vr.at(0).at(1).name + " ")
+	const t = [[[1, 2], [3]], [[4]]]
+	view vt = t.slice(0, 1)
+	const s = Array<Array<int>>.with([5, 6], 3)
+	view vs = s.slice(1, 3)
+	Console.write("\\{vt.at(0).length} \\{vt.at(0).at(1).at(0)} \\{vs.at(1).at(1)}")
+}
+`;
+		await build_and_check_output(input, "nested_slice_rows", "2 3 6 4 3 0 bz 2 3 6", true, {
+			audit: true,
+			js: true,
+		});
+	});
+
+	test("view of mv structs", async () => {
+		const input = `import System
+mv struct Rec {
+	mv string name
+}
+pub func main = () {
+	const r = [Rec("y"), Rec("z")]
+	view vr = r.slice(1, 2)
+	Console.write_line(vr.at(0).name)
+}
+`;
+		await build_and_check_output(input, "view_mv_structs", "z", true, { audit: true, js: true });
+	});
 });

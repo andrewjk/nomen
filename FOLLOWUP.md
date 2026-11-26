@@ -884,10 +884,8 @@ to 'Array<Rec>' parameter 'fallback'". This is the general rule for
 mv-struct array literals passed to `Array<T>` params (check_function_call),
 which now applies because nested `at_or` calls the row-keyed library mono.
 
-## `slice` on a nested array
+## `for ... of` over a `view`
 
-`g.slice(0, 1)` on an `Array<Array<int>>` fails with "Function not found:
-int.slice": the call still takes the leaf mono. `slice` returns `view T`,
-and a view of rows would need view types that carry the row type (`elem`)
-through the checker and all three backends, so it was left out of the
-nested `with` change. `copy()` and then indexing works as a stopgap.
+`for x of v` where `v` is a `view T` (`view v = xs.slice(0, 2)`) is
+rejected: "For loop list must be an array, List, or Enumerable, not int".
+Indexing with `v.at(i)` works. Seen while adding nested `slice`.

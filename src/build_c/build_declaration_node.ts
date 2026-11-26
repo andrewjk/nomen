@@ -397,9 +397,10 @@ export default function build_declaration_node(
 			}
 		}
 		const mono_name = mono_type_name(node.type);
-		const mono_struct = status.structs.find(
-			(s) => s.name === mono_name && !s.is_simple_type && !s.is_generic,
-		);
+		// A `view T` local is a (ptr, len) slice, never a `T` value.
+		const mono_struct = node.type.is_view
+			? undefined
+			: status.structs.find((s) => s.name === mono_name && !s.is_simple_type && !s.is_generic);
 		const is_class_type = !!mono_struct?.is_class;
 		// A trait-typed local holds a concrete struct value (the initializer's
 		// actual type). Declare it with the concrete struct's C type so the
@@ -1763,11 +1764,12 @@ export default function build_declaration_node(
 			{
 				// A row binding (`const row = g.at_or_panic(i)`) is an array of
 				// structs, not a struct value.
-				const binding_struct = node.type?.is_array
-					? undefined
-					: status.structs.find(
-							(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
-						);
+				const binding_struct =
+					node.type?.is_array || node.type?.is_view
+						? undefined
+						: status.structs.find(
+								(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
+							);
 				const init_access =
 					node.value?.node_type === "access"
 						? ((node.value as AccessNode).access as { node_type?: string; name?: string })

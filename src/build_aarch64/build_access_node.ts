@@ -240,6 +240,11 @@ function build_view_op(
 		build_operand(access_func.params[0], "x1", status);
 		ensure_newline(status);
 		emit_asm(status, `ldr x0, [x29, #${base}]\n`);
+		// A view of a nested array's rows: the slot is the row's base pointer.
+		if (t?.elem) {
+			emit_asm(status, `ldr x0, [x0, x1, lsl #3]\n`);
+			return true;
+		}
 		const elem_struct = status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
 		if (elem_struct) {
 			// Struct element: addr = ptr + index*size; memcpy into a sret temp;
@@ -1584,7 +1589,8 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			(node.target as AccessNode).access.node_type === "access_func" &&
 			(((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access ===
 				true ||
-				((node.target as AccessNode).access as AccessFunctionCallNode).returns_row === true)
+				((node.target as AccessNode).access as AccessFunctionCallNode).returns_row === true ||
+				((node.target as AccessNode).access as AccessFunctionCallNode).view_row_read === true)
 		) {
 			build_node(node.target, status);
 			ensure_newline(status);
@@ -4544,7 +4550,7 @@ function is_nested_row_read(target: BaseNode): boolean {
 	if (access.access.node_type !== "access_func") return false;
 	const outer = type_from_value_node(access.target);
 	const result = (access.access as AccessFunctionCallNode).type;
-	return !!outer?.is_array && !!outer.elem && !!result?.is_array;
+	return (!!outer?.is_array || !!outer?.is_view) && !!outer.elem && !!result?.is_array;
 }
 
 /**

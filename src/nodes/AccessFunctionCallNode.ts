@@ -222,6 +222,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * rows, lowered inline by the backends (the library `add` / `mul` would
 	 * share the row buffers).
 	 */
+	/**
+	 * `slice` on a NESTED array: the row-keyed mono's view over the row
+	 * slots; the result type is a `view` whose `elem` is the row.
+	 */
+	nested_slice?: boolean;
+	/** `.at(i)` on a view of a nested array's rows: reads a borrowed row. */
+	view_row_read?: boolean;
 	nested_op?: "add" | "mul";
 	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring

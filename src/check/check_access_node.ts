@@ -137,7 +137,8 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 			(node.target as AccessNode).access.node_type === "access_func" &&
 			(((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access ===
 				true ||
-				((node.target as AccessNode).access as AccessFunctionCallNode).returns_row === true)
+				((node.target as AccessNode).access as AccessFunctionCallNode).returns_row === true ||
+				((node.target as AccessNode).access as AccessFunctionCallNode).view_row_read === true)
 		) &&
 		// D3: a STRING call result stays inline — the call-site borrow/owned
 		// normalization (string_return_analysis) already emits a balanced
@@ -734,7 +735,10 @@ export function check_access_function_node(
 			for (const param of node.params) {
 				check_node(param, status);
 			}
-			node.type = new Type(elem_name);
+			// A view of a nested array's rows (`g.slice(0, 2)`) reads a row:
+			// a borrowed heap row buffer.
+			node.type = target_type.elem ? clone_type(target_type.elem) : new Type(elem_name);
+			if (target_type.elem) node.view_row_read = true;
 			return true;
 		}
 		if (node.name === "to_string" && target_type.name === "string") {
@@ -758,7 +762,8 @@ export function check_access_function_node(
 			target.node_type === "access" &&
 			(target as AccessNode).access?.node_type === "access_func" &&
 			(target as AccessNode).access &&
-			((target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true;
+			(((target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true ||
+				((target as AccessNode).access as AccessFunctionCallNode).view_row_read === true);
 		if (target_type.elem || chained_nested_receiver) {
 			if (node.name === "at" && node.params.length === 1) {
 				for (const param of node.params) {
@@ -1157,7 +1162,8 @@ export function check_access_function_node(
 		// (`Array_Array_int`); the backends otherwise rebuild the symbol
 		// from the leaf (`Array_int_first`).
 		node.mangled_name = `${struct.name}_${node.name}`;
-		node.returns_row = !!func.return_type?.is_array_heap;
+		node.returns_row = !!func.return_type?.is_array_heap && node.name !== "slice";
+		node.nested_slice = node.name === "slice";
 	}
 
 	// A `mv out T` method transfers ownership of its result to the caller
@@ -1380,6 +1386,15 @@ export function check_access_function_node(
 				node.deep_array_copy = true;
 			}
 		}
+	}
+	// `slice` of a nested array: a view of its rows (the row-keyed mono's
+	// (ptr, len) over the row slots), whose `.at` reads a borrowed row.
+	if (result && node.nested_slice && target_type.elem) {
+		const view = new Type(target_type.name);
+		view.is_view = true;
+		view.type_args = target_type.type_args;
+		view.elem = clone_type(target_type.elem);
+		node.type = view;
 	}
 
 	return result;
@@ -1778,6 +1793,11 @@ function check_nested_with(
 	const result = new Type(row.name);
 	result.storage_kind = "heap_array";
 	result.elem = row;
+	// A literal count gives the result a known length, like the flat
+	// `with`'s `out.length == count` contract (so `.slice` bounds verify).
+	if (node.params[1].node_type === "value" && /^\d+$/.test((node.params[1] as ValueNode).value)) {
+		result.length = new ValueNode(-1, (node.params[1] as ValueNode).value, new Type("int"));
+	}
 	node.type = result;
 	node.nested_with = true;
 	node.owned_return = true;
@@ -1791,7 +1811,7 @@ function is_integerish_name(name: string): boolean {
 /** Array methods a NESTED receiver dispatches to its row-keyed mono
  *  (`Array<Array<int>>` → `Array_Array_int`, whose `T` is the row) — see
  *  docs/ARRAY_NESTED_MONO.md. */
-const ROW_MONO_METHODS = new Set(["first", "at_end", "at_or", "at_or_panic"]);
+const ROW_MONO_METHODS = new Set(["first", "at_end", "at_or", "at_or_panic", "slice"]);
 
 /** The generic spelling of a nested array's row type (`Array<int>`,
  *  `Array<Array<int>>`, …) for monomorphizing `Array` on it. */
