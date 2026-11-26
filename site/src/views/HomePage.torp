@@ -1,10 +1,15 @@
 import home from "@/lib/docs/home.generated";
+import { TITLES } from "@/lib/titles.ts";
 
 import SiteNav from "./parts/SiteNav.torp";
 
 /** The landing page: README's introduction and feature list, plus a sample
  *  program (all rendered at build time by `scripts/render-docs.ts`). */
 export default function HomePage() {
+	@head {
+		<title>{TITLES.home}</title>
+	}
+
 	@render {
 		<SiteNav current="home" />
 		<main id="home">

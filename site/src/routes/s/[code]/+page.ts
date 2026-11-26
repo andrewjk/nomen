@@ -1,11 +1,12 @@
 import type { PageEndPoint } from "@torpor/build";
 import { ok } from "@torpor/build/response";
 
+import { TITLES } from "@/lib/titles.ts";
 import component from "@/views/PlaygroundPage.torp";
 
 import { CARD_VERSION, decode_source } from "../../../lib/share.ts";
 
-const TITLE = "Nomen Playground";
+const TITLE = TITLES.playground;
 const DESCRIPTION = "Open this Nomen program in the playground and run it in your browser.";
 
 /** A self-contained share link: the program is the URL. */
@@ -24,7 +25,6 @@ export default {
 		if (out) card.searchParams.set("out", out);
 		const image = source !== undefined ? card.href : `${origin}/og.png`;
 		return [
-			{ title: TITLE },
 			{ name: "description", content: DESCRIPTION },
 			{ property: "og:title", content: TITLE },
 			{ property: "og:description", content: DESCRIPTION },

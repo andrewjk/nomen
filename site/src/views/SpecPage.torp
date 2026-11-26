@@ -1,9 +1,14 @@
 import doc from "@/lib/docs/spec.generated";
+import { TITLES } from "@/lib/titles.ts";
 
 import DocPage from "./parts/DocPage.torp";
 
 /** SPEC.md, rendered at build time. */
 export default function SpecPage() {
+	@head {
+		<title>{TITLES.spec}</title>
+	}
+
 	@render {
 		<DocPage current="spec" title="Nomen Language Specification" doc={doc} />
 	}

@@ -1,4 +1,4 @@
-import type { ApiPage as Page } from "@/lib/api";
+import { api_title, type ApiPage as Page } from "@/lib/api";
 import nav from "@/lib/docs/api-nav.generated";
 
 import SiteNav from "./parts/SiteNav.torp";
@@ -11,6 +11,10 @@ export default function ApiPage($props: { data: { page?: Page } }) {
 		return $props.data.page && href === `/docs/${$props.data.page.path}`.replace(/\/$/, "")
 			? "current"
 			: "";
+	}
+
+	@head {
+		<title>{api_title($props.data.page)}</title>
 	}
 
 	@render {

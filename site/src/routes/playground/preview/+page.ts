@@ -20,7 +20,6 @@ export default {
 		return ok({ code, out: decode_source(out) !== undefined ? out : "" });
 	},
 	head: () => [
-		{ title: "Share preview" },
 		{
 			name: "description",
 			content: "Preview of the social card for a shared Nomen program.",

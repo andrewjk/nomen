@@ -24,6 +24,11 @@ export interface ApiNavNamespace {
 	types: { name: string; href: string }[];
 }
 
+/** An API page's `<title>` (the view sets it in `@head`; see lib/titles.ts). */
+export function api_title(page: ApiPage | undefined): string {
+	return page?.title ?? "Not found — Nomen API";
+}
+
 /** The `<head>` elements for an API page (`page` is undefined for a 404). */
 export function api_head(
 	url: URL,
@@ -33,10 +38,9 @@ export function api_head(
 	| { name: string; content: string }
 	| { property: string; content: string }
 )[] {
-	const title = page?.title ?? "Not found — Nomen API";
+	const title = api_title(page);
 	const description = page?.description ?? "";
 	return [
-		{ title },
 		{ name: "description", content: description },
 		{ property: "og:title", content: title },
 		{ property: "og:description", content: description },

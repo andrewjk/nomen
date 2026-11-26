@@ -1,8 +1,9 @@
 import type { PageEndPoint } from "@torpor/build";
 
+import { TITLES } from "@/lib/titles.ts";
 import component from "@/views/PlaygroundPage.torp";
 
-const TITLE = "Nomen Playground";
+const TITLE = TITLES.playground;
 const DESCRIPTION =
 	"Write and run Nomen programs in your browser: structs, enums, traits, generics, and the System library, compiled by the JavaScript backend.";
 
@@ -13,7 +14,6 @@ export default {
 	// rather than using `seo()` so no server-only framework code is imported
 	// into the Worker.
 	head: (event) => [
-		{ title: TITLE },
 		{ name: "description", content: DESCRIPTION },
 		{ property: "og:title", content: TITLE },
 		{ property: "og:description", content: DESCRIPTION },

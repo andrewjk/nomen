@@ -1,8 +1,9 @@
 import type { PageEndPoint } from "@torpor/build";
 
+import { TITLES } from "@/lib/titles.ts";
 import component from "@/views/EmbedPage.torp";
 
-const TITLE = "Nomen Playground";
+const TITLE = TITLES.playground;
 const DESCRIPTION =
 	"Write and run Nomen programs inside this post: structs, enums, traits, and the System library.";
 
@@ -17,7 +18,6 @@ export default {
 	head: (event) => {
 		const origin = event.url.origin;
 		return [
-			{ title: TITLE },
 			{ name: "description", content: DESCRIPTION },
 			{ name: "twitter:card", content: "player" },
 			{ name: "twitter:site", content: "@andrewjk" },

@@ -1,8 +1,9 @@
 import type { PageEndPoint } from "@torpor/build";
 
+import { TITLES } from "@/lib/titles.ts";
 import component from "@/views/HomePage.torp";
 
-const TITLE = "Nomen";
+const TITLE = TITLES.home;
 const DESCRIPTION =
 	"Nomen is a statically-typed, memory managed language that compiles to C, AArch64 assembly, and JavaScript.";
 
@@ -11,7 +12,6 @@ export default {
 	component,
 	prerender: true,
 	head: (event) => [
-		{ title: TITLE },
 		{ name: "description", content: DESCRIPTION },
 		{ property: "og:title", content: TITLE },
 		{ property: "og:description", content: DESCRIPTION },
