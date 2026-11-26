@@ -197,6 +197,10 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 			for (const field of node.fields) {
 				if (field.value) {
 					status.init_assigned_fields?.add(`self.${field.name}`);
+					if (field.type.storage_kind === "stack_array" && field.type.length) {
+						emit_fixed_array_field_default(`self${accessor}${field.name}`, field.value, status);
+						continue;
+					}
 					if (
 						field.type.is_view &&
 						!field.type.is_array &&
@@ -435,6 +439,17 @@ export default function build_struct_node(node: StructNode, status: BuildStatus)
 				} else {
 					status.code += `${object_name}${accessor}${field.name} = (nomen_view){0};\n`;
 				}
+			} else if (field.type.storage_kind === "stack_array" && field.type.length && field.value) {
+				// A defaulted fixed-size array field is not a ctor param: seed
+				// the inline storage from the default. An array literal stores
+				// element by element; a heap `Array` value (`Array.with(v, n)`)
+				// moves its elements out of the 16-byte-header buffer, which is
+				// then freed; any other fixed array value copies bytewise.
+				emit_fixed_array_field_default(
+					`${object_name}${accessor}${field.name}`,
+					field.value,
+					status,
+				);
 			} else if (field.type.storage_kind === "stack_array" && field.type.length) {
 				// Fixed-size stack array fields — use memcpy instead of assignment
 				status.code += `memcpy(${object_name}${accessor}${field.name}, ${field.name}, sizeof(${object_name}${accessor}${field.name}));\n`;
@@ -1501,4 +1516,38 @@ function forward_decl_referenced_types(func: FunctionNode, status: BuildStatus) 
 	for (const name of types_to_decl) {
 		status.headers += `struct ${name};\n`;
 	}
+}
+
+// Seed a defaulted fixed-size array field (`dst`) from its default. An
+// array literal stores element by element; a heap `Array` value
+// (`Array.with(v, n)`) moves its elements out of the 16-byte-header buffer,
+// which is then freed; any other fixed array value copies bytewise.
+function emit_fixed_array_field_default(dst: string, value: BaseNode, status: BuildStatus): void {
+	if (value.node_type === "array") {
+		(value as unknown as { values: BaseNode[] }).values.forEach((v, i) => {
+			status.code += `${dst}[${i}] = `;
+			build_node(v, status);
+			status.code += `;\n`;
+		});
+	} else if (value_is_heap_array(value)) {
+		status.code += `{ void* _src = (void*)(`;
+		build_node(value, status);
+		status.code += `); memcpy(${dst}, (char*)_src + 16, sizeof(${dst})); free(_src); }\n`;
+	} else {
+		status.code += `memcpy(${dst}, `;
+		build_node(value, status);
+		status.code += `, sizeof(${dst}));\n`;
+	}
+}
+
+// Whether a field default evaluates to a heap `Array<T>` buffer rather than
+// inline fixed-array storage: an array-returning call (`Array.with(v, n)`,
+// a method call) — the same rule the declaration builder applies to
+// `var int[4] b = Array.with(7, 4)` (is_heap_array_from_call).
+function value_is_heap_array(value: BaseNode): boolean {
+	if (value.node_type === "func_call") return true;
+	return (
+		value.node_type === "access" &&
+		(value as unknown as { access: BaseNode }).access.node_type === "access_func"
+	);
 }

@@ -834,16 +834,23 @@ comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
 
-## Fixed-length array fields and `Array` fields in library structs
+## `Array<T>` struct fields are never freed
 
-Seen while writing `core/System/Crypto/Sha256.nm` (which now avoids both):
+Seen while fixing array-typed struct fields (`test/array_struct_fields.test.ts`).
+A struct's destroy — C `build_auto_destroy` (`src/build_c/build_struct_node.ts`)
+and the aarch64 field-destroy walk — has no arm for a heap `Array<T>` field
+(`var Array<int> block = Array.with(0, 4)`), and `struct_needs_destroy`
+(`src/build_common/destroy_analysis.ts`) does not count one, so the buffer
+leaks one allocation per instance on both native backends. The dynamic-field
+test runs with the audit off until this lands.
 
-- `var int[8] h = Array.with(0, 8)` or `= [0, 0, …]` as a struct field
-  default: the C backend emits `self.h = Array_int_with(...)` (array type
-  not assignable) or `self.h = ;`, and the aarch64 backend emits the
-  literal's elements as an instruction ("asm: unparseable instruction
-  [in Sha256_init] — 0, 0, …"). JS works.
-- A dynamic `var Array<int> block = Array.with(0, 16)` field: C passes
-  `&self->block` (an `Array_int **`) to `Array_int_set`, which crashes at
-  run time; the JS backend has no lowering for `Array.at_or`
-  ("js backend: skipping unavailable feature: array.at_or").
+Freeing it is not a one-line arm, because ownership is undecided:
+
+- A NON-mv struct may hold an `Array<T>` field, and copying the struct
+  (`const q = p`) shares the buffer, so a destroy that frees it would
+  double-free. A `string` field in a non-mv struct is rejected ("cannot be
+  Copyable — field owns heap memory"); an `Array<T>` field probably needs
+  the same rule (a language decision, and a breaking change).
+- For `mv struct`s, destroy should free the buffer (and an `Array<string>`'s
+  element strings), field reassignment should free the displaced buffer,
+  and the synthesized `copy` must deep-copy the field.

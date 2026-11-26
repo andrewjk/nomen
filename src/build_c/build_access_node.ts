@@ -1793,7 +1793,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							const target_expr_is_class =
 								!!target_expr_type?.name &&
 								!!status.structs.find((s) => s.name === target_expr_type.name && s.is_class);
-							if (!target_is_ref_param && !target_expr_is_class) {
+							// A heap `Array<T>` receiver (an `Array<T>` FIELD, say)
+							// is already the `struct Array_<T>*` its methods take.
+							const target_expr_is_heap_array = !!target_expr_type?.is_array_heap;
+							if (!target_is_ref_param && !target_expr_is_class && !target_expr_is_heap_array) {
 								status.code += "&";
 							} else if (target_is_ref_class_param) {
 								// A `ref` class param is a double pointer (`struct T **`),

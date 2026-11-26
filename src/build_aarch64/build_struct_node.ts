@@ -202,6 +202,73 @@ function init_nullable_field_default(
 }
 
 /**
+ * Seed a defaulted fixed-size array field (`var int[4] h = [1, 2, 3, 4]`,
+ * `= Array.with(0, 4)`) into its inline storage. An array literal stores
+ * element by element; an array-returning call yields a heap `Array` buffer
+ * (count at +0, elements from +8) whose element bytes are moved into the
+ * field before the buffer is freed. Returns false for shapes it does not
+ * handle (non-scalar elements), leaving them to the generic path.
+ */
+function init_fixed_array_field_default(
+	node: StructNode,
+	field: any,
+	base_reg: string,
+	status: BuildStatus,
+): boolean {
+	const t = field.type;
+	if (t.storage_kind !== "stack_array" || !t.length || t.elem) return false;
+	const length = parseInt((t.length as { value?: string }).value ?? "", 10);
+	if (!(length > 0)) return false;
+	const is_string = t.name === "string";
+	if (!is_string && status.structs.find((s) => s.name === t.name && !s.is_simple_type)) {
+		return false;
+	}
+	const elem_size = is_string ? 16 : aarch64_size(t.name);
+	const offset = get_field_offset(node.name, field.name, status);
+	const value = field.value;
+	if (value.node_type === "array") {
+		const values = (value as { values: any[] }).values;
+		values.forEach((v: any, i: number) => {
+			status.last_result_is_heap = false;
+			build_node(v, status);
+			ensure_newline(status);
+			const at = offset + i * elem_size;
+			if (is_string) {
+				// Stored as-is, matching the C backend: fixed string-array
+				// elements are not freed by the struct's destroy.
+				emit_pair_store_to(status, base_reg, at, "x0", "x1");
+			} else {
+				emit_typed_store(status, "x0", base_reg, at, elem_size);
+			}
+		});
+		return true;
+	}
+	const is_call =
+		value.node_type === "func_call" ||
+		(value.node_type === "access" && value.access?.node_type === "access_func");
+	if (!is_call) return false;
+	build_node(value, status);
+	ensure_newline(status);
+	// Move the element bytes out of the heap buffer, then free it.
+	let k = 0;
+	const total = length * elem_size;
+	for (; k + 8 <= total; k += 8) {
+		emit_asm(status, `ldr x9, [x0, #${8 + k}]\n`);
+		emit_asm(status, `str x9, [${base_reg}, #${offset + k}]\n`);
+	}
+	for (; k + 4 <= total; k += 4) {
+		emit_asm(status, `ldr w9, [x0, #${8 + k}]\n`);
+		emit_asm(status, `str w9, [${base_reg}, #${offset + k}]\n`);
+	}
+	for (; k < total; k += 1) {
+		emit_asm(status, `ldrb w9, [x0, #${8 + k}]\n`);
+		emit_asm(status, `strb w9, [${base_reg}, #${offset + k}]\n`);
+	}
+	emit_free(status);
+	return true;
+}
+
+/**
  * Initialize a field whose default is a non-literal EXPRESSION (a string op
  * like `"de" + "fault"`, a call returning a non-struct, a grouped expr, …):
  * evaluate it and store the result into the field slot. x0 carries the
@@ -990,6 +1057,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 		if (field.value) {
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
+			if (init_fixed_array_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			const val = field.value.node_type === "value" ? (field.value as any).value : undefined;
 			// A defaulted `view T` field: a string literal borrows its static
@@ -1537,6 +1605,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 			status.init_assigned_fields?.add(`self.${field.name}`);
 			if (init_nullable_field_default(node, field, "x19", status)) continue;
 			if (init_enum_shorthand_field_default(node, field, "x19", status)) continue;
+			if (init_fixed_array_field_default(node, field, "x19", status)) continue;
 			const offset = get_field_offset(node.name, field.name, status);
 			const val = field.value.node_type === "value" ? (field.value as any).value : undefined;
 			// A defaulted `view T` field: a string literal borrows its static

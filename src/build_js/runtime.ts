@@ -341,6 +341,20 @@ function __at_or_null(list, i) {
 	return list[index];
 }
 
+// Array.at_or / at_or_panic: the element, or the fallback / a panic when
+// the index is out of range.
+function __array_at_or(list, i, fallback) {
+	const index = Number(i);
+	if (index < 0 || index >= list.length) return fallback;
+	return list[index];
+}
+
+function __array_at_or_panic(list, i) {
+	const index = Number(i);
+	if (index < 0 || index >= list.length) __panic("index out of range");
+	return list[index];
+}
+
 function __map_get(map, key) {
 	if (!map.has(key)) __panic("map key not found");
 	return map.get(key);
