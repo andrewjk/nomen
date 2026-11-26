@@ -5,6 +5,12 @@
  * `Result<T, E>`.
  **/
 pub checked enum Result<T, E> {
+	/**
+	 * Success, with the result `value`.
+	 **/
 	case ok(T value)
+	/**
+	 * Failure, with the error `err`.
+	 **/
 	case fail(E err)
 }

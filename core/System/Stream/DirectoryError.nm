@@ -14,9 +14,24 @@
  * that still has entries), `other` (anything else).
  **/
 pub enum DirectoryError {
+	/**
+	 * No directory exists at the path (ENOENT).
+	 **/
 	case not_found
+	/**
+	 * Permission was denied (EACCES).
+	 **/
 	case access_denied
+	/**
+	 * Something already exists at the path (EEXIST).
+	 **/
 	case already_exists
+	/**
+	 * The directory still has entries, so it can't be removed.
+	 **/
 	case not_empty
+	/**
+	 * Any other failure.
+	 **/
 	case other
 }

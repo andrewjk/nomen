@@ -253,7 +253,8 @@ function collect_items(
 							signature: c.params.length
 								? `case ${c.name}(${c.params.map(render_param).join(", ")})`
 								: `case ${c.name}`,
-							line: line_of(text, c.params[0]?.start ?? e.start),
+							doc: c.doc,
+							line: line_of(text, c.start ?? c.params[0]?.start ?? e.start),
 						})),
 					}),
 				);
@@ -429,13 +430,21 @@ function render_markdown(file: string, entries: DocEntry[]): string {
 			lines.push("**Members:**");
 			lines.push("");
 			for (const m of entry.members) {
-				const doc = m.doc ? ` — ${m.doc.split("\n")[0]}` : "";
+				const doc = m.doc ? ` — ${first_paragraph(m.doc)}` : "";
 				lines.push(`- \`${m.signature}\`${doc}`);
 			}
 			lines.push("");
 		}
 	}
 	return lines.join("\n");
+}
+
+/** A doc comment's first paragraph on one line (doc comments are hard-wrapped). */
+function first_paragraph(doc: string): string {
+	return doc
+		.split(/\n\s*\n/)[0]
+		.replace(/\s*\n\s*/g, " ")
+		.trim();
 }
 
 function render_param(p: ParameterNode): string {

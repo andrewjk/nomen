@@ -3,6 +3,12 @@
  * `match`.
  **/
 pub enum Option<T> {
+	/**
+	 * Holds a value.
+	 **/
 	case some(T value)
+	/**
+	 * Holds nothing.
+	 **/
 	case none
 }

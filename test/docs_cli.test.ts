@@ -34,6 +34,12 @@ pub mv struct Stack<T>: Countable {
 		self.length += 1
 	}
 
+	/**
+	 * How many values the stack
+	 * holds.
+	 *
+	 * Constant time.
+	 **/
 	pub inline func count = (self, out int) {
 		return self.length
 	}
@@ -52,6 +58,7 @@ pub trait Countable {
 
 /** A choice */
 pub enum Pick<T> {
+	/** Exactly one value **/
 	case one(T value)
 	case none
 }
@@ -109,19 +116,28 @@ describe("nomen docs", () => {
 			expect(stack.members.map((m) => [m.kind, m.signature, m.doc])).toEqual([
 				["field", "var length = 0", undefined],
 				["method", "func push = (ref self, mv T value)", "Push a value on top"],
-				["method", "func count = (self, out int)", undefined],
+				[
+					"method",
+					"func count = (self, out int)",
+					"How many values the stack\nholds.\n\nConstant time.",
+				],
 				["static", "func empty = (out Stack<T>)", undefined],
 			]);
 
 			const pick = model.entries[2];
-			expect(pick.members.map((m) => m.signature)).toEqual(["case one(T value)", "case none"]);
+			// A case takes its own doc comment; an undocumented case after it
+			// doesn't inherit it (nor the enum's).
+			expect(pick.members.map((m) => [m.signature, m.doc, m.line])).toEqual([
+				["case one(T value)", "Exactly one value", 41],
+				["case none", undefined, 42],
+			]);
 			expect(model.entries[3].signature).toBe("func helper = (int a, out int)");
 			expect(model.entries[4].signature).toBe("const ANSWER = 42");
 			expect(model.entries[5].members[0]).toMatchObject({
 				kind: "static",
 				signature: "func count = (string s, out int)",
 			});
-			expect(model.warnings).toEqual(["func `helper` has no doc comment (Stack.nm:38)"]);
+			expect(model.warnings).toEqual(["func `helper` has no doc comment (Stack.nm:45)"]);
 		} finally {
 			fs.rmSync(dir, { recursive: true });
 		}
@@ -136,6 +152,9 @@ describe("nomen docs", () => {
 			const md = fs.readFileSync(path.join(dir, "docs", "Lib", "Stack.md"), "utf8");
 			expect(md).toContain("## `mv struct Stack<T>: Countable`");
 			expect(md).toContain("- `func push = (ref self, mv T value)` — Push a value on top");
+			// A wrapped doc's first paragraph, joined onto one line.
+			expect(md).toContain("- `func count = (self, out int)` — How many values the stack holds.\n");
+			expect(md).toContain("- `case one(T value)` — Exactly one value");
 			expect(fs.existsSync(path.join(dir, "docs", "Lib", "Text", "Words.md"))).toBe(true);
 			const json = JSON.parse(fs.readFileSync(path.join(dir, "docs", "api.json"), "utf8"));
 			expect(json.entries).toHaveLength(6);

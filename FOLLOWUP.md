@@ -848,11 +848,6 @@ Unmarked struct members default to `pub`, so internal state fields
 reference. They are documented as "internal" for now; marking them
 `internal` would hide them.
 
-Two `nomen docs` gaps (`cli/src/docs.ts`, `src/doc_comments.ts`):
-
-- The generated Markdown lists each member as its signature plus the first
-  line of its doc, so a hard-wrapped doc comment is cut mid-sentence. Using
-  the first paragraph (lines joined) would fix it; the website renders the
-  full doc.
-- Enum cases can't carry doc comments (`collect_node` only collects the enum
-  itself), so `Option`, `Result`, `FileError`, … list their cases bare.
+Enum cases now take doc comments, but bitset flags still can't: a
+`BitsetNode`'s cases are bare strings with no source position, so
+`attach_doc_comments` has nothing to anchor them to.

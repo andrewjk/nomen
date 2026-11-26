@@ -71,6 +71,7 @@ export default function parse_enum(
 		status.stack.push(node);
 
 		while (peek_current(status) !== "}" && peek_current(status) !== undefined) {
+			const case_start = get_index(status);
 			if (accept("case", status)) {
 				// Case names are allowed to be keywords: the name after `case`
 				// in a type body is unambiguous, and every use is dot-prefixed
@@ -96,7 +97,7 @@ export default function parse_enum(
 					expect(")", status);
 				}
 
-				node.cases.push({ name: case_name, params });
+				node.cases.push({ name: case_name, params, start: case_start });
 				continue;
 			}
 			const next = status.tokens[status.i + 1]?.value;

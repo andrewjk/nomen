@@ -1,4 +1,5 @@
 import type BaseNode from "./nodes/BaseNode.ts";
+import type EnumNode from "./nodes/EnumNode.ts";
 import type RootNode from "./nodes/RootNode.ts";
 import type StructNode from "./nodes/StructNode.ts";
 import type TraitNode from "./nodes/TraitNode.ts";
@@ -52,7 +53,7 @@ export function clean_doc_comment(raw: string): string {
 /**
  * Attach each doc comment to the declaration node it immediately precedes. A
  * doc comment applies to the next documentable node (struct/trait/enum/bitset/
- * func/declare) whose `start` is at or after the comment's end; when several
+ * func/declare, or an enum case) whose `start` is at or after the comment's end; when several
  * precede a node, the nearest one wins.
  */
 export function attach_doc_comments(root: RootNode, source: string): void {
@@ -122,7 +123,15 @@ function collect_node(node: BaseNode, out: BaseNode[]): void {
 			for (const field of t.fields) out.push(field);
 			break;
 		}
-		case "enum":
+		case "enum": {
+			out.push(node);
+			// Cases carry a doc comment too: they aren't nodes, but attachment
+			// only reads `start` and writes `doc`.
+			for (const c of (node as unknown as EnumNode).cases) {
+				if (c.start !== undefined) out.push(c as unknown as BaseNode);
+			}
+			break;
+		}
 		case "bitset":
 		case "func":
 		case "declare":

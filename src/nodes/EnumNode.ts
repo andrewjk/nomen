@@ -5,7 +5,16 @@ import Type from "./Type.ts";
 export default class EnumNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
 	name: string;
-	cases: { name: string; params: ParameterNode[]; tag_index?: number }[];
+	/** `start` (the `case` keyword's offset) and `doc` are set for parsed
+	 *  cases so doc comments can document them; generated cases have
+	 *  neither. */
+	cases: {
+		name: string;
+		params: ParameterNode[];
+		tag_index?: number;
+		start?: number;
+		doc?: string;
+	}[];
 	/** True when this enum is defined in the appended System library source. */
 	is_library?: boolean;
 	/** Declared `mv enum` (STRUCT_PLAN_3 B1a): bindings mv instead of

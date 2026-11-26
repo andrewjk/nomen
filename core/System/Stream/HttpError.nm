@@ -14,8 +14,20 @@
  * refused or timed out), `other` (anything else).
  **/
 pub enum HttpError {
+	/**
+	 * The host name couldn't be resolved.
+	 **/
 	case dns
+	/**
+	 * The socket couldn't be created.
+	 **/
 	case socket
+	/**
+	 * The connection was refused or timed out.
+	 **/
 	case connect
+	/**
+	 * Any other failure.
+	 **/
 	case other
 }

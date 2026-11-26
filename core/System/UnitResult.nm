@@ -10,6 +10,12 @@
 // matching, checked-discard, the `error` gate, and postfix `!` all reuse the
 // Result machinery.
 pub checked enum UnitResult<E> {
+	/**
+	 * Success.
+	 **/
 	case ok
+	/**
+	 * Failure, with the error `err`.
+	 **/
 	case fail(E err)
 }
