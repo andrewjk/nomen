@@ -117,6 +117,15 @@ export default class Type {
 	view_of_elements?: boolean;
 
 	/**
+	 * A nullable heap ARRAY (`Array<int>?`): the array value itself may be
+	 * null. On an array type `is_nullable` means the ELEMENTS are nullable
+	 * (`Array<int?>`), so the array's own `?` needs this separate flag. A
+	 * heap array is a `struct Array_<T>*`, so null is the null pointer (no
+	 * `_has` companion).
+	 */
+	is_nullable_array?: boolean;
+
+	/**
 	 * For anonymous enum types `[.ok(T1, T2), .error]`, the case list.
 	 * When set, `name` is "anon_enum". Like tuples, these are materialized
 	 * into a generated enum during check (see materialize_anon_enum_type);

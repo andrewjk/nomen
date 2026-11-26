@@ -380,6 +380,14 @@ var v = arr.at_or(50, 0)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("at_or_null on a nested array returns a nullable row", () => {
+		const input = `
+const grid = [[1, 2], [3]]
+const row = grid.at_or_null(1) ?? [0]
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: slicing", () => {

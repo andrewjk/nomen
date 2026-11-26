@@ -185,6 +185,15 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 			build_node(node.right_value, status);
 			status.code += `); })`;
 		}
+	} else if (node.op === "??" && node.null_array_coalesce) {
+		// `xs ?? fallback` on an `Array<T>?`: the left once, the fallback
+		// only when it is null (both are borrowed heap-array pointers).
+		const id = ns_tmp_counter++;
+		status.code += `({ struct Array_${node.type.name}* _nac_${id} = `;
+		build_node(node.left_value, status);
+		status.code += `; _nac_${id} ? _nac_${id} : (`;
+		build_node(node.right_value, status);
+		status.code += `); })`;
 	} else if (node.op === "??") {
 		// Nullable chaining (ERRORS_PLAN): `a?.b ?? fallback`. The chain's
 		// nullness is consumed here — evaluate it once inside an if/else

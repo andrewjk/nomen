@@ -806,6 +806,9 @@ export default interface BuildStatus {
 	 *  must free every slot's ptr half before freeing the buffer. Unlike
 	 *  heap_string_arrays (rodata rows), these own their bytes. */
 	heap_owned_string_arrays?: Set<string>;
+	/** aarch64 only: heap-array locals that may hold null (`Array<T>?`) —
+	 *  their scope-exit destroy is null-guarded. */
+	nullable_heap_array_vars?: Set<string>;
 	/** aarch64 only: whether the expression JUST emitted produced a fresh
 	 *  heap-owned value (a call result, a concat, a materialized view copy)
 	 *  the consumer may transfer instead of copying. Side-channel state, so

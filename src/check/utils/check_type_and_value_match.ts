@@ -38,7 +38,17 @@ export default function check_type_and_value_match(
 	} else if (effective_target.name && !value_type.name) {
 		add_error_message(status, i, node_type, `unknown value ${value}`, type_name(effective_target));
 	} else if (effective_target.name && value_type.name) {
-		if (effective_target.is_array !== value_type.is_array) {
+		if (value_type.name === "null" && effective_target.is_nullable_array) {
+			return;
+		} else if (
+			value_type.is_nullable_array &&
+			!effective_target.is_nullable_array &&
+			effective_target.is_array
+		) {
+			// `Array<int>?` into a plain `Array<int>`: test it against null
+			// (or `??` a fallback) first.
+			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
+		} else if (effective_target.is_array !== value_type.is_array) {
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		} else if (!nested_elem_chains_match(effective_target, value_type)) {
 			// Nested-array element chains must agree in full depth and element

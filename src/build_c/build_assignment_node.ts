@@ -94,6 +94,25 @@ export default function build_assignment_node(
 	nir_rhs?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// An owned heap `Array<T>` local store (`x = ys.copy()`, `x = mv ys`,
+	// `x = null`): build the new buffer first (it may read `x`), free the
+	// displaced one (null-guarded), then store.
+	if (node.heap_array_local_store) {
+		const lhs_name = (node.left_value as ValueNode).value;
+		const lhs_type = type_from_value_node(node.left_value);
+		if (node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved) {
+			splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
+		}
+		const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+		const temp = `_hal_${id}`;
+		status.code += `{ __typeof__(${lhs_name}) ${temp} = `;
+		emit_rhs_value(node.right_value, nir_rhs, status);
+		status.code += `;\n`;
+		if (lhs_type) emit_heap_array_field_free(status, lhs_type, lhs_name);
+		status.code += `${lhs_name} = ${temp};\n}\n`;
+		if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
+		return;
+	}
 	// Evaluate override values into temporaries before the base lands in the
 	// destination, so an override reading the destination (`m = [ .. x,
 	// node_type = m.node_type ]`) sees the pre-assignment value.

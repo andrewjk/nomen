@@ -1,7 +1,7 @@
 # Plan: monomorphize nested arrays on their real element type
 
 Status: steps 1, 3 and 4 started — `first` / `at_end` / `at_or` /
-`at_or_panic` on nested receivers
+`at_or_null` / `at_or_panic` on nested receivers
 dispatch to the row-keyed mono (`ROW_MONO_METHODS` in check_access_node,
 row types in `check/utils/array_row_types.ts`). `set` and the static
 `Array<Array<T>>.with(row, n)` lower inline (`.set` deep-copies the value
@@ -49,7 +49,8 @@ Each works around the leaf-only mono for a subset of methods:
 | `deep_array_copy`       | check_access_node; `build_c/utils/deep_array_copy.ts`; `build_aarch64/utils/deep_array_copy.ts` | `copy`                                  |
 | `is_nested_row_read`    | aarch64 build_access_node                                                                       | base→data pointer for a method on a row |
 
-Still broken: `at_or_null` on nested receivers. About 45 references to these flags across
+`at_or_null` on nested receivers returns a nullable row (`Array<int>?`,
+`Type.is_nullable_array`). About 45 references to these flags across
 `src/`.
 
 ## The fix
@@ -169,12 +170,6 @@ check_access_node stamping), `is_nested_row_read`.
 
 ## Out of scope / prerequisites
 
-- **`at_or_null` on nested arrays needs nullable arrays.**
-  `var Array<int>? x = null` is rejected today ("Type mismatch in
-  declaration: null? (expected Array<int>)", "No operator ?? defined for
-  type Array"). The mono fix types `at_or_null` correctly as `Array<int>?`
-  but nothing can consume it until nullable heap arrays exist (a null
-  base pointer would be the natural representation). Track separately.
 - `Array<Self>` fields overflow the stack in `layout.ts` (FOLLOWUP.md) —
   independent, but worth fixing first if step 2's recursive row
   constants touch the same layout walk.

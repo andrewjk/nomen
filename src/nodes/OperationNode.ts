@@ -72,6 +72,16 @@ export default class OperationNode extends BaseNode {
 	 * restore it for the ok path's scope-exit free.
 	 */
 	in_flight_binding?: string;
+	/**
+	 * `xs == null` / `xs != null` where `xs` is a nullable heap array
+	 * (`Array<int>?`): a null-pointer test, stamped by the checker.
+	 */
+	null_array_compare?: boolean;
+	/**
+	 * `xs ?? fallback` where `xs` is an `Array<int>?`: the result borrows
+	 * whichever buffer is live, stamped by the checker.
+	 */
+	null_array_coalesce?: boolean;
 	operator_func?: {
 		struct_name: string;
 		func_name: string;

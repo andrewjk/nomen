@@ -8,6 +8,7 @@ import type GroupedNode from "../../nodes/GroupedNode.ts";
 import type Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
+import { clone_type } from "./tuple_struct.ts";
 
 /**
  * True for a checked call that hands back a fresh heap array its caller
@@ -39,6 +40,35 @@ export function hoist_array_temp(value: BaseNode, type: Type, status: CheckStatu
 	const call = ungroup(value);
 	status.allocations.push(new DeclarationNode(value.start, "private", "const", name, type, call));
 	return new ValueNode(value.start, name, type);
+}
+
+/**
+ * An array literal stored into a heap `Array<T>` slot (`x = [1, 2]`,
+ * `self.xs = [1, 2]`): build it as a heap temp and hand it over, so the
+ * store is `x = mv _param_N` (the temp is not freed at scope exit). A
+ * nested literal is heap-built at every level already; a flat one needs
+ * the heap-literal form.
+ */
+export function hoist_heap_array_literal(
+	value: BaseNode,
+	value_type: Type,
+	slot_type: Type,
+	status: CheckStatus,
+): ValueNode {
+	const name = `_param_${status.var_name_counter.value++}`;
+	let decl_type = value_type;
+	if (!slot_type.elem) {
+		decl_type = clone_type(slot_type);
+		decl_type.storage_kind = "heap_array";
+		decl_type.length = undefined;
+		decl_type.is_nullable_array = undefined;
+	}
+	const decl = new DeclarationNode(value.start, "private", "const", name, decl_type, value);
+	if (!slot_type.elem) decl.is_heap_array_literal = true;
+	status.allocations.push(decl);
+	const read = new ValueNode(value.start, name, decl_type);
+	read.is_moved = true;
+	return read;
 }
 
 /** `(expr)` → `expr`. */

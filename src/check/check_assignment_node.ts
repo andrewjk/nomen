@@ -42,6 +42,7 @@ import {
 	expr_to_string,
 	record_fresh_list_length,
 } from "./utils/flow_bounds.ts";
+import { hoist_heap_array_literal, is_owned_array_call } from "./utils/hoist_array_temp.ts";
 import { mv_type_error } from "./utils/mv_rule.ts";
 import {
 	borrowed_param_transfer_error,
@@ -246,7 +247,7 @@ export default function check_assignment_node(
 	// Without this, `field = nullableParam` errors "Variable '…' may be null"
 	// even though the value is merely being stored.
 	const old_allow_null = status.allow_null_value;
-	if (status.expected_type?.is_nullable) {
+	if (status.expected_type?.is_nullable || status.expected_type?.is_nullable_array) {
 		status.allow_null_value = true;
 	}
 	const result = check_node(assign.right_value, status);
@@ -255,6 +256,7 @@ export default function check_assignment_node(
 	if (!result) {
 		return false;
 	}
+	check_heap_array_store(assign, status);
 
 	// The mv rule (mv_rule.ts — the same predicate parameters, fields, and
 	// bindings enforce): `x = mv y` where y's type owns nothing transfers
@@ -330,8 +332,15 @@ export default function check_assignment_node(
 			(v) => v.name === (assign.right_value as ValueNode).value,
 		);
 		const src_type = type_from_value_node(assign.right_value, status);
-		// `field = mv arr` hands an `Array<T>` buffer to an owned field.
-		const array_transfer = stores_owned_array_field && src_type?.storage_kind === "heap_array";
+		// `field = mv arr` / `local = mv arr` hands an `Array<T>` buffer to
+		// an owned slot.
+		const lhs_heap = type_from_value_node(assign.left_value, status);
+		const array_transfer =
+			(stores_owned_array_field ||
+				(assign.left_value.node_type === "value" &&
+					lhs_heap?.storage_kind === "heap_array" &&
+					!lhs_heap.is_ref)) &&
+			src_type?.storage_kind === "heap_array";
 		if (src_sv?.func_params === undefined && !array_transfer) {
 			const mv_error = mv_type_error(src_type, status);
 			if (mv_error) {
@@ -1239,6 +1248,47 @@ export default function check_assignment_node(
 /** Is this `a.b = ...` assignment's target an OWNING-typed field (a class
  *  field or a mv-struct-typed field, B5)? Such stores TRANSFER — the
  *  copy rule does not apply; the borrow rejection governs instead. */
+/**
+ * A store into a heap `Array<T>` slot. An array literal becomes a heap temp
+ * moved into the slot (`x = mv _param_N`). For an owned LOCAL the store is
+ * stamped so the backends free the displaced buffer; its RHS must be a
+ * buffer the local can own — a fresh array, an `mv` transfer or `null` —
+ * since a plain read would share another owner's buffer (double free).
+ */
+function check_heap_array_store(assign: AssignmentNode, status: CheckStatus): void {
+	if (assign.operator || assign.swap) return;
+	const slot_type = type_from_value_node(assign.left_value, status);
+	if (slot_type?.storage_kind !== "heap_array" || slot_type.is_ref) return;
+	const rhs = assign.right_value;
+	if (rhs.node_type === "array") {
+		const value_type = type_from_value_node(rhs, status);
+		assign.right_value = hoist_heap_array_literal(rhs, value_type, slot_type, status);
+	}
+	if (assign.left_value.node_type !== "value") return;
+	const name = (assign.left_value as ValueNode).value;
+	const sv = status.values.findLast((v) => v.name === name);
+	if (!sv || sv.is_param || sv.type?.is_ref) return;
+	const value = assign.right_value;
+	const is_null = value.node_type === "value" && (value as ValueNode).value === "null";
+	const is_moved = value.node_type === "value" && !!(value as ValueNode).is_moved;
+	// A non-array RHS is the type check's to reject.
+	if (!type_from_value_node(value, status)?.is_array && !is_null) return;
+	if (!is_null && !is_moved && !is_owned_array_call(value)) {
+		const src = value_from_value_node(value) || "the value";
+		const fix =
+			value.node_type === "value"
+				? `transfer it with \`mv ${src}\`, or store a copy (\`${src}.copy()\`)`
+				: "store a copy (`.copy()`)";
+		add_error(
+			status,
+			`Storing '${src}' in the Array<T> variable '${name}' would share its buffer --> ${fix}`,
+			value.start,
+		);
+		return;
+	}
+	assign.heap_array_local_store = true;
+}
+
 function lhs_field_access_owning(access: AccessNode, status: CheckStatus): boolean {
 	const af = access.access as AccessFieldNode;
 	const target_type = type_from_value_node(access.target, status);

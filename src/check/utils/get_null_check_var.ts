@@ -33,14 +33,20 @@ export default function get_null_check_var(
 	// its inner access field. `type_from_value_node` unwraps it (and resolves
 	// a nullable variable's declared type).
 	const type_of = (node: BaseNode) => type_from_value_node(node, status);
+	// On an array `is_nullable` is the ELEMENT's; the array's own `?` is
+	// `is_nullable_array`.
+	const may_be_null = (node: BaseNode): boolean => {
+		const t = type_of(node);
+		return t?.is_array ? !!t.is_nullable_array : !!t?.is_nullable;
+	};
 
 	if (right.node_type === "value" && (right as ValueNode).value === "null") {
 		const path = path_of(left);
-		if (path && type_of(left)?.is_nullable) return { name: path, is_null_check: is_eq };
+		if (path && may_be_null(left)) return { name: path, is_null_check: is_eq };
 	}
 	if (left.node_type === "value" && (left as ValueNode).value === "null") {
 		const path = path_of(right);
-		if (path && type_of(right)?.is_nullable) return { name: path, is_null_check: is_eq };
+		if (path && may_be_null(right)) return { name: path, is_null_check: is_eq };
 	}
 	return null;
 }

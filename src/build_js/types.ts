@@ -40,6 +40,8 @@ export function stamped_type(node: BaseNode | undefined): Type | undefined {
 			return (node as ArrayValuesNode).type;
 		case "range":
 			return (node as RangeNode).type;
+		case "grouped":
+			return stamped_type((node as { value?: BaseNode }).value);
 		default:
 			return undefined;
 	}

@@ -39,7 +39,7 @@ import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import { is_owning_struct_type } from "./utils/ownership.ts";
 import { find_result_enum, result_display_name } from "./utils/result_display.ts";
 import { maybe_mark_borrow_to_string_operand } from "./utils/string_mutation_scan.ts";
-import { get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
+import { clone_type, get_or_create_tuple_struct, tuple_struct_name } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
 import value_from_value_node from "./utils/value_from_value_node.ts";
@@ -405,6 +405,23 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		}
 	}
 
+	// `xs ?? fallback` on a nullable heap array (`Array<int>?`).
+	if (op.op === "??" && left_type.is_nullable_array) {
+		return check_null_array_coalesce(op, left_type, right_type, status);
+	}
+
+	// `xs == null` / `xs != null` on a nullable heap array (`Array<int>?`):
+	// a null-pointer test (the array is a `struct Array_<T>*`).
+	if (
+		(op.op === "==" || op.op === "!=") &&
+		((left_type.is_nullable_array && right_type.name === "null") ||
+			(right_type.is_nullable_array && left_type.name === "null"))
+	) {
+		op.type = new Type("bool");
+		op.null_array_compare = true;
+		return true;
+	}
+
 	// `xs + ys` / `xs * n` on arrays: the library `Array.add` / `Array.mul`
 	// as an ordinary method call on heap operands (a fresh, owning result).
 	if (left_type.is_array && (op.op === "+" || op.op === "*")) {
@@ -480,7 +497,7 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	const struct_name = left_type.is_array ? "Array" : left_type.name;
 	if (
 		status.structs.find((s) => s.name === struct_name && !s.is_simple_type) &&
-		!(left_type.is_ref || left_type.is_nullable)
+		!(left_type.is_ref || left_type.is_nullable || left_type.is_nullable_array)
 	) {
 		add_error(status, `No operator ${op.op as string} defined for type ${struct_name}`, op.start);
 		return false;
@@ -1101,6 +1118,60 @@ function heap_array_operand(value: BaseNode, type: Type, status: CheckStatus): B
 	}
 	status.allocations.push(decl);
 	return new ValueNode(value.start, name, heap_type);
+}
+
+/**
+ * `xs ?? fallback` where `xs` is an `Array<T>?`. The result BORROWS
+ * whichever buffer is live, so it is bound to a borrowed `_param_N` temp
+ * (never freed — `xs` and the fallback keep their owners) and the operation
+ * becomes a read of it; the backends then only lower the coalesce as a
+ * declaration initializer. A literal fallback is built as a heap temp first.
+ */
+function check_null_array_coalesce(
+	op: OperationNode,
+	left_type: Type,
+	right_type: Type,
+	status: CheckStatus,
+): boolean {
+	const result_type = clone_type(left_type);
+	result_type.is_nullable_array = undefined;
+	result_type.storage_kind = "heap_array";
+	result_type.length = undefined;
+	if (
+		!right_type.is_array ||
+		right_type.name !== result_type.name ||
+		!!right_type.elem !== !!result_type.elem
+	) {
+		add_error(
+			status,
+			`Type mismatch in '??' fallback: ${type_name(right_type)} (expected ${type_name(result_type)})`,
+			op.right_value.start,
+		);
+		return false;
+	}
+	let right = op.right_value;
+	if (right.node_type === "array") {
+		right = heap_array_operand(right, right_type, status);
+	}
+	// A declaration initializer (`const t = xs ?? fb`) IS the borrowed
+	// binding — no second temp.
+	const owner = status.stack.at(-1);
+	if (owner?.node_type === "declare" && (owner as DeclarationNode).value === op) {
+		op.right_value = right;
+		op.type = result_type;
+		op.null_array_coalesce = true;
+		(owner as DeclarationNode).transferred_to_outer = true;
+		return true;
+	}
+	const coalesce = new OperationNode(op.start, "??", op.left_value, right);
+	coalesce.type = result_type;
+	coalesce.null_array_coalesce = true;
+	const name = `_param_${status.var_name_counter.value++}`;
+	const decl = new DeclarationNode(op.start, "private", "const", name, result_type, coalesce);
+	decl.transferred_to_outer = true;
+	status.allocations.push(decl);
+	replace_node(op, new ValueNode(op.start, name, result_type));
+	return true;
 }
 
 /** Turn `target` into `source` in place (every field), so parents holding

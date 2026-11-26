@@ -260,6 +260,24 @@ var int? x = 5
 const y = x + 1          // OK, y = 6
 ```
 
+A heap array can be nullable too: `Array<int>?` is an array that may be
+`null` (unlike `Array<int?>`, whose elements may be). It is a pointer, so
+`null` costs nothing extra. Test it with `== null` / `!= null` (which
+narrows), or coalesce it with `??` — the result borrows whichever array is
+live:
+
+```
+var Array<int>? xs = null
+const Array<int> none = [0]
+const n = (xs ?? none).length    // 1
+xs = [1, 2, 3]                   // frees the previous array, if any
+if xs != null {
+    Console.write_line("\{xs.length}")
+}
+```
+
+`?.` does not accept a nullable array yet; use `!= null` or `??`.
+
 ### Nullable Chaining
 
 `a?.b` reads a member only when the nullable target holds a value: the result is
@@ -3269,6 +3287,14 @@ plain runtime test instead of a compile error:
 var arr = [10, 20, 30]
 var c = arr.at_or_null(50) ?? 0   // null when out of range → 0
 var v = arr.at_or(50, 0)          // the fallback when out of range
+```
+
+On a nested array the element is a row, so `at_or_null` returns a nullable
+row (`Array<int>?`) that borrows from the outer array:
+
+```
+const grid = [[1, 2], [3]]
+const row = grid.at_or_null(1) ?? [0]   // [3]
 ```
 
 `at_or_panic(index)` traps on an out-of-range index — for the cases where

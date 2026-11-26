@@ -633,6 +633,43 @@ export function emit_heap_array_buffer_free(status: BuildStatus, type: Type): vo
 	const elem_is_string = type.name === "string" && !type.elem;
 	const elem_is_class =
 		!type.elem && !!status.structs.find((st) => st.name === type.name && st.is_class);
+	// Owning value-struct elements (mv string fields, …): destroy each in
+	// place before the buffer goes.
+	const elem_struct = type.elem
+		? undefined
+		: status.structs.find(
+				(st) =>
+					st.name === type.name &&
+					!st.is_simple_type &&
+					!st.is_class &&
+					!st.is_generic &&
+					struct_needs_destroy(st, status),
+			);
+	if (elem_struct) {
+		const elem_size = get_struct_size(elem_struct.name, status);
+		const loop = `.Lhaf_sloop_${id}`;
+		const done = `.Lhaf_sdone_${id}`;
+		emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_asm(status, `ldr x20, [x0]\n`);
+		emit_asm(status, `add x19, x0, #8\n`);
+		emit_asm(status, `${loop}:\n`);
+		emit_asm(status, `cbz x20, ${done}\n`);
+		emit_destroy_for_array_elem(
+			status,
+			elem_struct,
+			() => {
+				emit_asm(status, `mov x0, x19\n`);
+			},
+			0,
+		);
+		emit_asm(status, `add x19, x19, #${elem_size}\n`);
+		emit_asm(status, `sub x20, x20, #1\n`);
+		emit_asm(status, `b ${loop}\n`);
+		emit_asm(status, `${done}:\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+		emit_asm(status, `ldp x19, x20, [sp], #16\n`);
+	}
 	// A nested array's slots are row buffers, each freed recursively.
 	const elem_row = type.elem as Type | undefined;
 	if (elem_is_string || elem_is_class || elem_row) {
@@ -1359,7 +1396,34 @@ function emit_heap_struct_array_destroy(
 	emit_asm(status, `ldr x19, [sp], #16\n`);
 }
 
+/**
+ * An `Array<T>?` local may hold null: open a skip over its scope-exit walk
+ * (a no-op for every other local). Returns the closer that emits the label.
+ */
+function open_nullable_array_guard(status: BuildStatus, decl_name: string): () => void {
+	if (!status.nullable_heap_array_vars?.has(decl_name)) return () => {};
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const skip = `.Lnhg_skip_${id}`;
+	emit_var_load(status, "x0", decl_name, 8);
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	return () => emit_asm(status, `${skip}:\n`);
+}
+
 function emit_heap_array_decl_destroy(status: BuildStatus, decl_name: string): boolean {
+	if (!status.nullable_heap_array_vars?.has(decl_name)) {
+		return emit_heap_array_decl_destroy_body(status, decl_name);
+	}
+	// An `Array<T>?` local may hold null: skip the walk and free.
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const skip = `.Lnha_skip_${id}`;
+	emit_var_load(status, "x0", decl_name, 8);
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	const handled = emit_heap_array_decl_destroy_body(status, decl_name);
+	emit_asm(status, `${skip}:\n`);
+	return handled;
+}
+
+function emit_heap_array_decl_destroy_body(status: BuildStatus, decl_name: string): boolean {
 	const label_id = (status.label_counter = (status.label_counter ?? 0) + 1);
 	if (status.heap_nested_array_types?.has(decl_name)) {
 		// NESTED array: free every row's owned contents, each row buffer,
@@ -2288,10 +2352,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				!decl.transferred_to_outer &&
 				!decl.moved_to_owner
 			) {
+				const close_guard = open_nullable_array_guard(status, decl.name);
 				if (status.heap_nested_array_types?.has(decl.name)) {
 					emit_asm(status, `str x19, [sp, #-16]!\n`);
 					emit_nested_heap_decl_destroy(status, decl.name);
 					emit_asm(status, `ldr x19, [sp], #16\n`);
+					close_guard();
 					continue;
 				}
 				if (status.heap_struct_arrays?.has(decl.name)) {
@@ -2323,10 +2389,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 					emit_free(status);
 					emit_asm(status, `ldr x20, [sp], #16\n`);
 					emit_asm(status, `ldr x19, [sp], #16\n`);
+					close_guard();
 					continue;
 				}
 				emit_var_load(status, "x0", decl.name, 8);
 				emit_free(status);
+				close_guard();
 				continue;
 			}
 			if (status.heap_strings?.has(decl.name)) {
@@ -2501,10 +2569,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 			!decl.transferred_to_outer &&
 			!decl.moved_to_owner
 		) {
+			const close_guard = open_nullable_array_guard(status, decl.name);
 			if (status.heap_nested_array_types?.has(decl.name)) {
 				emit_asm(status, `str x19, [sp, #-16]!\n`);
 				emit_nested_heap_decl_destroy(status, decl.name);
 				emit_asm(status, `ldr x19, [sp], #16\n`);
+				close_guard();
 				continue;
 			}
 			if (status.heap_struct_arrays?.has(decl.name)) {
@@ -2538,10 +2608,12 @@ export function emit_destroy_for_scope(status: BuildStatus, declarations_before:
 				emit_free(status);
 				emit_asm(status, `ldr x20, [sp], #16\n`);
 				emit_asm(status, `ldr x19, [sp], #16\n`);
+				close_guard();
 				continue;
 			}
 			emit_var_load(status, "x0", decl.name, 8);
 			emit_free(status);
+			close_guard();
 			continue;
 		}
 		if (status.heap_strings?.has(decl.name)) {

@@ -688,6 +688,8 @@ export function free_scoped_declarations(
 				status.code += "\n// Auto-free\n";
 				commented = true;
 			}
+			// An `Array<T>?` local may hold null: guard the walk and free.
+			if (dec.type.is_nullable_array) status.code += `if (${cname}) {\n`;
 			if (dec.type.elem) {
 				// NESTED array: the buffer's slots are row POINTERS owned by
 				// this outer buffer — walk the rows recursively (a string or
@@ -710,7 +712,9 @@ export function free_scoped_declarations(
 				const elem_struct_type =
 					!elem_is_class &&
 					!elem_is_string &&
-					(dec.value?.node_type === "array" || is_array_copy_call(dec.value))
+					(dec.value?.node_type === "array" ||
+						is_array_copy_call(dec.value) ||
+						dec.type.is_nullable_array)
 						? status.structs.find((s) => s.name === elem_name && !s.is_simple_type && !s.is_generic)
 						: undefined;
 				if (elem_is_class) {
@@ -740,6 +744,7 @@ export function free_scoped_declarations(
 				}
 				status.code += `free(${cname});\n`;
 			}
+			if (dec.type.is_nullable_array) status.code += `}\n`;
 		}
 		// Stack (fixed-size) C arrays: the backing array is not malloc'd, but
 		// each element may own heap data (string / class / struct needing
@@ -1111,6 +1116,20 @@ export function emit_heap_array_field_free(
 		status.code += `for (long _i = 0; _i < ${owner_expr}->length; _i++) {\n`;
 		status.code += `\tnomen_string* _data = (nomen_string*)((char*)${owner_expr} + sizeof(struct Array_string));\n`;
 		status.code += `\tfree(_data[_i].ptr);\n`;
+		status.code += `}\n`;
+	} else if (
+		elem_struct &&
+		!elem_struct.is_simple_type &&
+		!elem_struct.is_generic &&
+		struct_needs_destroy(elem_struct, status)
+	) {
+		// Owning value-struct elements: destroy each in place.
+		status.code += `for (long _i = 0; _i < ${owner_expr}->length; _i++) {\n`;
+		emit_struct_destroys(
+			status,
+			elem_struct,
+			`((${elem_name}*)((char*)${owner_expr} + sizeof(struct Array_${elem_name})))[_i]`,
+		);
 		status.code += `}\n`;
 	}
 	status.code += `free(${owner_expr});\n`;

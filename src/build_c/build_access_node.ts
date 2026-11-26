@@ -2128,8 +2128,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				// consumer's pre-allocated flag when one exists; otherwise a
 				// disposable compound-literal address (the null-ness is
 				// discarded — the consumer treats the result as a value).
-				const method_ret_type =
-					(target_method ?? trait_default_func)?.return_type ?? access_func.type;
+				// A row-keyed nested call (`g.at_or_null(i)`) returns the ROW;
+				// `target_method` is the leaf mono's (`int?`).
+				const method_ret_type = access_func.returns_row
+					? access_func.type
+					: ((target_method ?? trait_default_func)?.return_type ?? access_func.type);
 				if (
 					is_nullable_struct_type(method_ret_type, status) ||
 					is_nullable_scalar_type(method_ret_type, status) ||

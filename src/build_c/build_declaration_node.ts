@@ -1114,7 +1114,23 @@ export default function build_declaration_node(
 					(node.value as AccessNode).access.node_type === "access_func") ||
 				(node.value?.node_type === "op" &&
 					!!(node.value as OperationNode).operator_func?.struct_name?.startsWith("Array")));
-		if (is_heap_array_from_call) {
+		const is_null_init =
+			!node.value ||
+			(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
+		if (node.value?.node_type === "op" && (node.value as OperationNode).null_array_coalesce) {
+			// A borrowed `xs ?? fallback` temp (never freed: transferred).
+			status.code += `struct Array_${node.type.name}* ${safe_name}`;
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(safe_name);
+		} else if (node.type.is_nullable_array && is_null_init) {
+			// `var Array<int>? x = null`: an owned heap-array slot that starts
+			// as the null pointer (stores free the displaced buffer; the
+			// scope-exit free is null-guarded).
+			status.code += `struct Array_${node.type.name}* ${safe_name} = 0`;
+			if (!status.heap_array_vars) status.heap_array_vars = new Set();
+			status.heap_array_vars.add(safe_name);
+			return;
+		} else if (is_heap_array_from_call) {
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);

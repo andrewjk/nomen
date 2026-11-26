@@ -1663,6 +1663,14 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			emit_asm(status, `mov x0, #${fixed_len}\n`);
 			return;
 		}
+		// Any other heap-array expression (`(xs ?? fb).length`): it yields
+		// the buffer pointer; the length word is at [ptr + 0].
+		if (target_type.storage_kind === "heap_array") {
+			build_node(node.target, status);
+			ensure_newline(status);
+			emit_asm(status, `ldr x0, [x0]\n`);
+			return;
+		}
 		emit_asm(status, `mov x0, #0\n`);
 		return;
 	}
@@ -3137,7 +3145,11 @@ function build_access_method(
 	// caller never pointed x8 at a live buffer, so the callee's sret store hit
 	// a wild address (EXC_BAD_ACCESS in a compiler-generated loop epilogue).
 	// Mono-resolve the callee's return type exactly like build_function_node.
-	const method_ret_type = access_callee_method?.return_type ?? access_func.type;
+	// A row-keyed nested call (`g.at_or_null(i)`) returns the ROW pointer;
+	// `access_callee_method` is the leaf mono's (`int?`).
+	const method_ret_type = access_func.returns_row
+		? access_func.type
+		: (access_callee_method?.return_type ?? access_func.type);
 	const resolved_ret_type = resolve_mono_type(method_ret_type, status);
 	const ret_type_name = resolved_ret_type.name || access_func.type.name;
 	const return_struct =

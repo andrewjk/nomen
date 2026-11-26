@@ -40,6 +40,14 @@ export default function check_null_access_node(node: NullAccessNode, status: Che
 	status.allow_null_value = old_allow_null;
 	if (!target_ok) return false;
 	const target_type = type_from_value_node(node.target, status);
+	if (target_type.is_nullable_array) {
+		add_error(
+			status,
+			`'?.' is not supported on a nullable array yet — test it with '!= null' first, or coalesce it ('(xs ?? fallback).${node.access.name}')`,
+			node.start,
+		);
+		return false;
+	}
 	if (!target_type.is_nullable) {
 		add_error(
 			status,

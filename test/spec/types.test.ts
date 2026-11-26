@@ -171,6 +171,19 @@ const y = x + 1
 		const errors = compile_main(input);
 		expect(errors.some((e) => e.message.includes("null"))).toBe(true);
 	});
+
+	test("nullable arrays", () => {
+		const input = `
+var Array<int>? xs = null
+const Array<int> none = [0]
+const n = (xs ?? none).length
+xs = [1, 2, 3]
+if xs != null {
+    Console.write_line("\\{xs.length}")
+}
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: reference types", () => {

@@ -1519,6 +1519,18 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	// `??` (null-coalescing) is lazy: the right operand is only evaluated when
 	// the left is null. This matters when the fallback allocates (e.g.
 	// `x ?? Box(99)`) — eagerly evaluating it would leak the unused instance.
+	if (node.op === "??" && node.null_array_coalesce) {
+		// `xs ?? fallback` on an `Array<T>?`: the left's buffer pointer, or
+		// (only when it is null) the fallback's — both borrowed.
+		const done_label = `.Lnac_done_${coalesce_counter++}`;
+		build_node(node.left_value, status);
+		ensure_newline(status);
+		emit_asm(status, `cbnz x0, ${done_label}\n`);
+		build_node(node.right_value, status);
+		ensure_newline(status);
+		emit_asm(status, `${done_label}:\n`);
+		return;
+	}
 	if (node.op === "??") {
 		// Nullable chaining (ERRORS_PLAN): `a?.b ?? fallback` — test the
 		// chain's hops, build the guarded value path or the fallback (lazy)

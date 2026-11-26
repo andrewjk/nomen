@@ -1152,6 +1152,11 @@ export default function build_declaration_node(
 	nir_init?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// Any `Array<T>?` local may hold null: its scope-exit walk is guarded.
+	if (node.type?.is_nullable_array) {
+		if (!status.nullable_heap_array_vars) status.nullable_heap_array_vars = new Set();
+		status.nullable_heap_array_vars.add(node.name);
+	}
 	// A `var _ = <expr>` discard of a VOID expression (a value-less result
 	// propagation such as `close()!`) has nothing to bind — emit the
 	// expression as a statement.
@@ -2208,6 +2213,50 @@ export default function build_declaration_node(
 		return;
 	}
 
+	if (
+		node.value?.node_type === "op" &&
+		(node.value as OperationNode).null_array_coalesce &&
+		status.function_return_label
+	) {
+		// A borrowed `xs ?? fallback` temp: the live buffer's pointer, never
+		// freed here (its owners free it).
+		build_node(node.value, status);
+		ensure_newline(status);
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+		emit_asm(status, `str x0, [x29, #${offset}]\n`);
+		if (!status.heap_array_vars) status.heap_array_vars = new Set();
+		status.heap_array_vars.add(node.name);
+		if (node.type.elem) {
+			if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+			status.heap_nested_array_types.set(node.name, node.type);
+		}
+		return;
+	}
+	if (
+		node.type.is_nullable_array &&
+		status.function_return_label &&
+		(!node.value ||
+			(node.value.node_type === "value" && (node.value as ValueNode).value === "null"))
+	) {
+		// `var Array<int>? x = null`: an owned heap-array slot that starts as
+		// the null pointer (stores free the displaced buffer; the scope-exit
+		// free is null-guarded).
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+		emit_asm(status, `str xzr, [x29, #${offset}]\n`);
+		if (!status.heap_array_vars) status.heap_array_vars = new Set();
+		status.heap_array_vars.add(node.name);
+		if (node.type.elem) {
+			if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+			status.heap_nested_array_types.set(node.name, node.type);
+		} else {
+			// The slot owns whatever buffer it is given (a fresh array or an
+			// `mv` transfer), elements included.
+			register_owned_array_elements(node.name, node.type, status);
+		}
+		return;
+	}
 	if (node.type.is_array) {
 		// A hoisted array-literal/range temp bound to a heap `Array<T>` param,
 		// or a heap `Array<T>` declared directly with a literal/range
@@ -4223,4 +4272,23 @@ function evaluate_range_const(node: any): number | undefined {
 		}
 	}
 	return undefined;
+}
+
+/** Register a heap-array local's ELEMENT ownership for the scope-exit walk:
+ *  string slots, class handles, or owning value structs. */
+function register_owned_array_elements(name: string, type: Type, status: BuildStatus): void {
+	if (type.name === "string") {
+		if (!status.heap_owned_string_arrays) status.heap_owned_string_arrays = new Set();
+		status.heap_owned_string_arrays.add(name);
+		return;
+	}
+	const element = status.structs.find((st) => st.name === type.name && !st.is_simple_type);
+	if (!element) return;
+	if (element.is_class) {
+		if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
+		status.heap_class_arrays.set(name, 0);
+	} else if (!element.is_generic && struct_needs_destroy(element, status)) {
+		if (!status.heap_struct_arrays) status.heap_struct_arrays = new Map();
+		status.heap_struct_arrays.set(name, element.name);
+	}
 }

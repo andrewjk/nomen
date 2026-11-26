@@ -48,6 +48,7 @@ export function clone_type(t: Type): Type {
 	new_t.tuple_types = t.tuple_types?.map(clone_type);
 	new_t.elem = t.elem ? clone_type(t.elem) : undefined;
 	new_t.view_of_elements = t.view_of_elements;
+	new_t.is_nullable_array = t.is_nullable_array;
 	new_t.enum_cases = t.enum_cases?.map((c) => ({
 		name: c.name,
 		types: c.types.map(clone_type),

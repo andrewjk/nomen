@@ -1819,7 +1819,14 @@ function is_integerish_name(name: string): boolean {
 /** Array methods a NESTED receiver dispatches to its row-keyed mono
  *  (`Array<Array<int>>` → `Array_Array_int`, whose `T` is the row) — see
  *  docs/ARRAY_NESTED_MONO.md. */
-const ROW_MONO_METHODS = new Set(["first", "at_end", "at_or", "at_or_panic", "slice"]);
+const ROW_MONO_METHODS = new Set([
+	"first",
+	"at_end",
+	"at_or",
+	"at_or_null",
+	"at_or_panic",
+	"slice",
+]);
 
 /** The generic spelling of a nested array's row type (`Array<int>`,
  *  `Array<Array<int>>`, …) for monomorphizing `Array` on it. */

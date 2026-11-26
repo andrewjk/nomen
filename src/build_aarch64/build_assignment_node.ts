@@ -1209,6 +1209,28 @@ export default function build_assignment_node(
 	nir_rhs?: NirExpr | null,
 	nir_swap?: NirExpr | null,
 ) {
+	// An owned heap `Array<T>` local store (`x = ys.copy()`, `x = mv ys`,
+	// `x = null`): build the new buffer first (it may read `x`), free the
+	// displaced one (null-guarded), then store.
+	if (node.heap_array_local_store) {
+		const name = (node.left_value as ValueNode).value;
+		const lhs_type = type_from_value_node(node.left_value);
+		if (node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved) {
+			const donor = (node.right_value as ValueNode).value;
+			const decl = all_scope_frames(status)
+				.flat()
+				.find((d) => d.name === donor);
+			if (decl) decl.moved_to_owner = true;
+		}
+		emit_rhs_value(node.right_value, nir_rhs, status);
+		ensure_newline(status);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_var_load(status, "x0", name, 8);
+		if (lhs_type) emit_heap_array_buffer_free(status, lhs_type);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+		emit_var_store(status, "x0", name, 8);
+		return;
+	}
 	// Evaluate override values into temporaries before the base lands in the
 	// destination (see hoist_field_overrides).
 	hoist_field_overrides(

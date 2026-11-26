@@ -51,6 +51,14 @@ export default class AssignmentNode extends BaseNode {
 	 */
 	enum_case_conversion?: { direction: "case_to_base" | "base_to_case" };
 
+	/**
+	 * Stamped by check_assignment_node on a store into an OWNED heap
+	 * `Array<T>` local (`x = ys.copy()`, `x = mv ys`, `x = null` for an
+	 * `Array<T>?`): the backends free the displaced buffer (null-guarded),
+	 * then store the new one.
+	 */
+	heap_array_local_store?: boolean;
+
 	constructor(start: number, left_value: BaseNode, right_value: BaseNode, operator?: string) {
 		super("assign", start);
 		this.left_value = left_value;

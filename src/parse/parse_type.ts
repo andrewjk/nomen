@@ -179,6 +179,11 @@ function parse_type_base(status: ParseStatus): Type {
 	// ROADBLOCKS `Array<T>.set` entry.
 	if (type.is_array === undefined && type.name === "Array" && type.type_args?.length === 1) {
 		const elem = type.type_args[0];
+		// `Array<int>?`: the `?` is the ARRAY's own (the array may be null);
+		// below, `is_nullable` is re-read as the element's nullability.
+		if (type.is_nullable) {
+			type.is_nullable_array = true;
+		}
 		if (elem.name === "func") {
 			add_error(status, `a func type cannot be an array or container element type`, start);
 		}

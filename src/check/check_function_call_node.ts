@@ -2576,7 +2576,9 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 		out.is_ref = type.is_ref;
 		out.is_view = type.is_view;
 		out.is_const_ref = type.is_const_ref;
-		out.is_nullable = type.is_nullable;
+		// `T?` with a row `T` is a nullable ARRAY (`Array<int>?`); the row's
+		// own `is_nullable` stays its elements'.
+		if (type.is_nullable) out.is_nullable_array = true;
 		return out;
 	}
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
