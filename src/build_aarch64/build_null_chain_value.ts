@@ -59,6 +59,19 @@ export function emit_null_chain_value_a64(
 	const done_label = `.Lnull_chain_done_${chain_label_counter++}`;
 	const null_label = `.Lnull_chain_null_${chain_label_counter++}`;
 
+	if (t?.is_nullable_array) {
+		// An array member (`xs?.copy()`, `p?.xs`): the heap-array pointer in
+		// x0, or the null pointer (ownership is the binding's).
+		emit_null_hop_tests(flat.hops, null_label, status);
+		build_operand(flat.value, "x0", status);
+		ensure_newline(status);
+		emit_asm(status, `b ${done_label}\n`);
+		emit_asm(status, `${null_label}:\n`);
+		emit_asm(status, `mov x0, xzr\n`);
+		emit_asm(status, `${done_label}:\n`);
+		return;
+	}
+
 	if (is_str && dest.kind === "expression") {
 		// In-band null: guarded owned pair or the fat zero pair, yielded in
 		// x0/x1 (the same convention every string consumer reads).

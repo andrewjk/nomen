@@ -1117,8 +1117,13 @@ export default function build_declaration_node(
 		const is_null_init =
 			!node.value ||
 			(node.value.node_type === "value" && (node.value as ValueNode).value === "null");
-		if (node.value?.node_type === "op" && (node.value as OperationNode).null_array_coalesce) {
-			// A borrowed `xs ?? fallback` temp (never freed: transferred).
+		if (
+			(node.value?.node_type === "op" && (node.value as OperationNode).null_array_coalesce) ||
+			(node.value?.node_type === "null_access" && node.type.is_nullable_array)
+		) {
+			// A borrowed `xs ?? fallback` temp (never freed: transferred), or
+			// an array-valued chain (`xs?.copy()` owned and freed null-guarded;
+			// `p?.xs` borrowed and transferred).
 			status.code += `struct Array_${node.type.name}* ${safe_name}`;
 			if (!status.heap_array_vars) status.heap_array_vars = new Set();
 			status.heap_array_vars.add(safe_name);

@@ -190,6 +190,7 @@ if xs != null {
 var Array<int>? xs = null
 const n = xs?.length ?? 0
 const first = xs?.at_or(0, -1)
+const c = xs?.copy()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});

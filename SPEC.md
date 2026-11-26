@@ -277,13 +277,15 @@ if xs != null {
 ```
 
 `?.` reads a member of a nullable array: `xs?.length` is an `int?`, null
-when `xs` is. A member that yields an array (`xs?.copy()`) is not supported
-yet; test the array with `!= null` first.
+when `xs` is. A member that yields an array is an `Array<T>?`: a fresh array
+(`xs?.copy()`) is owned by its binding, while a member array or nested row
+(`p?.xs`, `grid?.at(0)`) is borrowed and must be bound with `const`.
 
 ```
 var Array<int>? xs = null
 const n = xs?.length ?? 0        // 0
 const first = xs?.at_or(0, -1)   // int?, null
+const c = xs?.copy()             // Array<int>?, null
 ```
 
 ### Nullable Chaining

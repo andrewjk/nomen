@@ -2214,6 +2214,29 @@ export default function build_declaration_node(
 	}
 
 	if (
+		node.value?.node_type === "null_access" &&
+		node.type.is_nullable_array &&
+		status.function_return_label
+	) {
+		// An array-valued chain (`xs?.copy()`, `p?.xs`): the pointer or null.
+		// An owned result (not transferred) is freed null-guarded at scope
+		// exit; a borrowed one is transferred and never freed here.
+		build_node(node.value, status);
+		ensure_newline(status);
+		const offset = allocate_stack_space(status, 8);
+		status.stack_offsets!.set(node.name, offset);
+		emit_asm(status, `str x0, [x29, #${offset}]\n`);
+		if (!status.heap_array_vars) status.heap_array_vars = new Set();
+		status.heap_array_vars.add(node.name);
+		if (node.type.elem) {
+			if (!status.heap_nested_array_types) status.heap_nested_array_types = new Map();
+			status.heap_nested_array_types.set(node.name, node.type);
+		} else if (!node.transferred_to_outer) {
+			register_owned_array_elements(node.name, node.type, status);
+		}
+		return;
+	}
+	if (
 		node.value?.node_type === "op" &&
 		(node.value as OperationNode).null_array_coalesce &&
 		status.function_return_label

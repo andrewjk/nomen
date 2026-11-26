@@ -887,15 +887,6 @@ ownership question is open too (alias or copy). Stores into an existing
 heap-array local now require a fresh array, `mv`, or `.copy()`, but plain
 declarations were not changed. Seen while adding `Array<T>?`.
 
-## `?.` on a nullable array: remaining gaps
-
-- **Array-valued members** (`xs?.copy()`, `grid?.at(0)` on a nested array)
-  are rejected ("'?.' on a nullable array can't yield an array yet"). The
-  chain-value lowering in all three backends only yields strings, scalars and
-  structs; it would need an `Array<T>?` result (null pointer on the null arm),
-  plus an ownership rule for the yielded buffer (a `copy()` result is owned, a
-  nested row is borrowed).
-
 ## Nullable call results are not null-checked before use
 
 Only a variable that starts as a literal `null` gets the "may be null" read

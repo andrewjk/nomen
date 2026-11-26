@@ -31,6 +31,9 @@ export default class ValueNode extends BaseNode {
 	 * both backends' value paths consult the flag before the literal rules.
 	 */
 	is_struct_zero?: boolean;
+	/** A hoisted `_param_N` read of an OWNED array-valued chain
+	 *  (`xs?.copy()`): a store into a heap-array slot moves it. */
+	is_owned_chain_temp?: boolean;
 	/**
 	 * Stamped by the checker's synthesized `try/catch` success arm: this bare
 	 * variable is the result's ok payload BINDING, transferred OUT as the

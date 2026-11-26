@@ -8,6 +8,7 @@ import ValueNode from "../nodes/ValueNode.ts";
 import check_access_node from "./check_access_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { is_owned_array_call } from "./utils/hoist_array_temp.ts";
 import { clone_type as full_clone_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
@@ -58,15 +59,9 @@ export default function check_null_access_node(node: NullAccessNode, status: Che
 			add_error(status, `Field not found: ${node.access.name}`, node.access.start);
 			return false;
 		}
-		if ((member_type.is_array || member_type.is_view) && !node.is_inner_hop) {
-			add_error(status, `'?.' can't yield an array yet — test it with '!= null' first`, node.start);
-			return false;
-		}
 		node.call = guarded;
-		if (member_type.is_array) {
-			node.type = full_clone_type(member_type);
-			node.type.is_nullable_array = true;
-			return true;
+		if (member_type.is_array || member_type.is_view) {
+			return yield_nullable_array(node, member_type, status);
 		}
 		node.type = clone_type(member_type);
 		node.type.is_nullable = true;
@@ -97,6 +92,9 @@ export default function check_null_access_node(node: NullAccessNode, status: Che
 			add_error(status, `Field not found: ${node.access.name}`, node.access.start);
 			return false;
 		}
+		if (node.access.type.is_array || node.access.type.is_view) {
+			return yield_nullable_array(node, node.access.type, status);
+		}
 		node.type = clone_type(node.access.type);
 		node.type.is_nullable = true;
 		return true;
@@ -110,22 +108,75 @@ export default function check_null_access_node(node: NullAccessNode, status: Che
 		add_error(status, `Field not found: ${node.access.name}`, node.access.start);
 		return false;
 	}
-	if (field.type.is_array) {
+	if (field.type.is_array || field.type.is_view) {
 		// An array member: the chain result is a nullable ARRAY (null is
-		// the null pointer), so a further hop (`p?.xs?.length`) tests it.
-		if (!node.is_inner_hop) {
-			add_error(status, `'?.' can't yield an array yet — test it with '!= null' first`, node.start);
-			return false;
-		}
+		// the null pointer).
 		node.access.type = full_clone_type(field.type);
-		node.type = full_clone_type(field.type);
-		node.type.is_nullable_array = true;
-		return true;
+		return yield_nullable_array(node, field.type, status);
 	}
 	node.access.type = clone_type(field.type);
 	node.type = clone_type(field.type);
 	node.type.is_nullable = true;
 
+	return true;
+}
+
+/**
+ * A chain whose member is an array (`xs?.copy()`, `p?.xs`, `grid?.at(0)`)
+ * yields an `Array<T>?` — null is the null pointer. A further hop
+ * (`p?.xs?.length`) tests it directly; otherwise the result is bound to a
+ * declaration the backends know how to hold: the enclosing declaration
+ * itself (`const c = xs?.copy()`), or a hoisted `_param_N` temp. A fresh
+ * array (a copy, `with`, an array-returning call) is OWNED by that binding
+ * (freed at scope exit, null-guarded); a member array or nested row is
+ * BORROWED from its owner and never freed through the binding.
+ */
+function yield_nullable_array(
+	node: NullAccessNode,
+	member_type: Type,
+	status: CheckStatus,
+): boolean {
+	if (member_type.is_view || member_type.storage_kind !== "heap_array") {
+		add_error(
+			status,
+			`'?.' can only yield a heap array (Array<T>) — test the target with '!= null' first`,
+			node.start,
+		);
+		return false;
+	}
+	const result_type = full_clone_type(member_type);
+	result_type.is_nullable_array = true;
+	node.type = result_type;
+	if (node.is_inner_hop) return true;
+	const owned = !!node.call && is_owned_array_call(node.call);
+	const owner = status.stack.at(-1);
+	if (owner?.node_type === "declare" && (owner as DeclarationNode).value === node) {
+		const decl = owner as DeclarationNode;
+		if (!owned) {
+			if (decl.declaration !== "const") {
+				add_error(
+					status,
+					`'${decl.name}' borrows its array from '?.' — declare it with 'const', or end the chain with '?.copy()'`,
+					node.start,
+				);
+				return false;
+			}
+			decl.transferred_to_outer = true;
+		}
+		return true;
+	}
+	const chain = Object.assign(Object.create(Object.getPrototypeOf(node)), node) as NullAccessNode;
+	const name = `_param_${status.var_name_counter.value++}`;
+	const decl = new DeclarationNode(node.start, "private", "const", name, result_type, chain);
+	if (!owned) decl.transferred_to_outer = true;
+	status.allocations.push(decl);
+	const read = new ValueNode(node.start, name, result_type);
+	// An owned result may be handed over by a store (`y = xs?.copy()` —
+	// check_heap_array_store turns the read into a move).
+	read.is_owned_chain_temp = owned;
+	for (const key of Object.keys(node)) delete (node as any)[key];
+	Object.assign(node, read);
+	Object.setPrototypeOf(node, Object.getPrototypeOf(read));
 	return true;
 }
 

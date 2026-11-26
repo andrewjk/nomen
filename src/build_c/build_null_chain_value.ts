@@ -89,6 +89,17 @@ export function build_null_chain_value_c(node: NullAccessNode, status: BuildStat
 	}
 	const t = node.type;
 	const id = chain_tmp_counter++;
+	if (t?.is_nullable_array) {
+		// An array member (`xs?.copy()`, `p?.xs`): the heap-array pointer, or
+		// the null pointer. Ownership is the binding's (the checker bound the
+		// chain to an owning or borrowing declaration).
+		status.code += `({ void* _ncv_${id} = 0; if (`;
+		status.code += emit_chain_tests(flat.hops, status);
+		status.code += `) { _ncv_${id} = `;
+		build_node(flat.value, status);
+		status.code += `; } _ncv_${id}; })`;
+		return;
+	}
 	const is_str = t?.name === "string" && !t.is_view;
 	const is_struct =
 		!!t?.name &&

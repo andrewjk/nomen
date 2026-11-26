@@ -1260,6 +1260,9 @@ function check_heap_array_store(assign: AssignmentNode, status: CheckStatus): vo
 	const slot_type = type_from_value_node(assign.left_value, status);
 	if (slot_type?.storage_kind !== "heap_array" || slot_type.is_ref) return;
 	const rhs = assign.right_value;
+	// An owned array-valued chain temp (`y = xs?.copy()`) hands its buffer
+	// over: `y = mv _param_N`.
+	if (rhs.node_type === "value" && (rhs as ValueNode).is_owned_chain_temp) rhs.is_moved = true;
 	if (rhs.node_type === "array") {
 		const value_type = type_from_value_node(rhs, status);
 		assign.right_value = hoist_heap_array_literal(rhs, value_type, slot_type, status);

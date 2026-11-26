@@ -242,11 +242,72 @@ pub func main = () {
 		await build_and_check_output(input, "nullable_array_chain_field", "3 -1 -1 2", true, opts);
 	});
 
-	test("?. on a nullable array can't yield an array yet", () => {
-		const parsed = parse_with_imports(`var Array<int>? a = null
-const c = a?.copy()`);
+	test("?. yields owned and borrowed arrays", async () => {
+		const input = `import System
+mv struct Bag {
+	var Array<int>? xs
+}
+func find = (int id, out Bag?) {
+	if id == 1 {
+		return Bag([1, 2, 3])
+	}
+	return null
+}
+func total = (Array<int>? xs, out int) {
+	if xs == null {
+		return -1
+	}
+	var t = 0
+	for x of xs {
+		t = t + x
+	}
+	return t
+}
+pub func main = () {
+	var Array<int>? a = null
+	const c0 = a?.copy()
+	a = [4, 5]
+	const c1 = a?.copy()
+	var p = find(1)
+	var q = find(2)
+	const px = p?.xs
+	const qx = q?.xs
+	var Array<Array<int>>? g = null
+	const r0 = g?.at(0)
+	g = [[1, 2], [3, 4, 5]]
+	const r1 = g?.at(1)
+	Console.write_line("\\{c0 == null} \\{total(c1)} \\{total(px)} \\{qx == null} \\{r0 == null} \\{total(r1)} \\{total(a?.copy())} \\{total(p?.xs)}")
+}
+`;
+		await build_and_check_output(
+			input,
+			"nullable_array_chain_arrays",
+			"true 9 6 true true 12 9 6",
+			true,
+			opts,
+		);
+	});
+
+	test("an owned ?. array can be stored", async () => {
+		const input = `import System
+pub func main = () {
+	var Array<int>? a = [1, 2]
+	var Array<int>? y = null
+	y = a?.copy()
+	Console.write_line("\\{y?.length ?? -1}")
+}
+`;
+		await build_and_check_output(input, "nullable_array_chain_store", "2", true, opts);
+	});
+
+	test("a borrowed ?. array must be const", () => {
+		const parsed = parse_with_imports(`mv struct Bag {
+	var Array<int>? xs
+}
+var Bag? p = null
+var px = p?.xs`);
 		expect(parsed.errors.map((e) => e.message)).toEqual([
-			"'?.' can't yield an array yet — test it with '!= null' first",
+			"'px' borrows its array from '?.' — declare it with 'const', or end the chain with '?.copy()'",
 		]);
 	});
 });
