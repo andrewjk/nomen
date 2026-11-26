@@ -440,3 +440,113 @@ todo("not implemented yet")
       (argument_list
         (string
           (string_content))))))
+
+================================================================================
+Line breaks end expressions
+================================================================================
+
+func f = (out int) {
+	var a = b
+	-c
+	foo
+	(x) => x
+	bar
+	[d] = e
+	if done {
+		return
+	}
+	return
+	after()
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (return_parameter
+        (type_identifier)))
+    (block
+      (variable_declaration
+        (declaration_kind)
+        (identifier)
+        (identifier))
+      (expression_statement
+        (unary_expression
+          (identifier)))
+      (expression_statement
+        (identifier))
+      (expression_statement
+        (lambda_expression
+          (lambda_parameters
+            (lambda_parameter
+              (identifier)))
+          (identifier)))
+      (expression_statement
+        (identifier))
+      (assignment_statement
+        (array_literal
+          (identifier))
+        (identifier))
+      (expression_statement
+        (if_expression
+          (identifier)
+          (block
+            (return_statement))))
+      (return_statement)
+      (expression_statement
+        (call_expression
+          (identifier)
+          (argument_list))))))
+
+================================================================================
+Same-line continuations
+================================================================================
+
+const a = b - c
+const d = f (x)
+const e = xs [0]
+const g = items
+	.at(0)
+	.to_string()
+return -1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (binary_expression
+      (identifier)
+      (identifier)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (identifier)
+      (argument_list
+        (identifier))))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (index_expression
+      (identifier)
+      (number)))
+  (variable_declaration
+    (declaration_kind)
+    (identifier)
+    (call_expression
+      (member_expression
+        (call_expression
+          (member_expression
+            (identifier)
+            (field_identifier))
+          (argument_list
+            (number)))
+        (field_identifier))
+      (argument_list)))
+  (return_statement
+    (unary_expression
+      (number))))

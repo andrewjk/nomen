@@ -2148,8 +2148,18 @@
     "type": "raw_block",
     "named": true,
     "fields": {
-      "arguments": {
-        "multiple": true,
+      "body": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "raw_body",
+            "named": true
+          }
+        ]
+      },
+      "dialect": {
+        "multiple": false,
         "required": false,
         "types": [
           {
@@ -2158,12 +2168,12 @@
           }
         ]
       },
-      "body": {
+      "scope": {
         "multiple": false,
         "required": false,
         "types": [
           {
-            "type": "raw_body",
+            "type": "string",
             "named": true
           }
         ]
@@ -2939,6 +2949,10 @@
   },
   {
     "type": "\"",
+    "named": false
+  },
+  {
+    "type": "\"file\"",
     "named": false
   },
   {

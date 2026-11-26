@@ -16,6 +16,13 @@
  *     and be closed by a matching `>` later on the same line, with only
  *     type-ish characters in between.
  *   - BLOCK_COMMENT: `/* … *\/`, which nests.
+ *   - CALL_PAREN / INDEX_BRACKET / BINARY_MINUS: a `(`, `[` or `-` that
+ *     continues the expression before it. Nomen statements end at a line
+ *     break, so these only continue an expression on the same line; at the
+ *     start of a line the internal lexer produces the plain token instead,
+ *     which begins a new statement (`(a, b) => …`, `[x] = …`, `-n`).
+ *   - SAME_LINE: a zero-width marker for "the next token is on this line",
+ *     so a bare `return` does not swallow the next line's statement.
  */
 
 #include "tree_sitter/parser.h"
@@ -30,6 +37,10 @@ enum TokenType {
 	RAW_BODY,
 	TYPE_ARGS_START,
 	BLOCK_COMMENT,
+	CALL_PAREN,
+	INDEX_BRACKET,
+	BINARY_MINUS,
+	SAME_LINE,
 	ERROR_SENTINEL,
 };
 
@@ -269,6 +280,46 @@ bool tree_sitter_nomen_external_scanner_scan(void *payload, TSLexer *lexer,
 	if (valid_symbols[TYPE_ARGS_START] && lexer->lookahead == '<') {
 		if (scan_type_args_start(lexer)) return true;
 		return false;
+	}
+
+	if (valid_symbols[SAME_LINE]) {
+		// Zero width: the token ends where it starts; the lookahead below
+		// only peeks.
+		lexer->mark_end(lexer);
+		while (is_blank(lexer->lookahead)) advance(lexer);
+		int32_t c = lexer->lookahead;
+		if (!lexer->eof(lexer) && c != '\n' && c != '}' && c != ')' && c != '/') {
+			lexer->result_symbol = SAME_LINE;
+			return true;
+		}
+		// Not on this line: fall through so a comment can still be scanned.
+	}
+
+	if (valid_symbols[CALL_PAREN] || valid_symbols[INDEX_BRACKET] || valid_symbols[BINARY_MINUS]) {
+		while (is_blank(lexer->lookahead)) skip(lexer);
+		int32_t c = lexer->lookahead;
+		if (c == '(' && valid_symbols[CALL_PAREN]) {
+			advance(lexer);
+			lexer->mark_end(lexer);
+			lexer->result_symbol = CALL_PAREN;
+			return true;
+		}
+		if (c == '[' && valid_symbols[INDEX_BRACKET]) {
+			advance(lexer);
+			lexer->mark_end(lexer);
+			lexer->result_symbol = INDEX_BRACKET;
+			return true;
+		}
+		if (c == '-' && valid_symbols[BINARY_MINUS]) {
+			advance(lexer);
+			// `-=` and `->` belong to the internal lexer.
+			if (lexer->lookahead == '=' || lexer->lookahead == '>') return false;
+			lexer->mark_end(lexer);
+			lexer->result_symbol = BINARY_MINUS;
+			return true;
+		}
+		if (c != '/' && c != '\n') return false;
+		// A comment (or a line break before one) may follow.
 	}
 
 	if (valid_symbols[BLOCK_COMMENT]) return scan_block_comment(lexer);

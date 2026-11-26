@@ -1,0 +1,13 @@
+# Add these to ~/.config/helix/languages.toml (see tree-sitter/README.md).
+
+[[language]]
+name = "nomen"
+scope = "source.nomen"
+file-types = ["nm"]
+comment-tokens = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
+indent = { tab-width = 4, unit = "\t" }
+
+[[grammar]]
+name = "nomen"
+source = { git = "https://github.com/andrewjk/nomen", rev = "main", subpath = "tree-sitter" }

@@ -30,11 +30,7 @@ const verbose = process.argv.includes("--verbose");
  * reported input names (a repo-relative path, or `FILE.md:LINE` for a code
  * block, where LINE is the fence's opening line).
  */
-const KNOWN_GAPS = {
-	"README.md:120": "a list of type names (not statements), shown as a nomen block",
-	"SPEC.md:424": "a list of `ref T` type spellings (not statements)",
-	"SPEC.md:4925": "`{ … }` uses an ellipsis character as a placeholder body",
-};
+const KNOWN_GAPS = {};
 
 /** @returns {string[]} */
 function find_nm(dir) {

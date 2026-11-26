@@ -117,7 +117,7 @@ an earlier one.
 
 ### Value Types
 
-```nomen
+```text
 bool
 int     // and int8, int16, int32 and int64
 uint    // and uint8, uint16, uint32 and uint64

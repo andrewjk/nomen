@@ -421,7 +421,7 @@ Constraint expressions support:
 
 Any type can be made a reference type by prefixing with `ref`:
 
-```
+```text
 ref int       // reference to an int
 ref Character // reference to a Character struct
 ref Node?     // nullable reference to a Node
@@ -4922,7 +4922,7 @@ pub func main = () {
 
 The name is arbitrary — pick whatever reads best:
 
-```
+```text
 async nursery { … }
 async pool { … }
 ```

@@ -19,7 +19,8 @@
 	"scripts": {
 		"generate": "tree-sitter generate",
 		"test": "tree-sitter test",
-		"parse-all": "node scripts/parse-all.mjs"
+		"parse-all": "node scripts/parse-all.mjs",
+		"build-queries": "node scripts/build-editor-queries.mjs"
 	},
 	"devDependencies": {
 		"tree-sitter-cli": "0.27.2"

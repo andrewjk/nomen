@@ -79,6 +79,10 @@ module.exports = grammar({
 		$.raw_body,
 		$._type_args_start,
 		$.block_comment,
+		$._call_paren,
+		$._index_bracket,
+		$._binary_minus,
+		$._same_line,
 		$._error_sentinel,
 	],
 
@@ -367,7 +371,10 @@ module.exports = grammar({
 
 		// --- simple statements ---
 
-		return_statement: ($) => prec.right(seq("return", optional($._expression))),
+		// The value must start on the `return` line: a bare `return` followed by
+		// a statement on the next line stays bare.
+		return_statement: ($) =>
+			prec.right(seq("return", optional(seq($._same_line, $._expression)))),
 
 		break_statement: (_) => "break",
 
@@ -459,13 +466,30 @@ module.exports = grammar({
 		raw_block: ($) =>
 			seq(
 				"#raw",
-				optional(seq("(", commaSep(field("arguments", alias($._raw_argument, $.string))), ")")),
+				optional(
+					seq(
+						"(",
+						choice(
+							// `#raw("file")` — file scope, the target's default dialect
+							field("scope", alias($._raw_file, $.string)),
+							// `#raw("c")`, `#raw("c", "file")`
+							seq(
+								field("dialect", alias($._raw_argument, $.string)),
+								optional(seq(",", field("scope", alias($._raw_file, $.string)))),
+							),
+						),
+						optional(","),
+						")",
+					),
+				),
 				"{",
 				optional(field("body", $.raw_body)),
 				"}",
 			),
 
 		_raw_argument: (_) => token(seq('"', /[^"\n]*/, '"')),
+
+		_raw_file: (_) => '"file"',
 
 		// ------------------------------------------------------------------
 		// Names
@@ -696,8 +720,15 @@ module.exports = grammar({
 		call_expression: ($) =>
 			prec(
 				PREC.postfix,
-				seq(field("function", $._expression), field("arguments", $.argument_list)),
+				seq(
+					field("function", $._expression),
+					field("arguments", alias($._call_arguments, $.argument_list)),
+				),
 			),
+
+		// A call's `(` (and an index's `[`) must be on the callee's line; on
+		// the next line it starts a new statement.
+		_call_arguments: ($) => seq(alias($._call_paren, "("), commaSep($._argument), ")"),
 
 		argument_list: ($) => seq("(", commaSep($._argument), ")"),
 
@@ -718,7 +749,12 @@ module.exports = grammar({
 		index_expression: ($) =>
 			prec(
 				PREC.postfix,
-				seq(field("object", $._expression), "[", field("index", $._expression), "]"),
+				seq(
+					field("object", $._expression),
+					alias($._index_bracket, "["),
+					field("index", $._expression),
+					"]",
+				),
 			),
 
 		// `load(path)!` — propagate the error side
@@ -743,7 +779,9 @@ module.exports = grammar({
 				[PREC.bit_xor, "^"],
 				[PREC.bit_and, "&"],
 				[PREC.shift, choice("<<", ">>")],
-				[PREC.additive, choice("+", "-")],
+				// Binary `-` must be on the left operand's line; at the start of
+				// a line it is a unary minus beginning a new statement.
+				[PREC.additive, choice("+", alias($._binary_minus, "-"))],
 				[PREC.multiplicative, choice("*", "/", "%")],
 			];
 			return choice(

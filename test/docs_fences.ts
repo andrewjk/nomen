@@ -46,8 +46,6 @@ const SKIP: Record<string, string> = {
 	"README.md|The Nomen Programming Language > Language Overview > FFI|0":
 		"library-only: foreign declarations are System-library-only",
 	// SPEC — display/asset/library-only blocks.
-	"SPEC.md|Nomen Language Specification > Types > Reference Types|0":
-		"display: type-spelling list, not a program",
 	"SPEC.md|Nomen Language Specification > Statements > Return|0":
 		"display: bare `return value` fragment",
 	"SPEC.md|Nomen Language Specification > Expressions > Compile-time Embedding|0":
@@ -60,8 +58,6 @@ const SKIP: Record<string, string> = {
 		"intentional #error example (always fails)",
 	"SPEC.md|Nomen Language Specification > Compile-Time Conditionals > Compile-Time Errors (`#error`)|2":
 		"intentional #error example (always fails)",
-	"SPEC.md|Nomen Language Specification > Concurrency > Nursery (escape hatch)|2":
-		"display: `async nursery { … }` name-menu placeholder",
 	"SPEC.md|Nomen Language Specification > Concurrency > The Task Handle|0":
 		"display: body-less method signature listing",
 };
@@ -186,7 +182,7 @@ func parse = (uint64 conn) {
 func respond = (uint64 conn) {
     Console.write_line("\\{conn}")
 }`,
-	"SPEC.md|Nomen Language Specification > Concurrency > Nursery (escape hatch)|3": `const key = 1
+	"SPEC.md|Nomen Language Specification > Concurrency > Nursery (escape hatch)|2": `const key = 1
 
 func fetch_from_cache = (int k, out int) {
     return k

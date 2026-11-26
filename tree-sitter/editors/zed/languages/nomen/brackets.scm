@@ -1,0 +1,5 @@
+("(" @open ")" @close)
+("[" @open "]" @close)
+("{" @open "}" @close)
+(type_arguments ">" @close)
+(type_parameters ">" @close)
