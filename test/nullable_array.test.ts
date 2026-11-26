@@ -185,11 +185,44 @@ const t = a ?? s`);
 		]);
 	});
 
-	test("?. is not supported on a nullable array yet", () => {
+	test("?. reads a member of a nullable array", async () => {
+		const input = `import System
+mv struct Bag {
+	var Array<string>? names
+}
+
+func size = (Array<int>? xs, out int) {
+	return xs?.length ?? -1
+}
+
+pub func main = () {
+	var Array<int>? a = null
+	var o = "\\{a?.length ?? -1} \\{a?.at_or(1, 0) ?? -1} \\{a?.length == null}"
+	a = [4, 5, 6]
+	o = o + " \\{a?.length ?? -1} \\{a?.at_or(1, 0) ?? -1} \\{a?.length == null}"
+	const n = a?.length
+	o = o + " \\{n ?? 0} \\{size(null)} \\{size([1, 2])}"
+	var b = Bag(null)
+	o = o + " \\{b.names?.length ?? 0}"
+	b.names = ["x", "y"]
+	o = o + " \\{b.names?.at_or(1, "-") ?? "none"}"
+	Console.write_line(o)
+}
+`;
+		await build_and_check_output(
+			input,
+			"nullable_array_chain",
+			"-1 -1 true 3 5 false 3 -1 2 0 y",
+			true,
+			opts,
+		);
+	});
+
+	test("?. on a nullable array can't yield an array yet", () => {
 		const parsed = parse_with_imports(`var Array<int>? a = null
-const n = a?.length ?? 0`);
+const c = a?.copy()`);
 		expect(parsed.errors.map((e) => e.message)).toEqual([
-			"'?.' is not supported on a nullable array yet — test it with '!= null' first, or coalesce it ('(xs ?? fallback).length')",
+			"'?.' on a nullable array can't yield an array yet — test it with '!= null' first",
 		]);
 	});
 });

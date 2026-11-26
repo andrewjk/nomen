@@ -184,6 +184,15 @@ if xs != null {
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("nullable array chaining", () => {
+		const input = `
+var Array<int>? xs = null
+const n = xs?.length ?? 0
+const first = xs?.at_or(0, -1)
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
 });
 
 describe("spec: reference types", () => {

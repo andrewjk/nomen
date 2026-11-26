@@ -1,3 +1,4 @@
+import { has_null_chain } from "../build_common/null_chain.ts";
 import type AccessNode from "../nodes/AccessNode.ts";
 import type ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import type AssignmentNode from "../nodes/AssignmentNode.ts";
@@ -34,6 +35,7 @@ import { build_if_expression } from "./build_if_else_node.ts";
 import build_if_else_node from "./build_if_else_node.ts";
 import { build_match_expression } from "./build_match_node.ts";
 import { build_match_statement } from "./build_match_node.ts";
+import build_null_chain from "./build_null_chain.ts";
 import build_operation_node from "./build_operation_node.ts";
 import build_panic_node from "./build_panic_node.ts";
 import build_return_node from "./build_return_node.ts";
@@ -141,7 +143,11 @@ export function expr(node: BaseNode, status: BuildStatus): string {
 		case "cast":
 			return build_cast_node(node as CastNode, status);
 		case "access":
+			// A plain member after a `?.` step (`a?.b.c`) continues the chain.
+			if (has_null_chain((node as AccessNode).target)) return build_null_chain(node, status);
 			return build_access_node(node as AccessNode, status);
+		case "null_access":
+			return build_null_chain(node, status);
 		case "func_call":
 			return build_function_call_node(node as FunctionCallNode, status);
 		case "array":

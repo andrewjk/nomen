@@ -100,8 +100,11 @@ export default function flatten_null_chain(
 	// the CHECKED method call (`a?.m(args)` — the checker keeps the checked
 	// `AccessNode` on the node so its stamps ride along).
 	const chain_value_step = (na: NullAccessNode, base_path: BaseNode): BaseNode => {
+		// A checked hop (`?.` on a nullable array keeps its member access
+		// too, field or method) is emitted exactly as checked.
+		if (na.call) return na.call;
 		if (na.access.node_type === "access_func") {
-			return na.call ?? new AccessNode(na.start, base_path, na.access);
+			return new AccessNode(na.start, base_path, na.access);
 		}
 		return step(na.start, base_path, na.access.name);
 	};

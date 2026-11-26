@@ -276,7 +276,15 @@ if xs != null {
 }
 ```
 
-`?.` does not accept a nullable array yet; use `!= null` or `??`.
+`?.` reads a member of a nullable array: `xs?.length` is an `int?`, null
+when `xs` is. A member that yields an array (`xs?.copy()`) is not supported
+yet; test the array with `!= null` first.
+
+```
+var Array<int>? xs = null
+const n = xs?.length ?? 0        // 0
+const first = xs?.at_or(0, -1)   // int?, null
+```
 
 ### Nullable Chaining
 

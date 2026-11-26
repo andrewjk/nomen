@@ -26,7 +26,9 @@ var q = find(2)
 var none = q?.nickname
 Console.write("\\{none ?? "none"}\\n")
 `;
-		await build_and_check_output(input, "null_chain_decl_string", "ada\nnone\n");
+		await build_and_check_output(input, "null_chain_decl_string", "ada\nnone\n", false, {
+			js: true,
+		});
 	});
 
 	test("a chain initializes a nullable scalar local on both arms", async () => {
@@ -49,7 +51,7 @@ var q = find(2)
 var t = q?.score
 Console.write("\\{t ?? 0}\\n")
 `;
-		await build_and_check_output(input, "null_chain_decl_scalar", "5\n0\n");
+		await build_and_check_output(input, "null_chain_decl_scalar", "5\n0\n", false, { js: true });
 	});
 
 	test("a chain assigns through a nullable local on both arms", async () => {
@@ -73,7 +75,7 @@ var q = find(1)
 s = q?.score
 Console.write("\\{s ?? -1}\\n")
 `;
-		await build_and_check_output(input, "null_chain_assign", "-1\n5\n");
+		await build_and_check_output(input, "null_chain_assign", "-1\n5\n", false, { js: true });
 	});
 
 	test("a chain returns a nullable scalar (the flag rides `_ret_has`)", async () => {
@@ -97,7 +99,7 @@ func score_of = (int id, out int?) {
 Console.write("\\{score_of(1) ?? -1}\\n")
 Console.write("\\{score_of(2) ?? -1}\\n")
 `;
-		await build_and_check_output(input, "null_chain_return_scalar", "5\n-1\n");
+		await build_and_check_output(input, "null_chain_return_scalar", "5\n-1\n", false, { js: true });
 	});
 
 	test("a chain returns a nullable string", async () => {
@@ -124,7 +126,9 @@ var b = nick_of(2)
 Console.write("\\{b ?? "none"}\\n")
 `;
 		// The result is consumed through a local (an owned pair either way).
-		await build_and_check_output(input, "null_chain_return_string", "ada\nnone\n");
+		await build_and_check_output(input, "null_chain_return_string", "ada\nnone\n", false, {
+			js: true,
+		});
 	});
 
 	test("a nullable-string call coalesces without leaking (producer arms transfer)", async () => {
@@ -240,7 +244,7 @@ show(p?.score)
 var q = find(2)
 show(q?.score)
 `;
-		await build_and_check_output(input, "null_chain_arg", "5\n-1\n");
+		await build_and_check_output(input, "null_chain_arg", "5\n-1\n", false, { js: true });
 	});
 
 	test("a method-call hop (`p?.greet(...)`) calls only on the non-null path", async () => {
@@ -264,7 +268,9 @@ Console.write("\\{p?.greet("hi") ?? "none"}\\n")
 var q = find(2)
 Console.write("\\{q?.greet("hi") ?? "none"}\\n")
 `;
-		await build_and_check_output(input, "null_chain_method_hop", "hi ada\nnone\n");
+		await build_and_check_output(input, "null_chain_method_hop", "hi ada\nnone\n", false, {
+			js: true,
+		});
 	});
 
 	test("a chain through a call base evaluates the base once", async () => {
@@ -287,7 +293,7 @@ func mk = (int v, out Outer?) {
 Console.write("\\{mk(7)?.inner.value ?? -1}\\n")
 Console.write("\\{mk(0)?.inner.value ?? -1}\\n")
 `;
-		await build_and_check_output(input, "null_chain_call_base", "7\n-1\n");
+		await build_and_check_output(input, "null_chain_call_base", "7\n-1\n", false, { js: true });
 	});
 
 	test("a chain through a method hop continues on its result", async () => {
@@ -313,7 +319,9 @@ func mk = (int v, out Box?) {
 Console.write("\\{mk(7)?.get().value ?? -1}\\n")
 Console.write("\\{mk(0)?.get().value ?? -1}\\n")
 `;
-		await build_and_check_output(input, "null_chain_method_then_field", "7\n-1\n");
+		await build_and_check_output(input, "null_chain_method_then_field", "7\n-1\n", false, {
+			js: true,
+		});
 	});
 
 	test("a chain whose final member is itself nullable tests the member's flag", async () => {
@@ -340,7 +348,9 @@ Console.write("\\{b?.inner.tag ?? -1}\\n")
 `;
 		// The last hop is a plain `.` onto a nullable field — its own `_has`
 		// flag joins the chain's hop tests, so a null tag takes the fallback.
-		await build_and_check_output(input, "null_chain_nullable_member", "7\n-1\n");
+		await build_and_check_output(input, "null_chain_nullable_member", "7\n-1\n", false, {
+			js: true,
+		});
 	});
 
 	test("a null tag on the final member takes the fallback", async () => {
@@ -360,7 +370,7 @@ func mk = (out Outer?) {
 var a = mk()
 Console.write("\\{a?.inner.tag ?? -2}\\n")
 `;
-		await build_and_check_output(input, "null_chain_null_tag", "-2\n");
+		await build_and_check_output(input, "null_chain_null_tag", "-2\n", false, { js: true });
 	});
 
 	test("a chain returns a nullable struct member (the flag rides sret)", async () => {
@@ -388,7 +398,7 @@ func val_of = (int v, out Val?) {
 Console.write("\\{val_of(5)?.v ?? 0}\\n")
 Console.write("\\{val_of(0)?.v ?? 0}\\n")
 `;
-		await build_and_check_output(input, "null_chain_return_struct", "5\n0\n");
+		await build_and_check_output(input, "null_chain_return_struct", "5\n0\n", false, { js: true });
 	});
 
 	test("a chain in a return position compiles with no errors (was a v1 build error)", () => {

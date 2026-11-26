@@ -19,6 +19,14 @@ export function emit_chain_tests(hops: BaseNode[], status: BuildStatus): string 
 	const parts: string[] = [];
 	for (const hop of hops) {
 		const t = type_from_value_node(hop);
+		if (t?.is_nullable_array) {
+			// A nullable heap array: in-band null pointer.
+			const saved = begin_code_scratch(status);
+			build_node(hop, status);
+			const expr = end_code_scratch(status, saved);
+			parts.push(`(${expr} != 0)`);
+			continue;
+		}
 		// Only NULLABLE hops carry a condition: a non-nullable member's chain
 		// result is null exactly when an earlier hop is, already tested.
 		if (!t?.is_nullable) continue;

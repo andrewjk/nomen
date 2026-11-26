@@ -1203,6 +1203,7 @@ function build_operator_operand(node: BaseNode, target_reg: string, status: Buil
  *  the in-band ptr half for strings, the `_has` companion word otherwise. */
 function load_null_hop(hop: BaseNode, _status: BuildStatus): boolean {
 	const t = type_from_value_node(hop);
+	if (t?.is_nullable_array) return true;
 	// Only NULLABLE hops carry a condition (a non-nullable member's chain
 	// result is null exactly when an earlier hop is, already tested).
 	if (!t?.is_nullable) return false;
@@ -1210,7 +1211,9 @@ function load_null_hop(hop: BaseNode, _status: BuildStatus): boolean {
 }
 function emit_null_hop(hop: BaseNode, status: BuildStatus) {
 	const t = type_from_value_node(hop);
-	if (t?.is_nullable && t.name === "string") {
+	// A nullable heap array (in-band null pointer) or a nullable string (the
+	// in-band ptr half) loads its pointer word.
+	if (t?.is_nullable_array || (t?.is_nullable && t.name === "string")) {
 		build_operand(hop, "x1", status);
 		ensure_newline(status);
 	} else {

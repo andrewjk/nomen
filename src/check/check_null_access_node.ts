@@ -40,13 +40,32 @@ export default function check_null_access_node(node: NullAccessNode, status: Che
 	status.allow_null_value = old_allow_null;
 	if (!target_ok) return false;
 	const target_type = type_from_value_node(node.target, status);
+	// A nullable ARRAY (`Array<T>?` — null is the null pointer): every
+	// member (`.length`, `.at_or(i, d)`) is checked as an ordinary access on
+	// the non-null path, like a method-call hop.
 	if (target_type.is_nullable_array) {
-		add_error(
-			status,
-			`'?.' is not supported on a nullable array yet — test it with '!= null' first, or coalesce it ('(xs ?? fallback).${node.access.name}')`,
-			node.start,
-		);
-		return false;
+		const guarded = new AccessNode(node.start, node.target, node.access);
+		status.allow_null_value = true;
+		const ok = check_access_node(guarded, status);
+		status.allow_null_value = old_allow_null;
+		if (!ok) return false;
+		const member_type = node.access.type;
+		if (!member_type?.name) {
+			add_error(status, `Field not found: ${node.access.name}`, node.access.start);
+			return false;
+		}
+		if (member_type.is_array || member_type.is_view) {
+			add_error(
+				status,
+				`'?.' on a nullable array can't yield an array yet — test it with '!= null' first`,
+				node.start,
+			);
+			return false;
+		}
+		node.call = guarded;
+		node.type = clone_type(member_type);
+		node.type.is_nullable = true;
+		return true;
 	}
 	if (!target_type.is_nullable) {
 		add_error(
