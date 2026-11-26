@@ -266,6 +266,59 @@ export default function check_assignment_node(
 	// marker there transfers the closure descriptor — exempt. A
 	// monomorphized clone's re-check stands down (the substituted `mv T`
 	// shape degrades to a no-op against a non-owning concrete type).
+	// An owned `Array<T>` field (`self.xs = …`, mv structs only): its
+	// struct frees the buffer, so the stored value must be one the field
+	// can own — a fresh array or an explicit `mv` transfer. A plain
+	// variable or field read would share its buffer (double free).
+	const lhs_field_type =
+		assign.left_value.node_type === "access" &&
+		(assign.left_value as AccessNode).access.node_type === "access_field"
+			? type_from_value_node(assign.left_value, status)
+			: undefined;
+	const stores_owned_array_field =
+		!assign.operator &&
+		!assign.swap &&
+		lhs_field_type?.storage_kind === "heap_array" &&
+		!lhs_field_type.is_ref;
+	if (stores_owned_array_field) {
+		const rhs = assign.right_value;
+		const rhs_is_named =
+			(rhs.node_type === "value" &&
+				!(rhs as ValueNode).is_moved &&
+				/^[A-Za-z_]\w*$/.test((rhs as ValueNode).value) &&
+				!["null", "true", "false"].includes((rhs as ValueNode).value)) ||
+			(rhs.node_type === "access" && (rhs as AccessNode).access.node_type === "access_field");
+		// A moved PARAMETER does not transfer: an `mv Array<T>` parameter
+		// keeps the caller's copy convention (FOLLOWUP.md), so storing it
+		// would share the caller's buffer.
+		const rhs_is_moved_param =
+			rhs.node_type === "value" &&
+			(rhs as ValueNode).is_moved &&
+			!!status.values.findLast((v) => v.name === (rhs as ValueNode).value)?.is_param;
+		if (rhs_is_moved_param && type_from_value_node(rhs, status)?.storage_kind === "heap_array") {
+			add_error(
+				status,
+				`'${(rhs as ValueNode).value}' is a parameter — an Array<T> parameter cannot be moved into a field yet --> pass the array to the struct's constructor instead`,
+				rhs.start,
+			);
+		}
+		if (rhs_is_named && type_from_value_node(rhs, status)?.storage_kind === "heap_array") {
+			const path_text = (n: BaseNode): string =>
+				n.node_type === "access" && (n as AccessNode).access.node_type === "access_field"
+					? `${path_text((n as AccessNode).target)}.${((n as AccessNode).access as AccessFieldNode).name}`
+					: value_from_value_node(n);
+			const src = path_text(rhs);
+			const fix =
+				rhs.node_type === "value"
+					? `transfer it with \`mv ${src}\``
+					: "store a fresh array (e.g. `Array.with(…)`)";
+			add_error(
+				status,
+				`Storing '${src}' in the Array<T> field '${path_text(assign.left_value)}' would share its buffer --> ${fix}`,
+				rhs.start,
+			);
+		}
+	}
 	if (
 		!status.is_mono_body_recheck &&
 		assign.right_value.node_type === "value" &&
@@ -276,8 +329,11 @@ export default function check_assignment_node(
 		const src_sv = status.values.findLast(
 			(v) => v.name === (assign.right_value as ValueNode).value,
 		);
-		if (src_sv?.func_params === undefined) {
-			const mv_error = mv_type_error(type_from_value_node(assign.right_value, status), status);
+		const src_type = type_from_value_node(assign.right_value, status);
+		// `field = mv arr` hands an `Array<T>` buffer to an owned field.
+		const array_transfer = stores_owned_array_field && src_type?.storage_kind === "heap_array";
+		if (src_sv?.func_params === undefined && !array_transfer) {
+			const mv_error = mv_type_error(src_type, status);
 			if (mv_error) {
 				add_error(status, mv_error, assign.right_value.start);
 			}

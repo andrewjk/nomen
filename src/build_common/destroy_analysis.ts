@@ -213,6 +213,7 @@ export function struct_needs_destroy(struct: StructNode, table: StructTable): bo
 		has_struct_fields_with_destroy(struct, table) ||
 		struct_has_owning_enum_field(struct, table) ||
 		struct_has_owned_func_field(struct) ||
+		struct_has_owned_heap_array_field(struct) ||
 		(owns_strings_via_destroy(struct) && struct_has_direct_string_fields(struct)) ||
 		struct_has_trait_declared_destroy_fields(struct, table)
 	);
@@ -249,6 +250,11 @@ export function field_load_deep_copy(struct: StructNode, table: StructTable): bo
  * struct shares its descriptor (copies are non-mv) and frees nothing, so
  * it is excluded (CLOSURE.md Phase 2c).
  */
+function struct_has_owned_heap_array_field(struct: StructNode): boolean {
+	if (!(struct.is_class === true || struct.is_owning === true)) return false;
+	return struct.fields.some((f) => !f.type.is_ref && f.type.storage_kind === "heap_array");
+}
+
 function struct_has_owned_func_field(struct: StructNode): boolean {
 	if (!(struct.is_class === true || struct.is_owning === true)) return false;
 	return struct.fields.some((f) => !f.type.is_ref && f.type.name === "func" && !f.type.is_array);

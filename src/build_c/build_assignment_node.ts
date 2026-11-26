@@ -47,6 +47,7 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { build_vtable_target } from "./build_access_node.ts";
 import {
+	emit_heap_array_field_free,
 	emit_struct_destroys,
 	release_recorded_string_fields,
 	struct_needs_destroy_by_name,
@@ -561,6 +562,47 @@ export default function build_assignment_node(
 	// borrow accessors are excluded by the classifier) is the same fresh-value
 	// shape: without it the store fell through to the generic path and the
 	// displaced field value's heap fields leaked at the store.
+	// An owned `Array<T>` field store (`self.xs = Array.with(…)`): the
+	// owning struct's destroy frees the field's buffer, so the displaced
+	// buffer is freed here. The RHS is materialized first — it may read the
+	// field it replaces. A custom `#init`'s first write overwrites garbage.
+	if (
+		!node.operator &&
+		!node.swap &&
+		node.left_value.node_type === "access" &&
+		(node.left_value as AccessNode).access.node_type === "access_field"
+	) {
+		const access_lhs = node.left_value as AccessNode;
+		const field = access_lhs.access as AccessFieldNode;
+		if (field.type?.storage_kind === "heap_array" && !field.type.is_ref) {
+			const field_key = `self.${field.name}`;
+			const on_self_in_init =
+				access_lhs.target.node_type === "value" &&
+				(access_lhs.target as ValueNode).value === "self" &&
+				status.current_function?.name === "#init";
+			const first_init_write = on_self_in_init && !status.init_assigned_fields?.has(field_key);
+			if (on_self_in_init) {
+				if (!status.init_assigned_fields) status.init_assigned_fields = new Set();
+				status.init_assigned_fields.add(field_key);
+			}
+			if (node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved) {
+				splice_decl_from_c_scopes(status, (node.right_value as ValueNode).value);
+			}
+			const saved_len = begin_code_scratch(status);
+			build_node(node.left_value, status);
+			const field_access = end_code_scratch(status, saved_len);
+			const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+			const temp = `_haf_${id}`;
+			status.code += `{ __typeof__(${field_access}) ${temp} = `;
+			emit_rhs_value(node.right_value, nir_rhs, status);
+			status.code += `;\n`;
+			if (!first_init_write) emit_heap_array_field_free(status, field.type, field_access);
+			status.code += `${field_access} = ${temp};\n}\n`;
+			if (!status.c_field_override_depth) status.c_stmt_ends_block = true;
+			return;
+		}
+	}
+
 	const assign_rhs_is_moved_value =
 		node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved;
 	const assign_rhs_is_fresh_call =

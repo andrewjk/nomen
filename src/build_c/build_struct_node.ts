@@ -22,7 +22,7 @@ import StructNode from "../nodes/StructNode.ts";
 import TraitNode from "../nodes/TraitNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
-import build_auto_free from "./build_auto_free.ts";
+import build_auto_free, { emit_heap_array_field_free } from "./build_auto_free.ts";
 import build_foreign from "./build_foreign.ts";
 import { pointer_element_c_type } from "./build_index_node.ts";
 import build_node from "./build_node.ts";
@@ -1386,6 +1386,14 @@ function build_auto_destroy(node: StructNode, status: BuildStatus) {
 		// assignments strdup non-heap RHS), so the destroy frees it too.
 		if (field.type.name === "string" && !field.type.is_array && !field.type.is_view) {
 			status.code += `free(self->${field.name}.ptr);\n`;
+			continue;
+		}
+		// A dynamic `Array<T>` field owns its heap buffer (an mv struct
+		// or class is its sole owner — a plain struct cannot hold one).
+		if (field.type.storage_kind === "heap_array") {
+			if (node.is_class || node.is_owning === true) {
+				emit_heap_array_field_free(status, field.type, `self->${field.name}`);
+			}
 			continue;
 		}
 		// A func-typed field of a CLASS may hold a capturing closure (a heap

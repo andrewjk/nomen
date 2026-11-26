@@ -180,6 +180,37 @@ and `.length` behave the same. `Array<T>` is the canonical spelled-out form
 used throughout this document wherever a typed array is needed (e.g. tuples
 vs. arrays).
 
+A dynamic `Array<T>` struct field owns its heap buffer, so only an
+`mv struct` may declare one — a plain struct is Copyable, and a copy would
+share the buffer. The struct frees the buffer (and any element strings) when
+it is destroyed, and reassigning the field frees the displaced buffer. The
+stored array must be fresh or explicitly moved in with `mv`:
+
+```
+mv struct Blocks {
+    var Array<int> block = Array.with(0, 4)
+
+    func reset = (ref self { block }) {
+        self.block = Array.with(0, 8)    // frees the displaced buffer
+    }
+}
+
+mv struct Names {
+    var Array<string> items
+}
+
+func make_names = (mv out Names) {
+    const Array<string> items = Array.with("x", 2)
+    return Names(mv items)               // a plain `Names(items)` would share the buffer
+}
+```
+
+```
+struct Plain {
+    var Array<int> xs    // Error: 'Plain' cannot be Copyable — field 'xs' owns heap memory
+}
+```
+
 ### Nullable Types
 
 Any type can be made nullable by appending `?`:

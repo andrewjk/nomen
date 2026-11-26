@@ -619,6 +619,43 @@ function emit_field_destroys_from_slot(
 	emit_field_destroys_at(status, struct_type, base_offset, 0, !!struct_type.is_class);
 }
 
+/**
+ * Free the heap `Array<T>` buffer whose pointer is in x0 (a class / OWNING
+ * struct field — the sole owner; a plain struct cannot hold one). Owned
+ * elements go first: each string slot's bytes (16-byte stride, data at
+ * buffer + 8, count at [buffer]) and each class element. A NULL buffer is
+ * skipped. x19/x20 are saved around the walk.
+ */
+export function emit_heap_array_buffer_free(status: BuildStatus, type: Type): void {
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const skip = `.Lhaf_skip_${id}`;
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	const elem_is_string = type.name === "string" && !type.elem;
+	const elem_is_class =
+		!type.elem && !!status.structs.find((st) => st.name === type.name && st.is_class);
+	if (elem_is_string || elem_is_class) {
+		const stride = elem_is_string ? 16 : 8;
+		const loop = `.Lhaf_loop_${id}`;
+		const done = `.Lhaf_done_${id}`;
+		emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
+		emit_asm(status, `str x0, [sp, #-16]!\n`);
+		emit_asm(status, `ldr x20, [x0]\n`);
+		emit_asm(status, `add x19, x0, #8\n`);
+		emit_asm(status, `${loop}:\n`);
+		emit_asm(status, `cbz x20, ${done}\n`);
+		emit_asm(status, `ldr x0, [x19]\n`);
+		emit_free(status);
+		emit_asm(status, `add x19, x19, #${stride}\n`);
+		emit_asm(status, `sub x20, x20, #1\n`);
+		emit_asm(status, `b ${loop}\n`);
+		emit_asm(status, `${done}:\n`);
+		emit_asm(status, `ldr x0, [sp], #16\n`);
+		emit_asm(status, `ldp x19, x20, [sp], #16\n`);
+	}
+	emit_free(status);
+	emit_asm(status, `${skip}:\n`);
+}
+
 function emit_field_destroys_at(
 	status: BuildStatus,
 	struct_type: StructNode,
@@ -640,6 +677,14 @@ function emit_field_destroys_at(
 			is_struct_type(resolve_struct_name(field.type.name, field.type.type_args, status), status) ||
 			is_struct_type(field.type.name, status);
 		const field_acc = acc + offset;
+		if (field.type.storage_kind === "heap_array" && !field.type.is_ref) {
+			if (struct_type.is_class || struct_type.is_owning === true) {
+				emit_slot_base(status, root_slot, root_is_class, field_acc);
+				emit_asm(status, `ldr x0, [x0]\n`);
+				emit_heap_array_buffer_free(status, field.type);
+			}
+			continue;
+		}
 		if (field.type.is_array && field_struct && !field_struct.is_class) {
 			// A fixed-size array FIELD of value-struct elements: destroy each
 			// element in place — the scalar arms below resolve the ELEMENT
@@ -1785,6 +1830,17 @@ export function emit_field_destroys(
 			emit_enum_payload_frees_at(status, field_enum.name, "x0");
 			continue;
 		}
+		if (field.type.storage_kind === "heap_array" && !field.type.is_ref) {
+			if (struct_type.is_class || struct_type.is_owning === true) {
+				const actual_offset = base_offset !== undefined ? base_offset + offset : offset;
+				if (decl_name) {
+					emit_base_ptr(status, decl_name, is_class_parent);
+				}
+				emit_asm(status, `ldr x0, [x0, #${actual_offset}]\n`);
+				emit_heap_array_buffer_free(status, field.type);
+			}
+			continue;
+		}
 		const resolved = resolve_struct_name(field.type.name, field.type.type_args, status);
 		const field_struct =
 			is_struct_type(resolved, status) || is_struct_type(field.type.name, status);
@@ -2651,6 +2707,16 @@ export function mark_moved_if_struct(
 		!!status.moved_class_params?.has(var_name) ||
 		(!!status.function_param_regs?.has(var_name) && is_struct_type(var_type.name, status));
 	if (!is_local && !has_anchor && !is_class_param) return;
+	// An `Array<T>` buffer moved into a `mv` parameter (an owning struct's
+	// auto-init field): the new owner frees it, so the donor's scope-exit
+	// free is suppressed. (Returns keep their own heap-array path.)
+	if (!opts?.for_return && is_local && status.heap_array_vars?.has(var_name)) {
+		const decl = all_scope_frames(status)
+			.flat()
+			.find((d) => d.name === var_name);
+		if (decl) decl.transferred_to_outer = true;
+		return;
+	}
 	const is_struct = is_struct_type(var_type.name, status);
 	// An enum-with-data value is multi-word and mv (its payloads transfer
 	// with the blob): a moved-out enum local must be skipped by the cleanup

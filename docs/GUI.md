@@ -984,7 +984,7 @@ smooth transitions without the layout engine knowing about animation.
 ## Container base
 
 ```
-pub struct Container : Control {
+pub mv struct Container : Control {
     pub var Array<Control> children = Array<Control>()
     pub var Array<LayoutParams> params = Array<LayoutParams>()
     pub var Insets padding = Insets()

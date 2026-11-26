@@ -1626,6 +1626,16 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 				return;
 			}
 		}
+		// A fixed-size array FIELD (`obj.h.length`, inline storage with no
+		// length prefix): the length is the declared compile-time size.
+		const fixed_len = parseInt(
+			(target_type.length as unknown as { value?: string } | undefined)?.value ?? "",
+			10,
+		);
+		if (target_type.storage_kind === "stack_array" && fixed_len >= 0) {
+			emit_asm(status, `mov x0, #${fixed_len}\n`);
+			return;
+		}
 		emit_asm(status, `mov x0, #0\n`);
 		return;
 	}
@@ -3340,7 +3350,13 @@ function build_access_method(
 					}
 				}
 			}
-		} else if (!target_is_simple && node.target.node_type === "access") {
+		} else if (
+			// A heap `Array<T>` field takes the address path too: its element
+			// name can be simple (`Array<string>`), and a value load of the
+			// field would read a string-typed field as a (ptr, len) pair.
+			(!target_is_simple || (target_type.is_array && target_type.is_array_heap)) &&
+			node.target.node_type === "access"
+		) {
 			const access_target = node.target as AccessNode;
 			if (access_target.access.node_type === "access_field") {
 				if (

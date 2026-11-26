@@ -1,17 +1,30 @@
-import { describe, test } from "vite-plus/test";
+import path from "node:path";
 
+import { describe, expect, test } from "vite-plus/test";
+
+import { get_library } from "../src/lib";
+import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
 
 // Array-typed struct fields, on aarch64, C (audit leak-checked) and JS:
 // fixed-length fields seeded from an array literal or an `Array.with`
 // default (auto and custom `#init`), and dynamic `Array<T>` fields read and
-// written through their methods.
+// written through their methods. A dynamic field owns its buffer, so it
+// needs an `mv struct`; the struct frees it (and any displaced buffer).
 
-async function run(name: string, program: string, expected: string, audit = true): Promise<void> {
+async function run(name: string, program: string, expected: string): Promise<void> {
 	await build_and_check_output(`import System\n${program}`, name, expected, true, {
 		js: true,
-		audit,
+		audit: true,
 	});
+}
+
+const system = get_library(path.resolve("core"));
+
+function errors(source: string): string[] {
+	return parse(`import System\n${source}`, system, undefined, { allow_internal: true }).errors.map(
+		(e) => e.message,
+	);
 }
 
 describe("fixed-length array fields", () => {
@@ -32,7 +45,7 @@ mv struct Acc {
 
 	func sum = (self, out int) {
 		var total = self.tag
-		for i of 0 .. 4 {
+		for i of 0 .. self.lit.length {
 			total += self.lit.at(i)
 		}
 		for i of 0 .. 3 {
@@ -107,8 +120,6 @@ pub func main = () {
 	});
 });
 
-// Audit off: a struct's destroy does not yet free an `Array<T>` field's
-// buffer (FOLLOWUP.md, "Array<T> struct fields are never freed").
 describe("dynamic Array<T> fields", () => {
 	test("set, at and at_or through the field", async () => {
 		await run(
@@ -142,7 +153,162 @@ pub func main = () {
 }
 `,
 			"200\n218\n",
-			false,
+		);
+	});
+
+	test("string elements are set, read and freed", async () => {
+		await run(
+			"array_field_dynamic_strings",
+			`
+mv struct Names {
+	var Array<string> items = Array.with("x", 2)
+
+	func set_first = (ref self { items }, string v) {
+		if self.items.length > 0 {
+			self.items.set(0, v)
+		}
+	}
+}
+
+pub func main = () {
+	var n = Names()
+	n.set_first("hello")
+	Console.write_line(n.items.at_or(0, "?") + n.items.at_or(1, "?"))
+}
+`,
+			"hellox\n",
+		);
+	});
+
+	test("construction takes a fresh or moved buffer", async () => {
+		await run(
+			"array_field_dynamic_ctor",
+			`
+mv struct Holder {
+	var Array<int> xs
+}
+
+func total = (Holder h, out int) {
+	var t = 0
+	for i of 0 .. h.xs.length {
+		t += h.xs.at_or(i, 0)
+	}
+	return t
+}
+
+pub func main = () {
+	const a = Holder(Array.with(2, 5))
+	Console.write_line("\\{total(a)}")
+	const Array<int> src = Array.with(3, 2)
+	const b = Holder(mv src)
+	Console.write_line("\\{total(b)}")
+}
+`,
+			"10\n6\n",
+		);
+	});
+
+	test("reassignment frees the displaced buffer", async () => {
+		await run(
+			"array_field_dynamic_reassign",
+			`
+mv struct Holder {
+	var Array<string> names = Array.with("a", 1)
+	var Array<int> nums
+
+	pub func #init = (ref self { nums, names }) {
+		self.nums = Array.with(5, 2)
+		self.names = Array.with("b", 3)
+	}
+
+	func grow = (ref self { nums }) {
+		self.nums = Array.with(3, 4)
+	}
+}
+
+pub func main = () {
+	var h = Holder()
+	Console.write_line("\\{h.names.length} \\{h.nums.length}")
+	h.grow()
+	Console.write_line("\\{h.nums.length} \\{h.nums.at_or(0, 0)}")
+	const Array<int> more = Array.with(7, 1)
+	h.nums = mv more
+	h.names = Array.with("c", 2)
+	Console.write_line("\\{h.nums.length} \\{h.nums.at_or(0, 0)} \\{h.names.at_or(1, "?")}")
+}
+`,
+			"3 2\n4 3\n1 7 c\n",
+		);
+	});
+});
+
+describe("dynamic Array<T> field rules", () => {
+	test("a plain struct cannot hold one", () => {
+		expect(
+			errors(`
+struct Plain {
+	var Array<int> xs
+}
+`),
+		).toContain(
+			"'Plain' cannot be Copyable — field 'xs' owns heap memory --> mark the struct `mv struct Plain`, or remove the field",
+		);
+	});
+
+	test("storing a variable or field read would share its buffer", () => {
+		const found = errors(`
+mv struct Holder {
+	var Array<int> xs = Array.with(1, 2)
+}
+
+pub func main = () {
+	var h = Holder()
+	var g = Holder()
+	const Array<int> a = Array.with(3, 3)
+	h.xs = a
+	g.xs = h.xs
+	Console.write_line("\\{h.xs.length} \\{g.xs.length} \\{a.length}")
+}
+`);
+		expect(found).toContain(
+			"Storing 'a' in the Array<T> field 'h.xs' would share its buffer --> transfer it with `mv a`",
+		);
+		expect(found).toContain(
+			"Storing 'h.xs' in the Array<T> field 'g.xs' would share its buffer --> store a fresh array (e.g. `Array.with(…)`)",
+		);
+	});
+
+	test("constructing from a variable would share its buffer", () => {
+		expect(
+			errors(`
+mv struct Holder {
+	var Array<int> xs
+}
+
+pub func main = () {
+	const Array<int> a = Array.with(3, 3)
+	const h = Holder(a)
+	Console.write_line("\\{h.xs.length} \\{a.length}")
+}
+`),
+		).toContain(
+			"Passing this array to 'xs' would share its buffer with the new struct --> transfer it with `mv a`",
+		);
+	});
+
+	test("an Array<T> parameter cannot be moved into a field", () => {
+		expect(
+			errors(`
+mv struct Names {
+	var Array<string> items = Array.with("x", 2)
+
+	func swap_in = (ref self { items }, mv Array<string> other) {
+		self.items = mv other
+	}
+}
+`),
+		).toContain(
+			"'other' is a parameter — an Array<T> parameter cannot be moved into a field yet --> pass the array to the struct's constructor instead",
 		);
 	});
 });

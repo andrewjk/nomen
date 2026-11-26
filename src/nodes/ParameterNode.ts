@@ -14,6 +14,12 @@ export default class ParameterNode extends BaseNode {
 	// `is_moved` is inherited from BaseNode (a mv parameter / mv expression).
 	is_ref?: boolean;
 	/**
+	 * An owning struct's auto-init parameter for a dynamic `Array<T>` field:
+	 * the struct takes the caller's buffer, so the argument must be a fresh
+	 * array or an explicit `mv` transfer (a plain variable would alias).
+	 */
+	takes_array_buffer?: boolean;
+	/**
 	 * COMPTIME.md stage 4 (R4): a comptime type parameter — `type T` (or
 	 * the plan's `T: type` spelling). The parameter NAMES a type instead of
 	 * holding a runtime value: the call site passes the type as a bare name,

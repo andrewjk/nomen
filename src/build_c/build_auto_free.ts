@@ -875,6 +875,14 @@ export function emit_struct_destroys(
 	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
+		// A dynamic `Array<T>` field of a class / OWNING struct owns its heap
+		// buffer (a plain struct cannot hold one — check_struct_node).
+		if (field.type.storage_kind === "heap_array") {
+			if (struct.is_class === true || struct.is_owning === true) {
+				emit_heap_array_field_free(status, field.type, `${var_expr}.${field.name}`);
+			}
+			continue;
+		}
 		// An enum-with-data field owns its ACTIVE case's payloads (case
 		// construction strdups string args / transfers reference pointers,
 		// and every enum-field store takes mv copies via <Enum>_copy).
@@ -1042,4 +1050,39 @@ function capture_destroys(
 		}
 	}
 	return end_code_scratch(status, saved).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Free a heap `Array<T>` buffer that `owner_expr` holds (a struct FIELD —
+ * `self->items` — reclaimed by its struct's destroy). Elements the buffer
+ * owns go first: each string slot's bytes (Array.set / Array.with copy them
+ * in), each class element (destroy + free), and a nested array's rows. A
+ * NULL buffer (a moved-out or never-set field) is skipped.
+ */
+export function emit_heap_array_field_free(
+	status: BuildStatus,
+	type: Type,
+	owner_expr: string,
+): void {
+	status.code += `if (${owner_expr}) {\n`;
+	if (type.elem) {
+		emit_nested_buffer_free(status, type, owner_expr);
+		status.code += `}\n`;
+		return;
+	}
+	const elem_name = type.name;
+	const elem_struct = status.structs.find((s) => s.name === elem_name);
+	if (elem_struct?.is_class) {
+		status.code += `for (long _i = 0; _i < ${owner_expr}->length; _i++) {\n`;
+		status.code += `\tstruct ${elem_name}** _data = (struct ${elem_name}**)((char*)${owner_expr} + sizeof(struct Array_${elem_name}));\n`;
+		status.code += `\t${elem_name}_destroy(_data[_i]); free(_data[_i]);\n`;
+		status.code += `}\n`;
+	} else if (elem_name === "string") {
+		status.code += `for (long _i = 0; _i < ${owner_expr}->length; _i++) {\n`;
+		status.code += `\tnomen_string* _data = (nomen_string*)((char*)${owner_expr} + sizeof(struct Array_string));\n`;
+		status.code += `\tfree(_data[_i].ptr);\n`;
+		status.code += `}\n`;
+	}
+	status.code += `free(${owner_expr});\n`;
+	status.code += `}\n`;
 }

@@ -2134,6 +2134,27 @@ export default function check_function_call(
 		// the raw func_call to the builds' construct-in-place path and elides
 		// the intermediate struct copy (the elided temp never exists, so the
 		// destroyed-donor rules are trivially satisfied).
+		// A plain variable (or field read) handed to an owning struct's
+		// `Array<T>` field would share its buffer — both owners free it.
+		if (
+			func_param?.takes_array_buffer &&
+			!param.is_moved &&
+			!node.move_param_indices?.includes(i) &&
+			((param.node_type === "value" && /^[A-Za-z_]\w*$/.test((param as ValueNode).value)) ||
+				(param.node_type === "access" &&
+					(param as AccessNode).access.node_type === "access_field")) &&
+			type_from_value_node(param, status)?.storage_kind === "heap_array"
+		) {
+			const fix =
+				param.node_type === "value"
+					? `transfer it with \`mv ${(param as ValueNode).value}\``
+					: "pass a fresh array (e.g. `Array.with(…)`)";
+			add_error(
+				status,
+				`Passing this array to '${func_param.name}' would share its buffer with the new struct --> ${fix}`,
+				param.start,
+			);
+		}
 		const box_ctor_in_place_arg =
 			is_box_type((node as FunctionCallNode).name, status.structs) &&
 			!!func_param &&
@@ -2237,6 +2258,10 @@ export default function check_function_call(
 			// instance is freed twice (once by the new owner, once by the
 			// temporary's scope-exit cleanup).
 			if (func_param?.is_moved) {
+				// A heap `Array<T>` temp handed to a `mv` param (an owning
+				// struct's auto-init field): the new owner frees the buffer,
+				// so the temp's own scope-exit free is skipped.
+				if (param_is_heap_array && !func_param.type.is_ref) hoisted.transferred_to_outer = true;
 				if (!(node as FunctionCallNode).move_param_indices)
 					(node as FunctionCallNode).move_param_indices = [];
 				if (!(node as FunctionCallNode).move_param_indices!.includes(i))

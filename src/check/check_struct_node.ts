@@ -352,7 +352,10 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 		// claim is false — the verifier error names the fix. On an
 		// `mv struct` the declaration IS the contract: the field is an
 		// mv slot (transfer-on-store), so the field is accepted.
-		if (!struct.is_class && type_owns_heap(decl.type, status)) {
+		// A dynamic `Array<T>` field owns its heap buffer too: a byte-copy
+		// of the struct would share it (and both copies' destroys free it).
+		const field_is_heap_array = decl.type.storage_kind === "heap_array" && !decl.type.is_ref;
+		if (!struct.is_class && (type_owns_heap(decl.type, status) || field_is_heap_array)) {
 			if (!struct.is_owning) {
 				// ONE error for the newcomer's first owning struct: the
 				// verdict names BOTH edits — the struct keyword, and the
@@ -360,9 +363,10 @@ export default function check_struct_node(struct: StructNode, status: CheckStatu
 				// the verdict plus a separate spelling error on the same
 				// line. The spelling loop stands down for this field.
 				spelling_folded_fields.add(decl.name);
-				const field_fix = field_spelling_needs_mv(decl, struct, status)
-					? ` and declare the field \`mv ${type_name(decl.type)} ${decl.name}\``
-					: "";
+				const field_fix =
+					!field_is_heap_array && field_spelling_needs_mv(decl, struct, status)
+						? ` and declare the field \`mv ${type_name(decl.type)} ${decl.name}\``
+						: "";
 				add_error(
 					status,
 					`'${struct.name}' cannot be Copyable — field '${decl.name}' owns heap memory --> mark the struct \`mv struct ${struct.name}\`${field_fix}, or remove the field`,
@@ -532,6 +536,13 @@ function mark_owning_auto_init_params(struct: StructNode, status: CheckStatus) {
 		if (struct.is_owning) {
 			if (is_class_type(field.type.name, status)) {
 				param.is_moved = true;
+				continue;
+			}
+			// A dynamic `Array<T>` field owns its buffer (the struct's
+			// destroy frees it): construction transfers the caller's buffer.
+			if (field.type.storage_kind === "heap_array") {
+				param.is_moved = true;
+				param.takes_array_buffer = true;
 				continue;
 			}
 		}

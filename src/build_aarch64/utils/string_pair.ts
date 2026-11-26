@@ -151,6 +151,7 @@ export function emit_owning_array_string_specialize(
 		emit_asm(status, `stp x19, x20, [sp, #-16]!\n`);
 		emit_asm(status, `stp x21, x22, [sp, #-16]!\n`);
 		emit_asm(status, `stp x24, x25, [sp, #-16]!\n`);
+		emit_asm(status, `str x23, [sp, #-16]!\n`); // byte cursor below
 		emit_asm(status, `mov x19, x0\n`); // value ptr
 		emit_asm(status, `mov x20, x1\n`); // value len
 		emit_asm(status, `mov x21, x2\n`); // count
@@ -176,6 +177,7 @@ export function emit_owning_array_string_specialize(
 		emit_asm(status, `b .Larr_str_with_loop\n`);
 		emit_asm(status, `.Larr_str_with_done:\n`);
 		emit_asm(status, `mov x0, x22\n`);
+		emit_asm(status, `ldr x23, [sp], #16\n`);
 		emit_asm(status, `ldp x24, x25, [sp], #16\n`);
 		emit_asm(status, `ldp x21, x22, [sp], #16\n`);
 		emit_asm(status, `ldp x19, x20, [sp], #16\n`);
@@ -204,11 +206,14 @@ export function emit_owning_array_string_specialize(
 	if (func_name === "set") {
 		// Entry: self_reg = first element, x1 = index, x2/x3 = value pair.
 		emit_asm(status, `stp x20, x21, [sp, #-16]!\n`);
+		emit_asm(status, `str x22, [sp, #-16]!\n`);
 		emit_asm(status, `lsl x9, x1, #4\n`);
-		emit_asm(status, `add x9, ${self_reg}, x9\n`); // &slot[index]
+		// &slot[index] parks in callee-saved x22: _free and the copy's
+		// malloc/memcpy clobber x9.
+		emit_asm(status, `add x22, ${self_reg}, x9\n`);
 		// Free the outgoing value. x2/x3 are caller-saved and _free clobbers
 		// them, so the incoming value pair parks in x20/x21 (saved above).
-		emit_asm(status, `ldr x0, [x9]\n`);
+		emit_asm(status, `ldr x0, [x22]\n`);
 		emit_asm(status, `mov x20, x2\n`);
 		emit_asm(status, `mov x21, x3\n`);
 		emit_free(status);
@@ -216,8 +221,8 @@ export function emit_owning_array_string_specialize(
 		emit_asm(status, `mov x0, x20\n`);
 		emit_asm(status, `mov x1, x21\n`);
 		emit_strdup(status);
-		emit_asm(status, `str x0, [x9]\n`);
-		emit_asm(status, `str x21, [x9, #8]\n`);
+		emit_asm(status, `stp x0, x21, [x22]\n`);
+		emit_asm(status, `ldr x22, [sp], #16\n`);
 		emit_asm(status, `ldp x20, x21, [sp], #16\n`);
 		return true;
 	}

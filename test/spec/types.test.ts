@@ -89,6 +89,39 @@ const strs = Array<string>.with("x", 2)
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
+
+	test("struct fields need an mv struct", () => {
+		const input = `
+mv struct Blocks {
+	var Array<int> block = Array.with(0, 4)
+
+	func reset = (ref self { block }) {
+		self.block = Array.with(0, 8)
+	}
+}
+
+mv struct Names {
+	var Array<string> items
+}
+
+func make_names = (mv out Names) {
+	const Array<string> items = Array.with("x", 2)
+	return Names(mv items)
+}
+`;
+		expect(compile_module(input)).toEqual([]);
+	});
+
+	test("a plain struct cannot hold an Array<T> field", () => {
+		const input = `
+struct Plain {
+	var Array<int> xs
+}
+`;
+		expect(compile_module(input).map((e) => e.message)).toContain(
+			"'Plain' cannot be Copyable — field 'xs' owns heap memory --> mark the struct `mv struct Plain`, or remove the field",
+		);
+	});
 });
 
 describe("spec: nullable types", () => {

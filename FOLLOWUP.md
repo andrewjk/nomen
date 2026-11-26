@@ -834,23 +834,32 @@ comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
 
-## `Array<T>` struct fields are never freed
+## `Array<T>` struct fields: remaining gaps
 
-Seen while fixing array-typed struct fields (`test/array_struct_fields.test.ts`).
-A struct's destroy — C `build_auto_destroy` (`src/build_c/build_struct_node.ts`)
-and the aarch64 field-destroy walk — has no arm for a heap `Array<T>` field
-(`var Array<int> block = Array.with(0, 4)`), and `struct_needs_destroy`
-(`src/build_common/destroy_analysis.ts`) does not count one, so the buffer
-leaks one allocation per instance on both native backends. The dynamic-field
-test runs with the audit off until this lands.
+Dynamic `Array<T>` fields now require an `mv struct`. The struct's destroy
+frees the buffer, and so does a field reassignment
+(`test/array_struct_fields.test.ts`). Still open:
 
-Freeing it is not a one-line arm, because ownership is undecided:
+- **No synthesized `copy`.** `h.copy()` on a struct with an `Array<T>`
+  field reports "Function not found: Holder.copy". `Array` has no `copy`
+  to deep-copy the buffer with, so one is needed first.
+- **`mv Array<T>` parameters don't transfer into fields.** Storing one
+  (`self.items = mv other`) is rejected, because the callee's moved-param
+  teardown would free the buffer the field now holds. A real transfer
+  needs the callee teardown to skip a param that was moved into a field,
+  on both backends.
+- **Conditional moves are static on aarch64.** A heap-array donor moved
+  into an owning constructor (`Holder(mv a)`) is marked
+  `transferred_to_outer` (`mark_moved_if_struct`,
+  `src/build_aarch64/utils/auto_destroy.ts`). A move inside one branch
+  therefore also skips the free on the other path, which leaks; it never
+  double-frees.
 
-- A NON-mv struct may hold an `Array<T>` field, and copying the struct
-  (`const q = p`) shares the buffer, so a destroy that frees it would
-  double-free. A `string` field in a non-mv struct is rejected ("cannot be
-  Copyable — field owns heap memory"); an `Array<T>` field probably needs
-  the same rule (a language decision, and a breaking change).
-- For `mv struct`s, destroy should free the buffer (and an `Array<string>`'s
-  element strings), field reassignment should free the displaced buffer,
-  and the synthesized `copy` must deep-copy the field.
+## `view` parameters of mv structs fail to compile on C
+
+`func show = (view Holder h, …)` where `Holder` is an `mv struct` (even one
+holding just a `mv string` field) emits `nomen_view` for the parameter. Field
+reads through it then fail with clang errors: "member reference type
+'nomen_view' is not a pointer" and "no member named 's' in 'nomen_view'".
+`view` is treated as the string view type regardless of the parameter's
+struct type. Seen while testing `Array<T>` fields; it is unrelated to them.

@@ -75,6 +75,7 @@ import {
 	emit_enum_payload_frees,
 	emit_enum_payload_frees_at,
 	emit_enum_payload_strdups_at,
+	emit_heap_array_buffer_free,
 	emit_recorded_field_reclaim_for_slot,
 	emit_string_field_strdups_at,
 	find_anchor_slot,
@@ -2980,6 +2981,41 @@ export default function build_assignment_node(
 
 					emit_asm(status, `str x2, [x0, #${offset}]\n`);
 				}
+			} else if (
+				field_type?.storage_kind === "heap_array" &&
+				!node.operator &&
+				!node.swap &&
+				target_type?.name
+			) {
+				// An owned `Array<T>` field store (`self.xs = Array.with(…)`):
+				// the owning struct's destroy frees the field's buffer, so the
+				// displaced buffer is freed here. The RHS is built first — it may
+				// read the field it replaces. A custom `#init`'s first write
+				// overwrites garbage.
+				const offset = get_field_offset(target_type.name, field_name, status);
+				const target_var =
+					access.target.node_type === "value" ? (access.target as ValueNode).value : "";
+				const first_init_write = is_first_init_field_write(target_var, field_name, status);
+				mark_init_field_write(target_var, field_name, status);
+				if (node.right_value.node_type === "value" && (node.right_value as ValueNode).is_moved) {
+					const donor = (node.right_value as ValueNode).value;
+					const decl = all_scope_frames(status)
+						.flat()
+						.find((d) => d.name === donor);
+					if (decl) decl.transferred_to_outer = true;
+				}
+				emit_rhs_value(node.right_value, nir_rhs, status);
+				ensure_newline(status);
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
+				get_base_address(access, status, "x0");
+				emit_asm(status, `str x0, [sp, #-16]!\n`);
+				if (!first_init_write) {
+					emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
+					emit_heap_array_buffer_free(status, field_type);
+				}
+				emit_asm(status, `ldr x9, [sp], #16\n`);
+				emit_asm(status, `ldr x0, [sp], #16\n`);
+				emit_asm(status, `str x0, [x9, #${offset}]\n`);
 			} else if (field_type?.is_view && !node.operator) {
 				// A `view T` field store (`line.text = doc.slice(0, 5)`): the
 				// field is a non-mv (ptr, len) pair — store both halves
