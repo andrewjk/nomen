@@ -895,14 +895,6 @@ declarations were not changed. Seen while adding `Array<T>?`.
   structs; it would need an `Array<T>?` result (null pointer on the null arm),
   plus an ownership rule for the yielded buffer (a `copy()` result is owned, a
   nested row is borrowed).
-- **A nullable-array field in the middle of a chain** fails: with
-  `mv struct Bag { var Array<int>? xs }` and `p` a `Bag?`, `p?.xs?.length`
-  reports "Field not found: length". check_null_access_node's nullable-array
-  branch checks `node.target` (the `p?.xs` chain node) as an ordinary access
-  target, which doesn't resolve to the array type. The guarded access probably
-  needs to target the chain's value path (`p.xs`) instead, and flatten's
-  `chain_value_step` must then use that re-rooted access. A direct target
-  (`xs?.length`, `b.xs?.length`) works.
 
 ## Nullable call results are not null-checked before use
 

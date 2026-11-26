@@ -218,11 +218,35 @@ pub func main = () {
 		);
 	});
 
+	test("?. through a nullable struct to its nullable array field", async () => {
+		const input = `import System
+mv struct Bag {
+	var Array<int>? xs
+}
+func find = (int id, out Bag?) {
+	if id == 1 {
+		return Bag([1, 2, 3])
+	}
+	return null
+}
+pub func main = () {
+	var p = find(1)
+	var q = find(2)
+	var r = find(1)
+	if r != null {
+		r.xs = null
+	}
+	Console.write_line("\\{p?.xs?.length ?? -1} \\{q?.xs?.length ?? -1} \\{r?.xs?.length ?? -1} \\{p?.xs?.at_or(1, 0) ?? -1}")
+}
+`;
+		await build_and_check_output(input, "nullable_array_chain_field", "3 -1 -1 2", true, opts);
+	});
+
 	test("?. on a nullable array can't yield an array yet", () => {
 		const parsed = parse_with_imports(`var Array<int>? a = null
 const c = a?.copy()`);
 		expect(parsed.errors.map((e) => e.message)).toEqual([
-			"'?.' on a nullable array can't yield an array yet — test it with '!= null' first",
+			"'?.' can't yield an array yet — test it with '!= null' first",
 		]);
 	});
 });

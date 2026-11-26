@@ -1040,6 +1040,14 @@ function capture_destroys(
 	}
 	for (const field of struct.fields) {
 		if (field.type.is_ref) continue;
+		// A dynamic `Array<T>` field of a class / OWNING struct owns its heap
+		// buffer (mirrors emit_struct_destroys).
+		if (field.type.storage_kind === "heap_array") {
+			if (struct.is_class === true || struct.is_owning === true) {
+				emit_heap_array_field_free(status, field.type, `${var_expr}${accessor}${field.name}`);
+			}
+			continue;
+		}
 		const field_struct = resolve_struct_type(field.type, status);
 		if (!field_struct) continue;
 		const field_expr = `${var_expr}${accessor}${field.name}`;

@@ -30,6 +30,9 @@ export default class NullAccessNode extends BaseNode {
 	 *  which prefers this node so every stamp (resolved_function, hoisted
 	 *  params, ...) survives to the backends. */
 	call?: AccessNode;
+	/** The target of a further `?.` hop (`p?.xs` in `p?.xs?.length`): an
+	 *  array-valued member is allowed here (the outer hop tests it). */
+	is_inner_hop?: boolean;
 
 	constructor(
 		start: number,

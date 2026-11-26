@@ -102,7 +102,16 @@ export default function flatten_null_chain(
 	const chain_value_step = (na: NullAccessNode, base_path: BaseNode): BaseNode => {
 		// A checked hop (`?.` on a nullable array keeps its member access
 		// too, field or method) is emitted exactly as checked.
-		if (na.call) return na.call;
+		if (na.call) {
+			// A nullable-array hop reached through an earlier `?.`
+			// (`p?.xs?.length`): the checked access targets the chain node;
+			// re-root it at the plain path (`p.xs`), which the hops guard.
+			if (na.call.target !== base_path && type_of(na.call.target)?.is_nullable_array) {
+				const rooted = new AccessNode(na.start, base_path, na.call.access);
+				return rooted;
+			}
+			return na.call;
+		}
 		if (na.access.node_type === "access_func") {
 			return new AccessNode(na.start, base_path, na.access);
 		}
