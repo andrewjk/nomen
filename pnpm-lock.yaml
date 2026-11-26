@@ -83,11 +83,11 @@ importers:
   site:
     dependencies:
       '@torpor/adapter-cloudflare':
-        specifier: ^1.0.31
-        version: 1.0.31(@cloudflare/vite-plugin@1.68.0(@types/node@26.4.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(workerd@1.20261110.1)(wrangler@4.160.0(@types/node@26.4.1)))(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)(wrangler@4.160.0(@types/node@26.4.1))
+        specifier: ^1.0.32
+        version: 1.0.32(@cloudflare/vite-plugin@1.68.0(@types/node@26.4.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(workerd@1.20261110.1)(wrangler@4.160.0(@types/node@26.4.1)))(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)(wrangler@4.160.0(@types/node@26.4.1))
       '@torpor/build':
-        specifier: ^1.11.0
-        version: 1.11.0(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)
+        specifier: ^1.11.1
+        version: 1.11.1(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)
       '@torpor/unplugin':
         specifier: ^1.2.14
         version: 1.2.14(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)
@@ -1231,15 +1231,15 @@ packages:
   '@textlint/types@15.8.0':
     resolution: {integrity: sha512-Anhc6y5736YIsvqae0U6k0YmB2M/QVHkEeOv2aydAn/WIkdI69dCOiDbe3/+RagS3qstFTSFWJzNRA2lUjv19w==}
 
-  '@torpor/adapter-cloudflare@1.0.31':
-    resolution: {integrity: sha512-5V0Tzkb4+kztUhCuqz2iS5R28bJjM+JBGImfn1pDITfGuQwCSbiTemccIIzYpl7KuHqVqGxDzDyUTu87WZ2hKQ==}
+  '@torpor/adapter-cloudflare@1.0.32':
+    resolution: {integrity: sha512-Xc02YN576GV0Cd3fkUIGodZDX2yP4Itx67DY14BqmN9qUrjGMbEQFVT6V90PNYToLeLsSEEGIEdiv/KOmadUNQ==}
     peerDependencies:
       '@cloudflare/vite-plugin': ^1.0.0
       vite: '>=1.2.0'
       wrangler: ^4.118.0
 
-  '@torpor/build@1.11.0':
-    resolution: {integrity: sha512-XQO0fn18WHwZqL4XZlxeyc6HImy78hZPKk1PcBM4i+hDZYZOw1UhcNj/y1F2Kh8i6IRTUztaKxu/xJDNIosQAA==}
+  '@torpor/build@1.11.1':
+    resolution: {integrity: sha512-fU7dFgmOG7m+eM030ZoohyHVE2hwdjsKGiIy2oAHF+tm11zWPW1u08tk8jW3acR0egV3uWc5bxhPnGG0FlMiGQ==}
     hasBin: true
     peerDependencies:
       vite: '>=1.2.0'
@@ -3286,9 +3286,11 @@ packages:
 
   yuku-codegen@0.5.48:
     resolution: {integrity: sha512-p7HxD5Xl4jzDzqMrGePAOeSHmRY4g58h4HuGq15weQFPxuPWd/W6e7nqp/+Lea6JfpOdBwJOAyXFqIZ/J9Zfnw==}
+    deprecated: 'Yuku is now one package with one core. Use "yuku" instead: https://yuku.fyi/javascript/. Existing installs keep working but get no more fixes.'
 
   yuku-parser@0.5.48:
     resolution: {integrity: sha512-OWBfhrpgK9+/4+IXG9oT8Bao4AhViQA7vdyNNH7EUg8dQYgwa70XtIBWTpCEme1P1ECyoDNYkn0wT63f8XRcVA==}
+    deprecated: 'Yuku is now one package with one core. Use "yuku" instead: https://yuku.fyi/javascript/. Existing installs keep working but get no more fixes.'
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -4080,10 +4082,10 @@ snapshots:
     dependencies:
       '@textlint/ast-node-types': 15.8.0
 
-  '@torpor/adapter-cloudflare@1.0.31(@cloudflare/vite-plugin@1.68.0(@types/node@26.4.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(workerd@1.20261110.1)(wrangler@4.160.0(@types/node@26.4.1)))(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)(wrangler@4.160.0(@types/node@26.4.1))':
+  '@torpor/adapter-cloudflare@1.0.32(@cloudflare/vite-plugin@1.68.0(@types/node@26.4.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(workerd@1.20261110.1)(wrangler@4.160.0(@types/node@26.4.1)))(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)(wrangler@4.160.0(@types/node@26.4.1))':
     dependencies:
       '@cloudflare/vite-plugin': 1.68.0(@types/node@26.4.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(workerd@1.20261110.1)(wrangler@4.160.0(@types/node@26.4.1))
-      '@torpor/build': 1.11.0(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)
+      '@torpor/build': 1.11.1(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)
       vite: '@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2)'
       wrangler: 4.160.0(@types/node@26.4.1)
     transitivePeerDependencies:
@@ -4099,7 +4101,7 @@ snapshots:
       - unloader
       - webpack
 
-  '@torpor/build@1.11.0(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)':
+  '@torpor/build@1.11.1(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)':
     dependencies:
       '@torpor/unplugin': 1.2.14(@voidzero-dev/vite-plus-core@0.2.9(@types/node@26.4.1)(esbuild@0.28.2)(tsx@4.23.15)(typescript@7.0.2))(esbuild@0.28.2)
       '@torpor/view': 1.4.0

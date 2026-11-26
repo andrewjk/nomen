@@ -33,10 +33,10 @@ minimumReleaseAgeExclude:
   - miniflare@5.20261110.0-beta
   - workerd@1.20261110.1
   - wrangler@4.160.0
-  - '@torpor/adapter-cloudflare@1.0.31'
-  - '@torpor/build@1.11.0'
-  - '@torpor/unplugin@1.2.14'
-  - '@torpor/view@1.4.0'
+  - "@torpor/adapter-cloudflare@1.0.32"
+  - "@torpor/build@1.11.1"
+  - "@torpor/unplugin@1.2.14"
+  - "@torpor/view@1.4.0"
 overrides:
   vite: "catalog:"
 peerDependencyRules:
