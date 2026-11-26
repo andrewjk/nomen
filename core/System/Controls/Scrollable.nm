@@ -507,13 +507,15 @@ pub mv struct Scrollable: Control {
 	}
 }
 
-// Translate a WINDOW-space click (top-left origin, as click_x/click_y
-// return) into the scroll view's DOCUMENT coordinates, so content children
-// can be hit-tested with the content grid's `contains` while scrolled. The
-// visible top-left of the document moves with the scroll position (and the
-// clip view's own origin), so a raw click is off by both. A free function
-// (not a method): a raw-block-backed method returning a tuple fails the
-// checker's destructuring — native_intrinsic's free-function shape works.
+/**
+ * Translate a window-space click position (as `click_x` / `click_y` return) into the
+ * document coordinates of `scroll`, so its content can be hit-tested with `contains` while
+ * scrolled. Returns `[x, y]`.
+ **/
+// The visible top-left of the document moves with the scroll position (and the clip view's
+// own origin), so a raw click is off by both. A free function (not a method): a
+// raw-block-backed method returning a tuple fails the checker's destructuring —
+// native_intrinsic's free-function shape works.
 pub func content_click = (Scrollable scroll, int cx, int cy, out [int, int]) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw {

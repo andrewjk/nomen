@@ -23,6 +23,9 @@
  * Something whose completion can be waited on (may park the current context)
  **/
 pub trait Awaitable {
+	/**
+	 * Block (or, in a fiber, park) until the work has finished.
+	 **/
 	func wait = (self) {
 	}
 }

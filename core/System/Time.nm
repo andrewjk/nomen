@@ -3,13 +3,16 @@
  *
  * All members are static — no instance is constructed.
  *
- *	const uint64 started = Time.now_ms()       // wall-clock ms since the epoch
- *	const uint64 unix    = Time.now_unix()     // Unix seconds
- *	const uint64 t       = Time.now_ns()       // wall-clock ns since the epoch
- *	Time.sleep_ms(50)                          // sleep 50 ms
+ * ```
+ * const started = Time.now_ms()
+ * Time.sleep_ms(50)
+ * const elapsed = Time.now_ms() - started
+ * ```
  **/
 pub struct Time {
-	// (static) Wall-clock milliseconds since the Unix epoch.
+	/**
+	 * Wall-clock milliseconds since the Unix epoch.
+	 **/
 	pub func now_ms = (out uint64) {
 		#if META.arch == "c" {
 			#raw("file") {
@@ -43,11 +46,13 @@ pub struct Time {
 		return 0
 	}
 
-	// (static) Wall-clock nanoseconds since the Unix epoch. Uses the same
-	// CLOCK_REALTIME source as `now_ms` (portable across macOS and Linux,
-	// where the CLOCK_MONOTONIC id differs) but keeps the full nanosecond
-	// resolution, which `Tester.bench` needs to time short function bodies.
-	// Seconds since the epoch times 1e9 stays well inside uint64 range.
+	/**
+	 * Wall-clock nanoseconds since the Unix epoch, for timing short code.
+	 **/
+	// Uses the same CLOCK_REALTIME source as `now_ms` (portable across macOS and Linux,
+	// where the CLOCK_MONOTONIC id differs) but keeps the full nanosecond resolution,
+	// which `Tester.bench` needs to time short function bodies. Seconds since the epoch
+	// times 1e9 stays well inside uint64 range.
 	pub func now_ns = (out uint64) {
 		#if META.arch == "c" {
 			#raw {
@@ -74,7 +79,9 @@ pub struct Time {
 		return 0
 	}
 
-	// (static) Wall-clock seconds since the Unix epoch.
+	/**
+	 * Wall-clock seconds since the Unix epoch.
+	 **/
 	pub func now_unix = (out uint64) {
 		#if META.arch == "c" {
 			#raw {
@@ -89,8 +96,10 @@ pub struct Time {
 		}
 	}
 
-	// (static) Block the calling task for `ms` milliseconds. Uses nanosleep,
-	// so it is not capped at the 32-bit usleep range.
+	/**
+	 * Pause the calling task for `ms` milliseconds.
+	 **/
+	// Uses nanosleep, so it is not capped at the 32-bit usleep range.
 	pub func sleep_ms = (uint64 ms) {
 		#if META.arch == "c" {
 			#raw {

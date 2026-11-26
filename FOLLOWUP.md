@@ -834,18 +834,25 @@ comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
 
-## System library method docs (`/docs` API reference)
+## Controls API docs (`/docs` API reference)
 
-The website's API reference (`site/scripts/render-api.ts`, built from
-`nomen docs`'s `collect_docs`) only shows `/** … **/` doc comments. Almost
-every method in `core/System/` is described with `//` comments instead
-(only ~16 of ~1200 public members carry a doc comment), so the method
-sections are mostly bare signatures. Several type-level doc comments
-(`Map`, …) also describe implementation internals rather than usage.
-Converting the user-facing method notes to `/** … **/` (and keeping the
-implementation notes as `//`) would fill the reference in. 33 top-level
-`pub` items have no doc comment at all (`nomen docs --in core` lists them).
+Every non-UI type in `core/System/` now has `/** … **/` docs on its public
+members, but `core/System/Controls/` is still mostly bare signatures (~640
+undocumented members — `Container` and `Window` alone have ~130). Convert the
+user-facing `//` notes there the same way (doc first, implementation notes as
+`//` underneath).
 
 Unmarked struct members default to `pub`, so internal state fields
-(`Map.used`, `Map.hashes`, `List.items`) and `raw_*` helpers appear in the
-reference; marking them `internal` would hide them.
+(`Map.used`, `Map.hashes`, `List.items`), runtime handles (`Task.future`,
+`Channel.mu`) and `raw_*` / `find_slot`-style helpers appear in the
+reference. They are documented as "internal" for now; marking them
+`internal` would hide them.
+
+Two `nomen docs` gaps (`cli/src/docs.ts`, `src/doc_comments.ts`):
+
+- The generated Markdown lists each member as its signature plus the first
+  line of its doc, so a hard-wrapped doc comment is cut mid-sentence. Using
+  the first paragraph (lines joined) would fix it; the website renders the
+  full doc.
+- Enum cases can't carry doc comments (`collect_node` only collects the enum
+  itself), so `Option`, `Result`, `FileError`, … list their cases bare.

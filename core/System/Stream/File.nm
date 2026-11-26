@@ -1,47 +1,62 @@
 /**
  * A file handle for reading and writing, plus static one-shot helpers.
  *
- * `File` is a handle opened with a mode string (`"r"`, `"w"`, …) and closed
- * automatically by its `#destroy` when it goes out of scope. Read methods set
- * the `eof` flag when the end of the file is reached.
+ * Open a `File` with a mode string (`"r"`, `"w"`, `"a"`, …). It is closed automatically when
+ * it goes out of scope; call `close` to release it earlier. Read methods set the `eof` flag
+ * when they reach the end of the file.
  *
- * Every operation that can fail returns a `Result` whose error side is a
- * `FileError`; a handle whose `open` failed (or that was closed) reports
- * `FileError.not_open` from subsequent operations instead of crashing.
+ * Every operation that can fail returns a `Result` whose error side is a `FileError`. A
+ * handle whose `open` failed (or that was closed) reports `FileError.not_open` from later
+ * operations instead of crashing.
  *
- *	var File w = File()
- *	match w.open("notes.txt", "w") {
- *		case .ok(ok) -> {
- *			w.writeLine("hello")
- *			w.writeLine("world")
- *			w.close()
- *		}
- *		case .fail(e) -> Console.write("could not open")
- *	}
+ * ```
+ * var w = File()
+ * match w.open("notes.txt", "w") {
+ *     case .ok(ok) {
+ *         var _ = w.writeLine("hello")
+ *         var _ = w.close()
+ *     }
+ *     case .fail(e) -> Console.write_line("could not open")
+ * }
  *
- *	var File r = File()
- *	match r.open("notes.txt", "r") {
- *		case .ok(ok) -> {
- *			const string first = r.readLine()    // Result<string, FileError>
- *		}
- *		case .fail(e) -> Console.write("could not open")
- *	}
+ * var r = File()
+ * var _ = r.open("notes.txt", "r")
+ * match r.readLine() {
+ *     case .ok(line) -> Console.write_line(line)
+ *     case .fail(e) -> Console.write_line("could not read")
+ * }
+ * ```
  *
- * Static one-shot helpers do the open/read/close in one call:
+ * The static helpers do the open, read or write, and close in one call:
  *
- *	File.write_all("out.txt", "payload")
- *	const string body = File.read_all("out.txt")
- *	const bool ok     = File.exists("out.txt")
- *	File.delete("out.txt")
+ * ```
+ * var _ = File.write_all("out.txt", "payload")
+ * const body = File.read_all("out.txt")
+ * if File.exists("out.txt") {
+ *     var _ = File.delete("out.txt")
+ * }
+ * ```
  **/
 pub mv struct File {
+	/**
+	 * The underlying OS file handle (internal; 0 while not open).
+	 **/
 	var uint64 handle = 0
+	/**
+	 * Set once a read reaches the end of the file.
+	 **/
 	pub var eof = false
+	/**
+	 * The errno of the last operation, 0 for success (internal; the methods report it as a
+	 * `FileError`).
+	 **/
 	// errno of the last operation; 0 = success. Raw #arch bodies set it,
 	// the Result-returning wrappers map it to FileError.
 	var last_error = 0
 
-	// Maps an errno to its FileError case.
+	/**
+	 * The `FileError` case for an errno value.
+	 **/
 	func error_of = (int err, out FileError) {
 		switch {
 			case err == 2 {
@@ -62,6 +77,9 @@ pub mv struct File {
 		}
 	}
 
+	/**
+	 * Low-level `open`: records the errno in `last_error` instead of returning a `Result`.
+	 **/
 	// Open the file at `path` with a C mode string ("r", "w", "a", …).
 	// Stores the handle and records errno (0 on success) in `last_error`.
 	func raw_open = (ref self {}, string path, string mode) {
@@ -100,8 +118,10 @@ pub mv struct File {
 		}
 	}
 
-	// Open the file at `path` with a C mode string ("r", "w", "a", …).
-	// `.ok(true)` on success; `.fail(FileError)` otherwise.
+	/**
+	 * Open the file at `path` with a C mode string: `"r"` read, `"w"` write (truncating),
+	 * `"a"` append, and so on. `.ok(true)` on success, `.fail(FileError)` otherwise.
+	 **/
 	pub func open = (ref self {}, string path, string mode, out Result<bool, FileError>) {
 		self.raw_open(path, mode)
 		if self.last_error == 0 {
@@ -110,6 +130,9 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
+	/**
+	 * Low-level `close`: records the errno in `last_error` instead of returning a `Result`.
+	 **/
 	// Close the handle, recording errno in `last_error` (0 on success). Also
 	// performed automatically by #destroy; calling close explicitly releases
 	// the resource early.
@@ -149,9 +172,10 @@ pub mv struct File {
 		}
 	}
 
-	// Close the handle. Also performed automatically by #destroy; calling
-	// close explicitly releases the resource early. Closing an unopened (or
-	// already closed) File is `.ok(true)`.
+	/**
+	 * Close the file now rather than when it goes out of scope. Closing a file that is not
+	 * open (or already closed) is `.ok(true)`.
+	 **/
 	pub func close = (ref self {}, out Result<bool, FileError>) {
 		self.raw_close()
 		if self.last_error == 0 {
@@ -160,9 +184,11 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// Read every byte from the current position to EOF and return it. Sets
-	// `eof` and `last_error`. Declared `mv out string`: the raw body mallocs a
-	// fresh buffer and hands ownership to the caller.
+	/**
+	 * Low-level `readAll`: sets `eof` and `last_error` instead of returning a `Result`.
+	 **/
+	// Declared `mv out string`: the raw body mallocs a fresh buffer and hands ownership
+	// to the caller.
 	func raw_read_all = (ref self {}, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -226,9 +252,10 @@ pub mv struct File {
 		return ""
 	}
 
-	// Read every byte from the current position to EOF. `.ok(text)` with the
-	// remaining bytes (and `eof` set), or `.fail(FileError)` — including
-	// `not_open` when the handle was never opened.
+	/**
+	 * Read everything from the current position to the end of the file. `.ok(text)` (with
+	 * `eof` set), or `.fail(FileError)`, including `not_open` when the file isn't open.
+	 **/
 	pub func readAll = (ref self {}, out Result<string, FileError>) {
 		const string body = self.raw_read_all()
 		if self.last_error == 0 {
@@ -237,7 +264,10 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// Write a string at the current position.
+	/**
+	 * Low-level `writeAll`: records the errno in `last_error` instead of returning a
+	 * `Result`.
+	 **/
 	func raw_write_all = (ref self {}, string data) {
 		#if META.arch == "c" {
 			#raw {
@@ -267,9 +297,10 @@ pub mv struct File {
 		}
 	}
 
-	// Write a string at the current position. `.ok(true)`, or
-	// `.fail(FileError)` — including `not_open` when the handle was never
-	// opened.
+	/**
+	 * Write `data` at the current position. `.ok(true)`, or `.fail(FileError)`, including
+	 * `not_open` when the file isn't open.
+	 **/
 	pub func writeAll = (ref self {}, string data, out Result<bool, FileError>) {
 		self.raw_write_all(data)
 		if self.last_error == 0 {
@@ -278,9 +309,10 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// Read up to the next '\n' (the newline is not included). Sets `eof`
-	// when the end of the file is reached and `last_error` on failure. The raw
-	// body mallocs a fresh buffer — `mv out string` transfers it.
+	/**
+	 * Low-level `readLine`: sets `eof` and `last_error` instead of returning a `Result`.
+	 **/
+	// The raw body mallocs a fresh buffer — `mv out string` transfers it.
 	func raw_read_line = (ref self {}, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -373,8 +405,10 @@ pub mv struct File {
 		return ""
 	}
 
-	// Read up to the next '\n' (the newline is not included). `.ok(text)`
-	// and `eof` set at end of file, or `.fail(FileError)`.
+	/**
+	 * Read the next line, without its trailing newline. `.ok(text)`, with `eof` set at the
+	 * end of the file, or `.fail(FileError)`.
+	 **/
 	pub func readLine = (ref self {}, out Result<string, FileError>) {
 		const string line = self.raw_read_line()
 		if self.last_error == 0 {
@@ -383,7 +417,10 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// Write a string followed by '\n'.
+	/**
+	 * Low-level `writeLine`: records the errno in `last_error` instead of returning a
+	 * `Result`.
+	 **/
 	func raw_write_line = (ref self {}, string data) {
 		#if META.arch == "c" {
 			#raw {
@@ -417,7 +454,9 @@ pub mv struct File {
 		}
 	}
 
-	// Write a string followed by '\n'. `.ok(true)`, or `.fail(FileError)`.
+	/**
+	 * Write `data` followed by a newline. `.ok(true)`, or `.fail(FileError)`.
+	 **/
 	pub func writeLine = (ref self {}, string data, out Result<bool, FileError>) {
 		self.raw_write_line(data)
 		if self.last_error == 0 {
@@ -426,9 +465,10 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// Read up to `size` bytes from the current position. Sets `eof` if fewer
-	// than `size` bytes remain and `last_error` on failure. The raw body mallocs a
-	// fresh buffer — `mv out string` transfers it.
+	/**
+	 * Low-level `readChunk`: sets `eof` and `last_error` instead of returning a `Result`.
+	 **/
+	// The raw body mallocs a fresh buffer — `mv out string` transfers it.
 	func raw_read_chunk = (ref self {}, int size, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -481,8 +521,10 @@ pub mv struct File {
 		return ""
 	}
 
-	// Read up to `size` bytes from the current position. `.ok(text)`
-	// (`eof` set if fewer bytes remained), or `.fail(FileError)`.
+	/**
+	 * Read up to `size` bytes from the current position. `.ok(text)` (with `eof` set when
+	 * fewer than `size` bytes were left), or `.fail(FileError)`.
+	 **/
 	pub func readChunk = (ref self {}, int size, out Result<string, FileError>) {
 		const string chunk = self.raw_read_chunk(size)
 		if self.last_error == 0 {
@@ -491,7 +533,10 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// Write the first `size` bytes of `data` at the current position.
+	/**
+	 * Low-level `writeChunk`: records the errno in `last_error` instead of returning a
+	 * `Result`.
+	 **/
 	func raw_write_chunk = (ref self {}, string data, int size) {
 		#if META.arch == "c" {
 			#raw {
@@ -520,8 +565,10 @@ pub mv struct File {
 		}
 	}
 
-	// Write the first `size` bytes of `data` at the current position.
-	// `.ok(true)`, or `.fail(FileError)`.
+	/**
+	 * Write the first `size` bytes of `data` at the current position. `.ok(true)`, or
+	 * `.fail(FileError)`.
+	 **/
 	pub func writeChunk = (ref self {}, string data, int size, out Result<bool, FileError>) {
 		self.raw_write_chunk(data, size)
 		if self.last_error == 0 {
@@ -530,8 +577,9 @@ pub mv struct File {
 		return Result.fail(File.error_of(self.last_error))
 	}
 
-	// (static) Whether a file exists at `path`. A missing file is `false`,
-	// not an error.
+	/**
+	 * Whether a file exists at `path`. A missing file is `false`, not an error.
+	 **/
 	pub func exists = (string path, out bool) {
 		#if META.arch == "c" {
 			#raw {
@@ -553,7 +601,9 @@ pub mv struct File {
 		return false
 	}
 
-	// (static) Remove the file at `path`; returns errno (0 on success).
+	/**
+	 * Low-level `delete`: returns the errno (0 on success) instead of a `Result`.
+	 **/
 	func raw_delete = (string path, out int) {
 		#if META.arch == "c" {
 			#raw {
@@ -576,8 +626,9 @@ pub mv struct File {
 		return 0
 	}
 
-	// (static) Remove the file at `path`. `.ok(true)`, or
-	// `.fail(FileError)`.
+	/**
+	 * Delete the file at `path`. `.ok(true)`, or `.fail(FileError)`.
+	 **/
 	pub func delete = (string path, out Result<bool, FileError>) {
 		const int err = File.raw_delete(path)
 		if err == 0 {
@@ -586,7 +637,10 @@ pub mv struct File {
 		return Result.fail(File.error_of(err))
 	}
 
-	// (static) Read the entire contents of `path` in one open/read/close.
+	/**
+	 * Read the whole file at `path` in one call (open, read, close). `.ok(text)`, or
+	 * `.fail(FileError)`.
+	 **/
 	pub func read_all = (string path, out Result<string, FileError>) {
 		var Result<string, FileError> result = .fail(FileError.other)
 		var f = File()
@@ -608,10 +662,12 @@ pub mv struct File {
 		return result
 	}
 
-	// (static) Write `data` to `path` (replacing any existing contents) in
-	// one open/write/close. A write failure is reported as `.fail`, not
-	// silently swallowed (the `checked` Result discard check forces this to
-	// be deliberate).
+	/**
+	 * Write `data` to the file at `path` in one call, replacing anything already there.
+	 * `.ok(true)`, or `.fail(FileError)`.
+	 **/
+	// A write failure is reported as `.fail`, not silently swallowed (the `checked`
+	// Result discard check forces ignoring it to be deliberate).
 	pub func write_all = (string path, string data, out Result<bool, FileError>) {
 		var Result<bool, FileError> result = .fail(FileError.other)
 		var f = File()

@@ -10,7 +10,13 @@
  * A decoded character: its Unicode code point and UTF-8 byte length
  **/
 pub struct DecodedChar {
+	/**
+	 * The Unicode code point.
+	 **/
 	var int code_point
+	/**
+	 * How many bytes it takes up in UTF-8 (1 to 4).
+	 **/
 	var int byte_length
 }
 
@@ -18,10 +24,11 @@ pub struct DecodedChar {
  * UTF-8 scalar helpers (`decode_at`/`width_at`/`encode`/`char_count`)
  **/
 pub struct Utf8 {
-	// Decode the code point starting at byte_index.
-	// Malformed sequences yield U+FFFD with a byte_length of 1 (each
-	// invalid byte is one replacement character). Panics if byte_index is
-	// out of range (use Chars for end-aware iteration).
+	/**
+	 * Decode the character starting at byte `byte_index` of `text`. A malformed byte
+	 * decodes as U+FFFD with a length of 1. Panics if `byte_index` is out of range (use
+	 * `Chars` to iterate safely).
+	 **/
 	pub func decode_at = (view string text, int byte_index, out DecodedChar) {
 		if byte_index < 0 || byte_index >= text.length {
 			panic("byte index out of range")
@@ -94,15 +101,19 @@ pub struct Utf8 {
 		)
 	}
 
-	// Byte length of the character starting at byte_index (1-4; malformed
-	// sequences report 1). Panics if byte_index is out of range.
+	/**
+	 * The UTF-8 length (1 to 4) of the character starting at byte `byte_index`; 1 for a
+	 * malformed byte. Panics if `byte_index` is out of range.
+	 **/
 	pub func width_at = (view string text, int byte_index, out int) {
 		var d = Utf8.decode_at(text, byte_index)
 		return d.byte_length
 	}
 
-	// Encode a code point as UTF-8. Out-of-range values and surrogate halves
-	// encode as U+FFFD.
+	/**
+	 * `code_point` encoded as UTF-8. Out-of-range values and surrogate halves encode as
+	 * U+FFFD.
+	 **/
 	pub func encode = (int code_point, mv out string) {
 		var int code = code_point
 		if code < 0 || code > 0x10FFFF {
@@ -135,8 +146,9 @@ pub struct Utf8 {
 		return sb.to_string()
 	}
 
-	// Count the code points in text (one pass; malformed bytes each count
-	// as one U+FFFD).
+	/**
+	 * The number of characters (code points) in `text`. Each malformed byte counts as one.
+	 **/
 	pub func char_count = (view string text, out int) {
 		var n = 0
 		var pos = 0

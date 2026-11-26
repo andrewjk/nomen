@@ -3,8 +3,17 @@
  * plus whether stdout is a terminal (for renderer selection).
  **/
 pub mv struct Init {
+	/**
+	 * The number of command-line arguments, including the program name.
+	 **/
 	var int argc
+	/**
+	 * The command-line arguments (up to 16), starting with the program name.
+	 **/
 	var string[16] args
+	/**
+	 * Whether standard output is a terminal (rather than a file or pipe).
+	 **/
 	var bool is_tty
 }
 

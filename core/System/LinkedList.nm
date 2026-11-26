@@ -4,15 +4,36 @@
 // (read `count` before `add`); -1 means "no node" / "end".
 
 /**
- * A doubly-linked list of values
+ * A doubly-linked list of values. Nodes are identified by stable integer indices: `add`
+ * stores a value as node `length()` (read it before adding), `set_next` / `set_previous` link
+ * nodes, and -1 means "no node".
  **/
 pub mv struct LinkedList<T>: Enumerable {
+	/**
+	 * Node values, by node index (internal storage).
+	 **/
 	var values = Buffer<T>()
+	/**
+	 * Each node's next node, or -1 (internal storage).
+	 **/
 	mv nexts = Buffer<int>()
+	/**
+	 * Each node's previous node, or -1 (internal storage).
+	 **/
 	mv prevs = Buffer<int>()
+	/**
+	 * The index of the first node added, or -1 when the list is empty.
+	 **/
 	var int head = -1
+	/**
+	 * The number of nodes.
+	 **/
 	var count = 0
 
+	/**
+	 * Store `value` as a new, unlinked node; its index is the node count before the call.
+	 * The first node added becomes `head`. The value moves into the list.
+	 **/
 	pub func add = (ref self { nexts, prevs, values }, mv T value) {
 		var int idx = self.count
 		self.values.grow(idx + 1)
@@ -36,6 +57,10 @@ pub mv struct LinkedList<T>: Enumerable {
 		}
 	}
 
+	/**
+	 * Link node `next` after node `idx` (also setting `next`'s previous link to `idx`).
+	 * Pass -1 for no next node.
+	 **/
 	pub func set_next = (ref self { nexts, prevs }, int idx, int next) {
 		self.nexts.store_int(idx, next)
 		if next >= 0 && next < self.prevs.cap {
@@ -43,6 +68,10 @@ pub mv struct LinkedList<T>: Enumerable {
 		}
 	}
 
+	/**
+	 * Link node `prev` before node `idx` (also setting `prev`'s next link to `idx`). Pass
+	 * -1 for no previous node.
+	 **/
 	pub func set_previous = (ref self { nexts, prevs }, int idx, int prev) {
 		self.prevs.store_int(idx, prev)
 		if prev >= 0 && prev < self.nexts.cap {
@@ -50,23 +79,37 @@ pub mv struct LinkedList<T>: Enumerable {
 		}
 	}
 
+	/**
+	 * The node after node `idx`, or -1 at the end.
+	 **/
 	pub func next_at = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.nexts.load_int(idx)
 	}
 
+	/**
+	 * The node before node `idx`, or -1 at the start.
+	 **/
 	pub func previous_at = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.prevs.load_int(idx)
 	}
 
+	/**
+	 * The value of node 0. The list must be provably non-empty.
+	 **/
 	pub func first = (self: self.count > 0, out T) {
 		return self.values.load(0)
 	}
 
+	/**
+	 * The value of node `idx`. The index must be provably within `[0, count)`.
+	 **/
 	pub func at = (self, int idx: idx >= 0 && idx < self.count, out T) {
 		return self.values.load(idx)
 	}
 
-	// Bounds-checked access: `fallback` when idx is outside [0, self.count).
+	/**
+	 * The value of node `idx`, or `fallback` when `idx` is out of range.
+	 **/
 	pub func at_or = (self, int idx, T fallback, out T) {
 		if idx >= 0 && idx < self.count {
 			return self.at(idx)
@@ -74,7 +117,9 @@ pub mv struct LinkedList<T>: Enumerable {
 		return fallback
 	}
 
-	// Bounds-checked access that traps when idx is outside [0, self.count).
+	/**
+	 * The value of node `idx`. Panics when `idx` is out of range.
+	 **/
 	pub func at_or_panic = (self, int idx, out T) {
 		if idx >= 0 && idx < self.count {
 			return self.at(idx)
@@ -82,9 +127,9 @@ pub mv struct LinkedList<T>: Enumerable {
 		panic("index out of range")
 	}
 
-	// Nullable checked access: the element when idx is inside self.count,
-	// `null` otherwise — the escape hatch for indices the constraint
-	// checker can't prove (`xs.get(i) ?? fallback`).
+	/**
+	 * The value of node `idx`, or `null` when `idx` is out of range.
+	 **/
 	pub func at_or_null = (self, int idx, out T?) {
 		if idx >= 0 && idx < self.count {
 			return self.at(idx)
@@ -92,6 +137,9 @@ pub mv struct LinkedList<T>: Enumerable {
 		return null
 	}
 
+	/**
+	 * The number of nodes.
+	 **/
 	pub func length = (self, out int) {
 		return self.count
 	}

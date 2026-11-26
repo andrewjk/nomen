@@ -17,12 +17,20 @@ foreign func memcpy = (uint64 dst, uint64 src, int bytes, out uint64)
 foreign func memset = (uint64 dst, int value, int bytes, out uint64)
 
 /**
- * A UTF-8 text string — a heap-owned, length-tracked sequence of bytes.
- * STRUCT_PLAN_3 D3: `string` is OWNING — the fat (ptr, len) pair owns its
- * bytes, so bindings mv unless a copy is spelled (`.copy()`); `view string`
- * is the cheap read-only passing form.
+ * A UTF-8 text string: a heap-owned, length-tracked sequence of bytes. `length` and indexes
+ * count bytes, not characters.
+ *
+ * A string owns its bytes, so assigning one to another binding moves it unless you ask for
+ * a `.copy()`. Pass `view string` to borrow one cheaply for reading. Methods that return a
+ * new string (`substring`, `trim`, `replace_all`, …) always return a fresh copy and leave the
+ * receiver unchanged.
  **/
+// STRUCT_PLAN_3 D3: `string` is OWNING — the fat (ptr, len) pair owns its
+// bytes, so bindings mv unless a copy is spelled.
 pub mv struct string: Stringable, Hashable, Equatable {
+	/**
+	 * A hash of the string's bytes, so strings can be `Map` keys and `Set` elements.
+	 **/
 	pub func hash = (self, out uint) {
 		// djb2 over exactly self.length bytes — matches the byte count of
 		// owned strings and literals (views hash the viewed bytes only).
@@ -34,18 +42,23 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return h
 	}
 
-	// The uniform mv-type verb: a fresh, owned byte-exact copy of self.
-	// The deep-copy spelling the binding/assignment copy errors name — same
-	// allocation contract as to_string (fresh buffer, never an alias).
+	/**
+	 * A fresh, owned copy of the string.
+	 **/
+	// The uniform mv-type verb: the deep-copy spelling the binding/assignment copy
+	// errors name — same allocation contract as to_string (fresh buffer, never an alias).
 	pub func copy = (self, mv out string) {
 		return self.to_string()
 	}
 
-	// Returns an OWNED byte-exact copy of self (`mv out string`). Fresh
-	// allocation, never an alias of self's storage — the result can outlive
-	// the receiver (e.g. escape a match branch that reclaims the scrutinee
-	// temp). Copies by tracked length, so embedded NULs survive (an extern
-	// strdup boundary would re-synthesize length via strlen and truncate).
+	/**
+	 * A fresh, owned copy of the string (the `Stringable` conversion). The copy can outlive
+	 * the receiver.
+	 **/
+	// Fresh allocation, never an alias of self's storage — e.g. it can escape a match
+	// branch that reclaims the scrutinee temp. Copies by tracked length, so embedded
+	// NULs survive (an extern strdup boundary would re-synthesize length via strlen
+	// and truncate).
 	pub func to_string = (self, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -75,17 +88,22 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		}
 	}
 
-	// The indexing primitive everything string code builds on — `unsafe`
-	// Nomen, single-sourced for both backends. `self as ptr char` is the fat
-	// value's backing bytes (the thin `char*` the raw blocks used to poke).
+	/**
+	 * The byte at `index`. The index must be provably within `[0, length)`; use `at_or`,
+	 * `at_or_null` or `at_or_panic` when it can't be proven at compile time.
+	 **/
+	// The indexing primitive everything string code builds on — `unsafe` Nomen,
+	// single-sourced for both backends. `self as ptr char` is the fat value's backing
+	// bytes (the thin `char*` the raw blocks used to poke).
 	pub func at = (self, int index: index >= 0 && index < self.length, out char) {
 		unsafe {
 			return (self as ptr char)[index]
 		}
 	}
 
-	// Bounds-checked access: `fallback` when index is outside
-	// [0, self.length).
+	/**
+	 * The byte at `index`, or `fallback` when `index` is out of range.
+	 **/
 	pub func at_or = (self, int index, char fallback, out char) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -93,8 +111,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return fallback
 	}
 
-	// Bounds-checked access that traps when index is outside
-	// [0, self.length) — out-of-range is a bug, not a case.
+	/**
+	 * The byte at `index`. Panics when `index` is outside `[0, length)`.
+	 **/
 	pub func at_or_panic = (self, int index, out char) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -102,9 +121,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		panic("index out of range")
 	}
 
-	// Nullable checked access: the element when index is inside self.length,
-	// `null` otherwise — the escape hatch for indices the constraint
-	// checker can't prove (`xs.get(i) ?? fallback`).
+	/**
+	 * The byte at `index`, or `null` when `index` is out of range.
+	 **/
 	pub func at_or_null = (self, int index, out char?) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -112,10 +131,12 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return null
 	}
 
-	// A non-mv slice [start, end) into self's buffer. Returns a `view
-	// string` (ptr, len) that borrows from self: it may not outlive self's
-	// scope and is invalidated if self is reassigned. Use .to_string() to
-	// materialize an owned copy.
+	/**
+	 * A borrowed view of the bytes in `[start, end)`, without copying. The view may not
+	 * outlive the string and is invalidated if the string is reassigned; call
+	 * `.to_string()` on it for an owned copy. Use `substring` when the bounds might be out
+	 * of range.
+	 **/
 	pub func slice = (
 		self,
 		int start: start >= 0 && start <= self.length,
@@ -142,12 +163,19 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		}
 	}
 
+	/**
+	 * Overwrite the byte at `index` with `value`. The index must be provably within
+	 * `[0, length)`.
+	 **/
 	pub func set = (ref self, int index: index >= 0 && index < self.length, char value) {
 		unsafe {
 			(self as ptr char)[index] = value
 		}
 	}
 
+	/**
+	 * `a == b`: whether the two strings hold exactly the same bytes.
+	 **/
 	pub func #op_eq = (self, string other, out bool) {
 		#if META.arch == "c" {
 			#raw {
@@ -178,6 +206,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		}
 	}
 
+	/**
+	 * `a + b`: a new string holding `a` followed by `b`.
+	 **/
 	pub func #op_add = (self, string other, out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -221,6 +252,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		}
 	}
 
+	/**
+	 * `s * count`: a new string holding `count` copies of `s` back to back.
+	 **/
 	pub func #op_mul = (self, int count, out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -272,10 +306,11 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		}
 	}
 
-	// Replace the first non-overlapping occurrence of needle with
-	// replacement. No match — or an empty needle — returns an owned copy
-	// of self. Views pass straight in (no `to_string` copy): both sides
-	// are only ever read.
+	/**
+	 * A copy with the first occurrence of `needle` replaced by `replacement`. Returns an
+	 * unchanged copy when `needle` is empty or not found.
+	 **/
+	// Views pass straight in (no `to_string` copy): both sides are only ever read.
 	pub func replace_first = (self, view string needle, view string replacement, out string) {
 		var sb = StringBuilder()
 		var i = 0
@@ -295,10 +330,13 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return sb.to_string()
 	}
 
-	// Replace all non-overlapping occurrences of needle with replacement,
-	// left to right. Same edge behavior as replace_first. Literal bytes
-	// between matches are copied in bulk runs (one `append_string_view` per
-	// run) — the old loop appended per byte.
+	/**
+	 * A copy with every non-overlapping occurrence of `needle` replaced by `replacement`,
+	 * scanning left to right. Returns an unchanged copy when `needle` is empty or not
+	 * found.
+	 **/
+	// Literal bytes between matches are copied in bulk runs (one `append_string_view`
+	// per run) — the old loop appended per byte.
 	pub func replace_all = (self, view string needle, view string replacement, out string) {
 		var sb = StringBuilder()
 		var i = 0
@@ -319,16 +357,19 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return sb.to_string()
 	}
 
-	// First index of `needle` in self, or -1 when absent. An empty needle
-	// matches at 0 (JavaScript indexOf semantics).
+	/**
+	 * The byte index of the first occurrence of `needle`, or -1 when it is absent. An empty
+	 * `needle` matches at 0.
+	 **/
 	pub func index_of = (self, view string needle, out int) {
 		return self.index_of_from(needle, 0)
 	}
 
-	// First index of `needle` at or after byte offset `from`, or -1. `from`
-	// is clamped into [0, self.length]; an empty needle returns the clamped
-	// `from`, so a `from` past the end yields self.length for the empty
-	// needle and -1 otherwise.
+	/**
+	 * The byte index of the first occurrence of `needle` at or after `from`, or -1 when
+	 * there is none. `from` is clamped into `[0, length]`, and an empty `needle` matches at
+	 * the clamped `from`.
+	 **/
 	pub func index_of_from = (self, view string needle, int from, out int) {
 		var int f = from
 		if f < 0 {
@@ -350,12 +391,16 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return -1
 	}
 
-	// Whether `needle` occurs anywhere in self.
+	/**
+	 * Whether `needle` occurs anywhere in the string.
+	 **/
 	pub func contains = (self, view string needle, out bool) {
 		return self.index_of(needle) >= 0
 	}
 
-	// Whether self begins with `prefix`.
+	/**
+	 * Whether the string begins with `prefix`.
+	 **/
 	pub func starts_with = (self, view string prefix, out bool) {
 		if prefix.length > self.length {
 			return false
@@ -363,7 +408,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return match_at(self, prefix, 0)
 	}
 
-	// Whether self ends with `suffix`.
+	/**
+	 * Whether the string ends with `suffix`.
+	 **/
 	pub func ends_with = (self, view string suffix, out bool) {
 		if suffix.length > self.length {
 			return false
@@ -371,20 +418,18 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return match_at(self, suffix, self.length - suffix.length)
 	}
 
-	// The code of the byte at `index`, or -1 when out of bounds — the
-	// JavaScript charCodeAt NaN case as a plain int parsers can test.
-	// The code of the byte at `index`. Like `at`, the constraint makes
-	// out-of-bounds reads unrepresentable: a literal index is verified at
-	// compile time, and a dynamic index must be proven in-range by flow
-	// facts (a `while i < self.length` loop or an `if` guard) — an
-	// unverifiable call is a compile error. For a sentinel read, use
-	// `char_code_at_or`; for a trapping read, `char_code_at_or_panic`.
+	/**
+	 * The numeric code of the byte at `index`. The index must be provably within
+	 * `[0, length)` (a literal, or a dynamic index guarded by a loop condition or `if`);
+	 * use `char_code_at_or` or `char_code_at_or_panic` otherwise.
+	 **/
 	pub func char_code_at = (self, int index: index >= 0 && index < self.length, out int) {
 		return self.at(index) as int
 	}
 
-	// The code of the byte at `index`, with `fallback` when index is
-	// outside [0, self.length).
+	/**
+	 * The numeric code of the byte at `index`, or `fallback` when `index` is out of range.
+	 **/
 	pub func char_code_at_or = (self, int index, int fallback, out int) {
 		if index >= 0 && index < self.length {
 			return self.at(index) as int
@@ -392,8 +437,10 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return fallback
 	}
 
-	// The code of the byte at `index`; traps when index is outside
-	// [0, self.length) — out-of-range is a bug, not a case.
+	/**
+	 * The numeric code of the byte at `index`. Panics when `index` is outside
+	 * `[0, length)`.
+	 **/
 	pub func char_code_at_or_panic = (self, int index, out int) {
 		if index >= 0 && index < self.length {
 			return self.at(index) as int
@@ -401,9 +448,10 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		panic("index out of range")
 	}
 
-	// Owned copy of self[start, end) with both bounds clamped into
-	// [0, self.length] and an inverted pair swapped (JavaScript substring
-	// semantics: out-of-range operands can never trap).
+	/**
+	 * A copy of the bytes in `[start, end)`. Never panics: both bounds are clamped into
+	 * `[0, length]`, and a reversed pair is swapped (like JavaScript's `substring`).
+	 **/
 	pub func substring = (self, int start, int end, out string) {
 		var int a = start
 		var int b = end
@@ -423,8 +471,10 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return v.to_string()
 	}
 
-	// Owned copy of self with leading and trailing ASCII whitespace
-	// (tab, LF, VT, FF, CR, space) removed. All-whitespace yields "".
+	/**
+	 * A copy with leading and trailing ASCII whitespace (space, tab, CR, LF, VT, FF)
+	 * removed. An all-whitespace string gives "".
+	 **/
 	pub func trim = (self, out string) {
 		var start = 0
 		while start < self.length; start += 1 {
@@ -442,7 +492,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return v.to_string()
 	}
 
-	// Owned copy of self with trailing ASCII whitespace removed.
+	/**
+	 * A copy with trailing ASCII whitespace removed.
+	 **/
 	pub func trim_end = (self, out string) {
 		var int end = self.length
 		while end > 0; end -= 1 {
@@ -454,7 +506,9 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return v.to_string()
 	}
 
-	// Owned copy of self with leading ASCII whitespace removed.
+	/**
+	 * A copy with leading ASCII whitespace removed.
+	 **/
 	pub func trim_start = (self, out string) {
 		var start = 0
 		while start < self.length; start += 1 {
@@ -466,8 +520,10 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return v.to_string()
 	}
 
-	// Owned ASCII-lowercased copy of self (A-Z mapped to a-z; all other
-	// bytes — including UTF-8 sequences — pass through unchanged).
+	/**
+	 * A copy with ASCII letters A–Z lowercased. Other bytes, including UTF-8 sequences, are
+	 * unchanged.
+	 **/
 	pub func to_lowercase = (self, out string) {
 		var sb = StringBuilder()
 		var i = 0
@@ -481,8 +537,10 @@ pub mv struct string: Stringable, Hashable, Equatable {
 		return sb.to_string()
 	}
 
-	// Owned ASCII-uppercased copy of self (a-z mapped to A-Z; all other
-	// bytes — including UTF-8 sequences — pass through unchanged).
+	/**
+	 * A copy with ASCII letters a–z uppercased. Other bytes, including UTF-8 sequences, are
+	 * unchanged.
+	 **/
 	pub func to_uppercase = (self, out string) {
 		var sb = StringBuilder()
 		var i = 0

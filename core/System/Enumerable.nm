@@ -6,6 +6,9 @@
  * A trait for collections that can be iterated with `for x of collection`
  **/
 pub trait Enumerable {
+	/**
+	 * The number of elements. Conformers override it; the default is 0.
+	 **/
 	func length = (self, out int) {
 		return 0
 	}

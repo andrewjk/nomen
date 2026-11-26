@@ -29,19 +29,45 @@
 // socket; there is no aliasing copy to double-close.
 
 /**
- * A non-blocking TCP socket whose waits park the calling fiber
+ * A TCP socket. `Tcp.listen` opens a server socket and `accept` takes its connections;
+ * `Tcp.connect` opens a client connection. `send`, `recv` and `recv_all` transfer data.
+ *
+ * Waits never block a shared worker: inside a fiber the task parks until the socket is
+ * ready, and on a plain thread the call blocks. A `Tcp` owns its socket, which is closed
+ * when the value goes out of scope (or by `close`); moving it moves the socket.
+ *
+ * ```
+ * var server = Tcp.listen(8080, 128)
+ * var conn = server.accept()
+ * if conn.is_open() {
+ *     const sent = conn.send("hello")
+ *     conn.close()
+ * }
+ * ```
  **/
 pub mv struct Tcp {
-	// The underlying file descriptor, -1 when closed/failed.
+	/**
+	 * The socket's file descriptor, or -1 when it is closed or failed to open.
+	 **/
 	pub var int fd = -1
-	// 0 = ok; 1 = DNS, 2 = socket, 3 = connect, 4 = listen, 5 = closed.
+	/**
+	 * Why the last operation failed: 0 ok, 1 DNS lookup, 2 socket creation, 3 connect, 4
+	 * listen, 5 closed.
+	 **/
 	pub var last_error = 0
 
+	/**
+	 * Wrap an existing socket file descriptor.
+	 **/
 	pub func #init = (ref self, int handle) {
 		self.fd = handle
 		self.last_error = 0
 	}
 
+	/**
+	 * Close the socket if it is still open. Runs automatically when the value goes out of
+	 * scope.
+	 **/
 	pub func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {
@@ -61,16 +87,25 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Close the socket now. Does nothing if it is already closed.
+	 **/
 	pub func close = (ref self {}) {
 		Tcp.close_fd(self.fd)
 		self.fd = -1
 	}
 
+	/**
+	 * Whether the socket is open (`fd >= 0`).
+	 **/
 	pub func is_open = (self, out bool) => self.fd >= 0
 
 	// ---- listening ----
 
-	// Create a listening socket bound to `port` on all interfaces.
+	/**
+	 * A server socket listening on `port` on all interfaces, with room for `backlog`
+	 * pending connections. Check `is_open()` (or `last_error`) for success.
+	 **/
 	pub func listen = (int port, int backlog, mv out Tcp) {
 		var int handle = Tcp.listen_fd(port, backlog)
 		var t = Tcp(handle)
@@ -80,9 +115,10 @@ pub mv struct Tcp {
 		return t
 	}
 
-	// Accept the next connection, parking the fiber while the backlog is
-	// empty. The returned socket is -1 if the listener was cancelled or
-	// failed.
+	/**
+	 * Wait for and return the next incoming connection. The result is not open (`fd` -1)
+	 * when the listener was cancelled or failed.
+	 **/
 	pub func accept = (ref self {}, mv out Tcp) {
 		var int handle = Tcp.accept_fd(self.fd)
 		var t = Tcp(handle)
@@ -94,7 +130,10 @@ pub mv struct Tcp {
 
 	// ---- connecting ----
 
-	// Connect to `host`:`port`. Check `fd >= 0` (or `last_error == 0`) for success.
+	/**
+	 * Open a connection to `host` on `port`. Check `is_open()` (or `last_error == 0`) for
+	 * success.
+	 **/
 	pub func connect = (string host, int port, mv out Tcp) {
 		var int handle = Tcp.socket_fd()
 		if handle < 0 {
@@ -114,25 +153,35 @@ pub mv struct Tcp {
 
 	// ---- transferring ----
 
-	// Send every byte of `data`. Parks the fiber while the send buffer is
-	// full. Returns false on error or cancellation.
+	/**
+	 * Send all of `data`, waiting while the send buffer is full. Returns false on error or
+	 * cancellation.
+	 **/
 	pub func send = (ref self {}, string data, out bool) {
 		return Tcp.send_all(self.fd, data)
 	}
 
-	// Receive up to `max` bytes. Parks the fiber until data arrives; returns
-	// the empty string at end-of-stream, on error, or when cancelled.
+	/**
+	 * Receive up to `max` bytes, waiting until some arrive. Returns "" at end of stream, on
+	 * error, or when cancelled.
+	 **/
 	pub func recv = (ref self {}, int max, mv out string) {
 		return Tcp.recv_some(self.fd, max)
 	}
 
-	// Receive until the peer closes (how Connection: close HTTP works).
+	/**
+	 * Receive everything until the peer closes the connection (as `Connection: close` HTTP
+	 * does).
+	 **/
 	pub func recv_all = (ref self {}, mv out string) {
 		return Tcp.recv_until_close(self.fd)
 	}
 
 	// ---- raw helpers (int-shaped, so the wrappers above build the Tcp) ----
 
+	/**
+	 * Low-level: create a non-blocking socket and return its descriptor (-1 on failure).
+	 **/
 	func socket_fd = (out int) {
 		#if META.arch == "c" {
 			#raw("file") {
@@ -180,6 +229,10 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Low-level: create a socket listening on `port` and return its descriptor (-1 on
+	 * failure).
+	 **/
 	func listen_fd = (int port, int backlog, out int) {
 		#if META.arch == "c" {
 			#raw {
@@ -229,6 +282,9 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Low-level: accept a connection on the `listener` descriptor (-1 on failure).
+	 **/
 	func accept_fd = (int listener, out int) {
 		#if META.arch == "c" {
 			#raw {
@@ -258,7 +314,10 @@ pub mv struct Tcp {
 		}
 	}
 
-	// Returns 0 on success, or an error code (1 = DNS, 3 = connect).
+	/**
+	 * Low-level: connect the descriptor `handle` to `host`:`port`. Returns 0 on success, or
+	 * an error code (1 DNS lookup, 3 connect).
+	 **/
 	func connect_to = (int handle, string host, int port, out int) {
 		#if META.arch == "c" {
 			#raw {
@@ -302,6 +361,9 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Low-level: send all of `data` on the descriptor `handle`. Returns false on failure.
+	 **/
 	func send_all = (int handle, string data, out bool) {
 		#if META.arch == "c" {
 			#raw {
@@ -343,6 +405,9 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Low-level: receive up to `max` bytes from the descriptor `handle`.
+	 **/
 	func recv_some = (int handle, int max, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -394,6 +459,9 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Low-level: receive from the descriptor `handle` until the peer closes.
+	 **/
 	func recv_until_close = (int handle, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -449,6 +517,9 @@ pub mv struct Tcp {
 		}
 	}
 
+	/**
+	 * Low-level: close the descriptor `handle`.
+	 **/
 	func close_fd = (int handle) {
 		#if META.arch == "c" {
 			#raw {

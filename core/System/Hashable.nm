@@ -14,6 +14,10 @@
  * way.
  **/
 pub trait Hashable {
+	/**
+	 * A hash of the value. The default combines the hashes of every field not marked
+	 * `@hash_ignore`.
+	 **/
 	func hash = (self, out uint) {
 		var uint acc = 0
 		#for field of META.info(#self).fields {

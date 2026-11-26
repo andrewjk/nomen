@@ -8,19 +8,33 @@
  * A single-pass cursor over Unicode scalar values (`has_next`/`next`)
  **/
 pub struct Chars {
+	/**
+	 * The text being read (borrowed).
+	 **/
 	var view string source
+	/**
+	 * The byte offset of the next character.
+	 **/
 	var byte_pos = 0
 
+	/**
+	 * A cursor at the start of `source`. The text is borrowed, not copied.
+	 **/
 	pub func #init = (ref self, view string source) {
 		self.source = source
 	}
 
+	/**
+	 * Whether there is another character to read.
+	 **/
 	pub func has_next = (self, out bool) {
 		return self.byte_pos < self.source.length
 	}
 
-	// The code point at the cursor, advancing past it. Malformed sequences
-	// yield U+FFFD. Panics when exhausted — check has_next first.
+	/**
+	 * The code point at the cursor, moving past it. A malformed byte reads as U+FFFD.
+	 * Panics when there are no more characters; check `has_next` first.
+	 **/
 	pub func next = (ref self {}, out int) {
 		if self.byte_pos >= self.source.length {
 			panic("Chars exhausted; check has_next first")

@@ -54,29 +54,60 @@
  * `t.has_failed` to bail out of expensive follow-up work yourself.
  **/
 pub mv struct Tester {
-	// Has the *current* test recorded a failure? Reset by `begin_test`.
+	/**
+	 * Whether the current test has recorded a failure. Check it to skip expensive follow-up
+	 * work.
+	 **/
 	pub var has_failed = false
 
+	/**
+	 * The number of assertions that passed in the current test (internal).
+	 **/
 	// Assertion tallies for the current test.
 	var passed = 0
+	/**
+	 * The number of assertions that failed in the current test (internal).
+	 **/
 	var failed = 0
 
+	/**
+	 * The number of failures across the whole file (internal).
+	 **/
 	// Tallies for the whole file, so `done` records stay per-test while the
 	// process still knows whether anything failed overall.
 	var total_failed = 0
 
+	/**
+	 * The name of the running test (internal).
+	 **/
 	mv current = ""
+	/**
+	 * When the running test started (internal).
+	 **/
 	var uint64 started = 0
 
+	/**
+	 * Benchmark capture state read by the harness (internal).
+	 **/
 	// Benchmark capture state. `bench`/`bench_n` record the label and sample
 	// count here; the `nomen test` harness reads them after running the test
 	// function and drives the actual timing loop (Nomen can't store or call a
 	// function pointer, so the harness measures `bench_fn` itself). `bench_fn`
 	// is reconstructed by the harness from the call site, not stored here.
 	var bench_pending = false
+	/**
+	 * Benchmark capture state read by the harness (internal).
+	 **/
 	mv bench_label = ""
+	/**
+	 * How many iterations the harness runs a benchmark for (1000 unless set by `bench_n`).
+	 **/
 	var bench_samples = 1000
 
+	/**
+	 * The program's current count of allocations not yet freed. `nomen test --audit` reads
+	 * it around each test to find leaks.
+	 **/
 	// (audit) The process's current malloc/free balance — allocations made
 	// but not yet freed. `nomen test --audit` snapshots this around every
 	// test so a leak is attributed to the test that leaked instead of one
@@ -96,8 +127,10 @@ pub mv struct Tester {
 		}
 	}
 
-	// (harness) Start timing `name` and clear the per-test state. Called by
-	// the `main` that `nomen test` generates — not by test code.
+	/**
+	 * Harness hook: start test `name`. Called by the `main` that `nomen test` generates,
+	 * not by test code.
+	 **/
 	pub func begin_test = (ref self { current }, string name) {
 		self.has_failed = false
 		self.passed = 0
@@ -107,7 +140,9 @@ pub mv struct Tester {
 		self.started = Time.now_ns()
 	}
 
-	// (harness) Close the current test and emit its `done` record.
+	/**
+	 * Harness hook: finish the current test and report it.
+	 **/
 	pub func end_test = (ref self {}) {
 		const uint64 elapsed = Time.now_ns() - self.started
 		Console.write_line(
@@ -115,7 +150,9 @@ pub mv struct Tester {
 		)
 	}
 
-	// (harness) Did anything in this file fail?
+	/**
+	 * Harness hook: whether any test in this file failed.
+	 **/
 	pub func any_failed = (self, out bool) {
 		return self.total_failed > 0
 	}
@@ -152,6 +189,9 @@ pub mv struct Tester {
 		self.record_failure(message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	// Assert that a nullable value holds a value.
 	//
 	// Nomen has no generic methods, so there is one overload per nullable
@@ -160,38 +200,65 @@ pub mv struct Tester {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, uint? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, int64? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, uint64? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, int8? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, uint8? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, float? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, bool? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, char? value, string message) {
 		self.expect(value != null, message)
 	}
 
+	/**
+	 * Assert that `value` is not null, failing the test with `message` otherwise.
+	 **/
 	pub func assert = (ref self {}, string? value, string message) {
 		self.expect(value != null, message)
 	}
@@ -265,6 +332,9 @@ pub mv struct Tester {
 		)
 	}
 
+	/**
+	 * Internal: record a failed assertion with `message`.
+	 **/
 	func record_failure = (ref self {}, string message) {
 		self.failed += 1
 		self.total_failed += 1

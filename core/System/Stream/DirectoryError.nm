@@ -1,12 +1,13 @@
 /**
  * The failure mode of a directory operation.
  *
- *	Directory.create("scratch")
- *	var Result<string, DirectoryError> names = Directory.list("scratch")
- *	match names {
- *		case .ok(text) -> Console.write(text)
- *		case .fail(e) -> Console.write("failed")
- *	}
+ * ```
+ * var _ = Directory.create("scratch")
+ * match Directory.list("scratch") {
+ *     case .ok(text) -> Console.write_line(text)
+ *     case .fail(e) -> Console.write_line("failed")
+ * }
+ * ```
  *
  * Cases map from the underlying errno: `not_found` (ENOENT), `access_denied`
  * (EACCES), `already_exists` (EEXIST), `not_empty` (removing a directory

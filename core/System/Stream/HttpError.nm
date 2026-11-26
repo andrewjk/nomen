@@ -1,12 +1,13 @@
 /**
  * The failure mode of an HTTP request.
  *
- *	var Http h = Http()
- *	var Result<string, HttpError> body = h.get("http://example.com/")
- *	match body {
- *		case .ok(text) -> Console.write(text)
- *		case .fail(e) -> Console.write("failed")
- *	}
+ * ```
+ * var h = Http()
+ * match h.get("http://example.com/") {
+ *     case .ok(text) -> Console.write_line(text)
+ *     case .fail(e) -> Console.write_line("failed")
+ * }
+ * ```
  *
  * Cases map from the request lifecycle: `dns` (hostname resolution failed),
  * `socket` (the socket could not be created), `connect` (the connection was

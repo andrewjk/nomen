@@ -9,6 +9,9 @@
  **/
 pub mv struct HandleBuffer<T> {
 	internal var uint64 data = 0
+	/**
+	 * The number of slots. Read-only: only the buffer's own methods change it.
+	 **/
 	// Publicly readable; grown only by HandleBuffer's own methods (`readonly`).
 	readonly cap = 0
 
@@ -18,6 +21,10 @@ pub mv struct HandleBuffer<T> {
 		return self.cap
 	}
 
+	/**
+	 * Allocate `size` empty slots, replacing the current storage, and return the new
+	 * capacity.
+	 **/
 	// Semantic parity with Buffer<T>.alloc: generic code (e.g. Map#init's
 	// `self.values.alloc(N)`) forwards to either Buffer — where alloc is
 	// T_SIZE-aware (string slots are 16 bytes) — or this HandleBuffer, whose
@@ -93,6 +100,9 @@ pub mv struct HandleBuffer<T> {
 	// (Buffer) or a class (HandleBuffer, after the Buffer<T> field is
 	// rewritten). Bodies use 8-byte slots, matching _int.
 
+	/**
+	 * Grow to at least `needed` slots, keeping existing slots, and return the new capacity.
+	 **/
 	func grow = (ref self {}, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
@@ -108,6 +118,9 @@ pub mv struct HandleBuffer<T> {
 		return self.cap
 	}
 
+	/**
+	 * The object in slot `i`, borrowed (the slot still owns it).
+	 **/
 	inline func load = (self, int i: i >= 0 && i < self.cap, out T) {
 		#if META.arch == "c" {
 			#raw {
@@ -194,6 +207,10 @@ pub mv struct HandleBuffer<T> {
 		self.clear_view()
 	}
 
+	/**
+	 * Move the object out of slot `i` and return it, leaving the slot empty. The caller now
+	 * owns it.
+	 **/
 	// Move a class pointer out of a slot: return it and zero the slot so the
 	// buffer no longer references it. Declared `mv out T` so the borrow
 	// checker treats the result as OWNED — the slot is relinquished, so the
@@ -222,6 +239,9 @@ pub mv struct HandleBuffer<T> {
 		}
 	}
 
+	/**
+	 * Replace the object in slot `i` with `f(old object)`.
+	 **/
 	// Apply `f` to slot `i` in place — the mv-counterpart of Buffer's
 	// modify for class elements. `f` receives the current instance pointer
 	// as a MOVE argument — the only expressible parameter mode for a
@@ -377,6 +397,9 @@ pub mv struct HandleBuffer<T> {
 		}
 	}
 
+	/**
+	 * Store `val` in slot `i`, destroying the object it replaces.
+	 **/
 	// T-typed alias of replace_int: free the outgoing class pointer (destroy +
 	// free) then store the new one. Used by List.set so the uniform API
 	// preserves ownership for class elements.
@@ -415,6 +438,10 @@ pub mv struct HandleBuffer<T> {
 		}
 	}
 
+	/**
+	 * Move the object in slot `src` into slot `dst` (destroying what `dst` held) and empty
+	 * `src`.
+	 **/
 	// Move slot src into slot dst: reclaim dst's previous instance (destroy +
 	// free), take over src's pointer, and zero src — exactly one slot owns the
 	// instance afterwards. The class-buffer counterpart of Buffer.shift,
@@ -521,6 +548,10 @@ pub mv struct HandleBuffer<T> {
 		}
 	}
 
+	/**
+	 * A borrowed view of the slots in `[start, end)`. Invalidated if the buffer is
+	 * reassigned.
+	 **/
 	// A non-mv (ptr, len) slice [start, end) over this buffer's class
 	// pointers, returned as a `view T` (T is a class, so each element is an
 	// 8-byte pointer). Borrows from self — invalidated on reassignment. Mirrors
@@ -551,6 +582,10 @@ pub mv struct HandleBuffer<T> {
 		}
 	}
 
+	/**
+	 * Destroy every object and free the storage. Runs automatically when the buffer goes
+	 * out of scope.
+	 **/
 	func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {

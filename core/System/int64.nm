@@ -3,6 +3,10 @@
  **/
 pub struct int64: Stringable, Hashable, Equatable {
 
+	/**
+	 * `a / b`: integer division, truncating toward zero. The divisor must be provably
+	 * non-zero.
+	 **/
 	// The divisor contract (SPEC, Division and Modulo by Zero): scalar
 	// arithmetic lowers natively, so these declarations are the contract
 	// signatures the checker enforces at every `/` and `%` site.
@@ -10,13 +14,22 @@ pub struct int64: Stringable, Hashable, Equatable {
 		return self / divisor
 	}
 
+	/**
+	 * `a % b`: the remainder of integer division. The divisor must be provably non-zero.
+	 **/
 	func #op_mod = (self, int64 divisor: divisor != 0, out int64) {
 		return self % divisor
 	}
+	/**
+	 * A hash of the value, so it can be a `Map` key or `Set` element.
+	 **/
 	pub func hash = (self, out uint) {
 		return self as uint
 	}
 
+	/**
+	 * The value in base 10, as a new string.
+	 **/
 	pub func to_string = (self, mv out string) {
 		#if META.arch == "c" {
 			#raw {

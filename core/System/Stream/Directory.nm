@@ -5,15 +5,18 @@
  * Fallible operations return a `Result` whose error side is a
  * `DirectoryError`.
  *
- *	Directory.create("scratch")
- *	var Result<string, DirectoryError> names = Directory.list("scratch")
- *	match names {
- *		case .ok(text) -> Console.write(text)
- *		case .fail(e) -> Console.write("failed")
- *	}
+ * ```
+ * var _ = Directory.create("scratch")
+ * match Directory.list("scratch") {
+ *     case .ok(names) -> Console.write_line(names)
+ *     case .fail(e) -> Console.write_line("failed")
+ * }
+ * ```
  **/
 pub struct Directory {
-	// Maps an errno to its DirectoryError case.
+	/**
+	 * The `DirectoryError` case for an errno value.
+	 **/
 	func error_of = (int err, out DirectoryError) {
 		switch {
 			case err == 2 {
@@ -34,7 +37,9 @@ pub struct Directory {
 		}
 	}
 
-	// (static) Create a directory at `path`; returns errno (0 on success).
+	/**
+	 * Low-level `create`: returns the errno (0 on success) instead of a `Result`.
+	 **/
 	func raw_create = (string path, out int) {
 		#if META.arch == "c" {
 			#raw("file") {
@@ -63,8 +68,10 @@ pub struct Directory {
 		return 0
 	}
 
-	// (static) Create a directory at `path`. `.ok(true)`, or
-	// `.fail(DirectoryError)` (`already_exists` when it is already there).
+	/**
+	 * Create a directory at `path`. `.ok(true)`, or `.fail(DirectoryError)`
+	 * (`already_exists` when it is already there).
+	 **/
 	pub func create = (string path, out Result<bool, DirectoryError>) {
 		const int err = Directory.raw_create(path)
 		if err == 0 {
@@ -73,8 +80,9 @@ pub struct Directory {
 		return Result.fail(Directory.error_of(err))
 	}
 
-	// (static) Remove the (empty) directory at `path`; returns errno (0 on
-	// success).
+	/**
+	 * Low-level `remove`: returns the errno (0 on success) instead of a `Result`.
+	 **/
 	func raw_remove = (string path, out int) {
 		#if META.arch == "c" {
 			#raw {
@@ -97,8 +105,10 @@ pub struct Directory {
 		return 0
 	}
 
-	// (static) Remove the (empty) directory at `path`. `.ok(true)`, or
-	// `.fail(DirectoryError)` (`not_empty` when it still has entries).
+	/**
+	 * Remove the empty directory at `path`. `.ok(true)`, or `.fail(DirectoryError)`
+	 * (`not_empty` when it still has entries).
+	 **/
 	pub func remove = (string path, out Result<bool, DirectoryError>) {
 		const int err = Directory.raw_remove(path)
 		if err == 0 {
@@ -107,8 +117,9 @@ pub struct Directory {
 		return Result.fail(Directory.error_of(err))
 	}
 
-	// (static) Whether a directory exists at `path`. A missing directory is
-	// `false`, not an error.
+	/**
+	 * Whether a directory exists at `path`. A missing directory is `false`, not an error.
+	 **/
 	pub func exists = (string path, out bool) {
 		#if META.arch == "c" {
 			#raw {
@@ -130,10 +141,11 @@ pub struct Directory {
 		return false
 	}
 
-	// (static) The directory's entry names as a single newline-separated
-	// string (the `.` and `..` entries are skipped). `.ok(text)`, or
-	// `.fail(DirectoryError)` when the directory cannot be opened.
-	//
+	/**
+	 * The names of the entries in the directory at `path`, one per line (`.` and `..` are
+	 * left out). `.ok(text)`, or `.fail(DirectoryError)` when the directory can't be
+	 * opened.
+	 **/
 	// The whole operation is one raw body per backend: the listing must be
 	// built and any open failure mapped to its errno inside a single
 	// opendir/closedir lifetime, so the Result is constructed directly in

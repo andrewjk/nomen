@@ -10,9 +10,21 @@
  * A run of consecutive same-width multi-byte characters
  **/
 pub struct CharRun {
+	/**
+	 * The byte offset where the run starts.
+	 **/
 	var int byte_index
+	/**
+	 * The character index where the run starts.
+	 **/
 	var int char_start
+	/**
+	 * The UTF-8 length of each character in the run.
+	 **/
 	var int width
+	/**
+	 * The number of characters in the run.
+	 **/
 	var int count
 }
 
@@ -21,10 +33,23 @@ pub struct CharRun {
  * then `byte_offset_of` / `char_index_of` / `char_at` in O(log runs))
  **/
 pub mv struct CharIndex {
+	/**
+	 * The indexed text (borrowed).
+	 **/
 	var view string source
+	/**
+	 * The runs of multi-byte characters (internal).
+	 **/
 	mv runs = List<CharRun>()
+	/**
+	 * The number of characters in the text.
+	 **/
 	var char_count = 0
 
+	/**
+	 * Index `source` in one pass. The text is borrowed, not copied, so it must outlive the
+	 * index.
+	 **/
 	pub func #init = (ref self, view string source) {
 		self.source = source
 		var pos = 0
@@ -69,8 +94,10 @@ pub mv struct CharIndex {
 		self.char_count = chars
 	}
 
-	// Index built over source in one pass. Construct directly —
-	// `CharIndex(text)` borrows the caller's text with no copy.
+	/**
+	 * The byte offset where character `char_index` starts. Panics if `char_index` is
+	 * outside `[0, char_count)`.
+	 **/
 	pub func byte_offset_of = (self, int char_index, out int) {
 		if char_index < 0 || char_index >= self.char_count {
 			panic("character index out of range")
@@ -89,9 +116,11 @@ pub mv struct CharIndex {
 		return after_bytes + (char_index - after_chars)
 	}
 
-	// Character index containing byte_offset. A mid-character offset floors
-	// into its character; byte_offset == source.length maps to char_count.
-	// Panics if byte_offset is out of [0, source.length].
+	/**
+	 * The index of the character containing byte `byte_offset` (an offset inside a
+	 * character counts as that character; the text's length maps to `char_count`). Panics
+	 * if the offset is outside `[0, length]`.
+	 **/
 	pub func char_index_of = (self, int byte_offset, out int) {
 		if byte_offset < 0 || byte_offset > self.source.length {
 			panic("byte offset out of range")
@@ -112,13 +141,18 @@ pub mv struct CharIndex {
 		return after_chars + (byte_offset - after_bytes)
 	}
 
-	// Decoded code point of the char_index-th character. Panics if
-	// char_index is out of [0, char_count).
+	/**
+	 * The code point of character `char_index`. Panics if `char_index` is outside
+	 * `[0, char_count)`.
+	 **/
 	pub func char_at = (self, int char_index, out int) {
 		var int at = self.byte_offset_of(char_index)
 		var d = Utf8.decode_at(self.source, at)
 		return d.code_point
 	}
+	/**
+	 * Internal: the last run starting at or before `target`, or -1.
+	 **/
 	// Rightmost run whose key (char_start when by_char, else byte_index) is
 	// <= target, or -1 when all runs start after it.
 	func rightmost_run = (self, int target, bool by_char, out int) {

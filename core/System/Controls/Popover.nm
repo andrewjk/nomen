@@ -1,20 +1,4 @@
 /**
- * An anchored transient popup (NSPopover)
- *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * `show(handle)` anchors the popover to ANY control by its native handle
- * (the popover appears above it and the user dismisses it by clicking
- * elsewhere — NSPopover's transient behavior). Sizing drives the content
- * view's frame; hosting arbitrary controls inside the popover needs the
- * same layout-root shim as Sheet and lands with that design work. iOS
- * defers to UIPopoverPresentationController (TODO stubs; see GUI_PLAN
- * Tier 1 #21).
- **/
-/**
  * The popover content area's size (`Popover.content_size`'s return value)
  **/
 pub struct PopSize {
@@ -22,6 +6,20 @@ pub struct PopSize {
 	pub var height = 0
 }
 
+/**
+ * A transient popup anchored to a control. `show(handle)` anchors it to any control by its
+ * native handle: it appears above that control and closes when the user clicks elsewhere.
+ **/
+// An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
+// single field is a platform handle, so the value is movable and its
+// `#destroy` releases what the handle names (NSPopover). The constructor's
+// `self` is the inline instance (the `.` accessor); methods keep the pointer
+// form.
+//
+// Sizing drives the content view's frame; hosting arbitrary controls inside
+// the popover needs the same layout-root shim as Sheet and lands with that
+// design work. iOS defers to UIPopoverPresentationController (TODO stubs; see
+// GUI_PLAN Tier 1 #21).
 pub mv struct Popover: Control {
 	var uint64 handle = 0
 

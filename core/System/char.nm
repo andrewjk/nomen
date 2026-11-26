@@ -2,10 +2,16 @@
  * A single character
  **/
 pub struct char: Stringable, Hashable, Equatable {
+	/**
+	 * A hash of the character, so it can be a `Map` key or `Set` element.
+	 **/
 	pub func hash = (self, out uint) {
 		return self as uint
 	}
 
+	/**
+	 * A one-character string holding this character.
+	 **/
 	pub func to_string = (self, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -48,26 +54,34 @@ pub struct char: Stringable, Hashable, Equatable {
 		}
 	}
 
-	// ASCII digit: '0'-'9'. Non-ASCII bytes are false.
+	/**
+	 * Whether this is an ASCII digit, '0' to '9'. Non-ASCII bytes are false.
+	 **/
 	pub func is_digit = (self, out bool) {
 		var int code = self as int
 		return code >= 48 && code <= 57
 	}
 
-	// ASCII letter: 'A'-'Z' or 'a'-'z'. Non-ASCII bytes are false.
+	/**
+	 * Whether this is an ASCII letter, 'A' to 'Z' or 'a' to 'z'. Non-ASCII bytes are false.
+	 **/
 	pub func is_alpha = (self, out bool) {
 		var int code = self as int
 		return (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
 	}
 
-	// ASCII letter or digit.
+	/**
+	 * Whether this is an ASCII letter or digit.
+	 **/
 	pub func is_alphanumeric = (self, out bool) {
 		return self.is_alpha() || self.is_digit()
 	}
 
-	// ASCII whitespace: tab, LF, VT, FF, CR, space. Unicode spaces are
-	// false — byte-oriented callers trim with this and pass multibyte
-	// sequences through untouched.
+	/**
+	 * Whether this is ASCII whitespace: space, tab, CR, LF, VT or FF. Unicode spaces are
+	 * false.
+	 **/
+	// Byte-oriented callers trim with this and pass multibyte sequences through untouched.
 	pub func is_ascii_space = (self, out bool) {
 		var int code = self as int
 		return (code >= 9 && code <= 13) || code == 32

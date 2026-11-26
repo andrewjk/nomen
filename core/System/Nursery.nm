@@ -20,10 +20,22 @@
 // three fields are the full runtime contract.
 
 /**
- * The capability for spawning into a caller's `async` block; owns and tracks its tasks
+ * A handle to a named `async` block (`async pool { … }`), for spawning tasks into it from
+ * another function: pass it with `ref` and call `pool.spawn(work(n))`. The block waits for
+ * every task spawned into it before it exits. Options go on the declaration, as in
+ * `async pool = Nursery(timeout: 2000) { … }`.
  **/
 pub struct Nursery: Sendable {
+	/**
+	 * Runtime handle (internal).
+	 **/
 	pub var uint64 futures_ptr = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
 	pub var uint64 count_ptr = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
 	pub var uint64 cap_ptr = 0
 }

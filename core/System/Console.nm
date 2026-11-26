@@ -2,6 +2,9 @@
  * The standard console — writing text to, and reading input from, the terminal
  **/
 pub struct Console {
+	/**
+	 * Print `line` to standard output with no newline after it.
+	 **/
 	pub func write = (string line) {
 		#if META.arch == "c" {
 			#raw {
@@ -26,6 +29,9 @@ pub struct Console {
 		}
 	}
 
+	/**
+	 * Print `line` to standard output followed by a newline.
+	 **/
 	pub func write_line = (string line) {
 		#if META.arch == "c" {
 			#raw {
@@ -47,11 +53,15 @@ pub struct Console {
 		}
 	}
 
-	// Disable stdout buffering: every write goes straight to the file
-	// descriptor. The `nomen test` harness calls this at startup so a
-	// crashing binary still leaves every record it printed before the
-	// crash — a buffered stdout loses its pending bytes on an abnormal
-	// exit, which used to turn a mid-suite abort into "no records at all".
+	/**
+	 * Turn off standard-output buffering so every write reaches the terminal (or pipe)
+	 * immediately. Useful when a program may crash, since buffered output is lost on an
+	 * abnormal exit.
+	 **/
+	// The `nomen test` harness calls this at startup so a crashing binary still leaves
+	// every record it printed before the crash — a buffered stdout loses its pending
+	// bytes on an abnormal exit, which used to turn a mid-suite abort into "no records
+	// at all".
 	pub func unbuffered = () {
 		#if META.arch == "c" {
 			#raw {
@@ -75,8 +85,12 @@ pub struct Console {
 		}
 	}
 
-	// Read one line from stdin (newline stripped). The raw body mallocs the
-	// buffer — `mv out string` transfers ownership to the caller.
+	/**
+	 * Read one line from standard input and return it without its trailing newline. Returns
+	 * "" at end of input.
+	 **/
+	// The raw body mallocs the buffer — `mv out string` transfers ownership to the
+	// caller.
 	pub func read_line = (mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -149,6 +163,9 @@ pub struct Console {
 		return ""
 	}
 
+	/**
+	 * Read a single byte from standard input.
+	 **/
 	pub func read_char = (out char) {
 		#if META.arch == "c" {
 			#raw {
@@ -162,8 +179,12 @@ pub struct Console {
 		}
 	}
 
-	// The platform name ("macos" / "ios" / …). The raw body strdups a static
-	// string — `mv out string` transfers the owned copy to the caller.
+	/**
+	 * The name of the platform the program was built for: "macos", "ios", "linux",
+	 * "android", "windows" or "web".
+	 **/
+	// The raw body strdups a static string — `mv out string` transfers the owned copy
+	// to the caller.
 	pub func platform = (mv out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {

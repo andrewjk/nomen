@@ -2,6 +2,9 @@
  * A boolean value (`true` or `false`)
  **/
 pub struct bool: Stringable, Hashable, Equatable {
+	/**
+	 * A hash of the value, so it can be a `Map` key or `Set` element.
+	 **/
 	pub func hash = (self, out uint) {
 		return self as uint
 	}

@@ -1843,9 +1843,10 @@ pub mv struct Window: Control {
 // (`nomen_control_take_input`): the field editor writes through to the
 // control's stringValue while typing, so each keystroke is one edge.
 
-// Refresh the focus snapshot (prev/cur first responder of `window`).
-// Idempotent per frame; the synthesized focus dispatcher calls it once
-// before the arms.
+/**
+ * Internal plumbing: refresh the focus snapshot for `window` (which control had focus last
+ * frame and which has it now). Called once per frame before the focus and blur checks.
+ **/
 pub func nomen_window_focus_poll = (uint64 window) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -1924,6 +1925,10 @@ pub func nomen_window_focus_poll = (uint64 window) {
 	}
 }
 
+/**
+ * Internal plumbing: whether this frame's event pump saw a right click. Backs
+ * `Container.take_right_click`.
+ **/
 // Whether the most recent pump saw a right-mouse-down (the same record
 // FrameEvents.click reports as 2). Read by Container.take_right_click —
 // the on_right_click drain (docs/HANDLERS.md). The pump stamps the kind
@@ -1961,9 +1966,11 @@ pub func nomen_window_had_right_click = (out bool) {
 	}
 }
 
-// Focus EDGE drain: true when `handle` GAINED first-responder status this
-// frame. Pure snapshot compare — no state update, so any number of
-// focus/blur arms can poll the same frame in any order.
+/**
+ * Internal plumbing: whether the control `handle` gained focus this frame.
+ **/
+// Pure snapshot compare — no state update, so any number of focus/blur arms can poll the same
+// frame in any order.
 pub func nomen_control_take_focus = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -2011,8 +2018,9 @@ pub func nomen_control_take_focus = (uint64 handle, out bool) {
 	}
 }
 
-// Blur EDGE drain: true when `handle` LOST first-responder status this
-// frame (it was focused on the previous poll and is not now).
+/**
+ * Internal plumbing: whether the control `handle` lost focus this frame.
+ **/
 pub func nomen_control_take_blur = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -2060,10 +2068,12 @@ pub func nomen_control_take_blur = (uint64 handle, out bool) {
 	}
 }
 
-// Text-INPUT edge drain: true when the control's text changed since the
-// last drain for this handle (the field editor writes through to the
-// control's stringValue while typing, so each keystroke is one edge).
-// Last-seen text is tracked per handle.
+/**
+ * Internal plumbing: whether the text of the control `handle` changed since the last call.
+ * Each keystroke counts as one change.
+ **/
+// The field editor writes through to the control's stringValue while typing; last-seen text
+// is tracked per handle.
 pub func nomen_control_take_input = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -2161,6 +2171,10 @@ pub func nomen_control_take_input = (uint64 handle, out bool) {
 	}
 }
 
+/**
+ * Internal plumbing: make plain clicks on the view `handle` (one that has no native click
+ * action) reach the click record. Safe to call again for the same view.
+ **/
 pub func nomen_window_clicks_init = (uint64 handle) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {

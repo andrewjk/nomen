@@ -11,10 +11,15 @@
 // containers.
 
 /**
- * A flat, low-level buffer of value slots of type T — the backing store for arrays and collections
+ * A flat, low-level block of `cap` slots of type `T`: the backing store `List`, `Map` and the
+ * other collections are built on. It has a capacity but no length, so you track which
+ * slots are filled yourself; most code should use `List` instead.
  **/
 pub mv struct Buffer<T> {
 	internal var uint64 data = 0
+	/**
+	 * The number of slots. Read-only: only the buffer's own methods change it.
+	 **/
 	// Publicly readable capacity (`i < self.cap` guards every accessor), but
 	// only Buffer's own methods may grow it — `readonly`.
 	readonly cap = 0
@@ -360,6 +365,10 @@ pub mv struct Buffer<T> {
 	// structs of any width work correctly. Classes route to HandleBuffer<T> (per-element destroy), so T
 	// reaching here is always a value type (primitive or struct).
 
+	/**
+	 * Allocate `size` zeroed slots, replacing the current storage, and return the new
+	 * capacity.
+	 **/
 	func alloc = (ref self {}, int size, out int: out >= size) {
 		// Reclaim the old slab before the fresh calloc (the raw body runs
 		// for scalar / trivially-destructible elements — plain bytes, so a
@@ -374,6 +383,10 @@ pub mv struct Buffer<T> {
 		return self.cap
 	}
 
+	/**
+	 * Grow to at least `needed` slots, keeping existing slots' contents, and return the new
+	 * capacity.
+	 **/
 	func grow = (ref self {}, int needed, out int: out >= needed) {
 		if self.cap >= needed {
 			return self.cap
@@ -389,6 +402,9 @@ pub mv struct Buffer<T> {
 		return self.cap
 	}
 
+	/**
+	 * The value in slot `i` (a copy for strings and other owning values).
+	 **/
 	// `inline` splices the (width-folded at monomorphization) raw body at
 	// call sites — the load/store pair behind every container `.at`/`set` is
 	// the hottest path in data-heavy code, and the naked-inline path keeps it
@@ -595,6 +611,10 @@ pub mv struct Buffer<T> {
 		}
 	}
 
+	/**
+	 * Move the value out of slot `i` and return it, leaving the slot zeroed. The caller now
+	 * owns the value.
+	 **/
 	// Move a value out of a T_SIZE-sized slot: return it and zero the slot so the
 	// buffer no longer holds a (possibly mv) copy. Declared `mv out T` so
 	// the result is treated as OWNED by the borrow checker — the slot is
@@ -668,6 +688,10 @@ pub mv struct Buffer<T> {
 		}
 	}
 
+	/**
+	 * Replace the value in slot `i` with `f(old value)`, freeing the old value. Safe even
+	 * when the new value is derived from the old one.
+	 **/
 	// Apply `f` to slot `i` in place: the safe way to do a load→modify→store
 	// round-trip on a live slot. `f` receives the current value as a borrow
 	// (by value) and returns the replacement; the primitive itself handles
@@ -764,6 +788,10 @@ pub mv struct Buffer<T> {
 		}
 	}
 
+	/**
+	 * Store `val` in slot `i`, freeing the value it replaces. Correct for both empty and
+	 * occupied slots.
+	 **/
 	// Store into a T_SIZE-sized slot, overwriting the previous value. For
 	// trivially-destructible value structs this is a plain overwrite. For
 	// mv value structs (with string fields), the build phase replaces this
@@ -822,6 +850,10 @@ pub mv struct Buffer<T> {
 		}
 	}
 
+	/**
+	 * Store `value` in slot `i`, freeing the value it replaces. The value moves into the
+	 * buffer.
+	 **/
 	// Move-taking write, mirroring `List.set`: the caller's value is
 	// consumed and an independent copy is installed in the slot (replace
 	// deep-copies mv elements). The mv entry point a caller uses
@@ -907,6 +939,10 @@ pub mv struct Buffer<T> {
 		}
 	}
 
+	/**
+	 * Move the value in slot `src` into slot `dst` (freeing what `dst` held) and zero
+	 * `src`, so exactly one slot owns it.
+	 **/
 	// Move slot src into slot dst: overwrite dst with src's bytes and zero
 	// src, so exactly ONE slot owns the value afterwards. The
 	// ownership-transferring primitive behind backward-shift deletion
@@ -1057,11 +1093,12 @@ pub mv struct Buffer<T> {
 		}
 	}
 
-	// A non-mv (ptr, len) slice [start, end) over this buffer's element
-	// storage, returned as a `view T`. It borrows from self: it may not outlive
-	// self's scope and is invalidated if self is reassigned. This is the single
-	// primitive every other slice (Array<T>, List<T>, user containers) builds
-	// on — higher layers just `return self.items.slice(start, end)`.
+	/**
+	 * A borrowed view of the slots in `[start, end)`, without copying. The view may not
+	 * outlive the buffer and is invalidated if the buffer is reassigned.
+	 **/
+	// This is the single primitive every other slice (Array<T>, List<T>, user containers)
+	// builds on — higher layers just `return self.items.slice(start, end)`.
 	func slice = (
 		self,
 		int start: start >= 0,
@@ -1093,6 +1130,10 @@ pub mv struct Buffer<T> {
 		memset(self.data, 0, len * T_SIZE)
 	}
 
+	/**
+	 * A deep copy: a new buffer of the same capacity with an independent copy of every
+	 * slot.
+	 **/
 	// An independent copy: fresh slab, per-element deep copies. Each slot
 	// round-trips load→replace through a local, so mv element types get
 	// the same treatment a List<T>.copy slot does (the load materializes an
@@ -1176,6 +1217,9 @@ pub mv struct Buffer<T> {
 		}
 	}
 
+	/**
+	 * Free the storage. Runs automatically when the buffer goes out of scope.
+	 **/
 	func #destroy = (ref self) {
 		if self.data != 0 {
 			free(self.data)

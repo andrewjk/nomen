@@ -2,6 +2,10 @@
  * A double-precision (64-bit) floating-point number
  **/
 pub struct float: Stringable {
+	/**
+	 * The value as a decimal string with six digits after the point (`printf`'s `%f`), e.g.
+	 * "3.140000".
+	 **/
 	pub func to_string = (self, mv out string) {
 		#if META.arch == "c" {
 			#raw {

@@ -1,12 +1,3 @@
-/**
- * An arbitrary-precision integer (sign-magnitude)
- *
- * The sign is a real three-state machine — `zero / positive / negative`,
- * canonical: `sign == 0` exactly when the magnitude is zero. Every producer
- * that writes limbs (the constructors, add/sub/mul/div, copy) maintains it;
- * `cmp` consumes it. Limbs always hold the absolute value.
- **/
-
 // Operands with at least this many limbs each multiply via Toom-3 (five
 // ~1/3-size sub-multiplies evaluated at 0/1/-1/2/inf with Bodrato's
 // interpolation) instead of Karatsuba (three ~1/2-size sub-multiplies).
@@ -14,14 +5,45 @@
 // near 750, Toom-3 ~1.15x by 1500 (squaring, aarch64 -O2).
 const TOOM3_MIN_LIMBS = 600
 
+/**
+ * An arbitrary-precision signed integer, for values too large for `int`. Arithmetic writes
+ * into an existing value (`r.add_to(a, b)` sets `r` to `a + b`), so a loop can reuse its
+ * storage instead of allocating a new number each step.
+ *
+ * ```
+ * var a = BigInt(1)
+ * var r = BigInt()
+ * var scratch = BigInt()
+ * r.mul_to(a, a, ref scratch)
+ * ```
+ **/
+// The sign is a real three-state machine — `zero / positive / negative`,
+// canonical: `sign == 0` exactly when the magnitude is zero. Every producer
+// that writes limbs (the constructors, add/sub/mul/div, copy) maintains it;
+// `cmp` consumes it. Limbs always hold the absolute value (sign-magnitude).
 pub mv struct BigInt {
+	/**
+	 * The sign: 0 for zero, 1 for positive, -1 for negative.
+	 **/
 	var sign = 0
+	/**
+	 * The number of 64-bit limbs in use.
+	 **/
 	var len = 0
+	/**
+	 * The 64-bit limbs of the magnitude, least significant first (internal storage).
+	 **/
 	mv digits = Buffer<int>()
 
+	/**
+	 * Zero.
+	 **/
 	pub func #init = (ref self {}) {
 	}
 
+	/**
+	 * The value `val`.
+	 **/
 	pub func #init = (ref self { digits }, int val) {
 		var int v = val
 		if v < 0 {
@@ -42,6 +64,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: the sign derived from the magnitude (0 for zero).
+	 **/
 	// The canonical sign: 0 for a zero magnitude, ±1 otherwise — derived
 	// from the magnitude so a stale stored sign can never leak into a
 	// comparison or a producer.
@@ -55,7 +80,9 @@ pub mv struct BigInt {
 		return 1
 	}
 
-	// Reset to the canonical zero (len 1, limb 0, sign 0).
+	/**
+	 * Internal: reset to zero.
+	 **/
 	func set_zero = (ref self { digits }) {
 		self.ensure(1)
 		self.set(0, 0)
@@ -63,6 +90,9 @@ pub mv struct BigInt {
 		self.sign = 0
 	}
 
+	/**
+	 * Internal: store a computed sign, forcing 0 for a zero result.
+	 **/
 	// Store a producer's computed sign, canonicalized against the final
 	// magnitude: a zero result is sign 0 no matter what the sign arithmetic
 	// produced (0 * -1 == 0, an equal-magnitude subtraction, a zero quotient).
@@ -74,6 +104,9 @@ pub mv struct BigInt {
 		self.sign = s
 	}
 
+	/**
+	 * Internal: limb `i`.
+	 **/
 	// Per-limb get/set stay raw: they are `inline` and splice into the limb
 	// loops, where the raw bodies are 1-2 instructions with no param
 	// marshalling. The unsafe-Nomen forms measured a 3x pidigits regression
@@ -88,6 +121,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: set limb `i`.
+	 **/
 	inline func set = (ref self {}, int i, uint64 val) {
 		unsafe {
 			var ptr uint64 limbs = self.digits.data as ptr uint64
@@ -95,6 +131,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: the address of the limb storage.
+	 **/
 	// Raw data-pointer accessors. The limb loops below hoist `digits.data`
 	// into a local once (before the loop) and index through it via get_at /
 	// set_at, so each limb access is a single strided load/store instead of
@@ -107,6 +146,9 @@ pub mv struct BigInt {
 		return self.digits.data
 	}
 
+	/**
+	 * Internal: limb `i` read through a hoisted storage address.
+	 **/
 	// Same story as get/set above: the hoisted-pointer limb accessors stay
 	// raw for the aarch64 splice path. `data_ptr` is called once per loop
 	// (to hoist the slab address), so its Nomen body is free.
@@ -117,6 +159,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: set limb `i` through a hoisted storage address.
+	 **/
 	inline func set_at = (ref self {}, uint64 ptr, int i, uint64 val) {
 		unsafe {
 			var ptr uint64 limbs = ptr as ptr uint64
@@ -124,14 +169,23 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: make room for `needed` limbs.
+	 **/
 	func ensure = (ref self { digits }, int needed) {
 		self.digits.grow_int(needed)
 	}
 
+	/**
+	 * Internal: zero the first `len` limbs.
+	 **/
 	func clear = (ref self { digits }, int len) {
 		self.digits.zero_int(len)
 	}
 
+	/**
+	 * Internal: copy `count` limbs of `src` from `start`.
+	 **/
 	func copy_range_from = (ref self { digits }, BigInt src, int start, int count) {
 		self.ensure(count)
 		var i = 0
@@ -147,6 +201,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: add `other` shifted up by `shift` limbs into this magnitude.
+	 **/
 	func add_at = (ref self { digits }, BigInt other, int shift) {
 		self.ensure(other.len + shift + 1)
 		var carry = 0
@@ -178,6 +235,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: subtract `other` shifted up by `shift` limbs from this magnitude.
+	 **/
 	func sub_at = (ref self {}, BigInt other, int shift) {
 		var borrow = 0
 		var i = 0
@@ -215,6 +275,10 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: set this to `count` limbs of `src` starting at `start`, as a positive
+	 * value.
+	 **/
 	// Copy `count` limbs of `src` starting at `start` into this value as a
 	// canonical positive magnitude (sign 0 for a zero/empty slice). The count
 	// and start clamp to src's length: a slice past the end reads as fewer
@@ -250,6 +314,9 @@ pub mv struct BigInt {
 		self.finish_sign(1)
 	}
 
+	/**
+	 * Internal: set this to `coef` shifted up by `shift` limbs.
+	 **/
 	// A fresh value holding `coef` shifted up by `shift` limbs (a signed
 	// move: sign and magnitude carry over). Used to place the signed Toom-3
 	// coefficients at their limb offsets through the fully signed add_to.
@@ -264,6 +331,9 @@ pub mv struct BigInt {
 		self.finish_sign(coef.eff_sign())
 	}
 
+	/**
+	 * Internal: halve an even magnitude.
+	 **/
 	// Halve the magnitude exactly: callers guarantee the value is even (the
 	// Toom-3 even combinations always are). Sign untouched.
 	func div2_exact = (ref self { digits }) {
@@ -282,6 +352,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: divide a magnitude that is a multiple of 3 by 3.
+	 **/
 	// Divide the magnitude by 3 exactly: callers guarantee divisibility (the
 	// Toom-3 interpolation differences always are). Hensel digit lifting: with
 	// inv3 = 3^(-1) mod 2^64, limb i of the quotient is
@@ -313,6 +386,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: the 128-by-64-bit division `(hi:lo) / d`, saturating when `hi == d`.
+	 **/
 	// (hi:lo) / d with the quotient truncated to 64 bits.
 	// Callers guarantee hi <= d (the running remainder is always < divisor,
 	// and Knuth-D q_hat estimation has u_hi <= v_top). When hi == d the true
@@ -352,6 +428,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: the high 64 bits of the 128-bit product `a * b`.
+	 **/
 	inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
 		#if META.arch == "c" {
 			#raw {
@@ -366,9 +445,9 @@ pub mv struct BigInt {
 		}
 	}
 
-	// Sign-aware compare: the signs decide first (canonical zero sorts
-	// before every nonzero), and same-sign operands compare by magnitude
-	// with the result flipped for negatives.
+	/**
+	 * Compare with `other`: -1 when this is smaller, 0 when equal, 1 when larger.
+	 **/
 	pub func cmp = (self, BigInt other, out int) {
 		const int sself = self.eff_sign()
 		const int sother = other.eff_sign()
@@ -388,8 +467,9 @@ pub mv struct BigInt {
 		return mag
 	}
 
-	// Magnitude compare (ignores sign): 1 when |self| > |other|, -1 when
-	// less, 0 when the limbs are equal.
+	/**
+	 * Internal: compare magnitudes, ignoring sign (-1, 0 or 1).
+	 **/
 	func mag_cmp = (self, BigInt other, out int) {
 		if self.len != other.len {
 			if self.len > other.len {
@@ -413,6 +493,9 @@ pub mv struct BigInt {
 		return 0
 	}
 
+	/**
+	 * Internal: set this to `a + b`, or `a - b` when `flip_b` is set.
+	 **/
 	// The signed sum (and, with flip_b, difference): self = a + b, or
 	// a - b when flip_b. Same-sign operands magnitude-add; opposite-sign
 	// operands subtract the smaller magnitude from the larger and take the
@@ -460,17 +543,23 @@ pub mv struct BigInt {
 		self.sign = sb
 	}
 
-	// self = a + b (signed).
+	/**
+	 * Set this to `a + b`.
+	 **/
 	pub func add_to = (ref self { digits }, BigInt a, BigInt b) {
 		self.signed_add(a, b, false)
 	}
 
-	// self = a - b (signed; truncating like the limb primitive it wraps).
+	/**
+	 * Set this to `a - b`.
+	 **/
 	pub func sub_to = (ref self { digits }, BigInt a, BigInt b) {
 		self.signed_add(a, b, true)
 	}
 
-	// Magnitude add: |self| = |a| + |b| (sign untouched — signed_add owns it).
+	/**
+	 * Internal: set this magnitude to `|a| + |b|`.
+	 **/
 	func mag_add_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			var uint64 a_val = a.get(0)
@@ -533,8 +622,9 @@ pub mv struct BigInt {
 		}
 	}
 
-	// Magnitude subtract: |self| = |a| - |b|; callers guarantee |a| >= |b|
-	// (signed_add orders the operands). Sign untouched.
+	/**
+	 * Internal: set this magnitude to `|a| - |b|` (requires `|a| >= |b|`).
+	 **/
 	func mag_sub_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			self.ensure(1)
@@ -580,6 +670,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Internal: Toom-3 multiplication for large operands.
+	 **/
 	// Toom-3 multiplication: split both operands at t = ceil(max_len/3) limbs,
 	// evaluate the 3-term polynomials at 0, 1, -1, 2 and infinity, multiply
 	// the five (smaller) evaluation values, and interpolate the coefficients
@@ -724,6 +817,10 @@ pub mv struct BigInt {
 		self.finish_sign(mul_sign)
 	}
 
+	/**
+	 * Set this to `a * b`. `scratch` is working space; it must be a different value from
+	 * this, `a` and `b`. This may be the same value as `a` or `b`.
+	 **/
 	pub func mul_to = (ref self { digits }, BigInt a, BigInt b, ref BigInt scratch { digits }) {
 		// The product's sign, computed before anything can alias-mutate the
 		// operands (self may alias a or b).
@@ -925,12 +1022,11 @@ pub mv struct BigInt {
 		self.finish_sign(mul_sign)
 	}
 
-	// self = quotient, a = dividend, b = divisor, remainder = remainder
-	// Uses remainder's internal buffer as working space
-	//
-	// Truncating division (C semantics): the quotient takes the product of
-	// the operands' signs, the remainder takes the dividend's, and both are
-	// canonicalized (a zero quotient/remainder is sign 0).
+	/**
+	 * Set this to `a / b` and `remainder` to `a % b`, truncating toward zero like `int`
+	 * division: the quotient takes the sign of `a * b` and the remainder the sign of `a`.
+	 **/
+	// Uses remainder's internal buffer as working space.
 	pub func div_to = (ref self { digits }, BigInt a, BigInt b, ref BigInt remainder { digits }) {
 		const int q_sign = a.eff_sign() * b.eff_sign()
 		const int r_sign = a.eff_sign()
@@ -1347,6 +1443,9 @@ pub mv struct BigInt {
 		remainder.finish_sign(r_sign)
 	}
 
+	/**
+	 * The magnitude (ignoring sign) as an `int` when it fits in one limb, otherwise -1.
+	 **/
 	pub func to_digit = (self, out int) {
 		if self.len == 1 {
 			return self.get(0) as int
@@ -1354,6 +1453,9 @@ pub mv struct BigInt {
 		return -1
 	}
 
+	/**
+	 * Set this to a copy of `other`.
+	 **/
 	pub func copy_from = (ref self { digits }, BigInt other) {
 		self.ensure(other.len)
 		self.len = other.len
@@ -1366,6 +1468,9 @@ pub mv struct BigInt {
 		self.sign = other.eff_sign()
 	}
 
+	/**
+	 * Set this to `val`.
+	 **/
 	pub func set_int = (ref self { digits }, int val) {
 		var int v = val
 		if v < 0 {
@@ -1385,6 +1490,9 @@ pub mv struct BigInt {
 		}
 	}
 
+	/**
+	 * Set this to the unsigned value `val`.
+	 **/
 	pub func set_u64 = (ref self { digits }, uint64 val) {
 		self.ensure(1)
 		self.set(0, val)

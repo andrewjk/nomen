@@ -1,3 +1,7 @@
+/**
+ * An optional value: `.some(value)` holds one, `.none` holds nothing. Inspect it with
+ * `match`.
+ **/
 pub enum Option<T> {
 	case some(T value)
 	case none

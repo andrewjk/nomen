@@ -2,6 +2,10 @@
  * Mathematical helper functions
  **/
 pub struct Math {
+	/**
+	 * `base` raised to the power `exp` by repeated multiplication. An `exp` of 0 or less
+	 * gives 1.
+	 **/
 	pub func power = (int base, int exp, out int) {
 		var result = 1
 		var i = 0
@@ -11,6 +15,9 @@ pub struct Math {
 		return result
 	}
 
+	/**
+	 * The square root of `x`.
+	 **/
 	// Square root — stays an inline raw body for speed (see CORE_RAW.md):
 	// the single-fsqrt splice keeps `advance`'s inner loop call-free so it
 	// holds the SLP vector shapes; a real call scalarizes the loop.
@@ -29,6 +36,8 @@ pub struct Math {
 		}
 	}
 
-	// libm natural logarithm — extern.
+	/**
+	 * The natural logarithm of `x`.
+	 **/
 	foreign func log = (float x, out float)
 }

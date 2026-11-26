@@ -1,3 +1,9 @@
+/**
+ * The outcome of an operation that can fail: `.ok(value)` on success or `.fail(err)` with an
+ * error. It is `checked`, so a result can't be silently discarded; handle it with `match`, or
+ * propagate a failure with postfix `!`. A function declared `out T ! E` returns a
+ * `Result<T, E>`.
+ **/
 pub checked enum Result<T, E> {
 	case ok(T value)
 	case fail(E err)

@@ -4,15 +4,37 @@
 // "no child" / "no parent".
 
 /**
- * A tree of values connected by parent/child links
+ * A binary tree of values. Nodes are identified by stable integer indices: `add` stores a
+ * value as node `length()` (read it before adding), `set_left` / `set_right` attach children,
+ * and -1 means "no node".
  **/
 pub mv struct Tree<T>: Enumerable {
+	/**
+	 * Node values, by node index (internal storage).
+	 **/
 	var values = Buffer<T>()
+	/**
+	 * Each node's left child, or -1 (internal storage).
+	 **/
 	mv lefts = Buffer<int>()
+	/**
+	 * Each node's right child, or -1 (internal storage).
+	 **/
 	mv rights = Buffer<int>()
+	/**
+	 * Each node's parent, or -1 (internal storage).
+	 **/
 	mv parents = Buffer<int>()
+	/**
+	 * The number of nodes.
+	 **/
 	var count = 0
 
+	/**
+	 * Store `value` as a new node with no parent or children; its index is the node count
+	 * before the call.
+	 **/
+	// Values are stored as ints (`store_int`), so T must be int-shaped.
 	pub func add = (ref self { lefts, parents, rights, values }, mv T value) {
 		const int idx = self.count
 		self.values.grow_int(idx + 1)
@@ -27,37 +49,60 @@ pub mv struct Tree<T>: Enumerable {
 		self.count = self.count + 1
 	}
 
+	/**
+	 * Make node `left` the left child of node `idx` (and set its parent).
+	 **/
 	pub func set_left = (ref self { lefts, parents }, int idx, int left) {
 		self.lefts.store_int(idx, left)
 		self.parents.store_int(left, idx)
 	}
 
+	/**
+	 * Make node `right` the right child of node `idx` (and set its parent).
+	 **/
 	pub func set_right = (ref self { parents, rights }, int idx, int right) {
 		self.rights.store_int(idx, right)
 		self.parents.store_int(right, idx)
 	}
 
+	/**
+	 * The left child of node `idx`, or -1.
+	 **/
 	pub func left = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.lefts.load_int(idx)
 	}
 
+	/**
+	 * The right child of node `idx`, or -1.
+	 **/
 	pub func right = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.rights.load_int(idx)
 	}
 
+	/**
+	 * The parent of node `idx`, or -1 for a root.
+	 **/
 	pub func parent_of = (self, int idx, out int: out >= -1 && out < self.count) {
 		return self.parents.load_int(idx)
 	}
 
+	/**
+	 * The value of node 0. The tree must be provably non-empty.
+	 **/
 	pub func first = (self: self.count > 0, out T) {
 		return self.values.load_int(0)
 	}
 
+	/**
+	 * The value of node `idx`. The index must be provably within `[0, count)`.
+	 **/
 	pub func at = (self, int idx: idx >= 0 && idx < self.count, out T) {
 		return self.values.load_int(idx)
 	}
 
-	// Bounds-checked access: `fallback` when idx is outside [0, self.count).
+	/**
+	 * The value of node `idx`, or `fallback` when `idx` is out of range.
+	 **/
 	pub func at_or = (self, int idx, T fallback, out T) {
 		if idx >= 0 && idx < self.count {
 			return self.at(idx)
@@ -65,7 +110,9 @@ pub mv struct Tree<T>: Enumerable {
 		return fallback
 	}
 
-	// Bounds-checked access that traps when idx is outside [0, self.count).
+	/**
+	 * The value of node `idx`. Panics when `idx` is out of range.
+	 **/
 	pub func at_or_panic = (self, int idx, out T) {
 		if idx >= 0 && idx < self.count {
 			return self.at(idx)
@@ -73,6 +120,9 @@ pub mv struct Tree<T>: Enumerable {
 		panic("index out of range")
 	}
 
+	/**
+	 * The number of nodes in the subtree rooted at node `idx` (0 for -1).
+	 **/
 	pub func count_nodes = (self, int idx, out int) {
 		if idx == -1 {
 			return 0
@@ -80,6 +130,9 @@ pub mv struct Tree<T>: Enumerable {
 		return 1 + self.count_nodes(self.left(idx)) + self.count_nodes(self.right(idx))
 	}
 
+	/**
+	 * The number of nodes.
+	 **/
 	pub func length = (self, out int) {
 		return self.count
 	}
