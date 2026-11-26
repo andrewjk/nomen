@@ -840,9 +840,14 @@ Dynamic `Array<T>` fields now require an `mv struct`. The struct's destroy
 frees the buffer, and so does a field reassignment
 (`test/array_struct_fields.test.ts`). Still open:
 
-- **No synthesized `copy`.** `h.copy()` on a struct with an `Array<T>`
-  field reports "Function not found: Holder.copy". `Array` has no `copy`
-  to deep-copy the buffer with, so one is needed first.
+- **No synthesized struct `copy`.** `h.copy()` on a struct with an
+  `Array<T>` field reports "Function not found: Holder.copy". `Array.copy()`
+  now exists, so the synthesized copy can call it per field
+  (`Holder(src.xs.copy())` works by hand today).
+- **`Array.copy()` handles plain values and strings only.** The checker
+  rejects `copy()` on arrays whose elements own heap memory (nested arrays,
+  mv structs), because a bytewise copy would share their storage. A deep
+  copy for those needs a per-element `copy`.
 - **`mv Array<T>` parameters don't transfer into fields.** Storing one
   (`self.items = mv other`) is rejected, because the callee's moved-param
   teardown would free the buffer the field now holds. A real transfer
@@ -863,3 +868,17 @@ reads through it then fail with clang errors: "member reference type
 'nomen_view' is not a pointer" and "no member named 's' in 'nomen_view'".
 `view` is treated as the string view type regardless of the parameter's
 struct type. Seen while testing `Array<T>` fields; it is unrelated to them.
+
+## `.length` on an array-returning call is wrong on native backends
+
+`.length` read straight off a call that returns a heap array gives the wrong
+answer:
+
+- `make().length` (with `func make = (out Array<int>)`) prints 0 on aarch64.
+- `Array<int>.with(1, 3).length` prints 1 and leaks the buffer on C. The C
+  build emits `sizeof(Array_int_with(1L, 3L)) / sizeof(long)`, the
+  fixed-array length idiom, against a pointer.
+- `xs.copy().length` hits the same paths: 1 on C, 0 on aarch64. JS is correct.
+
+Binding the result to a local first (`const c = xs.copy()`, then `c.length`)
+works everywhere. Seen while adding `Array.copy()`.

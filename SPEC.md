@@ -175,6 +175,14 @@ const zeros = Array.with(0, 3)      // Array<int> of [0, 0, 0] (inferred int)
 const strs = Array<string>.with("x", 2)  // Array<string> of ["x", "x"]
 ```
 
+`copy()` returns a new heap array with its own storage. String elements are
+deep-copied, so changing the copy never touches the source:
+
+```
+const Array<string> names = Array.with("x", 2)
+var mine = names.copy()             // independent of `names`
+```
+
 Internally `Array<T>` is identical to `T[]`; casts, indexing (`.at`/`.set`),
 and `.length` behave the same. `Array<T>` is the canonical spelled-out form
 used throughout this document wherever a typed array is needed (e.g. tuples
@@ -202,6 +210,10 @@ mv struct Names {
 func make_names = (mv out Names) {
     const Array<string> items = Array.with("x", 2)
     return Names(mv items)               // a plain `Names(items)` would share the buffer
+}
+
+func clone_names = (Names src, mv out Names) {
+    return Names(src.items.copy())       // a copy gives the new struct its own buffer
 }
 ```
 

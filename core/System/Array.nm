@@ -296,6 +296,87 @@ pub struct Array<T>: Viewable {
 	}
 
 	/**
+	 * A new heap array holding the same elements. String elements are deep-copied
+	 * (each slot gets its own bytes); other elements are copied by value.
+	 **/
+	pub func copy = (self, out Array<T>: out.length == self.length) {
+		#if META.arch == "c" {
+			#raw {
+				long _header = sizeof(*self);
+				long _len = self->length;
+				void* _result = malloc(_header + _len * T_SIZE);
+				((long*)_result)[0] = 0;
+				((long*)_result)[1] = _len;
+				T* _data = (T*)((char*)_result + _header);
+				T* _src = (T*)((char*)self + _header);
+				for (long i = 0; i < _len; i++) {
+					#if T_NEEDS_STRDUP
+						_data[i] = nomen_str_dup(_src[i]);
+					#else
+						_data[i] = _src[i];
+					#endif
+				}
+				return _result;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (first elem), length at [x19, #-8].
+				// Returns x0 = heap-allocated array pointer ([ptr]=length, [ptr+8..]=data).
+				stp x20, x21, [sp, #-16]!
+				stp x22, x23, [sp, #-16]!
+				ldr x21, [x19, #-8]         // x21 = length
+
+				// ptr = malloc(8 + length * T_SIZE)
+				mov x2, #T_SIZE
+				mul x0, x21, x2
+				add x0, x0, #8
+				bl _malloc
+				mov x20, x0                 // x20 = base pointer
+				str x21, [x20]              // [ptr] = length
+
+				// memcpy(ptr + 8, self, length * T_SIZE)
+				add x0, x20, #8
+				mov x1, x19
+				mov x2, #T_SIZE
+				mul x2, x21, x2
+				bl _memcpy
+
+				// T_FAT (string): give each slot its own copy of the bytes
+				// (length-based, so NUL bytes survive).
+				mov x7, #T_FAT
+				cmp x7, #1
+				b.ne .Larray_copy_end
+				mov x22, #0                 // i = 0
+				.Larray_copy_loop:
+				cmp x22, x21
+				b.ge .Larray_copy_end
+				add x23, x20, #8
+				add x23, x23, x22, lsl #4   // x23 = &slot[i]
+				ldr x0, [x23]
+				cbz x0, .Larray_copy_next
+				ldr x0, [x23, #8]
+				add x0, x0, #1
+				bl _malloc                  // malloc(len + 1)
+				ldr x1, [x23]
+				ldr x2, [x23, #8]
+				bl _memcpy                  // returns the destination
+				ldr x2, [x23, #8]
+				strb wzr, [x0, x2]
+				str x0, [x23]
+				.Larray_copy_next:
+				add x22, x22, #1
+				b .Larray_copy_loop
+
+				.Larray_copy_end:
+				mov x0, x20                 // return heap pointer
+				ldp x22, x23, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
+	}
+
+	/**
 	 * A new array holding this array's elements followed by `other`'s.
 	 **/
 	pub func add = (self, Array other, out Array) {

@@ -90,6 +90,14 @@ const strs = Array<string>.with("x", 2)
 		expect(compile_main(input)).toEqual([]);
 	});
 
+	test("copy", () => {
+		const input = `
+const Array<string> names = Array.with("x", 2)
+var mine = names.copy()
+`;
+		expect(compile_main(input)).toEqual([]);
+	});
+
 	test("struct fields need an mv struct", () => {
 		const input = `
 mv struct Blocks {
@@ -107,6 +115,10 @@ mv struct Names {
 func make_names = (mv out Names) {
 	const Array<string> items = Array.with("x", 2)
 	return Names(mv items)
+}
+
+func clone_names = (Names src, mv out Names) {
+	return Names(src.items.copy())
 }
 `;
 		expect(compile_module(input)).toEqual([]);
