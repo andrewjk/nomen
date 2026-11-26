@@ -1,35 +1,73 @@
 /**
- * A page-picker row — prev/next plus one numbered Button per page composed
+ * A page picker: "<" and ">" buttons around up to five numbered page buttons
  *
- * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
- * control, no drawing — a row of Buttons wired into the caller's grid.
- * The page count is fixed at construction (1..5; spare buttons are hidden
- * and skipped by the layout's hidden-leaf pass). The composite is its own
- * HANDLER HOST (docs/HANDLERS.md Stage 2): #init registers a handler per
- * button and the arms keep `current` up to date — the run loop forwards
- * into whatever app field hosts the pagination. Changes the app cares
- * about travel UP via the id up-call (Stage 3): `on_page_change(id)`
- * enrolls interest, the mutators raise the pending flag, and the app
- * forwards itself down once per frame — `pag.tick(ref self, ref win)` —
- * for the callback into its `run_handler`. Value polling (`page`) remains
- * for apps that don't need the event. Handles (`prev_handle`/
- * `next_handle`/`page_handle`) remain for coordinate hit-testing.
+ * Add it to your grid with `add_to`. Read the current page with `page`, or respond to page
+ * changes with `on_page_change`; for that, call `tick` from `App.frame` each frame.
  **/
+// PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+// control, no drawing — a row of Buttons wired into the caller's grid. The page
+// count is fixed at construction (1..5; spare buttons are hidden and skipped by
+// the layout's hidden-leaf pass). The composite is its own HANDLER HOST
+// (docs/HANDLERS.md Stage 2): #init registers a handler per button and the arms
+// keep `current` up to date — the run loop forwards into whatever app field
+// hosts the pagination. Changes the app cares about travel UP via the id
+// up-call (Stage 3): `on_page_change(id)` enrolls interest, the mutators raise
+// the pending flag, and the app forwards itself down once per frame —
+// `pag.tick(ref self, ref win)` — for the callback into its `run_handler`.
+// Value polling (`page`) remains for apps that don't need the event. Handles
+// (`prev_handle`/ `next_handle`/`page_handle`) remain for coordinate
+// hit-testing.
 pub mv struct Pagination {
+	/**
+	 * The "<" button.
+	 **/
 	mv Button prev
+	/**
+	 * The ">" button.
+	 **/
 	mv Button next
+	/**
+	 * The page 1 button.
+	 **/
 	mv Button b0
+	/**
+	 * The page 2 button.
+	 **/
 	mv Button b1
+	/**
+	 * The page 3 button.
+	 **/
 	mv Button b2
+	/**
+	 * The page 4 button.
+	 **/
 	mv Button b3
+	/**
+	 * The page 5 button.
+	 **/
 	mv Button b4
-	var pages = 1
-	var current = 0
+	/**
+	 * The number of pages (internal).
+	 **/
+	internal var pages = 1
+	/**
+	 * The current page (internal; read it with `page()`).
+	 **/
+	internal var current = 0
+	/**
+	 * The handler id from `on_page_change`, or -1 (internal).
+	 **/
 	// The up-call plumbing: the dispatch id the app enrolled (—1 = none)
 	// and whether a page change is waiting for the next tick.
-	var int page_change_id = -1
-	var page_change_pending = false
+	internal var int page_change_id = -1
+	/**
+	 * Whether a page change is waiting to be reported (internal).
+	 **/
+	internal var page_change_pending = false
 
+	/**
+	 * A page picker in `window` with `pages` numbered buttons (1 to 5) between "<" and ">".
+	 **/
 	pub func #init = (ref self, Window window, int pages: pages > 0 && pages <= 5) {
 		self.prev = Button(window, "<")
 		self.next = Button(window, ">")
@@ -65,7 +103,9 @@ pub mv struct Pagination {
 		self.b4.on_click(func() { self.select(4) })
 	}
 
-	// Wire the row into the caller's grid under `parent`.
+	/**
+	 * Add the row of buttons to `grid` under `parent`, spanning `span` cells.
+	 **/
 	pub func add_to = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int parent, int span) {
 		var int hs = grid.add_hstack(parent, 6, span)
 		grid.add_to_intrinsic(hs, self.prev.handle, 1)
@@ -77,15 +117,23 @@ pub mv struct Pagination {
 		grid.add_to_intrinsic(hs, self.next.handle, 1)
 	}
 
-	// The page buttons' handles, for grid.contains hit-testing.
+	/**
+	 * The native handle of the "<" button, for hit-testing.
+	 **/
 	pub func prev_handle = (self, out uint64) {
 		return self.prev.handle
 	}
 
+	/**
+	 * The native handle of the ">" button, for hit-testing.
+	 **/
 	pub func next_handle = (self, out uint64) {
 		return self.next.handle
 	}
 
+	/**
+	 * The native handle of page button `index` (0 if there is none), for hit-testing.
+	 **/
 	pub func page_handle = (self, int index, out uint64) {
 		if index == 0 { return self.b0.handle }
 		if index == 1 { return self.b1.handle }
@@ -95,11 +143,16 @@ pub mv struct Pagination {
 		return 0
 	}
 
-	// The current page (0-based), clamped to the page count.
+	/**
+	 * The current page, counting from 0.
+	 **/
 	pub func page = (self, out int) {
 		return self.current
 	}
 
+	/**
+	 * Go to page `index` (clamped to the pages there are).
+	 **/
 	pub func select = (ref self {}, int index) {
 		var int i = index
 		if i < 0 { i = 0 }
@@ -108,6 +161,9 @@ pub mv struct Pagination {
 		self.page_change_pending = true
 	}
 
+	/**
+	 * Go to the next page, if there is one.
+	 **/
 	pub func next = (ref self {}) {
 		if self.current < self.pages - 1 {
 			self.current += 1
@@ -115,6 +171,9 @@ pub mv struct Pagination {
 		}
 	}
 
+	/**
+	 * Go to the previous page, if there is one.
+	 **/
 	pub func prev = (ref self {}) {
 		if self.current > 0 {
 			self.current -= 1
@@ -122,17 +181,18 @@ pub mv struct Pagination {
 		}
 	}
 
-	// The declared event API (docs/HANDLERS.md Stage 3): the desugar's
-	// enrollment rewrite calls this with the app handler's dispatch id.
+	/**
+	 * Run a handler when the page changes: write `pag.on_page_change(func () { ... })` and
+	 * the compiler passes the handler's id here. The app must call `tick` each frame.
+	 **/
 	pub func on_page_change = (ref self {}, int id) {
 		self.page_change_id = id
 	}
 
-	// One tick of the up-call protocol: the app forwards itself down once
-	// per frame — `self.pag.tick(ref self, ref win)` — and a pending page
-	// change calls back into the app's `run_handler` (one vtable hop into
-	// the concrete override). The borrow flows down per call; nothing is
-	// stored and nothing outlives the tick.
+	/**
+	 * Report a pending page change to `owner`'s handler. Call it once per frame from
+	 * `App.frame`: `self.pag.tick(ref self, ref win)`.
+	 **/
 	pub func tick = (ref self {}, ref App owner, ref Window win {}) {
 		if self.page_change_pending && self.page_change_id >= 0 {
 			owner.run_handler(self.page_change_id, ref win)

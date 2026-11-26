@@ -32,16 +32,37 @@
 // preferred way for tasks to communicate. See ASYNC.md.
 
 /**
- * A thread-safe, blocking FIFO queue for passing values between tasks
+ * A thread-safe queue for passing values between tasks: first in, first out, unbounded.
+ * `send` / `receive` pass `uint64` values and `send_string` / `receive_string` pass strings.
+ * `receive` waits until a message arrives (inside a fiber it parks rather than blocking).
+ * Channels are the preferred way for tasks to communicate.
  **/
 pub mv struct Channel {
-	pub var uint64 mu = 0
-	pub var uint64 not_empty_cv = 0
-	pub var uint64 head = 0
-	pub var uint64 tail = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 mu = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 not_empty_cv = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 head = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 tail = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// Head of the parked-fiber wait list (guarded by mu). Send wakes it.
-	pub var uint64 waiters = 0
+	internal var uint64 waiters = 0
 
+	/**
+	 * An empty channel.
+	 **/
 	pub func #init = (self) {
 		#if META.arch == "c" {
 			#raw("file") {
@@ -88,6 +109,9 @@ pub mv struct Channel {
 		}
 	}
 
+	/**
+	 * Add `value` to the end of the queue. Never blocks.
+	 **/
 	pub func send = (self, uint64 value) {
 		#if META.arch == "c" {
 			#raw {
@@ -141,6 +165,10 @@ pub mv struct Channel {
 		}
 	}
 
+	/**
+	 * Add a copy of `value` to the end of the queue (the sender keeps its own string).
+	 * Receive it with `receive_string`.
+	 **/
 	// Pass a fat string through the channel. The value is DUPLICATED into the
 	// queue node — the sender keeps ownership of what it passed — so the
 	// message survives the sender's scope exit intact (true len, embedded
@@ -210,6 +238,9 @@ pub mv struct Channel {
 		}
 	}
 
+	/**
+	 * Wait until a message is available, then remove and return it.
+	 **/
 	pub func receive = (self, out uint64) {
 		#if META.arch == "c" {
 			#raw {
@@ -271,6 +302,10 @@ pub mv struct Channel {
 		}
 	}
 
+	/**
+	 * Wait until a message is available, then remove and return it as a string. Pair with
+	 * `send_string`.
+	 **/
 	// Block until a message is available, then return it as an OWNED string
 	// (the node's copy is moved out — the payload leaves the channel, and a
 	// second receive of the same message is not possible). The fat (ptr, len)
@@ -341,6 +376,10 @@ pub mv struct Channel {
 		}
 	}
 
+	/**
+	 * Free the channel and any messages never received. Runs automatically when it goes out
+	 * of scope.
+	 **/
 	pub func #destroy = (self) {
 		#if META.arch == "c" {
 			#raw {

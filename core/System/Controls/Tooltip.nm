@@ -38,8 +38,9 @@ pub func set_tooltip = (uint64 handle, string text) {
 	}
 }
 
-// The tooltip text currently attached to the view `handle` names ("" when
-// none).
+/**
+ * The tooltip text attached to the view `handle`, or "" when it has none.
+ **/
 pub func get_tooltip = (uint64 handle, out string) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw {

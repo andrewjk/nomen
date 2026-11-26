@@ -31,33 +31,49 @@ mv struct JsonNode {
 }
 
 /**
- * A flat, pool-backed set of JSON tree nodes — the parsed representation `Json.parse` produces
+ * A parsed JSON document, as filled in by `Json.parse`. Nodes are addressed by integer index
+ * (-1 means "none"); create one tree and reuse it across documents, since each parse resets
+ * it.
+ *
+ * Each node has a kind (`get_kind`): 0 null, 1 true, 2 number, 3 string, 4 array, 5 object,
+ * 6 false. Numbers and strings carry their text (`get_text`). An array's `get_child` is its
+ * first element and each element's `get_next` is the one after it. An object's `get_child`
+ * is its first key (a string node); a key's `get_val` is its value and its `get_next` is the
+ * next key.
  **/
 pub mv struct JsonTree {
-	mv nodes = StableList<JsonNode>()
+	/**
+	 * The node pool (internal storage; use the accessors).
+	 **/
+	internal mv nodes = StableList<JsonNode>()
 
-	// Append a fresh node and return its index.
+	/**
+	 * Append a fresh null node and return its index.
+	 **/
 	func alloc_node = (ref self { nodes }, out int) {
 		self.nodes.push(JsonNode())
 		return self.nodes.length - 1
 	}
 
-	// Drop the current document: the fresh StableList displaces the old one,
-	// whose destroy frees every node (texts included) and its slabs. The
-	// next parse starts from a clean pool.
+	/**
+	 * Discard every node, leaving an empty tree. `Json.parse` calls this itself.
+	 **/
+	// The fresh StableList displaces the old one, whose destroy frees every node (texts
+	// included) and its slabs.
 	func reset = (ref self { nodes }) {
 		self.nodes = StableList<JsonNode>()
 	}
 
-	// Install node `idx`'s text, TAKING ownership of the argument (the D3
-	// mv convention): `set_text(n, mv s)` transfers the caller's buffer
-	// into the pool with no copy anywhere — the field store moves the pair
-	// raw and the caller's variable is invalidated. (Pass `.copy()` for the
-	// keep-the-original spelling: `set_text(n, s.copy())`.) The pool owns
-	// its node texts end to end, so the transferred buffer is freed exactly
-	// once, by the list's destroy or the next text store. For strings
-	// produced by a StringBuilder, `take_text` installs the builder's
-	// buffer with no copy at all.
+	/**
+	 * Set node `idx`'s text to `text`, which moves into the tree (pass `s.copy()` to keep
+	 * the original).
+	 **/
+	// The D3 mv convention: `set_text(n, mv s)` transfers the caller's buffer into the
+	// pool with no copy anywhere — the field store moves the pair raw and the caller's
+	// variable is invalidated. The pool owns its node texts end to end, so the
+	// transferred buffer is freed exactly once, by the list's destroy or the next text
+	// store. For strings produced by a StringBuilder, `take_text` installs the
+	// builder's buffer with no copy at all.
 	func set_text = (ref self {}, int idx, mv string text) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -66,15 +82,17 @@ pub mv struct JsonTree {
 		n.text = mv text
 	}
 
-	// Install node `idx`'s text by TAKING the builder's buffer — the parse
-	// path's zero-copy store. `to_string` is a take (the builder hands its
-	// heap buffer over and resets), and a fresh-call RHS stores into the
-	// field directly, so per parsed string/key the only allocation in the
-	// whole node lifecycle is the builder's own buffer — the node's null
-	// seed costs nothing and there is no copy malloc, no seed free, no
-	// temp free. (A `mv string` parameter cannot do this: the string-arg
-	// ownership convention makes mv string arguments caller-owned
-	// borrows, forcing the callee-side copy this method exists to skip.)
+	/**
+	 * Set node `idx`'s text to the contents of `sb`, taking the builder's buffer without a
+	 * copy (the builder is left empty).
+	 **/
+	// The parse path's zero-copy store. `to_string` is a take (the builder hands its
+	// heap buffer over and resets), and a fresh-call RHS stores into the field
+	// directly, so per parsed string/key the only allocation in the whole node
+	// lifecycle is the builder's own buffer — the node's null seed costs nothing and
+	// there is no copy malloc, no seed free, no temp free. (A `mv string` parameter
+	// cannot do this: the string-arg ownership convention makes mv string arguments
+	// caller-owned borrows, forcing the callee-side copy this method exists to skip.)
 	func take_text = (ref self {}, int idx, ref StringBuilder sb {}) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -83,6 +101,9 @@ pub mv struct JsonTree {
 		n.text = sb.to_string()
 	}
 
+	/**
+	 * Set node `idx`'s kind (see the type's description for the codes).
+	 **/
 	func set_kind = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -91,6 +112,10 @@ pub mv struct JsonTree {
 		n.kind = val
 	}
 
+	/**
+	 * Set node `idx`'s first child (first array element or first object key), or -1 for
+	 * none.
+	 **/
 	func set_child = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -99,6 +124,9 @@ pub mv struct JsonTree {
 		n.child = val
 	}
 
+	/**
+	 * Set the sibling after node `idx`, or -1 for none.
+	 **/
 	func set_next = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -107,6 +135,9 @@ pub mv struct JsonTree {
 		n.next = val
 	}
 
+	/**
+	 * Set the value node for the object key `idx`.
+	 **/
 	func set_val = (ref self {}, int idx, int val) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -115,6 +146,9 @@ pub mv struct JsonTree {
 		n.val = val
 	}
 
+	/**
+	 * Node `idx`'s kind: 0 null, 1 true, 2 number, 3 string, 4 array, 5 object, 6 false.
+	 **/
 	func get_kind = (self, int idx, out int) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -123,6 +157,10 @@ pub mv struct JsonTree {
 		return n.kind
 	}
 
+	/**
+	 * A copy of node `idx`'s text (a string's value or a number's digits); "" when it has
+	 * none.
+	 **/
 	func get_text = (self, int idx, out string) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -140,13 +178,14 @@ pub mv struct JsonTree {
 		return n.text.copy()
 	}
 
-	// A non-mv (ptr, len) view over node `idx`'s text — the zero-copy read.
-	// The borrow roots at `self` and re-roots at the call-site receiver
-	// (the `slice` convention), so it is invalidated by `reset()`/re-parse
-	// like any pool borrow. Callers that immediately append, hash, or
-	// inspect the text take this instead of paying `get_text`'s per-read
-	// copy allocation. A node that never had text installed views the
-	// empty string (a rodata-rooted empty borrow).
+	/**
+	 * A borrowed view of node `idx`'s text without copying it; "" when it has none. The
+	 * view is invalidated when the tree is reset or reused for another parse.
+	 **/
+	// The borrow roots at `self` and re-roots at the call-site receiver (the `slice`
+	// convention). Callers that immediately append, hash, or inspect the text take
+	// this instead of paying `get_text`'s per-read copy allocation. A node that never
+	// had text installed views the empty string (a rodata-rooted empty borrow).
 	func get_text_view = (self, int idx, out view string) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -158,6 +197,9 @@ pub mv struct JsonTree {
 		return n.text.slice(0, n.text.length)
 	}
 
+	/**
+	 * Node `idx`'s first child (first array element or first object key), or -1 for none.
+	 **/
 	func get_child = (self, int idx, out int) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -166,6 +208,9 @@ pub mv struct JsonTree {
 		return n.child
 	}
 
+	/**
+	 * The sibling after node `idx` (next array element or next object key), or -1 for none.
+	 **/
 	func get_next = (self, int idx, out int) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")
@@ -174,6 +219,9 @@ pub mv struct JsonTree {
 		return n.next
 	}
 
+	/**
+	 * The value node of the object key `idx`.
+	 **/
 	func get_val = (self, int idx, out int) {
 		if idx < 0 || idx >= self.nodes.length {
 			panic("index out of range")

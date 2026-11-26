@@ -338,6 +338,7 @@ class Builder {
 					start: case_start,
 					length: enum_case.name.length,
 					signature: `${node.name}.${enum_case.name}${params ? `(${params})` : ""}`,
+					doc: enum_case.doc,
 					container: node.name,
 					type: make_type(node.name),
 					is_static: true,
@@ -361,7 +362,7 @@ class Builder {
 		const info = this.type_info(node.name);
 		info.def = def;
 		let search = start;
-		for (const name of node.cases) {
+		for (const [i, name] of node.cases.entries()) {
 			const case_start = this.find_name(search, name);
 			if (case_start < 0) continue;
 			search = case_start + name.length;
@@ -373,6 +374,7 @@ class Builder {
 					start: case_start,
 					length: name.length,
 					signature: `${node.name}.${name}`,
+					doc: node.case_info?.[i]?.doc,
 					container: node.name,
 					type: make_type(node.name),
 					is_static: true,

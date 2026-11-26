@@ -19,11 +19,19 @@
 // section mutates the kernel object the handle names, never the binding.
 
 /**
- * A pthread-backed mutual-exclusion lock for protecting shared mutable state
+ * A lock for protecting shared mutable state: only one task holds it between `lock` and
+ * `unlock`. A fiber waiting for the lock parks instead of blocking its worker. Prefer
+ * passing values through a `Channel` where you can.
  **/
 pub mv struct Mutex {
-	pub var uint64 handle = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 handle = 0
 
+	/**
+	 * A new, unlocked mutex.
+	 **/
 	pub func #init = (self) {
 		// The constructor's `self` is the INLINE instance (a local value in the
 		// C lowering — methods take the pointer form, the ctor does not), so the
@@ -42,6 +50,9 @@ pub mv struct Mutex {
 	}
 	}
 
+	/**
+	 * Wait until the lock is free, then take it.
+	 **/
 	pub func lock = (self) {
 	#if META.arch == "c" {
 		#raw {
@@ -58,6 +69,9 @@ pub mv struct Mutex {
 	}
 	}
 
+	/**
+	 * Release the lock.
+	 **/
 	pub func unlock = (self) {
 	#if META.arch == "c" {
 		#raw {
@@ -72,6 +86,9 @@ pub mv struct Mutex {
 	}
 	}
 
+	/**
+	 * Free the lock. Runs automatically when it goes out of scope.
+	 **/
 	pub func #destroy = (self) {
 	#if META.arch == "c" {
 		#raw {

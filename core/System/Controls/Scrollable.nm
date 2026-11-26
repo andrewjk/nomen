@@ -1,28 +1,36 @@
 /**
- * A scrolling viewport hosting arbitrary controls on a document view
+ * A scroll view that holds its own controls
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * fields are platform handles, so the value is movable and its `#destroy`
- * releases what they name. The constructor's `self` is the inline instance
- * (the `.` accessor); methods keep the pointer form.
- *
- * The scroll view is framed like any control (it sits in a Grid cell), but
- * its children live on a DOCUMENT VIEW: `content_window` hands back a
- * Window-shaped value whose `contentView` is the document view itself (the
- * NomenDocumentView NSView subclass answers `-contentView` with `self`), so
- * control constructors and `Container.layout` work unchanged. The document
- * view stays unflipped, so the engine's y-flip against `content_height()`
- * (the document height) is the existing math — see the Scrollable design
- * note in GUI.md. Per relayout pass: measure the content grid unbounded,
- * `set_content_size`, then `content_grid.layout(content)`. `content_click`
- * translates window-space clicks into document coordinates so content
- * children can be hit-tested while scrolled. iOS defers to UIScrollView
- * (TODO stubs; see GUI_PLAN Tier 2).
+ * Create controls with `content_window()` as their window and lay them out in a grid of
+ * their own. Register that grid with
+ * `grid.set_document(scroll.handle, scroll.doc_handle())` and `Window.run` keeps the
+ * content sized and laid out. Respond to scrolling with `on_scroll`.
  **/
+// The scroll view is framed like any control (it sits in a Grid cell), but its
+// children live on a DOCUMENT VIEW: `content_window` hands back a Window-shaped
+// value whose `contentView` is the document view itself (the NomenDocumentView
+// NSView subclass answers `-contentView` with `self`), so control constructors
+// and `Container.layout` work unchanged. The document view stays unflipped, so
+// the engine's y-flip against `content_height()` (the document height) is the
+// existing math — see the Scrollable design note in GUI.md. Per relayout pass:
+// measure the content grid unbounded, `set_content_size`, then
+// `content_grid.layout(content)`. `content_click` translates window-space
+// clicks into document coordinates so content children can be hit-tested while
+// scrolled. iOS defers to UIScrollView (TODO stubs; see GUI_PLAN Tier 2).
 pub mv struct Scrollable: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
-	var uint64 doc = 0
+	/**
+	 * The native document view that holds the content (internal).
+	 **/
+	internal var uint64 doc = 0
 
+	/**
+	 * A scroll view in `window`. Add controls to it through `content_window`.
+	 **/
 	// File-scope helper: the document view class. It answers `-contentView`
 	// with `self` so Window-expecting constructors add their controls to the
 	// document view (registered once, like NomenResizeDelegate).
@@ -124,12 +132,12 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
-	// A Window-shaped handle to the document view: pass it to control
-	// constructors and `Container.layout` to host controls in the scroll
-	// view. The value retains the document view (+1), so its scope-exit
-	// `#destroy` releases its OWN reference and the Scrollable's stays
-	// balanced — keep the Scrollable alive at least as long as the returned
-	// value.
+	/**
+	 * A `Window` handle for the scrolling content: pass it to control constructors and
+	 * `Container.layout`. Keep the scroll view alive at least as long as the handle.
+	 **/
+	// The value retains the document view (+1), so its scope-exit `#destroy` releases
+	// its OWN reference and the Scrollable's stays balanced.
 	pub func content_window = (self, out Window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -177,6 +185,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * The native handle of the content view. Pass it with `handle` to
+	 * `Container.set_document` so the window's relayout keeps the content sized.
+	 **/
 	// The document view's native handle — pair with `handle` to register
 	// this scroll view's document via `Container.set_document` (the
 	// Window.run relayout registry). Scalars, so the registration call
@@ -185,6 +197,10 @@ pub mv struct Scrollable: Control {
 		return self.doc
 	}
 
+	/**
+	 * Set the size of the scrolling content. Call it after measuring the content's grid and
+	 * before laying it out. Content shorter than the scroll view is stretched to fill it.
+	 **/
 	// Size the document view to the laid-out content. Call between the
 	// content grid's unbounded `measure` and its `layout(content)` — the
 	// flip needs the document height to equal the content height before
@@ -228,6 +244,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Scroll to the top of the content. Call it once after the first layout, since a new
+	 * scroll view starts at the bottom.
+	 **/
 	// Scroll so the top of the document is visible. The document view is
 	// unflipped (the engine's flip math owns the coordinates), and NSScrollView
 	// initially shows an unflipped document's bottom-left corner — call once
@@ -277,6 +297,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * How far the content is scrolled down from its top, in points (0 at the top). Add it
+	 * to a click's y within the scroll view to find the content point under it.
+	 **/
 	// How far the document is scrolled from its top, in document pixels
 	// (0 = top). Add this to a window-space click y (minus the scroll view's
 	// own origin) before hit-testing content children — see the Scrollable
@@ -316,6 +340,9 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Scroll to the bottom of the content.
+	 **/
 	// Scroll so the BOTTOM of the document is visible (the unflipped document
 	// shows its bottom by default, so this restores the initial view after a
 	// `scroll_to_top`).
@@ -356,6 +383,9 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -383,6 +413,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -411,6 +445,9 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -419,6 +456,9 @@ pub mv struct Scrollable: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {
@@ -469,6 +509,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_scroll`: whether the scroll view scrolled this frame. Read
+	 * the amounts with `win.scroll_dx()` and `win.scroll_dy()`.
+	 **/
 	// The on_scroll desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. True on any frame whose pump saw
 	// scroll-wheel events; the deltas ride the dispatch window —
@@ -507,13 +551,15 @@ pub mv struct Scrollable: Control {
 	}
 }
 
-// Translate a WINDOW-space click (top-left origin, as click_x/click_y
-// return) into the scroll view's DOCUMENT coordinates, so content children
-// can be hit-tested with the content grid's `contains` while scrolled. The
-// visible top-left of the document moves with the scroll position (and the
-// clip view's own origin), so a raw click is off by both. A free function
-// (not a method): a raw-block-backed method returning a tuple fails the
-// checker's destructuring — native_intrinsic's free-function shape works.
+/**
+ * Translate a window-space click position (as `click_x` / `click_y` return) into the
+ * document coordinates of `scroll`, so its content can be hit-tested with `contains` while
+ * scrolled. Returns `[x, y]`.
+ **/
+// The visible top-left of the document moves with the scroll position (and the clip view's
+// own origin), so a raw click is off by both. A free function (not a method): a
+// raw-block-backed method returning a tuple fails the checker's destructuring —
+// native_intrinsic's free-function shape works.
 pub func content_click = (Scrollable scroll, int cx, int cy, out [int, int]) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw {

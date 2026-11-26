@@ -10,6 +10,9 @@
  * hand-written method always wins.
  **/
 pub trait Stringable {
+	/**
+	 * The value as text. The default renders `Name(field=value, ...)`.
+	 **/
 	func to_string = (self, out string) {
 		var s = META.info(#self).name + "("
 		var first = true

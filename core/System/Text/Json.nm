@@ -10,12 +10,22 @@
 // parse cycle. The caller creates a JsonTree once and resets it per document.
 
 /**
- * JSON serialization helpers — `serialize`/`deserialize` strings, `parse`/`stringify` via a JsonTree
+ * JSON helpers. `parse` reads a document into a `JsonTree` and `stringify` writes one back
+ * out; `serialize` / `deserialize` convert a single string to and from a JSON string literal.
+ * To read or write a struct directly, use `json_decode_into` and `json_encode`.
+ *
+ * ```
+ * var tree = JsonTree()
+ * const root = Json.parse("[1, 2, 3]", ref tree)
+ * const text = Json.stringify(ref tree, root)
+ * ```
  **/
 pub struct Json {
-	// Serialize a string to a JSON string literal, escaping the special
-	// characters ", \, newline, tab and carriage return. `mv out string`:
-	// returns the StringBuilder's owned heap copy.
+	/**
+	 * `value` as a quoted JSON string literal, with `"`, `\`, newline, tab and carriage
+	 * return escaped.
+	 **/
+	// `mv out string`: returns the StringBuilder's owned heap copy.
 	pub func serialize = (string value, mv out string) {
 		var sb = StringBuilder()
 		sb.append_char('"')
@@ -49,7 +59,9 @@ pub struct Json {
 		return sb.to_string()
 	}
 
-	// Deserialize a JSON string literal to the raw, unescaped value.
+	/**
+	 * The raw value of the JSON string literal `json` (quotes removed, escapes decoded).
+	 **/
 	// `mv out string`: returns the StringBuilder's owned heap copy.
 	pub func deserialize = (string json, mv out string) {
 		var sb = StringBuilder()
@@ -102,8 +114,10 @@ pub struct Json {
 		return sb.to_string()
 	}
 
-	// Parse a JSON document into tree. The caller provides a JsonTree pool
-	// which is reset and filled. Returns the index of the root node.
+	/**
+	 * Parse the JSON document `s` into `tree` and return the index of its root node. `tree`
+	 * is reset first, so any earlier document in it is discarded.
+	 **/
 	pub func parse = (string s, ref JsonTree tree { nodes }, out int) {
 		tree.reset()
 		var int pos = 0
@@ -111,7 +125,9 @@ pub struct Json {
 		return json_parse_value(s, ref pos, len, ref tree)
 	}
 
-	// Serialize a node in the tree back to a JSON string.
+	/**
+	 * The JSON text of the node `root` in `tree` (and everything under it).
+	 **/
 	pub func stringify = (ref JsonTree tree { nodes }, int root, out string) {
 		var sb = StringBuilder()
 		json_ser_value(ref tree, root, ref sb)
@@ -402,21 +418,29 @@ func json_ser_value = (ref JsonTree tree { nodes }, int n, ref StringBuilder sb 
 // `META.is_container(T)` comptime predicates).
 // ===========================================================================
 
-// Decode `text` (a JSON object) into `target`, overwriting the fields it
-// names: repeated decodes into the same value REPLACE list content (the
-// array is truncated to the new length, its storage retained — the pool
-// reuse that makes a decode cycle allocation-free) and re-fill struct
-// fields in place. Missing keys keep their defaults; unknown keys are
-// skipped.
+/**
+ * Decode the JSON object `text` into the struct `target`, field by field. A key matches a
+ * field's name, or its `@rename("…")` value; `@skip` fields are ignored. Missing keys leave
+ * the field as it was and unknown keys are skipped. Supports string, int, float and bool
+ * fields, nested structs and `StableList<T>` arrays of those.
+ *
+ * Decoding into the same value again refills it in place, reusing list storage.
+ **/
+// Repeated decodes into the same value REPLACE list content (the array is
+// truncated to the new length, its storage retained — the pool reuse that makes a
+// decode cycle allocation-free) and re-fill struct fields in place.
 pub func json_decode_into<T> = (string text, ref T target) {
 	var int pos = 0
 	json_decode_object_into(text, ref pos, text.length, ref target)
 }
 
-// Encode `value` to a JSON object string. Field keys are the field name or
-// its `@rename` value; `@skip` fields are omitted. `value` is BORROWED
-// (`ref`): the walk reads fields and element slots in place, so encoding a
-// reused value (a decode-refill loop) moves no container — the mirror of
+/**
+ * Encode the struct `value` as a JSON object string. Keys are the field names, or their
+ * `@rename("…")` values; `@skip` fields are left out. Supports the same field types as
+ * `json_decode_into`.
+ **/
+// `value` is BORROWED (`ref`): the walk reads fields and element slots in place, so
+// encoding a reused value (a decode-refill loop) moves no container — the mirror of
 // `stringify`'s `ref JsonTree`.
 pub func json_encode<T> = (ref T value, out string) {
 	var sb = StringBuilder()

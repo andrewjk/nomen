@@ -1,21 +1,37 @@
 /**
  * The failure mode of a directory operation.
  *
- *	Directory.create("scratch")
- *	var Result<string, DirectoryError> names = Directory.list("scratch")
- *	match names {
- *		case .ok(text) -> Console.write(text)
- *		case .fail(e) -> Console.write("failed")
- *	}
+ * ```
+ * var _ = Directory.create("scratch")
+ * match Directory.list("scratch") {
+ *     case .ok(text) -> Console.write_line(text)
+ *     case .fail(e) -> Console.write_line("failed")
+ * }
+ * ```
  *
  * Cases map from the underlying errno: `not_found` (ENOENT), `access_denied`
  * (EACCES), `already_exists` (EEXIST), `not_empty` (removing a directory
  * that still has entries), `other` (anything else).
  **/
 pub enum DirectoryError {
+	/**
+	 * No directory exists at the path (ENOENT).
+	 **/
 	case not_found
+	/**
+	 * Permission was denied (EACCES).
+	 **/
 	case access_denied
+	/**
+	 * Something already exists at the path (EEXIST).
+	 **/
 	case already_exists
+	/**
+	 * The directory still has entries, so it can't be removed.
+	 **/
 	case not_empty
+	/**
+	 * Any other failure.
+	 **/
 	case other
 }

@@ -4,16 +4,40 @@
 // are stable int indices; -1 means "none".
 
 /**
- * A graph of values connected by edges
+ * A directed graph of values. Nodes and edges are identified by stable integer indices:
+ * `add_node` stores a value as node `node_length()` and `add_edge` connects two nodes. Walk a
+ * node's outgoing edges with `edges_of` and `next_edge` until -1.
  **/
 pub mv struct Graph<T>: Enumerable {
-	var values = Buffer<T>()
-	mv head_edge = Buffer<int>()
-	mv edge_target = Buffer<int>()
-	mv edge_next = Buffer<int>()
+	/**
+	 * Node values, by node index (internal storage).
+	 **/
+	internal var values = Buffer<T>()
+	/**
+	 * Each node's first outgoing edge, or -1 (internal storage).
+	 **/
+	internal mv head_edge = Buffer<int>()
+	/**
+	 * Each edge's target node (internal storage; read it with `edge_target(e)`).
+	 **/
+	internal mv edge_target = Buffer<int>()
+	/**
+	 * Each edge's next sibling edge, or -1 (internal storage).
+	 **/
+	internal mv edge_next = Buffer<int>()
+	/**
+	 * The number of nodes.
+	 **/
 	var node_count = 0
+	/**
+	 * The number of edges.
+	 **/
 	var edge_count = 0
 
+	/**
+	 * Store `value` as a new node with no edges; its index is the node count before the
+	 * call.
+	 **/
 	pub func add_node = (ref self { head_edge, values }, mv T value) {
 		var int idx = self.node_count
 		self.values.grow(idx + 1)
@@ -23,6 +47,9 @@ pub mv struct Graph<T>: Enumerable {
 		self.node_count = self.node_count + 1
 	}
 
+	/**
+	 * Add a directed edge from node `from` to node `to`.
+	 **/
 	pub func add_edge = (ref self { edge_next, edge_target, head_edge }, int from, int to) {
 		var int e = self.edge_count
 		self.edge_target.grow_int(e + 1)
@@ -37,30 +64,52 @@ pub mv struct Graph<T>: Enumerable {
 		self.edge_count = self.edge_count + 1
 	}
 
+	/**
+	 * The first outgoing edge of `node`, or -1 when it has none. Follow `next_edge` for the
+	 * rest.
+	 **/
 	pub func edges_of = (self, int node, out int: out >= -1 && out < self.edge_count) {
 		return self.head_edge.load_int(node)
 	}
 
+	/**
+	 * The node edge `e` points to.
+	 **/
 	pub func edge_target = (self, int e, out int: out >= 0 && out < self.node_count) {
 		return self.edge_target.load_int(e)
 	}
 
+	/**
+	 * The next outgoing edge after `e` from the same node, or -1.
+	 **/
 	pub func next_edge = (self, int e, out int: out >= -1 && out < self.edge_count) {
 		return self.edge_next.load_int(e)
 	}
 
+	/**
+	 * The value of node 0. The graph must be provably non-empty.
+	 **/
 	pub func first = (self: self.node_count > 0, out T) {
 		return self.values.load(0)
 	}
 
+	/**
+	 * The value of node `idx`. The index must be provably within `[0, node_count)`.
+	 **/
 	pub func at = (self, int idx: idx >= 0 && idx < self.node_count, out T) {
 		return self.values.load(idx)
 	}
 
+	/**
+	 * The number of nodes.
+	 **/
 	pub func node_length = (self, out int) {
 		return self.node_count
 	}
 
+	/**
+	 * The number of edges.
+	 **/
 	pub func edge_length = (self, out int) {
 		return self.edge_count
 	}

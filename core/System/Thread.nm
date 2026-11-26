@@ -41,9 +41,24 @@
 // declared by the library file, not inferred from user-source tokens).
 
 /**
- * A deferred function call, startable on the shared worker pool
+ * A function call to run on the shared worker pool. `Thread(work(n))` evaluates the
+ * arguments now and defers the call; `start()` runs it and returns a `Task` to wait on,
+ * and `detach()` runs it in the background with no handle.
+ *
+ * ```
+ * var t = Thread(work(n))
+ * var task = t.start()
+ * task.wait()
+ * ```
+ *
+ * A `Thread` must be started (or detached): dropping one that never ran is a programming
+ * error that aborts the program. The pool starts with 4 workers (see `Task.set_pool_size`)
+ * and grows on demand up to 64.
  **/
 pub mv struct Thread<T> : Spawnable<T> {
+	/**
+	 * Construction hook: makes `Thread(call)` a deferred call.
+	 **/
 	// The construction hook (ASYNC.md): declares this type's
 	// construction as the deferred-call special form — the single argument
 	// is a call (args packed eagerly, call deferred) or a zero-arg function
@@ -53,15 +68,33 @@ pub mv struct Thread<T> : Spawnable<T> {
 	#spawn = () {
 	}
 
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/detach/nursery.start transfers it to the runtime.
-	pub var uint64 task = 0
+	internal var uint64 task = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// Result-slot / cancel-flag / future handles for the (single) launch.
-	pub var uint64 result_slot = 0
-	pub var uint64 cancel_flag = 0
-	pub var uint64 future = 0
+	internal var uint64 result_slot = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 cancel_flag = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 future = 0
+	/**
+	 * Whether the call has been started (or detached).
+	 **/
 	// Must-start flag: set by .start() / .detach() / nursery.start.
 	pub var started = false
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// LEXICAL NURSERY CAPTURE (ASYNC.md): the tracking slots of the
 	// `async` block that lexically encloses the CONSTRUCTION, or 0 when the
 	// construction is outside any block. `.start()` registers the future
@@ -71,10 +104,19 @@ pub mv struct Thread<T> : Spawnable<T> {
 	// own futures list slots (the block cannot exit until every registered
 	// task has finished, so a started-before-exit task never registers into
 	// dead storage).
-	pub var uint64 nursery_futures = 0
-	pub var uint64 nursery_count = 0
-	pub var uint64 nursery_cap = 0
+	internal var uint64 nursery_futures = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 nursery_count = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 nursery_cap = 0
 
+	/**
+	 * Start the call on the shared worker pool and return a `Task` for it.
+	 **/
 	// Start the deferred call on the shared worker pool and yield the
 	// Task<T> handle. Consumes the instance's launch machinery (submit, then
 	// register with the construction-time nursery, if any) and zeroes the
@@ -145,6 +187,10 @@ pub mv struct Thread<T> : Spawnable<T> {
 		return t
 	}
 
+	/**
+	 * Run the call on its own background thread with no handle to wait on. It is never
+	 * joined: it is stopped if the program exits first.
+	 **/
 	// Run the deferred call on a dedicated detached pthread — the daemon
 	// form. Never a pool worker, never joined; process exit kills it
 	// mid-execution BY DESIGN. The unused future (a Thread always carries
@@ -191,6 +237,10 @@ pub mv struct Thread<T> : Spawnable<T> {
 		self.started = true
 	}
 
+	/**
+	 * Runs when the value goes out of scope. Aborts the program if the call was never
+	 * started.
+	 **/
 	// Destroying an unstarted Thread is a programming error (the wrapped
 	// call would silently never run) — report it and abort. A started
 	// Thread owns nothing: the launch transferred the task closure, result

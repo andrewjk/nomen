@@ -17,11 +17,12 @@ object-oriented, and functional paradigms.
 
 A `/** ... */` block comment immediately before a declaration is a **doc
 comment**: `nomen docs` attaches it to the following struct, trait, enum,
-bitset, or function and renders it into a markdown tree under `<root>/docs/`
-(one file per source file, mirroring the source layout). The delimiters and
-the conventional leading `*` are stripped, `@tag` lines (e.g. `@param`) are
-preserved verbatim, and nested `/* */` inside a doc comment is allowed. A
-top-level `pub` item with no doc comment produces a `nomen docs` warning.
+bitset, function, field, enum case or bitset flag and renders it into a
+markdown tree under `<root>/docs/` (one file per source file, mirroring the
+source layout). The delimiters and the conventional leading `*` are
+stripped, `@tag` lines (e.g. `@param`) are preserved verbatim, and nested
+`/* */` inside a doc comment is allowed. A top-level `pub` item with no doc
+comment produces a `nomen docs` warning.
 
 ```
 /**

@@ -1,17 +1,18 @@
 /**
- * A multiline editable text surface
+ * A scrolling, multi-line text editor
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Sized explicitly by the container (`add(handle, w, h, …)`): a native text
- * view has no useful intrinsic size (it scrolls its own document), so the
- * Control-trait measure reports what the platform offers and clamps to the
- * constraints like every other leaf.
+ * Give it an explicit size when adding it to a `Container`; it has no natural size of its
+ * own. Read it with `get_text`.
  **/
+// Sized explicitly by the container (`add(handle, w, h, …)`): a native text
+// view has no useful intrinsic size (it scrolls its own document), so the
+// Control-trait measure reports what the platform offers and clamps to the
+// constraints like every other leaf.
 pub mv struct TextView: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -19,6 +20,9 @@ pub mv struct TextView: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * An empty multi-line text editor in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -116,6 +120,10 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -147,6 +155,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * Replace the control's text.
+	 **/
 	pub func set_text = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -182,6 +193,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * Set the hint text shown while the field is empty.
+	 **/
 	// The placeholder: gray hint text shown while the view is empty. Unlike
 	// set_text, it is not the view's value — get_text still reports "" until
 	// the user types. AppKit has no public NSTextView placeholder API, so this
@@ -223,6 +237,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * The control's current text.
+	 **/
 	pub func get_text = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -262,6 +279,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -271,6 +291,9 @@ pub mv struct TextView: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

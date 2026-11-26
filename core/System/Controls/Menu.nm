@@ -1,25 +1,28 @@
 /**
- * A context menu attachable to any control (NSMenu via `view.menu`)
+ * A context menu shown when the user right-clicks a control
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Right-clicking an attached control shows the menu natively — AppKit runs
- * its own modal tracking loop, so the manual event loop is untouched. Each
- * item carries a tag (its index) and a shared target whose action records
- * the tag in a C global; `clicked_item` polls it (edge-triggered: the read
- * resets it to -1, "none"), and `on_item_select` is the registered form —
- * the drain consumes the selection, the handler reads it through
- * `selected_item`.
- * iOS presentation differs (UIContextMenu-
- * Interaction needs a scene-attached view — see GUI_PLAN Tier 2; the iOS
- * blocks are TODO stubs).
+ * Add items with `add_item`, `attach` the menu to a control, then respond to choices with
+ * `on_item_select` (reading which with `selected_item`) or poll `clicked_item` each frame.
+ * macOS only.
  **/
+// Right-clicking an attached control shows the menu natively — AppKit runs its
+// own modal tracking loop, so the manual event loop is untouched. Each item
+// carries a tag (its index) and a shared target whose action records the tag in
+// a C global; `clicked_item` polls it (edge-triggered: the read resets it to
+// -1, "none"), and `on_item_select` is the registered form — the drain consumes
+// the selection, the handler reads it through `selected_item`. iOS presentation
+// differs (UIContextMenu- Interaction needs a scene-attached view — see
+// GUI_PLAN Tier 2; the iOS blocks are TODO stubs).
 pub mv struct Menu: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An empty context menu. Add items, then `attach` it to a control.
+	 **/
 	// File-scope helper: the shared item target. The action records the
 	// clicked item's tag (shared — one Menu per process, like List's row
 	// storage).
@@ -150,9 +153,10 @@ pub mv struct Menu: Control {
 		}
 	}
 
-	// Append a clickable item. Its tag (and the `clicked_item` value it
-	// reports) is its ENTRY index in the menu — separators consume an index
-	// too, so `add_item` after `add_separator` reports the entry count.
+	/**
+	 * Add a clickable item. Its number (reported by `clicked_item` and `selected_item`) is
+	 * its position in the menu, counting separators.
+	 **/
 	pub func add_item = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -202,7 +206,9 @@ pub mv struct Menu: Control {
 		}
 	}
 
-	// Append a separator line.
+	/**
+	 * Add a separator line. It takes up a position too.
+	 **/
 	pub func add_separator = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -230,7 +236,9 @@ pub mv struct Menu: Control {
 		}
 	}
 
-	// Show this menu on right-click of the control with the given handle.
+	/**
+	 * Show this menu when the control with native handle `handle` is right-clicked.
+	 **/
 	pub func attach = (self, uint64 handle) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -254,7 +262,9 @@ pub mv struct Menu: Control {
 		}
 	}
 
-	// The number of ENTRIES (items + separators).
+	/**
+	 * The number of entries, separators included.
+	 **/
 	pub func item_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -282,8 +292,10 @@ pub mv struct Menu: Control {
 		}
 	}
 
-	// The tag of the most recently clicked item since the last read
-	// (edge-triggered; -1 = none). Poll it in the manual loop.
+	/**
+	 * The number of the item clicked since the last call, or -1 if none was. Each click is
+	 * reported once.
+	 **/
 	pub func clicked_item = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -313,6 +325,11 @@ pub mv struct Menu: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_item_select`: whether an item was chosen since the last poll.
+	 * Read which with `selected_item()`. Use either the handler or `clicked_item`, not
+	 * both.
+	 **/
 	// The on_item_select desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. The selection is CONSUMED by the drain
 	// — like the poll, one record has one consumer, so a selection fires an
@@ -346,6 +363,9 @@ pub mv struct Menu: Control {
 		}
 	}
 
+	/**
+	 * The item the `on_item_select` handler is reporting (-1 before the first choice).
+	 **/
 	// The tag the last take_item_select consumed (-1 before the first
 	// selection) — the handler body's payload getter. The control-scoped
 	// analog of the dispatch-window getters (win.click_x() et al): the
@@ -378,6 +398,10 @@ pub mv struct Menu: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	// A menu is not laid out: it has no frame of its own (it presents at the
 	// cursor under the attached control's right-click).
@@ -385,11 +409,17 @@ pub mv struct Menu: Control {
 		// No-op: the menu presents at the cursor.
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var s = Size()
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var s = Size()
 		return s

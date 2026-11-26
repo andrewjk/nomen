@@ -833,19 +833,3 @@ per-group sync hoist (~~+5%). The scaffolding (region/reduce planners, the
 comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
-
-## System library method docs (`/docs` API reference)
-
-The website's API reference (`site/scripts/render-api.ts`, built from
-`nomen docs`'s `collect_docs`) only shows `/** … **/` doc comments. Almost
-every method in `core/System/` is described with `//` comments instead
-(only ~16 of ~1200 public members carry a doc comment), so the method
-sections are mostly bare signatures. Several type-level doc comments
-(`Map`, …) also describe implementation internals rather than usage.
-Converting the user-facing method notes to `/** … **/` (and keeping the
-implementation notes as `//`) would fill the reference in. 33 top-level
-`pub` items have no doc comment at all (`nomen docs --in core` lists them).
-
-Unmarked struct members default to `pub`, so internal state fields
-(`Map.used`, `Map.hashes`, `List.items`) and `raw_*` helpers appear in the
-reference; marking them `internal` would hide them.

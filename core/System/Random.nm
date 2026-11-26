@@ -21,28 +21,46 @@
 // parameter is the read-only borrow that keeps one stream per binding).
 
 /**
- * A fast splitmix64 pseudo-random number generator
+ * A fast pseudo-random number generator (splitmix64). `Random()` seeds itself from the
+ * clock, so generators created back to back still give independent streams; pass a seed
+ * for a reproducible sequence. Not cryptographically secure.
+ *
+ * ```
+ * var rng = Random()
+ * const roll = rng.below(6) + 1
+ * const delay = rng.range(1000, 10000)
+ * ```
  **/
 pub mv struct Random {
-	// The raw 64-bit generator state (seeded from the wall clock by the
-	// no-arg constructor, or an explicit seed for reproducible sequences).
+	/**
+	 * The generator's 64-bit state.
+	 **/
+	// Seeded from the wall clock by the no-arg constructor, or an explicit seed for
+	// reproducible sequences.
 	pub var uint64 state = 0
 
-	// Seed from the wall clock (nanoseconds since the epoch).
+	/**
+	 * A generator seeded from the clock.
+	 **/
+	// Wall clock nanoseconds since the epoch.
 	pub func #init = (ref self) {
 		self.state = Time.now_ns()
 	}
 
-	// Seed from an explicit value — reproducible sequences for tests.
+	/**
+	 * A generator seeded with `seed`: the same seed always gives the same sequence.
+	 **/
 	pub func #init = (ref self, uint64 seed) {
 		self.state = seed
 	}
 
-	// The next 64-bit value (splitmix64: golden-ratio step, then two
-	// multiply-xor rounds). Pure Nomen — the 64-bit arithmetic, bitwise
-	// operators, and hex literals all lower directly; the aarch64 64-bit
-	// arithmetic folds (PERF_PLAN item 15) keep the emission within a few
-	// instructions of a hand-written `#arch` body.
+	/**
+	 * The next pseudo-random 64-bit value.
+	 **/
+	// splitmix64: golden-ratio step, then two multiply-xor rounds. Pure Nomen — the
+	// 64-bit arithmetic, bitwise operators, and hex literals all lower directly; the
+	// aarch64 64-bit arithmetic folds (PERF_PLAN item 15) keep the emission within a
+	// few instructions of a hand-written `#arch` body.
 	pub func next = (ref self {}, out uint64) {
 		self.state = self.state + 0x9E3779B97F4A7C15
 		var uint64 z = self.state
@@ -51,8 +69,10 @@ pub mv struct Random {
 		return z ^ (z >> 31)
 	}
 
-	// The next value in [0, bound). A bound of 0 returns 0. Slight modulo
-	// bias for very large bounds — irrelevant at demo scale.
+	/**
+	 * A pseudo-random value in `[0, bound)`. A `bound` of 0 gives 0. Very large bounds have
+	 * a slight bias.
+	 **/
 	pub func below = (ref self {}, uint64 bound, out uint64) {
 		if bound == 0 {
 			return 0
@@ -60,8 +80,9 @@ pub mv struct Random {
 		return self.next() % bound
 	}
 
-	// The next value in [lo, hi], both ends inclusive. A hi <= lo
-	// returns lo.
+	/**
+	 * A pseudo-random value in `[lo, hi]`, both ends included. Gives `lo` when `hi <= lo`.
+	 **/
 	pub func range = (ref self {}, uint64 lo, uint64 hi, out uint64) {
 		if hi <= lo {
 			return lo

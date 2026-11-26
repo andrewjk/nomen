@@ -2,8 +2,14 @@
  * A fixed-length array of values, created with a literal (`[1, 2, 3]`) and addressable by index
  **/
 pub struct Array<T>: Viewable {
+	/**
+	 * The number of elements. Fixed when the array is created.
+	 **/
 	pub const int length
 
+	/**
+	 * An array holding `items` in order (what an array literal like `[1, 2, 3]` creates).
+	 **/
 	pub func #init = (self, ...T items) {
 		#if META.arch == "c" {
 			#raw {
@@ -32,6 +38,10 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
+	/**
+	 * The element at `index`. The index must be provably within `[0, length)`; use `at_or`,
+	 * `at_or_null` or `at_or_panic` when it can't be proven at compile time.
+	 **/
 	// Inline-storage element access — `unsafe` Nomen single-sourced for both
 	// backends (docs/CORE_RAW.md roadmap item 2). `self[index]` lowers to the
 	// element base each backend already uses for Array receivers (C skips the
@@ -42,12 +52,19 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
+	/**
+	 * The first element. The array must be provably non-empty.
+	 **/
 	pub func first = (self: self.length > 0, out T) {
 		unsafe {
 			return self[0]
 		}
 	}
 
+	/**
+	 * Replace the element at `index` with `value`. The index must be provably within
+	 * `[0, length)`.
+	 **/
 	// The string-slot specialization the raw `#if T_NEEDS_STRDUP` blocks used
 	// to express: T_NEEDS_STRDUP is a per-instantiation constant the
 	// monomorphizer substitutes (true for string, false otherwise) and folds,
@@ -68,6 +85,9 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
+	/**
+	 * The element at `index`, or `fallback` when `index` is out of range.
+	 **/
 	// Bounds-checked accessors — the runtime-checked escape hatch for
 	// indices the constraint checker can't prove (see PERF.md gap 5). Unlike
 	// every other Array method these have Nomen-level bodies: the method-call
@@ -81,6 +101,9 @@ pub struct Array<T>: Viewable {
 		return fallback
 	}
 
+	/**
+	 * The element at `index`. Panics when `index` is outside `[0, length)`.
+	 **/
 	pub func at_or_panic = (self, int index, out T) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -88,9 +111,10 @@ pub struct Array<T>: Viewable {
 		panic("index out of range")
 	}
 
-	// Nullable checked access: the element when index is inside self.length,
-	// `null` otherwise — the escape hatch for indices the constraint
-	// checker can't prove (`arr.at_or_null(i) ?? fallback`).
+	/**
+	 * The element at `index`, or `null` when `index` is out of range
+	 * (`arr.at_or_null(i) ?? fallback`).
+	 **/
 	pub func at_or_null = (self, int index, out T?) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -98,15 +122,19 @@ pub struct Array<T>: Viewable {
 		return null
 	}
 
+	/**
+	 * The last element. The array must not be empty.
+	 **/
 	pub func at_end = (self, out T) {
 		unsafe {
 			return self[self.length - 1]
 		}
 	}
 
-	// A non-mv (ptr, len) slice [start, end) over self's inline element
-	// storage, returned as a `view T`. Borrows from self (may not outlive it,
-	// invalidated on reassignment). Element access via view.at / view.length.
+	/**
+	 * A borrowed view of the elements in `[start, end)`, without copying. The view may not
+	 * outlive the array and is invalidated if the array is reassigned.
+	 **/
 	pub func slice = (
 		self,
 		int start: start >= 0 && start <= self.length,
@@ -133,6 +161,9 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
+	/**
+	 * A new array of `count` elements, each a copy of `value` (`Array.with(0, 10)`).
+	 **/
 	pub func with = (T value, int count: count >= 0, out Array<T>: out.length == count) {
 		#if META.arch == "c" {
 			#raw {
@@ -264,6 +295,9 @@ pub struct Array<T>: Viewable {
 	}
 	}
 
+	/**
+	 * A new array holding this array's elements followed by `other`'s.
+	 **/
 	pub func add = (self, Array other, out Array) {
 		#if META.arch == "c" {
 			#raw {
@@ -329,6 +363,9 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
+	/**
+	 * A new array holding this array's elements repeated `other` times.
+	 **/
 	pub func mul = (self, int other, out Array) {
 		#if META.arch == "c" {
 			#raw {

@@ -1,31 +1,53 @@
 /**
- * An ordered key-value map with `set`/`get`/`get_or`/`has`/`remove`. Keys must be
- * `Hashable` (hashed to a `uint` via `key.hash()`) and `Equatable` (compared
- * with `==`); values may be any type.
+ * A hash map from keys to values: `set` inserts or replaces, `get_or` / `get_or_panic` look
+ * a key up, `has` tests for it and `remove` deletes it. Keys must be `Hashable` and
+ * `Equatable`; values may be any type.
  *
- * The capacity is always a power of two (initial 8, doubling on rehash), so
- * bucket indexing is a mask (`hash & (cap - 1)`) instead of a division — and
- * it is correct for negative hashes too: two's-complement `&` already lands
- * in `[0, cap)`, which is why no negative adjustment is needed.
- *
- * Each slot carries its key's hash (truncated to 32 bits) in a parallel
- * `hashes` buffer. Probes compare the stored hash before the key itself, so
- * a probed slot whose hash differs skips the key load and `==` entirely (the
- * Swiss-table short-circuit: the full key compare only runs on a hash match,
- * and a false match still falls through to `==`, so truncation costs
- * nothing); rehash re-inserts hash-free, reading the stored word instead of
- * calling `key.hash()` again.
+ * ```
+ * var ages = Map(["ana", 31], ["bo", 27])
+ * ages.set("cy", 40)
+ * const a = ages.get_or("dee", 0)
+ * ```
  **/
+// The capacity is always a power of two (initial 8, doubling on rehash), so
+// bucket indexing is a mask (`hash & (cap - 1)`) instead of a division — and
+// it is correct for negative hashes too: two's-complement `&` already lands
+// in `[0, cap)`, which is why no negative adjustment is needed.
+//
+// Each slot carries its key's hash (truncated to 32 bits) in a parallel
+// `hashes` buffer. Probes compare the stored hash before the key itself, so
+// a probed slot whose hash differs skips the key load and `==` entirely (the
+// Swiss-table short-circuit: the full key compare only runs on a hash match,
+// and a false match still falls through to `==`, so truncation costs
+// nothing); rehash re-inserts hash-free, reading the stored word instead of
+// calling `key.hash()` again.
 pub mv struct Map<TK: Hashable + Equatable, TV> {
+	/**
+	 * The number of entries in the map.
+	 **/
 	var length = 0
-	var keys = Buffer<TK>()
-	var values = Buffer<TV>()
-	mv used = Buffer<int>()
-	mv hashes = Buffer<int>()
+	/**
+	 * The key slots of the hash table (internal storage; unused slots hold no key).
+	 **/
+	internal var keys = Buffer<TK>()
+	/**
+	 * The value slots of the hash table (internal storage).
+	 **/
+	internal var values = Buffer<TV>()
+	/**
+	 * Per-slot occupancy flags (internal storage).
+	 **/
+	internal mv used = Buffer<int>()
+	/**
+	 * Per-slot stored key hashes (internal storage).
+	 **/
+	internal mv hashes = Buffer<int>()
 
-	// Variadic-tuple constructor: Map<string, int>(["a", 1], ["b", 2]) or
-	// Map(["a", 1], ["b", 2]) (type args inferred from the first pair).
-	// Zero pairs yields an empty Map, so this also covers Map<K, V>().
+	/**
+	 * A map holding the given `[key, value]` pairs: `Map<string, int>(["a", 1], ["b", 2])`,
+	 * or `Map(["a", 1], ["b", 2])` with the types inferred from the first pair. With no
+	 * pairs it is an empty map. A repeated key keeps its last value.
+	 **/
 	// Each pair is read into a local and its fields are MV-DESTRUCTURED into
 	// bindings, so set's mv store receives an explicit transfer chain — no
 	// temp-rooted read exemption involved. (String bindings lower as the
@@ -39,6 +61,10 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		}
 	}
 
+	/**
+	 * Store `value` under `key`, replacing (and freeing) any value already there. The key
+	 * and value move into the map.
+	 **/
 	pub func set = (ref self { hashes, keys, used, values }, mv TK key, mv TV value) {
 		var int cap = self.keys.cap
 		if cap == 0 {
@@ -122,6 +148,11 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return self.values.slot_ptr(idx)
 	}
 
+	/**
+	 * The value stored under `key`, or a zero value (`0`, `""`, …) when the key is absent.
+	 * Prefer `get_or` or `get_or_panic` when a missing key must be told apart from a stored
+	 * zero.
+	 **/
 	pub func get = (self, TK key, out TV) {
 		var int cap = self.keys.cap
 		if cap == 0 {
@@ -134,6 +165,9 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return self.values.load(idx)
 	}
 
+	/**
+	 * The value stored under `key`, or `fallback` when the key is absent.
+	 **/
 	// Fused lookup-with-fallback: one probe instead of the `has` + `get`
 	// pair (which probes twice) for the common "default when missing" shape.
 	pub func get_or = (self, TK key, TV fallback, out TV) {
@@ -148,8 +182,12 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return self.values.load(idx)
 	}
 
-	// Lookup that traps when the key is absent — for when a missing key is
-	// a bug, not a case (and `get`'s 0-for-missing would be ambiguous).
+	/**
+	 * The value stored under `key`. Panics with "key not found" when the key is absent.
+	 *
+	 * Binding the result by reference (`ref TV v = map.get_or_panic(k)`) borrows the stored
+	 * value in place instead of copying it.
+	 **/
 	pub func get_or_panic = (self, TK key, out TV) {
 		var int cap = self.keys.cap
 		if cap == 0 {
@@ -188,6 +226,9 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		}
 	}
 
+	/**
+	 * Whether the map holds an entry for `key`.
+	 **/
 	pub func has = (self, TK key, out bool) {
 		var int cap = self.keys.cap
 		if cap == 0 {
@@ -197,6 +238,10 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return self.used.load_u32(idx) != 0
 	}
 
+	/**
+	 * Delete the entry for `key`, freeing its key and value. Does nothing when the key is
+	 * absent.
+	 **/
 	pub func remove = (ref self { hashes, keys, used, values }, TK key) {
 		var int cap = self.keys.cap
 		if cap == 0 {
@@ -283,14 +328,16 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		self.length = self.length - 1
 	}
 
-	// An independent copy: a fresh Map whose every member slab is fresh
-	// (keys/values deep-copied per element, `used`/`hashes` copied word by
-	// word), with the same length and entries. The u32-word buffers are
-	// copied through their own primitives — `Buffer.copy` is T_SIZE-aware
-	// (8-byte loads for `int`), which would read past a 4-byte-per-slot
-	// `alloc_u32` slab. Not available for class/trait keys or values (the
-	// member routes to HandleBuffer, which has no copy — the checker rejects
-	// the call; see the copy gate in check_access_node).
+	/**
+	 * A deep copy: a new map with an independent copy of every key and value. Not available
+	 * for class or trait keys or values.
+	 **/
+	// Every member slab is fresh (keys/values deep-copied per element, `used`/`hashes`
+	// copied word by word). The u32-word buffers are copied through their own
+	// primitives — `Buffer.copy` is T_SIZE-aware (8-byte loads for `int`), which would
+	// read past a 4-byte-per-slot `alloc_u32` slab. Class/trait members route to
+	// HandleBuffer, which has no copy — the checker rejects the call; see the copy gate
+	// in check_access_node.
 	pub func copy = (self, out Map<TK, TV>) {
 		var dst = Map<TK, TV>()
 		dst.keys = self.keys.copy()
@@ -306,7 +353,10 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return dst
 	}
 
-	func find_slot = (self, TK key, uint32 h, int cap, out int: out >= 0 && out < cap) {
+	/**
+	 * Internal: the slot holding `key`, or the empty slot where it would go.
+	 **/
+	internal func find_slot = (self, TK key, uint32 h, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two, so this is `hash mod cap` via a mask —
 		// non-negative for any hash (two's complement), no adjustment.
 		var int idx = (h as int) & (cap - 1)
@@ -326,13 +376,16 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 		return idx
 	}
 
+	/**
+	 * Internal: rebuild the table with capacity `new_cap`.
+	 **/
 	// Rehash hash-free: the stored per-slot hash words move with the entries,
 	// so no `key.hash()` runs here and the insertion probe needs no key
 	// compares (keys arrive unique — they came from a valid table). This is
 	// the other half of the Swiss-table trick; the old form re-inserted via
 	// `self.set(mv k, mv v)`, re-hashing every key and re-comparing keys on
 	// every probed slot.
-	func rehash = (ref self { hashes, keys, used, values }, int new_cap) {
+	internal func rehash = (ref self { hashes, keys, used, values }, int new_cap) {
 		var Buffer<TK> old_keys = mv self.keys swap Buffer<TK>()
 		var Buffer<TV> old_values = mv self.values swap Buffer<TV>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()

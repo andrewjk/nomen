@@ -38,32 +38,68 @@
 // declared by the library file, not inferred from user-source tokens).
 
 /**
- * A stackful coroutine: lightweight, cooperatively scheduled, parks instead of blocking
+ * A lightweight coroutine. `Fiber(work(n)).start()` works like `Thread`, but the call runs
+ * on its own small stack, and whenever it waits (on a `Task`, a `Channel` or I/O) it parks
+ * and frees its worker thread instead of blocking it, so thousands of waiting fibers are
+ * cheap. `Fiber.yield()` hands the worker to the next fiber.
+ *
+ * Like `Thread`, a `Fiber` must be started (or detached); dropping one that never ran
+ * aborts the program.
  **/
 pub mv struct Fiber<T> : Spawnable<T> {
+	/**
+	 * Construction hook: makes `Fiber(call)` a deferred call.
+	 **/
 	// The construction hook (see Thread.nm): the deferred-call special form.
 	#spawn = () {
 	}
 
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/start_on/nursery.start transfers it to the runtime.
-	pub var uint64 task = 0
+	internal var uint64 task = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// Result-slot / cancel-flag / future handles for the (single) launch.
-	pub var uint64 result_slot = 0
-	pub var uint64 cancel_flag = 0
-	pub var uint64 future = 0
+	internal var uint64 result_slot = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 cancel_flag = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 future = 0
+	/**
+	 * Whether the call has been started (or detached).
+	 **/
 	// Must-start flag: set by .start() / .start_on(buf) / nursery.start.
 	pub var started = false
+	/**
+	 * Runtime handle (internal).
+	 **/
 	// LEXICAL NURSERY CAPTURE (ASYNC.md): the tracking slots of the
 	// `async` block that lexically encloses the CONSTRUCTION, or 0 when the
 	// construction is outside any block. `.start()` registers the future
 	// through these stored pointers — registration follows the scope that
 	// created the deferred call, not the one that happens to start it. See
 	// Thread.nm's matching fields.
-	pub var uint64 nursery_futures = 0
-	pub var uint64 nursery_count = 0
-	pub var uint64 nursery_cap = 0
+	internal var uint64 nursery_futures = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 nursery_count = 0
+	/**
+	 * Runtime handle (internal).
+	 **/
+	internal var uint64 nursery_cap = 0
 
+	/**
+	 * Start the call as a fiber and return a `Task` for it.
+	 **/
 	// Start the deferred call on the fiber scheduler and yield the Task<T>
 	// handle. Same shape as Thread.start: consume the machinery, register
 	// with the construction-time nursery (if captured), transfer the handles
@@ -132,6 +168,9 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		return t
 	}
 
+	/**
+	 * Start the call as a fiber with no handle to wait on.
+	 **/
 	// Run the deferred call fire-and-forget (the Spawnable daemon role).
 	// The fiber is launched exactly like start, but the handle is dropped
 	// immediately: the future's refs are released as the discarded Task is
@@ -140,6 +179,10 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		self.start()
 	}
 
+	/**
+	 * Runs when the value goes out of scope. Aborts the program if the call was never
+	 * started.
+	 **/
 	// Destroying an unstarted Fiber is a programming error (the wrapped
 	// call would silently never run) — report it and abort. A started
 	// Fiber owns nothing: the launch transferred the task closure, result
@@ -179,7 +222,9 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		}
 	}
 
-	// Hand the worker to the next runnable fiber. No-op outside a fiber.
+	/**
+	 * Let the next runnable fiber use this worker. Does nothing outside a fiber.
+	 **/
 	pub func yield = () {
 		#if META.arch == "c" {
 			#raw {
@@ -193,8 +238,9 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		}
 	}
 
-	// Is the calling code running inside a fiber? True when Fiber.yield or
-	// fiber parking would take effect.
+	/**
+	 * Whether the calling code is running inside a fiber.
+	 **/
 	pub func is_fiber = (out bool) {
 		#if META.arch == "c" {
 			#raw {
@@ -208,10 +254,11 @@ pub mv struct Fiber<T> : Spawnable<T> {
 		}
 	}
 
-	// Run fibers on the calling thread and never start worker threads. Must
-	// be called before the first fiber spawn; intended for single-threaded
-	// (bare-metal) targets. In cooperative mode a fiber that parks on an
-	// event only another thread could fire will never resume.
+	/**
+	 * Run every fiber on the calling thread with no worker threads, for single-threaded
+	 * targets. Call it before the first fiber starts. In this mode a fiber waiting on
+	 * something only another thread could provide never resumes.
+	 **/
 	pub func set_cooperative = (bool on) {
 		#if META.arch == "c" {
 			#raw {

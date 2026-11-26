@@ -19,7 +19,13 @@ const MAX_DIM = 2147483647
  * A 2D size (width and height)
  **/
 pub struct Size {
+	/**
+	 * Width in points.
+	 **/
 	pub var width = 0
+	/**
+	 * Height in points.
+	 **/
 	pub var height = 0
 }
 
@@ -27,9 +33,21 @@ pub struct Size {
  * A rectangle (x, y, width, height) — a control's assigned position and size
  **/
 pub struct Frame {
+	/**
+	 * Left edge, in points from the parent's left.
+	 **/
 	pub var x = 0
+	/**
+	 * Top edge, in points from the parent's top.
+	 **/
 	pub var y = 0
+	/**
+	 * Width in points.
+	 **/
 	pub var width = 0
+	/**
+	 * Height in points.
+	 **/
 	pub var height = 0
 }
 
@@ -37,9 +55,21 @@ pub struct Frame {
  * Per-edge padding (top, right, bottom, left)
  **/
 pub struct Insets {
+	/**
+	 * Top padding.
+	 **/
 	pub var top = 0
+	/**
+	 * Right padding.
+	 **/
 	pub var right = 0
+	/**
+	 * Bottom padding.
+	 **/
 	pub var bottom = 0
+	/**
+	 * Left padding.
+	 **/
 	pub var left = 0
 }
 
@@ -49,11 +79,26 @@ pub struct Insets {
  * Min/max size bounds a parent passes to a child during the layout measure phase
  **/
 pub struct BoxConstraints {
+	/**
+	 * The smallest width allowed.
+	 **/
 	pub var min_width = 0
+	/**
+	 * The smallest height allowed.
+	 **/
 	pub var min_height = 0
+	/**
+	 * The largest width allowed (unbounded by default).
+	 **/
 	pub var int max_width = MAX_DIM
+	/**
+	 * The largest height allowed (unbounded by default).
+	 **/
 	pub var int max_height = MAX_DIM
 
+	/**
+	 * A copy with the width range narrowed to fit inside both this range and `min`–`max`.
+	 **/
 	pub func tighten_width = (self, int min, int max, out BoxConstraints) {
 		var BoxConstraints c = self
 		c.min_width = self.min_width
@@ -63,6 +108,9 @@ pub struct BoxConstraints {
 		return c
 	}
 
+	/**
+	 * A copy with the height range narrowed to fit inside both this range and `min`–`max`.
+	 **/
 	pub func tighten_height = (self, int min, int max, out BoxConstraints) {
 		var BoxConstraints c = self
 		c.min_height = self.min_height
@@ -72,22 +120,34 @@ pub struct BoxConstraints {
 		return c
 	}
 
+	/**
+	 * `value` limited to the allowed width range.
+	 **/
 	pub func clamp_width = (self, int value, out int) {
 		if value < self.min_width { return self.min_width }
 		if value > self.max_width { return self.max_width }
 		return value
 	}
 
+	/**
+	 * `value` limited to the allowed height range.
+	 **/
 	pub func clamp_height = (self, int value, out int) {
 		if value < self.min_height { return self.min_height }
 		if value > self.max_height { return self.max_height }
 		return value
 	}
 
+	/**
+	 * Whether there is a maximum width.
+	 **/
 	pub func is_width_bounded = (self, out bool) {
 		return self.max_width < MAX_DIM
 	}
 
+	/**
+	 * Whether there is a maximum height.
+	 **/
 	pub func is_height_bounded = (self, out bool) {
 		return self.max_height < MAX_DIM
 	}

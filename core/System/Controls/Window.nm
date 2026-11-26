@@ -1,16 +1,22 @@
 /**
- * A top-level native window that hosts controls and dispatches events
+ * A top-level window
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is an AppKit handle, so the value is movable and its
- * `#destroy` releases what the handle names. The methods take the receiver
- * bare (struct receivers travel by address — the raw bodies keep the
- * pointer form); the constructor's `self` is the inline instance (the `.`
- * accessor).
+ * Create it with a title and size, create controls in it, then hand it an `App` with
+ * `run(mv app)`, which shows the window and runs the app until it closes. Apps that run
+ * their own loop instead call `show` and then `process_events` until `is_visible` turns
+ * false.
  **/
 pub mv struct Window: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A new, hidden window titled `title` with a `width` × `height` content area. Add
+	 * controls, then `show` it (or hand it to `run`, which shows it for you).
+	 **/
 	pub func #init = (self, string title, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -117,6 +123,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Bring the window on screen and make it the key window.
+	 **/
 	pub func show = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -140,6 +149,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Set the control's title.
+	 **/
 	pub func set_title = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -159,6 +171,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Hand control to the platform's own event loop. It doesn't return; use `run(app)` or a
+	 * manual `process_events` loop instead for apps that need a frame loop.
+	 **/
 	pub func run = () {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -184,6 +200,11 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Handle every pending event without waiting, for apps that run their own loop. Returns
+	 * 1 if the batch held a left click, 2 if it held a right click, 0 otherwise; read where
+	 * with `click_x()` and `click_y()`.
+	 **/
 	// Process pending events without blocking. Returns 1 if a left-mouse-down
 	// was among the events (i.e. a click happened), 2 if a right-mouse-down
 	// was, 0 otherwise. This lets a manual event loop detect clicks (and
@@ -559,8 +580,9 @@ pub mv struct Window: Control {
 		}
 	}
 
-	// Returns true if the window is still on screen. Use this to exit a
-	// manual event loop when the user closes the window.
+	/**
+	 * Whether the window is still on screen. A manual loop ends when this turns false.
+	 **/
 	pub func is_visible = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -588,6 +610,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The x of the latest mouse-down, in points from the content area's left (-1 before the
+	 * first click).
+	 **/
 	// Returns the x coordinate (in the window's content view) of the most
 	// recent mouse-down (left or right). The pump (process_events) captures
 	// the coordinates when the event is handled, so drag/move events that
@@ -616,6 +642,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The y of the latest mouse-down, in points from the content area's top (-1 before the
+	 * first click).
+	 **/
 	// Returns the y coordinate (flipped to top-left origin) of the most
 	// recent mouse-down, in the window's content view. Captured by the pump;
 	// see click_x.
@@ -656,6 +686,10 @@ pub mv struct Window: Control {
 	// applied by the pump): Command = 0x100000, Option = 0x80000,
 	// Control = 0x40000, Shift = 0x20000, Function = 0x800000.
 
+	/**
+	 * This frame's mouse button: 1 left, 2 right, 3 middle, 4 and up for extra buttons, or
+	 * 0 when no button went down.
+	 **/
 	pub func mouse_button = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -679,6 +713,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * This frame's click count: 2 for a double-click, 3 for a triple-click.
+	 **/
 	pub func mouse_click_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -702,6 +739,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The modifier keys held at this frame's mouse-down: Command `0x100000`, Option
+	 * `0x80000`, Control `0x40000`, Shift `0x20000`, Function `0x800000`.
+	 **/
 	pub func mouse_modifiers = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -725,6 +766,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * How far the scroll wheel or trackpad scrolled right this frame (negative for left).
+	 **/
 	// This frame's accumulated scroll deltas (AppKit deltaY/deltaX: dy is
 	// positive scrolling up/away from the user, dx positive scrolling
 	// right), truncated to ints. Scroll events accumulate across the pump's
@@ -753,6 +797,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * How far the scroll wheel or trackpad scrolled up (away from the user) this frame
+	 * (negative for down).
+	 **/
 	pub func scroll_dy = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -784,6 +832,10 @@ pub mv struct Window: Control {
 	// (key_code / key_modifiers / key_repeat / key_up_code). All per-frame:
 	// -1 = no key-down/key-up this frame.
 
+	/**
+	 * The hardware key code of this frame's last key-down, or -1 if none. Space is 49,
+	 * Return 36, Delete 51, Esc 53, the arrows 123–126.
+	 **/
 	pub func key_code = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -807,6 +859,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The modifier keys held at this frame's key-down (the same bits as `mouse_modifiers`).
+	 **/
 	pub func key_modifiers = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -830,6 +885,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Whether this frame's key-down is an auto-repeat from a held key.
+	 **/
 	pub func key_repeat = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -853,6 +911,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The hardware key code of this frame's last key-up, or -1 if none.
+	 **/
 	pub func key_up_code = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -882,6 +943,9 @@ pub mv struct Window: Control {
 	// (Container.take_mouse_move) is the registered-handler form; hover,
 	// cursors, and tooltips hit-test this against Container.contains.
 
+	/**
+	 * The pointer's x this frame, if it moved (-1 if it didn't).
+	 **/
 	pub func mouse_x = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -905,6 +969,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The pointer's y this frame, if it moved (-1 if it didn't).
+	 **/
 	pub func mouse_y = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -932,6 +999,9 @@ pub mv struct Window: Control {
 	// Milliseconds since the previous pump (0 on the first frame) — the
 	// animation clock. `FrameEvents.dt` carries the same value.
 
+	/**
+	 * Milliseconds since the previous frame (0 on the first): the animation clock.
+	 **/
 	pub func dt = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -963,10 +1033,13 @@ pub mv struct Window: Control {
 	// panes (tab pages, split panes). FrameEvents.resized / width / height
 	// carry the same record for `frame`.
 
+	/**
+	 * Record this frame's resize (internal; used by `run`).
+	 **/
 	// Stamp the resize record — run's resize detection calls this (the
 	// record lives in C statics shared with Container.take_resize; params
 	// because raw blocks in deep control flow can only address them).
-	func stamp_resize = (self, bool on, int w, int h) {
+	internal func stamp_resize = (self, bool on, int w, int h) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_last_resized;
@@ -1001,6 +1074,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The content area's new width, on a frame where the window resized.
+	 **/
 	pub func resize_width = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1024,6 +1100,9 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * The content area's new height, on a frame where the window resized.
+	 **/
 	pub func resize_height = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1053,7 +1132,11 @@ pub mv struct Window: Control {
 	// native close and sets a pending flag, and run consults the app on the
 	// next frame. Programmatic `close()` is forced and bypasses this.
 
-	pub func close_pending = (self, out bool) {
+	/**
+	 * Whether the user clicked the close button and the app hasn't answered yet (internal;
+	 * `run` asks `App.close_requested`).
+	 **/
+	internal func close_pending = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_close_pending;
@@ -1078,7 +1161,10 @@ pub mv struct Window: Control {
 		}
 	}
 
-	pub func clear_close_pending = (self) {
+	/**
+	 * Forget a pending close request (internal; used by `run`).
+	 **/
+	internal func clear_close_pending = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_close_pending;
@@ -1108,7 +1194,9 @@ pub mv struct Window: Control {
 	// pumping after the last window closes via `keep_alive`; the process
 	// exits when macOS delivers a Quit, or when the app calls `quit()`.
 
-	// True when the app has been asked to quit (Window.quit()).
+	/**
+	 * Whether the app has been asked to quit.
+	 **/
 	pub func quit_requested = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1134,6 +1222,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Set the Dock icon to the Nomen logo. `run` does this at startup; call it yourself in
+	 * a manual-loop app.
+	 **/
 	// The default Dock icon: the Nomen logo (core/assets/nomen.png, a
 	// full-bleed square rasterized from the SVG by the site's icon script)
 	// — embedded at library build time and laid out by set_icon. `run`
@@ -1143,6 +1235,10 @@ pub mv struct Window: Control {
 		Window.set_icon(#embed_file("assets/nomen.png"))
 	}
 
+	/**
+	 * Quit the app, not just this window: close the window and make `run` and `keep_alive`
+	 * return. This is what the Dock's Quit does; `close` closes one window only.
+	 **/
 	// Quit the APP (not just the window): sets the app-quit flag and closes
 	// this window. `run`/`keep_alive` return once the flag is set, so main
 	// unwinds normally. This is the programmatic equivalent of the Dock's
@@ -1153,9 +1249,10 @@ pub mv struct Window: Control {
 		self.close()
 	}
 
-	// Sets the app-quit flag (raw-only body: aarch64 replaces the whole
-	// body with its raw blocks).
-	func set_quit_flag = (self) {
+	/**
+	 * Mark the app as quitting (internal).
+	 **/
+	internal func set_quit_flag = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_app_quit;
@@ -1170,21 +1267,21 @@ pub mv struct Window: Control {
 		}
 	}
 
-	// Pump events until the app quits. Called by `run` after the last
-	// window closes (macOS keeps the process alive), and available to
-	// manual-loop apps that want the same lifetime: after your
-	// `while win.is_visible()` ends, the app is still open in the
-	// platform's eyes — hand control to the pump so Dock Quit and other
-	// system interactions keep working.
+	/**
+	 * Handle events until the app quits. `run` calls it after the last window closes; a
+	 * manual-loop app calls it once its loop ends, so Dock Quit and the like keep working.
+	 **/
 	pub func keep_alive = () {
 		while !Window.quit_flag() {
 			Window.process_events()
 		}
 	}
 
-	// True when the Dock was clicked while every window was closed —
-	// Window.run resumes the frame loop for the reopened window.
-	pub func reopen_flag = (out bool) {
+	/**
+	 * Whether the Dock icon was clicked while every window was closed (internal; `run`
+	 * reopens the window).
+	 **/
+	internal func reopen_flag = (out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_app_reopen;
@@ -1209,8 +1306,10 @@ pub mv struct Window: Control {
 		}
 	}
 
-	// The raw app-quit flag behind `quit_requested`/`keep_alive`.
-	func quit_flag = (out bool) {
+	/**
+	 * Whether the app is quitting (internal).
+	 **/
+	internal func quit_flag = (out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_app_quit;
@@ -1235,7 +1334,9 @@ pub mv struct Window: Control {
 		}
 	}
 
-	// Returns the width of the window's content view.
+	/**
+	 * The width of the window's content area.
+	 **/
 	pub func content_width = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1271,7 +1372,9 @@ pub mv struct Window: Control {
 		}
 	}
 
-	// Returns the height of the window's content view (for coordinate flipping).
+	/**
+	 * The height of the window's content area.
+	 **/
 	pub func content_height = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1307,6 +1410,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Resize the content area to `width` × `height`, the same as if the user dragged the
+	 * window edge (layouts update as they would for a drag).
+	 **/
 	// Resize the window's content area to width x height (displayed). The
 	// programmatic stand-in for a user drag: it fires the same
 	// windowDidResize: notifications (and the Container resize delegate), so
@@ -1342,6 +1449,11 @@ pub mv struct Window: Control {
 
 	// ── The App run loop (see App.nm) ──
 
+	/**
+	 * Make `grid` the window's layout root for `run`: it is laid out at start and again
+	 * whenever the window resizes. Call it from `App.start`, with a grid that lives at
+	 * least as long as the run (an app field).
+	 **/
 	// Register the layout root for Window.run: the root Container's layout
 	// re-runs on start, on every live-resize delegate tick, and on each
 	// frame where the content rect changed. The grid must outlive the run
@@ -1388,12 +1500,15 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Lay out the registered root and panes once (internal; used by `run`).
+	 **/
 	// One framework relayout pass: the registered root Container, then every
 	// registered Scrollable's document dance (`first` drives its one-time
 	// scroll_to_top), then every registered pane root's layout (tabs pages /
 	// split panes re-frame when THIS pass frames their host view — the app
 	// cannot know the moment, so registration hands the timing here).
-	func relayout = (self, int first) {
+	internal func relayout = (self, int first) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern void nomen_layout_thunk(struct Container *, struct Window *);
@@ -1430,6 +1545,10 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Start reporting pointer movement (`mouse_x`, `mouse_y`, `on_mouse_move`). `run` does
+	 * this; a manual-loop app calls it once after creating the window.
+	 **/
 	// Arm mouse-MOVED delivery. AppKit sends move events only when the
 	// window opts in — run() arms it before the loop; manual-loop apps
 	// pumping process_events directly call this once after creating the
@@ -1457,26 +1576,16 @@ pub mv struct Window: Control {
 		}
 	}
 
-	// Close the window (the programmatic stand-in for the red button) — the
-	// run loop exits on the next `is_visible` check. Programmatic close is
-	// FORCED: it bypasses the close_requested interception (the delegate's
-	// windowShouldClose: sees nomen_close_forced and allows). Only the red
-	// button routes through `close_requested`.
-	//
-	// The forced latch is one-shot: it is armed immediately before
-	// performClose: (which dispatches windowShouldClose: synchronously) and
-	// disarmed right after. Left armed it is process-global — every LATER
-	// red-button close (another window, a later run loop) would silently
-	// bypass App.close_requested forever.
-	// Replace the Dock icon with the app's own art (PNG bytes — usually an
-	// `#embed_file` literal). AppKit draws a runtime icon image as-is (Tahoe
-	// only masks its outer bounds), so full-bleed art renders edge-to-edge
-	// and looks oversized beside native icons. Normalise onto Apple's
-	// app-icon grid first: aspect-fit the art into an 824px squircle body
-	// centred on a transparent 1024px canvas. Any square source works; pass
-	// raw complete art, not a pre-masked icon. App-wide on macOS: every
-	// window shares the single Dock tile, so this is static for call-site
-	// ergonomics (`Window.set_icon(png)`).
+	/**
+	 * Set the Dock icon from PNG bytes, usually an `#embed_file` literal. Pass square,
+	 * full-bleed art; it is fitted to the standard macOS icon shape for you. The icon is
+	 * app-wide.
+	 **/
+	// AppKit draws a runtime icon image as-is (Tahoe only masks its outer bounds), so
+	// full-bleed art renders edge-to-edge and looks oversized beside native icons.
+	// Normalise onto Apple's app-icon grid first: aspect-fit the art into an 824px
+	// squircle body centred on a transparent 1024px canvas. Static because every window
+	// shares the single Dock tile.
 	pub func set_icon = (string png) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1598,6 +1707,17 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Close the window, as if the user clicked its close button but without asking
+	 * `App.close_requested`. A `run` loop ends; the app keeps running (see `quit`).
+	 **/
+	// Programmatic close is FORCED: it bypasses the close_requested interception (the
+	// delegate's windowShouldClose: sees nomen_close_forced and allows).
+	//
+	// The forced latch is one-shot: it is armed immediately before performClose:
+	// (which dispatches windowShouldClose: synchronously) and disarmed right after.
+	// Left armed it is process-global — every LATER red-button close (another window,
+	// a later run loop) would silently bypass App.close_requested forever.
 	pub func close = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1627,6 +1747,11 @@ pub mv struct Window: Control {
 		}
 	}
 
+	/**
+	 * Run `app` in this window until the window closes. Calls `app.start`, shows the
+	 * window, then every frame handles events, relays out on resize, runs the app's event
+	 * handlers and calls `app.frame`. The app is destroyed when `run` returns.
+	 **/
 	// Run the app: the framework owns everything from here until the window
 	// closes. Order: `app.start` (the app registers its layout roots and its
 	// click handlers while in final storage), the pre-show layout pass,
@@ -1734,6 +1859,9 @@ pub mv struct Window: Control {
 	// The window is the layout root: it measures to its content-view size and
 	// applies a frame to the native NSWindow/UIWindow.
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var s = Size()
 		s.width = self.content_width()
@@ -1741,6 +1869,9 @@ pub mv struct Window: Control {
 		return s
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var s = Size()
 		s.width = self.content_width()
@@ -1748,6 +1879,10 @@ pub mv struct Window: Control {
 		return s
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1843,9 +1978,10 @@ pub mv struct Window: Control {
 // (`nomen_control_take_input`): the field editor writes through to the
 // control's stringValue while typing, so each keystroke is one edge.
 
-// Refresh the focus snapshot (prev/cur first responder of `window`).
-// Idempotent per frame; the synthesized focus dispatcher calls it once
-// before the arms.
+/**
+ * Internal plumbing: refresh the focus snapshot for `window` (which control had focus last
+ * frame and which has it now). Called once per frame before the focus and blur checks.
+ **/
 pub func nomen_window_focus_poll = (uint64 window) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -1924,6 +2060,10 @@ pub func nomen_window_focus_poll = (uint64 window) {
 	}
 }
 
+/**
+ * Internal plumbing: whether this frame's event pump saw a right click. Backs
+ * `Container.take_right_click`.
+ **/
 // Whether the most recent pump saw a right-mouse-down (the same record
 // FrameEvents.click reports as 2). Read by Container.take_right_click —
 // the on_right_click drain (docs/HANDLERS.md). The pump stamps the kind
@@ -1961,9 +2101,11 @@ pub func nomen_window_had_right_click = (out bool) {
 	}
 }
 
-// Focus EDGE drain: true when `handle` GAINED first-responder status this
-// frame. Pure snapshot compare — no state update, so any number of
-// focus/blur arms can poll the same frame in any order.
+/**
+ * Internal plumbing: whether the control `handle` gained focus this frame.
+ **/
+// Pure snapshot compare — no state update, so any number of focus/blur arms can poll the same
+// frame in any order.
 pub func nomen_control_take_focus = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -2011,8 +2153,9 @@ pub func nomen_control_take_focus = (uint64 handle, out bool) {
 	}
 }
 
-// Blur EDGE drain: true when `handle` LOST first-responder status this
-// frame (it was focused on the previous poll and is not now).
+/**
+ * Internal plumbing: whether the control `handle` lost focus this frame.
+ **/
 pub func nomen_control_take_blur = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -2060,10 +2203,12 @@ pub func nomen_control_take_blur = (uint64 handle, out bool) {
 	}
 }
 
-// Text-INPUT edge drain: true when the control's text changed since the
-// last drain for this handle (the field editor writes through to the
-// control's stringValue while typing, so each keystroke is one edge).
-// Last-seen text is tracked per handle.
+/**
+ * Internal plumbing: whether the text of the control `handle` changed since the last call.
+ * Each keystroke counts as one change.
+ **/
+// The field editor writes through to the control's stringValue while typing; last-seen text
+// is tracked per handle.
 pub func nomen_control_take_input = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -2161,6 +2306,10 @@ pub func nomen_control_take_input = (uint64 handle, out bool) {
 	}
 }
 
+/**
+ * Internal plumbing: make plain clicks on the view `handle` (one that has no native click
+ * action) reach the click record. Safe to call again for the same view.
+ **/
 pub func nomen_window_clicks_init = (uint64 handle) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {

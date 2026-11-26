@@ -1,18 +1,27 @@
 /**
- * A system alert dialog (NSAlert)
+ * A system alert dialog
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * Set a title, message and buttons, then call `run`, which shows the alert, waits for the
+ * user to pick a button and returns its index:
  *
- * Window-coordinated: `run` enters NSAlert's own modal loop (it blocks the
- * caller and pumps its own events, so it works with the manual loop), and
- * returns the clicked button's index (first button = 0). iOS defers —
- * UIAlertController needs a presenting view controller (TODO stubs; see
- * GUI_PLAN Tier 1 #19).
+ * ```
+ * const alert = Alert()
+ * alert.set_title("Delete the file?")
+ * alert.add_button("Delete")
+ * alert.add_button("Cancel")
+ * const choice = alert.run()
+ * ```
  **/
+// Window-coordinated: `run` enters NSAlert's own modal loop (it blocks the
+// caller and pumps its own events, so it works with the manual loop), and
+// returns the clicked button's index (first button = 0). iOS defers —
+// UIAlertController needs a presenting view controller (TODO stubs; see
+// GUI_PLAN Tier 1 #19).
 pub mv struct Alert: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -20,6 +29,9 @@ pub mv struct Alert: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * A new alert dialog. Give it a title, message and buttons, then `run` it.
+	 **/
 	pub func #init = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -51,6 +63,9 @@ pub mv struct Alert: Control {
 		}
 	}
 
+	/**
+	 * Set the control's title.
+	 **/
 	// The alert's headline (bold first line).
 	pub func set_title = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -81,6 +96,9 @@ pub mv struct Alert: Control {
 		}
 	}
 
+	/**
+	 * The alert's title.
+	 **/
 	pub func title = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -116,7 +134,9 @@ pub mv struct Alert: Control {
 		}
 	}
 
-	// The explanatory second line.
+	/**
+	 * Set the explanatory text shown under the title.
+	 **/
 	pub func set_message = (self, string message) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -146,6 +166,9 @@ pub mv struct Alert: Control {
 		}
 	}
 
+	/**
+	 * The explanatory text.
+	 **/
 	pub func message = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -181,6 +204,10 @@ pub mv struct Alert: Control {
 		}
 	}
 
+	/**
+	 * Add a button, left to right. The first button added is the default (Return) and
+	 * replaces the built-in "OK" button.
+	 **/
 	// Append a button (left to right). The FIRST button is the default
 	// (Return); the clicked one's index is what `run` returns. A fresh
 	// NSAlert carries one default button ("OK") — the first
@@ -214,7 +241,9 @@ pub mv struct Alert: Control {
 		}
 	}
 
-	// How many buttons the alert carries.
+	/**
+	 * The number of buttons.
+	 **/
 	pub func button_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -244,6 +273,10 @@ pub mv struct Alert: Control {
 		}
 	}
 
+	/**
+	 * Show the alert and wait until the user dismisses it, then return the index of the
+	 * clicked button (0 for the first). The rest of the UI keeps drawing meanwhile.
+	 **/
 	// Show the alert modally and return the clicked button's index (0 =
 	// first button). BLOCKS in NSAlert's own modal loop until dismissed —
 	// call it from the event thread when the manual loop can afford to
@@ -277,6 +310,10 @@ pub mv struct Alert: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	// An alert is a modal, not an in-window view: it measures to nothing and
 	// the layout engine never frames it. The conformance exists so an Alert
@@ -285,11 +322,17 @@ pub mv struct Alert: Control {
 		// No-op: modals are positioned by the window server.
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var s = Size()
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var s = Size()
 		return s

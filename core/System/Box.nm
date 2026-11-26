@@ -21,9 +21,14 @@
 // are already boxed.)
 
 /**
- * A mv pointer to a heap-allocated value — the cycle-breaking shape
+ * An owning pointer to a heap-allocated value. Use it for recursive structs and stable
+ * addresses (`var Box<Node>? next`); fields and methods of the boxed value are reached
+ * straight through the box (`box.value` for a boxed struct's `value` field).
  **/
 pub mv struct Box<T> {
+	/**
+	 * The boxed value. You never name this field: access through the box is transparent.
+	 **/
 	// The wrapped value. Access through the box is transparent: the checker
 	// rewrites `box.f` to `box.__value.f`, so this field never appears in
 	// user code (the `__` prefix keeps it out of every legal field name).

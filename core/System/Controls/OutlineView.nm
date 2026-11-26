@@ -1,27 +1,34 @@
 /**
- * A tree of expandable rows (NSOutlineView, cell-based)
+ * A tree of expandable rows
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what they name. The constructor's `self` is the
- * inline instance (the `.` accessor); methods keep the pointer form.
- *
- * The data-source bridge generalizes ListView's (see that file) from rows
- * to a TREE: nodes live in a fixed-capacity C-global pool (text + parent
- * index; children are found by scanning), and NSOutlineView's item protocol
- * passes node handles as opaque `(id)(index + 1)` pointers (0 = the root).
- * `add_item(text, parent)` appends and reloads; `set_expanded` opens a
- * branch. One OutlineView per process (shared pool — the same trade ListView
- * makes). Selection is POLLED (`selected_row`), like every value in the
- * manual loop. The view is cell-based (plain-text rows, no view reuse).
- * Named `OutlineView` with no stdlib collision (the ListView `List<T>`
- * lesson). macOS-only (no iOS counterpart; see GUI_PLAN Tier 2 — the iOS
- * blocks are TODO stubs).
+ * Add nodes with `add_item`, giving each one's parent, expand branches with `set_expanded`,
+ * and read the selection with `selected_row` or respond to it with `on_select`. Only one
+ * `OutlineView` can exist at a time. macOS only.
  **/
+// The data-source bridge generalizes ListView's (see that file) from rows to a
+// TREE: nodes live in a fixed-capacity C-global pool (text + parent index;
+// children are found by scanning), and NSOutlineView's item protocol passes
+// node handles as opaque `(id)(index + 1)` pointers (0 = the root).
+// `add_item(text, parent)` appends and reloads; `set_expanded` opens a branch.
+// One OutlineView per process (shared pool — the same trade ListView makes).
+// Selection is POLLED (`selected_row`), like every value in the manual loop.
+// The view is cell-based (plain-text rows, no view reuse). Named `OutlineView`
+// with no stdlib collision (the ListView `List<T>` lesson). macOS-only (no iOS
+// counterpart; see GUI_PLAN Tier 2 — the iOS blocks are TODO stubs).
 pub mv struct OutlineView: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
-	var uint64 tree = 0
+	/**
+	 * The native outline view inside the scroll view (internal).
+	 **/
+	internal var uint64 tree = 0
 
+	/**
+	 * An empty tree list in `window`.
+	 **/
 	// File-scope helper: the node pool (shared — one OutlineView per process)
 	// and the data-source IMPs answering the item protocol.
 	pub func #init = (self, Window window) {
@@ -340,6 +347,11 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
+	/**
+	 * Add a node with label `text` under node `parent` (the index from an earlier
+	 * `add_item`, or -1 for a top-level node). Nodes are numbered in the order they were
+	 * added.
+	 **/
 	// Append a node under `parent` (its `add_item`-order index, or -1 for a
 	// top-level item) and reload.
 	pub func add_item = (self, string text, int parent) {
@@ -367,7 +379,9 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
-	// Expand or collapse the branch at node `index`.
+	/**
+	 * Expand or collapse node `index`.
+	 **/
 	pub func set_expanded = (self, int index, bool expanded) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -397,7 +411,9 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
-	// The total number of nodes in the pool.
+	/**
+	 * The total number of nodes.
+	 **/
 	pub func count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -423,8 +439,9 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
-	// The selected ROW (a visible row number, not a node index), polled;
-	// -1 = no selection.
+	/**
+	 * The selected visible row (not a node index), or -1 when nothing is selected.
+	 **/
 	pub func selected_row = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -450,6 +467,10 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_select`: whether the selection changed since the last poll.
+	 * Read the new selection from the control.
+	 **/
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
 	// selected row changed since the last drain — user clicks AND
 	// programmatic select_row (the delegate observes both; a pre-selection
@@ -483,6 +504,9 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -498,6 +522,10 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -526,6 +554,9 @@ pub mv struct OutlineView: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -534,6 +565,9 @@ pub mv struct OutlineView: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

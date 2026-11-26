@@ -8,6 +8,9 @@
  * generated body; a hand-written `#op_eq` always wins.
  **/
 pub trait Equatable {
+	/**
+	 * Whether `self` and `other` are equal. The default compares every field with `==`.
+	 **/
 	func eq = (self, #self other, out bool) {
 		var result = true
 		#for field of META.info(#self).fields {

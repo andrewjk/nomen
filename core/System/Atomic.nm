@@ -23,11 +23,17 @@
  * A lock-free 64-bit integer slot for cross-task shared state
  **/
 pub struct Atomic<T> {
+	/**
+	 * The stored machine word (internal; always go through the methods).
+	 **/
 	// The machine word. Private by discipline: mutate through the methods
 	// (direct assignment replaces the atomic — the checker's freeze blocks
 	// that through borrowed captures).
-	var uint64 word = 0
+	internal var uint64 word = 0
 
+	/**
+	 * The current value.
+	 **/
 	pub func load = (self, out T) {
 		#if META.arch == "c" {
 			#raw {
@@ -43,6 +49,9 @@ pub struct Atomic<T> {
 		}
 	}
 
+	/**
+	 * Set the value to `v`.
+	 **/
 	pub func store = (ref self {}, T v) {
 	#if META.arch == "c" {
 		#raw {
@@ -57,7 +66,9 @@ pub struct Atomic<T> {
 		}
 	}
 
-	// Adds v and returns the PREVIOUS value (fetch-and-add).
+	/**
+	 * Add `v` and return the value from before the addition.
+	 **/
 	pub func fetch_add = (ref self {}, T v, out T) {
 		#if META.arch == "c" {
 			#raw {
@@ -72,7 +83,9 @@ pub struct Atomic<T> {
 		}
 	}
 
-	// Replaces the value and returns the PREVIOUS one.
+	/**
+	 * Set the value to `v` and return the previous value.
+	 **/
 	pub func swap = (ref self {}, T v, out T) {
 		#if META.arch == "c" {
 			#raw {

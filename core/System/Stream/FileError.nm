@@ -1,21 +1,37 @@
 /**
  * The failure mode of a file operation.
  *
- *	File.write_all("out.txt", "payload")
- *	var Result<string, FileError> body = File.read_all("out.txt")
- *	match body {
- *		case .ok(text) -> Console.write(text)
- *		case .fail(e) -> Console.write("failed")
- *	}
+ * ```
+ * var _ = File.write_all("out.txt", "payload")
+ * match File.read_all("out.txt") {
+ *     case .ok(text) -> Console.write_line(text)
+ *     case .fail(e) -> Console.write_line("failed")
+ * }
+ * ```
  *
  * Cases map from the underlying errno: `not_found` (ENOENT), `access_denied`
  * (EACCES), `already_exists` (EEXIST), `not_open` (operating on a `File`
  * whose open failed or that was already closed), `other` (anything else).
  **/
 pub enum FileError {
+	/**
+	 * No file exists at the path (ENOENT).
+	 **/
 	case not_found
+	/**
+	 * Permission was denied (EACCES).
+	 **/
 	case access_denied
+	/**
+	 * Something already exists at the path (EEXIST).
+	 **/
 	case already_exists
+	/**
+	 * The `File` isn't open: its `open` failed, or it was already closed.
+	 **/
 	case not_open
+	/**
+	 * Any other failure.
+	 **/
 	case other
 }

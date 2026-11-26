@@ -369,4 +369,25 @@ struct Point {
 		expect(def_at(analysis, at(source, "Point"))?.doc).toEqual("A point in space");
 		expect(analysis.types.get("Point")?.fields.get("x")?.doc).toEqual("The horizontal offset");
 	});
+
+	test("keeps documentation comments on enum cases and bitset flags", () => {
+		const source = `
+enum Shape {
+	/** A round shape **/
+	case circle(int radius)
+	case square
+}
+
+bitset Perm {
+	/** May read **/
+	case read
+	case write
+}
+`;
+		const { analysis } = index(source);
+		expect(analysis.types.get("Shape")?.cases.get("circle")?.doc).toEqual("A round shape");
+		expect(analysis.types.get("Shape")?.cases.get("square")?.doc).toBeUndefined();
+		expect(analysis.types.get("Perm")?.cases.get("read")?.doc).toEqual("May read");
+		expect(analysis.types.get("Perm")?.cases.get("write")?.doc).toBeUndefined();
+	});
 });

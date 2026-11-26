@@ -14,16 +14,22 @@
  * The polymorphic interface every UI node implements (measure / set_frame / intrinsic_size)
  **/
 pub trait Control {
-	// Given these constraints, report the size you want to be.
-	// Must satisfy min_width ≤ result.width ≤ max_width (ditto height).
+	/**
+	 * The size this control wants, within `constraints`: the result must lie between their
+	 * minimum and maximum on each axis.
+	 **/
 	func measure = (self, BoxConstraints constraints, out Size)
 
-	// Apply a concrete rectangle. For native controls this calls setFrame: on the
-	// platform handle. For containers this also arranges children.
+	/**
+	 * Apply a concrete rectangle, in points. Native controls move their platform view;
+	 * containers also arrange their children.
+	 **/
 	func set_frame = (ref self, int x, int y, int width, int height)
 
-	// What size would you be with unbounded space? (Used by parents to decide
-	// wrapping, scrolling, etc. Default: call measure with infinity.)
+	/**
+	 * The size this control would be with unlimited space. Parents use it to decide on
+	 * wrapping, scrolling and so on.
+	 **/
 	func intrinsic_size = (self, out Size)
 }
 
@@ -39,8 +45,10 @@ pub trait Control {
 // closure is not expressible soundly (capturing a control MOVES it; see
 // CLOSURE.md), so the poll form is the ownership-clean equivalent.
 
-// Arm a control's native click action. Called by the button-family
-// constructors; safe to call again (re-sets target/action).
+/**
+ * Internal plumbing: arm the native click action for the control `handle` so `was_clicked`
+ * can see its clicks. Called by the button-family constructors; safe to call again.
+ **/
 pub func nomen_control_arm_clicks = (uint64 handle) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -158,8 +166,10 @@ pub func nomen_control_arm_clicks = (uint64 handle) {
 	}
 }
 
-// Drain a control's click record: true exactly once per click (the record
-// is consumed). Called by the button-family `was_clicked` polls.
+/**
+ * Internal plumbing: whether the control `handle` was clicked since the last call (each
+ * click is reported once). Backs the button-family `was_clicked` polls.
+ **/
 pub func nomen_control_take_click = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw {
@@ -185,13 +195,14 @@ pub func nomen_control_take_click = (uint64 handle, out bool) {
 	}
 }
 
-// Arm a control's native selection action — the on_select plumbing for the
-// ACTION family (Select, Segmented, ComboBox: NSControls whose target/action
-// fires on a user-driven selection change). The DELEGATE family (Tabs,
-// ListView, Table, OutlineView) pushes into the same record from its
-// selection delegate instead. Called by those constructors; safe to call
-// again (re-sets target/action). A control carries ONE target/action, so a
-// control arms clicks OR selects, never both — the families are disjoint.
+/**
+ * Internal plumbing: arm the native selection-change action for the control `handle`
+ * (`Select`, `Segmented`, `ComboBox`). Called by those constructors; safe to call again.
+ **/
+// The on_select plumbing for the ACTION family (NSControls whose target/action fires on a
+// user-driven selection change). The DELEGATE family (Tabs, ListView, Table, OutlineView)
+// pushes into the same record from its selection delegate instead. A control carries ONE
+// target/action, so a control arms clicks OR selects, never both — the families are disjoint.
 pub func nomen_control_arm_selects = (uint64 handle) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -310,14 +321,16 @@ pub func nomen_control_arm_selects = (uint64 handle) {
 	}
 }
 
-// Arm a text field's native commit action — the on_submit plumbing for the
-// single-line fields (TextBox, SecureField, SearchField). NSTextField
-// sends its target/action exactly on the USER commit (Return), so one
-// shared target serves every field: the field editor maps back to the
-// editing control (the on_focus mapping), and the action's sender IS the
-// field's handle. The record is the submit ring — the selection ring's
-// shape, one entry per committed field, consumed by the field's
-// take_submit drain. Called by those constructors; safe to call again.
+/**
+ * Internal plumbing: arm the native commit (Return) action for the text field `handle`
+ * (`TextBox`, `SecureField`, `SearchField`). Called by those constructors; safe to call
+ * again.
+ **/
+// NSTextField sends its target/action exactly on the USER commit (Return), so one shared
+// target serves every field: the field editor maps back to the editing control (the on_focus
+// mapping), and the action's sender IS the field's handle. The record is the submit ring —
+// the selection ring's shape, one entry per committed field, consumed by the field's
+// take_submit drain.
 pub func nomen_control_arm_submits = (uint64 handle) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw("file") {
@@ -434,11 +447,13 @@ pub func nomen_control_arm_submits = (uint64 handle) {
 	}
 }
 
-// Drain a control's selection record: true exactly once per selection
-// change (the record is consumed). Called by the selection-family
-// `take_select` drains — the on_select desugar's arm primitive. The
-// payload is NOT stashed here: the handler body reads it through the
-// control's own selected_index() / selected_row().
+/**
+ * Internal plumbing: whether the selection of the control `handle` changed since the last
+ * call (each change is reported once). Read the new selection from the control itself.
+ **/
+// Called by the selection-family `take_select` drains — the on_select desugar's arm
+// primitive. The payload is NOT stashed here: the handler body reads it through the control's
+// own selected_index() / selected_row().
 pub func nomen_control_take_select = (uint64 handle, out bool) {
 	#if META.arch == "c" && META.platform == "macos" {
 		#raw {

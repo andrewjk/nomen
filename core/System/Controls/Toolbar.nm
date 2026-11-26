@@ -1,25 +1,31 @@
 /**
- * A window toolbar with labeled push-button items (NSToolbar)
+ * A row of labeled buttons at the top of a window
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * NSToolbar is delegate-driven: the shared delegate answers the identifier
- * questions from the fixed item count and builds each item as a labeled
- * push button (NSButton view) targeted at the shared action recorder — so
- * `clicked_item` polls the last click edge-triggered, like Menu, and
- * `on_item_select` is the registered form. Attaching
- * a toolbar shrinks the window's contentView (AppKit owns the layout rect),
- * so create the Toolbar BEFORE the first grid layout. One Toolbar per
- * process (the shared delegate + tag storage — the same trade List and Menu
- * already make). macOS-only (NSToolbar has no iOS counterpart; see GUI_PLAN
- * Tier 2 — the iOS blocks are TODO stubs).
+ * The number of buttons is set when it is created; label them with `set_label`. Respond to
+ * clicks with `on_item_select` or poll `clicked_item`. Create it before the window's first
+ * layout, since adding a toolbar shrinks the content area. Only one `Toolbar` can exist at
+ * a time. macOS only.
  **/
+// NSToolbar is delegate-driven: the shared delegate answers the identifier
+// questions from the fixed item count and builds each item as a labeled push
+// button (NSButton view) targeted at the shared action recorder — so
+// `clicked_item` polls the last click edge-triggered, like Menu, and
+// `on_item_select` is the registered form. Attaching a toolbar shrinks the
+// window's contentView (AppKit owns the layout rect), so create the Toolbar
+// BEFORE the first grid layout. One Toolbar per process (the shared delegate +
+// tag storage — the same trade List and Menu already make). macOS-only
+// (NSToolbar has no iOS counterpart; see GUI_PLAN Tier 2 — the iOS blocks are
+// TODO stubs).
 pub mv struct Toolbar: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A toolbar with `count` buttons at the top of `window`. Label them with `set_label`.
+	 **/
 	// File-scope helper: the shared delegate + action recorder (shared — one
 	// Toolbar per process).
 	pub func #init = (self, Window window, int count) {
@@ -303,9 +309,9 @@ pub mv struct Toolbar: Control {
 		}
 	}
 
-	// Set an item's label (the text under its button). Items are built
-	// lazily by the shared delegate, so the label lands in the table the
-	// builder reads and is applied to the live item immediately.
+	/**
+	 * Set the label under button `index`.
+	 **/
 	pub func set_label = (self, int index, string label) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -331,7 +337,9 @@ pub mv struct Toolbar: Control {
 		}
 	}
 
-	// The fixed item count.
+	/**
+	 * The number of buttons.
+	 **/
 	pub func count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -359,8 +367,10 @@ pub mv struct Toolbar: Control {
 		}
 	}
 
-	// The tag of the most recently clicked item since the last read
-	// (edge-triggered; -1 = none). Poll it in the manual loop.
+	/**
+	 * The index of the button clicked since the last call, or -1 if none was. Each click is
+	 * reported once.
+	 **/
 	pub func clicked_item = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -388,6 +398,11 @@ pub mv struct Toolbar: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_item_select`: whether a button was clicked since the last
+	 * poll. Read which with `selected_item()`. Use either the handler or `clicked_item`,
+	 * not both.
+	 **/
 	// The on_item_select desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. The selection is CONSUMED by the drain
 	// — like the poll, one record has one consumer, so a selection fires an
@@ -421,6 +436,9 @@ pub mv struct Toolbar: Control {
 		}
 	}
 
+	/**
+	 * The button the `on_item_select` handler is reporting (-1 before the first click).
+	 **/
 	// The tag the last take_item_select consumed (-1 before the first
 	// selection) — the handler body's payload getter, the control-scoped
 	// analog of the dispatch-window getters (win.click_x() et al).
@@ -451,6 +469,10 @@ pub mv struct Toolbar: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	// A toolbar is window chrome: the layout engine never frames it (AppKit
 	// owns the layout rect and shrinks the contentView itself).
@@ -458,11 +480,17 @@ pub mv struct Toolbar: Control {
 		// No-op: the NSWindow carries the toolbar's geometry.
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var s = Size()
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var s = Size()
 		return s

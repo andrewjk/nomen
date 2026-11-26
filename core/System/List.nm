@@ -2,9 +2,19 @@
  * A growable, ordered list of values (`push`/`pop`/`at`)
  **/
 pub mv struct List<T>: Viewable {
+	/**
+	 * The number of elements in the list.
+	 **/
 	var length = 0
-	var items = Buffer<T>()
+	/**
+	 * The backing storage. Use the list's methods rather than touching it directly.
+	 **/
+	internal var items = Buffer<T>()
 
+	/**
+	 * Append `value` to the end of the list, growing the storage when it is full. The value
+	 * moves into the list.
+	 **/
 	pub func push = (ref self { items }, mv T value) {
 		if self.length < self.items.cap {
 			// The value arrives owned (`mv T value`): a value-struct element
@@ -55,6 +65,10 @@ pub mv struct List<T>: Viewable {
 		return self.items.cap
 	}
 
+	/**
+	 * Remove and return the last element. The list must not be empty (check `length`
+	 * first).
+	 **/
 	pub func pop = (ref self { items }, mv out T) {
 		if self.length <= 0 {
 			return self.items.move(0)
@@ -64,13 +78,17 @@ pub mv struct List<T>: Viewable {
 		return self.items.move(idx)
 	}
 
+	/**
+	 * The element at index `i`. The index must be provably within `[0, length)`; use
+	 * `at_or`, `at_or_null` or `at_or_panic` when it can't be proven at compile time.
+	 **/
 	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
 		return self.items.load(i)
 	}
 
-	// Bounds-checked access: `fallback` when i is outside [0, self.length) —
-	// for indices that can't be proven at compile time and out-of-range is an
-	// expected case.
+	/**
+	 * The element at index `i`, or `fallback` when `i` is out of range.
+	 **/
 	pub func at_or = (self, int i, T fallback, out T) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -78,9 +96,10 @@ pub mv struct List<T>: Viewable {
 		return fallback
 	}
 
-	// Bounds-checked access that traps when i is outside [0, self.length) —
-	// for indices that can't be proven at compile time and out-of-range is a
-	// bug, not a case.
+	/**
+	 * The element at index `i`. Panics with "index out of range" when `i` is outside
+	 * `[0, length)`.
+	 **/
 	pub func at_or_panic = (self, int i, out T) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -88,9 +107,10 @@ pub mv struct List<T>: Viewable {
 		panic("index out of range")
 	}
 
-	// Nullable checked access: the element when i is inside self.length,
-	// `null` otherwise — the escape hatch for indices the constraint
-	// checker can't prove (`xs.get(i) ?? fallback`).
+	/**
+	 * The element at index `i`, or `null` when `i` is out of range
+	 * (`xs.at_or_null(i) ?? fallback`).
+	 **/
 	pub func at_or_null = (self, int i, out T?) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -98,20 +118,29 @@ pub mv struct List<T>: Viewable {
 		return null
 	}
 
-	// A non-mv `view T` over [start, end). Delegates to the backing Buffer's
-	// #arch slice primitive — no #arch code here. Borrows from self.
+	/**
+	 * A borrowed view of the elements in `[start, end)`. The view is only valid while the
+	 * list is alive and not modified.
+	 **/
+	// Delegates to the backing Buffer's #arch slice primitive — no #arch code here.
 	pub func slice = (self, int start: start >= 0, int end: end >= start, out view T) {
 		return self.items.slice(start, end)
 	}
 
+	/**
+	 * Replace the element at index `i` with `value`. The index must be provably within
+	 * `[0, length)`; use `set_or_panic` otherwise.
+	 **/
 	pub func set = (ref self { items }, int i: i >= 0 && i < self.length, mv T value) {
 		self.items.replace(i, value)
 	}
 
-	// Bounds-checked write that traps when i is outside [0, self.length) —
-	// for indices that can't be proven at compile time (cross-module calls
-	// can never discharge `set`'s parameter constraint) and out-of-range is
-	// a bug, not a case.
+	/**
+	 * Replace the element at index `i` with `value`. Panics with "index out of range" when
+	 * `i` is outside `[0, length)`.
+	 **/
+	// For indices that can't be proven at compile time (cross-module calls can never discharge
+	// `set`'s parameter constraint).
 	pub func set_or_panic = (ref self { items }, int i, mv T value) {
 		if i >= 0 && i < self.length {
 			self.set(i, value)
@@ -158,13 +187,13 @@ pub mv struct List<T>: Viewable {
 		return self.items.slot_ptr(i)
 	}
 
-	// Bounds-checked removal that traps when i is outside [0, self.length) —
-	// same contract as at_or_panic/set_or_panic, for indices that can't be
-	// proven at compile time. The element is moved out (later elements
-	// backward-shift into place) and returned: the caller owns it, so its
-	// resources are reclaimed when the binding's scope ends — binding the
-	// result in a nested block is the way to free an owning element at a
-	// chosen point (its #destroy runs at the block's closing brace).
+	/**
+	 * Remove the element at index `i` and return it, shifting later elements down by one.
+	 * Panics with "index out of range" when `i` is outside `[0, length)`.
+	 *
+	 * The caller owns the returned element, so binding it in a nested block frees an owning
+	 * element at that block's closing brace.
+	 **/
 	pub func remove_at_or_panic = (ref self { items }, int i, mv out T) {
 		if i < 0 || i >= self.length {
 			panic("index out of range")
@@ -178,14 +207,15 @@ pub mv struct List<T>: Viewable {
 		return v
 	}
 
-	// A deep copy: a fresh List<T> with an independent copy of every element.
-	// For mv element types (strings, mv value structs) each slot in the
-	// copy owns its own heap data (Buffer deep-copies on store), so the source
-	// and the copy share nothing. Not available for class/trait element types
-	// (the copy would share the stored instances — the checker rejects it).
-	// The element is bound to a local before push — the monomorphized body is
-	// never re-checked, so it can't rely on check-time call-arg hoisting for
-	// struct element types.
+	/**
+	 * A deep copy: a new list holding an independent copy of every element. Not available
+	 * for class or trait element types.
+	 **/
+	// For mv element types (strings, mv value structs) each slot in the copy owns its own heap
+	// data (Buffer deep-copies on store), so the source and the copy share nothing. The checker
+	// rejects class/trait element types (the copy would share the stored instances). The element
+	// is bound to a local before push — the monomorphized body is never re-checked, so it can't
+	// rely on check-time call-arg hoisting for struct element types.
 	pub func copy = (self, out List<T>) {
 		var dst = List<T>()
 		var i = 0

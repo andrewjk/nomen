@@ -1,7 +1,11 @@
 /**
- * A signed double-precision (64-bit) floating-point number
+ * A single-precision (32-bit) floating-point number
  **/
 pub struct float32: Stringable {
+	/**
+	 * The value as a decimal string with six digits after the point (`printf`'s `%f`), e.g.
+	 * "3.140000".
+	 **/
 	pub func to_string = (self, mv out string) {
 		#if META.arch == "c" {
 			#raw {

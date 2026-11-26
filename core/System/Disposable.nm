@@ -2,6 +2,10 @@
  * A trait for resources that must be explicitly cleaned up via `dispose`
  **/
 pub trait Disposable {
+	/**
+	 * Release the resource. Conformers should override this; the default body is only a
+	 * placeholder.
+	 **/
 	func dispose = (self) {
 		Console.write("\nboom!")
 	}

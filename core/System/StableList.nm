@@ -1,49 +1,68 @@
 /**
- * A grow-only, ordered list whose element borrows survive `push` — including
- * interior slot ADDRESSES (stable grow-only arrays; v2).
- *
- * Storage is CHUNKED so that no slot address ever moves: chunk 0 is the
- * `items` Buffer, allocated once at exactly 256 slots and never resized;
- * chunks 1.. live in the `chunks` directory as raw slab pointers (each
- * `calloc`'d once at 256 slots). The directory itself may realloc — it holds
- * slab ADDRESSES, which survive the move. That is what lets `slot_ptr`
- * exist: `ref T x = sl.at(i)` binds the slot itself, the checker's `push`
- * exemption keeps the alias alive across pushes, and writes through it land
- * in the list. The list only ever appends (`push`) — no `pop`/`remove_at` —
- * because displacing an element wholesale would invalidate its borrows. The
- * two refill writes are the exceptions: `set(i, v)` overwrites an EXISTING
- * slot in place (no address moves; the displaced value is reclaimed), and
- * `truncate(n)` destroys the tail while RETAINING the slabs (the pool-reuse
- * primitive — a decode that truncates then refills re-allocates nothing).
- *
- * The tail pieces (store/load/destroy for directory chunks) delegate to
- * Buffer's mono'd methods through a stack `Buffer_T` view — `load_from` is a
- * bitwise slot load (the borrow form; never the strdup-copy the
- * owning-specialized `load` would materialize), the tail store is the typed
- * `store` against a `Buffer.init_view` view (deep-copy semantics into the
- * chunk slot, no staging relay), and `#destroy` destroys each directory chunk
- * through a view whose `cap` is the chunk's FILL count, so no uninitialized
- * slot is ever walked. Chunk 0 (`items`) and the directory's own slab are
- * reclaimed by the ordinary field destroy: the specialized per-element
- * destroy guards zeroed slots and frees its slab.
+ * A grow-only list whose elements never move: a reference into it (`ref x = sl.at(i)`)
+ * stays valid while more elements are pushed. Elements are added with `push` and can be
+ * overwritten with `set` or dropped from the end with `truncate`, but not removed from the
+ * middle.
  **/
+// Stable grow-only arrays; v2. Interior slot ADDRESSES survive `push`.
+//
+// Storage is CHUNKED so that no slot address ever moves: chunk 0 is the
+// `items` Buffer, allocated once at exactly 256 slots and never resized;
+// chunks 1.. live in the `chunks` directory as raw slab pointers (each
+// `calloc`'d once at 256 slots). The directory itself may realloc — it holds
+// slab ADDRESSES, which survive the move. That is what lets `slot_ptr`
+// exist: `ref T x = sl.at(i)` binds the slot itself, the checker's `push`
+// exemption keeps the alias alive across pushes, and writes through it land
+// in the list. The list only ever appends (`push`) — no `pop`/`remove_at` —
+// because displacing an element wholesale would invalidate its borrows. The
+// two refill writes are the exceptions: `set(i, v)` overwrites an EXISTING
+// slot in place (no address moves; the displaced value is reclaimed), and
+// `truncate(n)` destroys the tail while RETAINING the slabs (the pool-reuse
+// primitive — a decode that truncates then refills re-allocates nothing).
+//
+// The tail pieces (store/load/destroy for directory chunks) delegate to
+// Buffer's mono'd methods through a stack `Buffer_T` view — `load_from` is a
+// bitwise slot load (the borrow form; never the strdup-copy the
+// owning-specialized `load` would materialize), the tail store is the typed
+// `store` against a `Buffer.init_view` view (deep-copy semantics into the
+// chunk slot, no staging relay), and `#destroy` destroys each directory chunk
+// through a view whose `cap` is the chunk's FILL count, so no uninitialized
+// slot is ever walked. Chunk 0 (`items`) and the directory's own slab are
+// reclaimed by the ordinary field destroy: the specialized per-element
+// destroy guards zeroed slots and frees its slab.
 pub mv struct StableList<T> {
+	/**
+	 * The number of elements in the list.
+	 **/
 	var length = 0
+	/**
+	 * The first storage chunk (internal; use the methods).
+	 **/
 	// Chunk 0: an exact-cap 256-slot slab, allocated on first push, never
 	// grown — a realloc would move its slots and invalidate `slot_ptr` aliases.
-	var items = Buffer<T>()
+	internal var items = Buffer<T>()
+	/**
+	 * The directory of later storage chunks (internal).
+	 **/
 	// Directory of chunk-1.. slab addresses (uint64 words, `calloc`'d slabs of
 	// 256 T_SIZE bytes). The directory's slot array may realloc; the slabs it
 	// points at never move.
-	mv chunks = Buffer<uint64>()
+	internal mv chunks = Buffer<uint64>()
+	/**
+	 * Scratch view used while storing into later chunks (internal).
+	 **/
 	// A transient VIEW carrier for tail pushes: `push` points it at the
 	// target chunk slab, stores the value through it (deep-copy semantics via
 	// Buffer's specialized `store` — no staging relay, no byte copy), then
 	// clears it. A field (not a local) because an owning Buffer local is
 	// auto-destroyed at scope exit and would free the borrowed slab. Its own
 	// slab is always null, so its field destroy reclaims nothing.
-	var stage = Buffer<T>()
+	internal var stage = Buffer<T>()
 
+	/**
+	 * Append `value` to the end of the list. Existing elements never move, so references to
+	 * them stay valid. The value moves into the list.
+	 **/
 	pub func push = (ref self { chunks, items, stage }, mv T value) {
 		if self.items.cap == 0 {
 			self.items.alloc(256)
@@ -173,6 +192,10 @@ pub mv struct StableList<T> {
 		}
 	}
 
+	/**
+	 * The element at index `i`. The index must be provably within `[0, length)`; use
+	 * `at_or`, `at_or_null` or `at_or_panic` when it can't be proven at compile time.
+	 **/
 	pub inline func at = (self, int i: i >= 0 && i < self.length, out T) {
 		if i < self.items.cap {
 			return self.items.load(i)
@@ -221,6 +244,9 @@ pub mv struct StableList<T> {
 		}
 	}
 
+	/**
+	 * The element at index `i`, or `fallback` when `i` is out of range.
+	 **/
 	pub func at_or = (self, int i, T fallback, out T) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -228,9 +254,9 @@ pub mv struct StableList<T> {
 		return fallback
 	}
 
-	// Bounds-checked access that traps when i is outside [0, self.length) —
-	// for indices that can't be proven at compile time and out-of-range is a
-	// bug, not a case.
+	/**
+	 * The element at index `i`. Panics when `i` is outside `[0, length)`.
+	 **/
 	pub func at_or_panic = (self, int i, out T) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -238,9 +264,9 @@ pub mv struct StableList<T> {
 		panic("index out of range")
 	}
 
-	// Nullable checked access: the element when i is inside self.length,
-	// `null` otherwise — the escape hatch for indices the constraint
-	// checker can't prove (`xs.get(i) ?? fallback`).
+	/**
+	 * The element at index `i`, or `null` when `i` is out of range.
+	 **/
 	pub func at_or_null = (self, int i, out T?) {
 		if i >= 0 && i < self.length {
 			return self.at(i)
@@ -248,6 +274,10 @@ pub mv struct StableList<T> {
 		return null
 	}
 
+	/**
+	 * Replace the existing element at index `i` with `value`, freeing the old one. No
+	 * element moves, so references to other elements stay valid.
+	 **/
 	// Overwrite an EXISTING element in place (i must be < length — the
 	// refill contract): the displaced element is reclaimed, `value` is
 	// installed, and no slot moves — element addresses are untouched, so
@@ -271,6 +301,10 @@ pub mv struct StableList<T> {
 		}
 	}
 
+	/**
+	 * Drop the elements from index `n` on, keeping the storage so that refilling the list
+	 * allocates nothing.
+	 **/
 	// Destroy elements [n, length) and drop length to n, RETAINING the
 	// allocated storage: chunk 0, the directory, and every tail slab stay
 	// allocated, and each destroyed slot is zeroed (Buffer.destroy_at
@@ -337,14 +371,14 @@ pub mv struct StableList<T> {
 		}
 	}
 
-	// A deep copy: a fresh StableList<T> with an independent copy of every
-	// element. For mv element types (strings, mv value structs) each slot in
-	// the copy owns its own heap data (Buffer deep-copies on store), so the
-	// source and the copy share nothing. Not available for class/trait
-	// element types (the copy would share the stored instances — the checker
-	// rejects it). The element is bound to a local before push — the
-	// monomorphized body is never re-checked, so it can't rely on check-time
-	// call-arg hoisting for struct element types.
+	/**
+	 * A deep copy: a new list holding an independent copy of every element. Not available
+	 * for class or trait element types.
+	 **/
+	// For mv element types (strings, mv value structs) each slot in the copy owns
+	// its own heap data (Buffer deep-copies on store). The element is bound to a
+	// local before push — the monomorphized body is never re-checked, so it can't
+	// rely on check-time call-arg hoisting for struct element types.
 	pub func copy = (self, out StableList<T>) {
 		var dst = StableList<T>()
 		var i = 0
@@ -356,6 +390,10 @@ pub mv struct StableList<T> {
 		return dst
 	}
 
+	/**
+	 * Free every element and all storage. Runs automatically when the list goes out of
+	 * scope.
+	 **/
 	// Chunk 0 first: `move` hands each element out (the binding's scope exit
 	// destroys it — exactly once), then `alloc(0)` retires the empty slab so
 	// the field destroy walks zero slots. Directory chunks: raw loop, each

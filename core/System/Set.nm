@@ -1,25 +1,46 @@
 /**
- * An ordered set of unique values (`add`/`has`/`get`/`remove`). Elements must
- * be `Hashable` (hashed to a `uint` via `value.hash()`) and `Equatable`
- * (compared with `==`).
+ * A hash set of unique values: `add` inserts, `has` tests membership and `remove` deletes.
+ * Elements must be `Hashable` and `Equatable`. Adding a value that is already present does
+ * nothing.
  *
- * The capacity is always a power of two (initial 8, doubling on rehash), so
- * slot indexing is a mask (`hash & (cap - 1)`) — correct for negative hashes
- * too (two's-complement `&` already lands in `[0, cap)`).
- *
- * Each slot carries its value's hash (truncated to 32 bits) in a parallel
- * `hashes` buffer. Probes compare the stored hash before the value itself
- * (the Swiss-table short-circuit — the `==` only runs on a hash match, and a
- * false match still falls through to `==`, so truncation costs nothing);
- * rehash re-inserts hash-free, reading the stored word instead of calling
- * `value.hash()` again.
+ * ```
+ * var seen = Set<string>()
+ * seen.add("a")
+ * const fresh = !seen.has("b")
+ * ```
  **/
+// The capacity is always a power of two (initial 8, doubling on rehash), so
+// slot indexing is a mask (`hash & (cap - 1)`) — correct for negative hashes
+// too (two's-complement `&` already lands in `[0, cap)`).
+//
+// Each slot carries its value's hash (truncated to 32 bits) in a parallel
+// `hashes` buffer. Probes compare the stored hash before the value itself
+// (the Swiss-table short-circuit — the `==` only runs on a hash match, and a
+// false match still falls through to `==`, so truncation costs nothing);
+// rehash re-inserts hash-free, reading the stored word instead of calling
+// `value.hash()` again.
 pub mv struct Set<T: Hashable + Equatable> {
+	/**
+	 * The number of values in the set.
+	 **/
 	var length = 0
-	var slots = Buffer<T>()
-	mv used = Buffer<int>()
-	mv hashes = Buffer<int>()
+	/**
+	 * The value slots of the hash table (internal storage).
+	 **/
+	internal var slots = Buffer<T>()
+	/**
+	 * Per-slot occupancy flags (internal storage).
+	 **/
+	internal mv used = Buffer<int>()
+	/**
+	 * Per-slot stored value hashes (internal storage).
+	 **/
+	internal mv hashes = Buffer<int>()
 
+	/**
+	 * Add `value` to the set. Does nothing when an equal value is already present. The
+	 * value moves into the set.
+	 **/
 	pub func add = (ref self { hashes, slots, used }, mv T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
@@ -52,6 +73,9 @@ pub mv struct Set<T: Hashable + Equatable> {
 		}
 	}
 
+	/**
+	 * Whether the set contains a value equal to `value`.
+	 **/
 	pub func has = (self, T value, out bool) {
 		var int cap = self.slots.cap
 		if cap == 0 {
@@ -61,6 +85,11 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return self.used.load_u32(idx) != 0
 	}
 
+	/**
+	 * The stored value equal to `key`, or a zero value when it is not in the set. Prefer
+	 * `get_or` or `get_or_panic` when a missing value must be told apart from a stored
+	 * zero.
+	 **/
 	pub func get = (self, T key, out T) {
 		var int cap = self.slots.cap
 		if cap == 0 {
@@ -73,8 +102,9 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return self.slots.load(idx)
 	}
 
-	// Membership lookup with a fallback value: `fallback` when the value is
-	// not in the set (one probe instead of the `has` + `get` pair).
+	/**
+	 * The stored value equal to `key`, or `fallback` when it is not in the set.
+	 **/
 	pub func get_or = (self, T key, T fallback, out T) {
 		var int cap = self.slots.cap
 		if cap == 0 {
@@ -87,7 +117,9 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return self.slots.load(idx)
 	}
 
-	// Membership lookup that traps when the value is not in the set.
+	/**
+	 * The stored value equal to `key`. Panics when it is not in the set.
+	 **/
 	pub func get_or_panic = (self, T key, out T) {
 		var int cap = self.slots.cap
 		if cap == 0 {
@@ -100,6 +132,9 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return self.slots.load(idx)
 	}
 
+	/**
+	 * Remove the value equal to `value`, if present.
+	 **/
 	pub func remove = (ref self { hashes, slots, used }, T value) {
 		var int cap = self.slots.cap
 		if cap == 0 {
@@ -175,15 +210,16 @@ pub mv struct Set<T: Hashable + Equatable> {
 		self.length = self.length - 1
 	}
 
-	// An independent copy: a fresh Set whose member slabs are fresh (`slots`
-	// deep-copied per element, `used`/`hashes` copied word by word), with the
-	// same length and entries. The u32-word buffers are copied through their
-	// own primitives — `Buffer.copy` is T_SIZE-aware (8-byte loads for
-	// `int`), which would read past a 4-byte-per-slot `alloc_u32` slab. Not
-	// available for class/trait elements (the member routes to HandleBuffer,
-	// which has no copy — the checker rejects the call; the shape is also
-	// unreachable today since `T: Hashable + Equatable` cannot be a trait
-	// without trait-conformance syntax).
+	/**
+	 * A deep copy: a new set with an independent copy of every value.
+	 **/
+	// Member slabs are fresh (`slots` deep-copied per element, `used`/`hashes`
+	// copied word by word). The u32-word buffers are copied through their own
+	// primitives — `Buffer.copy` is T_SIZE-aware (8-byte loads for `int`), which
+	// would read past a 4-byte-per-slot `alloc_u32` slab. Class/trait elements
+	// route to HandleBuffer, which has no copy — the checker rejects the call (the
+	// shape is also unreachable today since `T: Hashable + Equatable` cannot be a
+	// trait without trait-conformance syntax).
 	pub func copy = (self, out Set<T>) {
 		var dst = Set<T>()
 		dst.slots = self.slots.copy()
@@ -198,7 +234,10 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return dst
 	}
 
-	func find_slot = (self, T value, uint32 h, int cap, out int: out >= 0 && out < cap) {
+	/**
+	 * Internal: the slot holding `value`, or the empty slot where it would go.
+	 **/
+	internal func find_slot = (self, T value, uint32 h, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two: `hash mod cap` via a mask, non-negative
 		// for any hash — no adjustment needed.
 		var int idx = (h as int) & (cap - 1)
@@ -219,12 +258,15 @@ pub mv struct Set<T: Hashable + Equatable> {
 		return idx
 	}
 
+	/**
+	 * Internal: rebuild the table with capacity `new_cap`.
+	 **/
 	// Rehash hash-free: the stored per-slot hash words move with the entries,
 	// so no `value.hash()` runs here and the insertion probe needs no value
 	// compares (values arrive unique — they came from a valid set). The old
 	// form re-inserted via `self.add(mv v)`, re-hashing every value and
 	// re-comparing values on every probed slot.
-	func rehash = (ref self { hashes, slots, used }, int new_cap) {
+	internal func rehash = (ref self { hashes, slots, used }, int new_cap) {
 		var Buffer<T> old_slots = mv self.slots swap Buffer<T>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()
 		var Buffer<int> old_hashes = mv self.hashes swap Buffer<int>()

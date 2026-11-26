@@ -1,12 +1,13 @@
 /**
- * A toggle control with a title and checked/hidden state
+ * A checkbox with a title
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is an AppKit handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * Read its state with `is_checked`, or respond to changes with `on_click`.
  **/
 pub mv struct CheckBox: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -14,6 +15,9 @@ pub mv struct CheckBox: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * An unchecked checkbox in `window`. Set its label with `set_title`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -85,6 +89,10 @@ pub mv struct CheckBox: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -116,6 +124,9 @@ pub mv struct CheckBox: Control {
 		}
 	}
 
+	/**
+	 * Set the control's title.
+	 **/
 	pub func set_title = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -135,6 +146,9 @@ pub mv struct CheckBox: Control {
 		}
 	}
 
+	/**
+	 * Check or uncheck the control.
+	 **/
 	pub func set_checked = (self, bool checked) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -164,6 +178,9 @@ pub mv struct CheckBox: Control {
 		}
 	}
 
+	/**
+	 * Whether the control is checked.
+	 **/
 	pub func is_checked = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -195,6 +212,9 @@ pub mv struct CheckBox: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -210,6 +230,9 @@ pub mv struct CheckBox: Control {
 		}
 	}
 
+	/**
+	 * Whether the control was clicked since the last check. Each click is reported once.
+	 **/
 	// ── Control trait conformance ──
 	// Edge-triggered click poll: true exactly once per click (the record
 	// is consumed). Backed by the native target/action queue —
@@ -219,6 +242,10 @@ pub mv struct CheckBox: Control {
 		return nomen_control_take_click(self.handle)
 	}
 
+	/**
+	 * Handler hook behind `on_click`: whether the control was clicked since the last poll.
+	 * Use either `on_click` or `was_clicked` for a control, not both.
+	 **/
 	// The on_click desugar's drain (docs/HANDLERS.md): the synthesized pump
 	// arm polls this per frame. Same edge as was_clicked — register one way
 	// or the other, never both (first consumer wins).
@@ -226,6 +253,9 @@ pub mv struct CheckBox: Control {
 		return nomen_control_take_click(self.handle)
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -234,6 +264,9 @@ pub mv struct CheckBox: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

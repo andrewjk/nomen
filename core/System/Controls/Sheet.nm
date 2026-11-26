@@ -1,24 +1,30 @@
 /**
- * A modal sheet attached to a window (the macOS "forms slide out of the
- * title bar" presentation)
+ * A dialog that slides down from a window's title bar
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * fields are platform handles, so the value is movable and its `#destroy`
- * releases what they name. The constructor's `self` is the inline instance
- * (the `.` accessor); methods keep the pointer form.
- *
- * The sheet is its own NSWindow presented attached to the host — so its
- * contentView is just another layout root: `content_window` hands back a
- * Window-shaped value whose contentView is the sheet's, and every control
- * constructor (and `Container.layout`) accepts it like any window.
- * `present`/`dismiss` are non-blocking (completion-handler form); iOS
- * defers to UISheetPresentationController (TODO stubs; see GUI_PLAN
- * Tier 1 #20).
+ * Create controls with `content_window()` as their window and lay them out there, then
+ * `present` the sheet and `dismiss` it when done. Neither call waits.
  **/
+// The sheet is its own NSWindow presented attached to the host — so its
+// contentView is just another layout root: `content_window` hands back a
+// Window-shaped value whose contentView is the sheet's, and every control
+// constructor (and `Container.layout`) accepts it like any window.
+// `present`/`dismiss` are non-blocking (completion-handler form); iOS defers to
+// UISheetPresentationController (TODO stubs; see GUI_PLAN Tier 1 #20).
 pub mv struct Sheet: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
-	var uint64 host = 0
+	/**
+	 * The native window the sheet attaches to (internal).
+	 **/
+	internal var uint64 host = 0
 
+	/**
+	 * A `width` × `height` sheet for `window`. Add controls through `content_window`, then
+	 * `present` it.
+	 **/
 	pub func #init = (self, Window window, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -66,11 +72,12 @@ pub mv struct Sheet: Control {
 		}
 	}
 
-	// A Window-shaped handle to the sheet's contentView: pass it to control
-	// constructors and `Container.layout` to host controls in the sheet.
-	// The value retains the sheet's window (+1), so its scope-exit
-	// `#destroy` releases its OWN reference and the Sheet's stays balanced
-	// — keep the Sheet alive at least as long as the returned value.
+	/**
+	 * A `Window` handle for the sheet's content: pass it to control constructors and
+	 * `Container.layout`. Keep the sheet alive at least as long as the handle.
+	 **/
+	// The value retains the sheet's window (+1), so its scope-exit `#destroy` releases
+	// its OWN reference and the Sheet's stays balanced.
 	pub func content_window = (self, out Window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -118,6 +125,9 @@ pub mv struct Sheet: Control {
 		}
 	}
 
+	/**
+	 * Set the control's title.
+	 **/
 	pub func set_title = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -147,6 +157,9 @@ pub mv struct Sheet: Control {
 		}
 	}
 
+	/**
+	 * The control's title.
+	 **/
 	pub func get_title = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -182,8 +195,10 @@ pub mv struct Sheet: Control {
 		}
 	}
 
-	// Slide the sheet out of the host window's title bar. Non-blocking: the
-	// sheet stays up while the manual loop keeps polling.
+	/**
+	 * Slide the sheet down from the window's title bar. Returns at once; the sheet stays up
+	 * until `dismiss`.
+	 **/
 	pub func present = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -211,7 +226,9 @@ pub mv struct Sheet: Control {
 		}
 	}
 
-	// Close the sheet (the host regains focus).
+	/**
+	 * Close the sheet.
+	 **/
 	pub func dismiss = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -241,7 +258,9 @@ pub mv struct Sheet: Control {
 		}
 	}
 
-	// True while the sheet is attached to its host window.
+	/**
+	 * Whether the sheet is showing.
+	 **/
 	pub func is_presented = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -271,6 +290,10 @@ pub mv struct Sheet: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	// A sheet is window-coordinated like Alert: the layout engine never
 	// frames it (its own NSWindow carries the geometry).
@@ -278,11 +301,17 @@ pub mv struct Sheet: Control {
 		// No-op: the sheet's NSWindow carries the geometry.
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var s = Size()
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var s = Size()
 		return s

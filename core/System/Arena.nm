@@ -20,9 +20,18 @@
  * reused slot distinguishable from the one this handle was issued for.
  **/
 pub struct ArenaRef<T> {
+	/**
+	 * The slot index (-1 for a null handle).
+	 **/
 	var int index = -1
+	/**
+	 * The slot generation this handle was issued for.
+	 **/
 	var int generation = -1
 
+	/**
+	 * Whether this is a null handle (one that was never issued by an arena).
+	 **/
 	pub func is_null = (self, out bool) {
 		return self.index < 0
 	}
@@ -33,18 +42,33 @@ pub struct ArenaRef<T> {
  * copyable `ArenaRef<T>` handles.
  **/
 pub mv struct Arena<T> {
+	/**
+	 * Slot values (internal storage).
+	 **/
 	// Slot payloads. T = value struct/primitive routes to Buffer<T>; T =
 	// class/trait routes to HandleBuffer<T> (monomorphize rewrites the field),
 	// so slot ownership follows the usual element rules.
-	var values = Buffer<T>()
+	internal var values = Buffer<T>()
+	/**
+	 * Per-slot generations (internal storage).
+	 **/
 	// Per-slot generation, bumped on every free. Slots are calloc'd, so a
 	// fresh slot's generation is 0.
-	mv generations = Buffer<int>()
+	internal mv generations = Buffer<int>()
+	/**
+	 * Freed slots available for reuse (internal storage).
+	 **/
 	// Freed slot indices available for reuse (LIFO free list). A raw Buffer
 	// plus an explicit count: a `List<int>` field would need its own
 	// monomorphization from inside a generic struct body.
-	mv free_indices = Buffer<int>()
+	internal mv free_indices = Buffer<int>()
+	/**
+	 * The number of freed slots available for reuse.
+	 **/
 	var free_count = 0
+	/**
+	 * The number of slots ever allocated (live or freed).
+	 **/
 	// High-water mark: every index < count has a slot (live or free).
 	var count = 0
 

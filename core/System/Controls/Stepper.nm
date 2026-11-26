@@ -1,17 +1,19 @@
 /**
- * A pair of up/down arrows that walk a numeric range
+ * Up and down arrows that step a number through a range
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Pair with a TextBox for the "number input" composition (gpui-kit's
- * number-input is exactly that pairing).
+ * Set the range with `set_min`, `set_max` and `set_increment`, and read the value with
+ * `value`. Next to a text field it makes a number input; `NumberInput` is that pairing.
  **/
 pub mv struct Stepper: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An up/down stepper in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -87,6 +89,10 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -118,6 +124,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Set the lowest value.
+	 **/
 	pub func set_min = (self, float min) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -145,6 +154,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Set the highest value.
+	 **/
 	pub func set_max = (self, float max) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -172,7 +184,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
-	// The per-click step size.
+	/**
+	 * Set how much each click changes the value.
+	 **/
 	pub func set_increment = (self, float increment) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -200,6 +214,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Set the value.
+	 **/
 	pub func set_value = (self, float value) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -227,7 +244,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
-	// The current value — polled per frame (each click lands between frames).
+	/**
+	 * The current value.
+	 **/
 	pub func value = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -255,6 +274,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -282,6 +304,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -291,6 +316,9 @@ pub mv struct Stepper: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

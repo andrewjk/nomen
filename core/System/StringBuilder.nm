@@ -6,12 +6,30 @@
 // concatenation, where each `+` mallocs and copies the whole accumulator.
 
 /**
- * A growable byte buffer for incrementally building strings (O(1) amortized append)
+ * A growable byte buffer for building a string piece by piece. Appending is O(1) amortized,
+ * so it avoids the quadratic cost of repeated `string +` in a loop. Call `to_string` at the
+ * end to take the result.
+ *
+ * ```
+ * var sb = StringBuilder()
+ * sb.append("x = ")
+ * sb.append(42)
+ * const text = sb.to_string()
+ * ```
  **/
 pub mv struct StringBuilder {
-	var uint64 data = 0
-	var len = 0
-	var cap = 0
+	/**
+	 * The address of the byte buffer (internal storage; 0 while empty).
+	 **/
+	internal var uint64 data = 0
+	/**
+	 * The number of bytes written so far (internal; read it with `length()`).
+	 **/
+	internal var len = 0
+	/**
+	 * The buffer's capacity in bytes (internal).
+	 **/
+	internal var cap = 0
 
 	// Ensure capacity for at least `needed` bytes. Grows geometrically.
 	// Plain Nomen + the memory externs — no pointer arithmetic needed, so
@@ -31,7 +49,9 @@ pub mv struct StringBuilder {
 		self.cap = new_cap
 	}
 
-	// Append a single byte (char).
+	/**
+	 * Append a single byte.
+	 **/
 	pub inline func append_char = (ref self {}, char c) {
 		#if META.arch == "c" {
 			#raw {
@@ -85,11 +105,13 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Append a base-10 integer WITHOUT materializing a string: the digits are
-	// written straight into the buffer (one capacity check, no malloc and no
-	// snprintf). The `sb.append(i.to_string())` shape's two snprintf passes
-	// plus the intermediate string's malloc/free collapse to a few
-	// instructions against the buffer. The raw body is spliced per call site
+	/**
+	 * Append `n` in base 10, writing the digits straight into the buffer without creating
+	 * an intermediate string.
+	 **/
+	// One capacity check, no malloc and no snprintf. The `sb.append(i.to_string())`
+	// shape's two snprintf passes plus the intermediate string's malloc/free collapse
+	// to a few instructions against the buffer. The raw body is spliced per call site
 	// (labels renamed by the splicer), so the digit loop is truly inline.
 	pub inline func append_int = (ref self {}, int n) {
 		#if META.arch == "c" {
@@ -197,9 +219,12 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Append a float with the SAME text `float.to_string` produces ("%f"):
-	// one snprintf into a stack scratch, then a bulk copy into the buffer —
-	// no sizing pass and no intermediate string allocation.
+	/**
+	 * Append `f` with the same text `float.to_string` produces, without creating an
+	 * intermediate string.
+	 **/
+	// One snprintf into a stack scratch, then a bulk copy into the buffer — no sizing
+	// pass and no intermediate string allocation.
 	pub inline func append_float = (ref self {}, float f) {
 		#if META.arch == "c" {
 			#raw {
@@ -281,22 +306,30 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Append a borrowed view without materializing it.
+	/**
+	 * Append the bytes of `s` (borrowed; nothing is copied besides the bytes themselves).
+	 **/
 	pub func append = (ref self {}, view string s) {
 		self.append_string_view(s)
 	}
 
-	// Append an int without materializing a string (see `append_int`).
+	/**
+	 * Append `n` in base 10 (see `append_int`).
+	 **/
 	pub func append = (ref self {}, int n) {
 		self.append_int(n)
 	}
 
-	// Append a float without materializing a string (see `append_float`).
+	/**
+	 * Append `f` as text (see `append_float`).
+	 **/
 	pub func append = (ref self {}, float f) {
 		self.append_float(f)
 	}
 
-	// Append a single byte. (Overload, so `sb.append(c)` works for chars.)
+	/**
+	 * Append a single byte, so `sb.append(c)` works for a `char`.
+	 **/
 	pub func append = (ref self {}, char c) {
 		self.append_char(c)
 	}
@@ -315,10 +348,13 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Append a view's bytes without materializing it: `append_string` takes
-	// an owned string, so passing a slice would need a `to_string` copy per
-	// call. Views lower to the same (ptr, len) fat pair, so the bytes are
-	// memcpy'd straight out of the borrowed buffer (used by
+	/**
+	 * Append the bytes of a borrowed `view string`, such as a `slice`, without copying it
+	 * to an owned string first.
+	 **/
+	// `append_string` takes an owned string, so passing a slice would need a
+	// `to_string` copy per call. Views lower to the same (ptr, len) fat pair, so the
+	// bytes are memcpy'd straight out of the borrowed buffer (used by
 	// `string.replace_first`/`replace_all`).
 	pub func append_string_view = (ref self {}, view string s) {
 		unsafe {
@@ -329,10 +365,11 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Replace the buffer's contents with a copy of `s`'s bytes. The only
-	// way to start a StringBuilder from a slice without a `to_string()`
-	// copy: the view's bytes are copied once into fresh storage, so the
-	// result is owned and independent of the source.
+	/**
+	 * Replace the builder's contents with a copy of `s`'s bytes. This is the way to start a
+	 * builder from a slice without a `to_string()` copy; the result is independent of the
+	 * source.
+	 **/
 	pub func seed = (ref self {}, view string s) {
 		unsafe {
 			var int sl = s.length
@@ -342,16 +379,19 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Read-back: how many bytes the buffer currently holds. (The `len` field
-	// is private; this is the O(1) peek the incremental-builder flow needs —
-	// e.g. recording a mark before appending a section.)
+	/**
+	 * The number of bytes currently in the buffer. Record it as a mark before appending a
+	 * section to use with `truncate` or `take_since`.
+	 **/
 	pub func length = (self, out int) {
 		return self.len
 	}
 
-	// Whether the buffer's current bytes end with `suffix` (an empty suffix
-	// is always true). Reads the buffer tail in place — no copy of either
-	// side (`view string` avoids materializing the checked suffix).
+	/**
+	 * Whether the bytes written so far end with `suffix`. An empty `suffix` is always true.
+	 **/
+	// Reads the buffer tail in place — no copy of either side (`view string` avoids
+	// materializing the checked suffix).
 	pub func ends_with = (ref self {}, view string suffix, out bool) {
 		unsafe {
 			var int sl = suffix.length
@@ -369,8 +409,10 @@ pub mv struct StringBuilder {
 		return true
 	}
 
-	// Truncate the buffer to `new_len` bytes (clamped to [0, len]). Capacity
-	// is kept, so a subsequent append reuses the storage without a realloc.
+	/**
+	 * Cut the contents back to the first `new_len` bytes (clamped to `[0, length()]`). The
+	 * capacity is kept, so later appends reuse the storage.
+	 **/
 	pub func truncate = (ref self {}, int new_len) {
 		var int n = new_len
 		if n < 0 {
@@ -382,21 +424,24 @@ pub mv struct StringBuilder {
 		self.len = n
 	}
 
-	// Drop the last byte (a no-op when the buffer is empty). The common
-	// chomp-the-trailing-separator shape.
+	/**
+	 * Drop the last byte, such as a trailing separator. Does nothing when the builder is
+	 * empty.
+	 **/
 	pub func chomp = (ref self {}) {
 		if self.len > 0 {
 			self.len = self.len - 1
 		}
 	}
 
-	// Extract the bytes from `mark` to the end as a fresh owned string and
-	// rewind the buffer to `mark` bytes (capacity kept). The mid-render
-	// measure-and-restart shape: record `length()`, append a section, then
-	// `take_since(mark)` to measure it and re-emit decorated. `mark` clamps
-	// to [0, len]; the returned string is always an independent allocation.
-	// (`mv out string` — the raw body mallocs the result, so the caller
-	// owns it by signature, like `Console.read_line`.)
+	/**
+	 * Remove the bytes from `mark` to the end and return them as a new string, leaving the
+	 * builder holding the first `mark` bytes. `mark` is clamped to `[0, length()]`. Use it
+	 * to measure a section after appending it (record `length()` first) and then re-emit it
+	 * decorated.
+	 **/
+	// `mv out string` — the raw body mallocs the result, so the caller owns it by
+	// signature, like `Console.read_line`.
 	pub func take_since = (ref self {}, int mark, mv out string) {
 		#if META.arch == "c" {
 			#raw {
@@ -459,14 +504,15 @@ pub mv struct StringBuilder {
 		}
 	}
 
-	// Finalize: null-terminate, return the byte buffer as a string, and
-	// release ownership (sets `data` to 0 so the destructor won't free it,
-	// and resets `len`/`cap` so the builder is a valid empty builder again —
-	// a stale `cap` would let a later append skip the grow and memcpy to a
-	// null buffer). Reuse after `to_string` yields a fresh builder.
-	// Explicitly `pub`: struct members default to pub, but this is the
-	// builder's primary read-back — the contract should not depend on the
-	// default.
+	/**
+	 * Return the built string and reset the builder to empty. The buffer is handed over
+	 * without a copy; the builder can be reused afterwards and starts fresh.
+	 **/
+	// Null-terminates and releases ownership (sets `data` to 0 so the destructor won't
+	// free it, and resets `len`/`cap` so the builder is a valid empty builder again — a
+	// stale `cap` would let a later append skip the grow and memcpy to a null buffer).
+	// Explicitly `pub`: struct members default to pub, but this is the builder's
+	// primary read-back — the contract should not depend on the default.
 	pub func to_string = (ref self {}, out string) {
 		#if META.arch == "c" {
 			#raw {

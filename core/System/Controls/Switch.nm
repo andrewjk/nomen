@@ -1,16 +1,19 @@
 /**
- * A settings-style on/off toggle (the "missing switch")
+ * An on/off switch, for settings
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Pairs with CheckBox: check = task state, switch = preference.
+ * Read it with `is_checked`. Use a `CheckBox` for things like tasks and a `Switch` for
+ * preferences.
  **/
 pub mv struct Switch: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An off switch in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -74,6 +77,10 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -105,6 +112,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Check or uncheck the control.
+	 **/
 	pub func set_checked = (self, bool checked) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -134,6 +144,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Whether the control is checked.
+	 **/
 	pub func is_checked = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -165,6 +178,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -192,6 +208,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -201,6 +220,9 @@ pub mv struct Switch: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

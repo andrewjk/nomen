@@ -1,21 +1,25 @@
 /**
- * A browsable date picker (year/month/day)
+ * A date picker showing year, month and day
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * The value travels as epoch seconds (UTC) — an absolute time, so the
- * platform's display timezone is irrelevant to the round trip. The default
- * macOS style is TextFieldAndStepper (a compact one-line picker): the
- * ClockAndCalendar style renders as a ~148px-tall inline calendar on modern
- * macOS, which no row-height layout can host. A browsable calendar GRID as a
- * layout widget is Tier 3; this is the native picker.
+ * The value is a time in seconds since 1970 (UTC): read it with `time`, set it with
+ * `set_time`.
  **/
+// The value travels as epoch seconds (UTC) — an absolute time, so the
+// platform's display timezone is irrelevant to the round trip. The default
+// macOS style is TextFieldAndStepper (a compact one-line picker): the
+// ClockAndCalendar style renders as a ~148px-tall inline calendar on modern
+// macOS, which no row-height layout can host. A browsable calendar GRID as a
+// layout widget is Tier 3; this is the native picker.
 pub mv struct DatePicker: Control {
+	/**
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A date picker in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -87,6 +91,10 @@ pub mv struct DatePicker: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -118,7 +126,9 @@ pub mv struct DatePicker: Control {
 		}
 	}
 
-	// Set the picker to an absolute time (epoch seconds, UTC).
+	/**
+	 * Set the picker to `seconds` since the Unix epoch (UTC).
+	 **/
 	pub func set_time = (self, int64 seconds) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -154,7 +164,9 @@ pub mv struct DatePicker: Control {
 		}
 	}
 
-	// The picker's current value as epoch seconds (UTC).
+	/**
+	 * The picker's value, as seconds since the Unix epoch (UTC).
+	 **/
 	pub func time = (self, out int64) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -194,6 +206,9 @@ pub mv struct DatePicker: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -221,6 +236,9 @@ pub mv struct DatePicker: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -230,6 +248,9 @@ pub mv struct DatePicker: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {
