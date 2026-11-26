@@ -46,7 +46,7 @@ import { build_operand, load_nullable_has } from "./build_operation_node.ts";
 import { emit_typed_store } from "./build_struct_node.ts";
 import { emit_expr_from_nir } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_malloc, emit_strdup } from "./utils/audit.ts";
+import { emit_malloc } from "./utils/audit.ts";
 import {
 	all_scope_frames,
 	clear_heap_string_fields,
@@ -70,7 +70,11 @@ import {
 
 let temp_counter = 0;
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
-import { emit_pair_store_x29, emit_strdup_string } from "./utils/string_pair.ts";
+import {
+	emit_pair_store_x29,
+	emit_strdup_literal,
+	emit_strdup_string,
+} from "./utils/string_pair.ts";
 import {
 	emit_struct_copy,
 	get_enum_case_index,
@@ -425,8 +429,7 @@ export default function build_return_node(
 				// frees each slot, so rodata pointers must never land here.
 				const label = resolve_array_element(raw, str_labels);
 				emit_asm(status, `adr x0, ${label}\n`);
-				emit_strdup(status);
-				emit_asm(status, `mov x1, #${string_literal_length(raw)}\n`);
+				emit_strdup_literal(status, string_literal_length(raw));
 				emit_pair_store_x29(status, slot, "x0", "x1");
 			} else if (raw !== null) {
 				emit_asm(status, `mov x0, #${raw}\n`);

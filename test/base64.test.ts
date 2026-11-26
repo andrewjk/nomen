@@ -81,20 +81,20 @@ Console.write_line(Base64.encode("\\xFB\\xEF\\xBE") + " " + Base64.encode_url("\
 		);
 	});
 
-	// Bytes 1-255: a decoded string holding a NUL byte is truncated when the
-	// native backends copy it into the Result (see FOLLOWUP.md, "Native
-	// string copies are not binary-safe"); encoding byte 0 is covered here.
+	// Bytes 0-255: decoded results hold NUL bytes, which must survive the
+	// copy into the Result on every backend.
 	test("every byte value round-trips through both alphabets", async () => {
-		const bytes = Buffer.from(Array.from({ length: 255 }, (_, i) => i + 1));
+		const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
 		await run(
 			"base64_all_bytes",
 			`
 var sb = StringBuilder()
-for i of 1 .. 256 {
+for i of 0 .. 256 {
 	sb.append_char(i as char)
 }
 const data = sb.to_string()
 Console.write_line(Base64.encode("\\x00\\x00\\x00\\x00"))
+show_url("AAEC")
 const std = Base64.encode(data)
 const url = Base64.encode_url(data)
 Console.write_line(std)
@@ -108,7 +108,7 @@ match Base64.decode_url(url) {
 	case .fail(e) -> Console.write_line("fail")
 }
 `,
-			`AAAAAA==\n${bytes.toString("base64")}\n${bytes.toString("base64url")}\ntrue\ntrue\n`,
+			`AAAAAA==\nok 000102\n${bytes.toString("base64")}\n${bytes.toString("base64url")}\ntrue\ntrue\n`,
 		);
 	});
 });
@@ -185,6 +185,10 @@ describe("Hex", () => {
 ${RFC_INPUTS.map((s) => `Console.write_line("[" + Hex.encode("${s}") + "]")`).join("\n")}
 Console.write_line(Hex.encode("\\x00\\x7F\\x80\\xFF"))
 show_hex("666F6F626172")
+match Hex.decode("00ff0001") {
+	case .ok(b) -> Console.write_line("\\{b.length} \\{Hex.encode(b)}")
+	case .fail(e) -> Console.write_line("fail")
+}
 show_hex("666f6F626172")
 show_hex("")
 show_hex("666")
@@ -193,7 +197,7 @@ show_hex("x6")
 `,
 			"[]\n[66]\n[666f]\n[666f6f]\n[666f6f62]\n[666f6f6261]\n[666f6f626172]\n" +
 				"007f80ff\n" +
-				"ok foobar\nok foobar\nok \ninvalid_length\ninvalid_character 1\ninvalid_character 0\n",
+				"ok foobar\n4 00ff0001\nok foobar\nok \ninvalid_length\ninvalid_character 1\ninvalid_character 0\n",
 		);
 	});
 });

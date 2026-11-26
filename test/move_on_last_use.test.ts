@@ -130,7 +130,7 @@ pub func main = () {
 	// not a mv — the C backend transfers (`u = t`, one free). Both shapes
 	// are audit-clean; the counts pin the real emission per backend.
 	expect(count(a64, "bl string_to_string")).toBe(1);
-	expect(count(a64, "bl _strdup")).toBe(1);
+	expect(count(a64, "// str_copy")).toBe(1);
 	expect(count(a64, "bl _free")).toBe(2);
 });
 

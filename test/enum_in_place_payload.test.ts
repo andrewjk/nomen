@@ -270,6 +270,7 @@ pub func main = (Init init) {
 		const take_at = code.indexOf("Res_ok_init_take(nomen_string text)");
 		const take_body = code.slice(take_at, code.indexOf("}", take_at));
 		expect(take_body).not.toContain("strdup");
+		expect(take_body).not.toContain("str_copy");
 		// The unstamped site (a literal argument) keeps the owning copy.
 		expect(code).toContain("Res r2 = Res_ok_init(");
 		// The stamped construction carries no hoisted temp home.
@@ -314,6 +315,7 @@ pub func main = (Init init) {
 		expect(seq).toContain("str x0, [x29, #");
 		expect(seq).toContain("str x1, [x29, #");
 		expect(seq).not.toContain("bl _strdup");
+		expect(seq).not.toContain("str_copy");
 		expect(seq).not.toContain("_param_");
 	});
 

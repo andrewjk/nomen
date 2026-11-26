@@ -7,6 +7,7 @@
 [666f6f626172]
 007f80ff
 ok foobar
+4 00ff0001
 ok foobar
 ok 
 invalid_length

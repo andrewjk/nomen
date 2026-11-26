@@ -263,10 +263,19 @@ export function materialize_func_value_a64(func: FunctionNode, status: BuildStat
 	if (normalizes_borrow_return) {
 		// `bl` so the (ptr, len) pair can be duplicated: the len half rides x1
 		// across the strdup call, which only consumes the ptr in x0.
+		// Length-based copy (strings may hold NUL bytes) — see emit_strdup.
 		lines.push(`bl ${target}`);
-		lines.push(`str x1, [sp, #-16]!`);
-		lines.push(status.audit ? `bl _nomen_strdup_wrap` : `bl _strdup`);
-		lines.push(`ldr x1, [sp], #16`);
+		const skip = `.Lthunk_dup_null_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+		lines.push(`cbz x0, ${skip}`);
+		lines.push(`stp x0, x1, [sp, #-16]!`);
+		lines.push(`add x0, x1, #1`);
+		lines.push(status.audit ? `bl _nomen_malloc_wrap` : `bl _malloc`);
+		lines.push(`ldp x1, x2, [sp]`);
+		lines.push(`bl _memcpy // str_copy`);
+		lines.push(`ldr x1, [sp, #8]`);
+		lines.push(`strb wzr, [x0, x1]`);
+		lines.push(`add sp, sp, #16`);
+		lines.push(`${skip}:`);
 		if (dest_area > 0) lines.push(`add sp, sp, #${dest_area}`);
 		lines.push(`ldp x29, x30, [sp], #16`);
 		lines.push(`ret`);

@@ -91,9 +91,16 @@ export function emit_string_pair_load_at(
  * ownership of the original.
  */
 export function emit_strdup_string(status: BuildStatus) {
-	emit_asm(status, `str x1, [sp, #-16]!\n`);
-	emit_asm(status, status.audit ? `bl _nomen_strdup_wrap\n` : `bl _strdup\n`);
-	emit_asm(status, `ldr x1, [sp], #16\n`);
+	emit_strdup(status);
+}
+
+/**
+ * Heap-copy the string literal whose ptr is in x0 and whose compile-time
+ * byte length is `len`; leaves the owned pair in (x0, x1).
+ */
+export function emit_strdup_literal(status: BuildStatus, len: number) {
+	emit_asm(status, `mov x1, #${len}\n`);
+	emit_strdup_string(status);
 }
 
 /** free(ptr-half) of the fat value whose ptr is in x0. */
@@ -159,6 +166,7 @@ export function emit_owning_array_string_specialize(
 		emit_asm(status, `cmp x24, x21\n`);
 		emit_asm(status, `b.ge .Larr_str_with_done\n`);
 		emit_asm(status, `mov x0, x19\n`);
+		emit_asm(status, `mov x1, x20\n`);
 		emit_strdup(status);
 		// slot address = buf + cursor (stp has no register-offset form).
 		emit_asm(status, `add x25, x22, x23\n`);
@@ -206,6 +214,7 @@ export function emit_owning_array_string_specialize(
 		emit_free(status);
 		// Deep-copy the incoming value.
 		emit_asm(status, `mov x0, x20\n`);
+		emit_asm(status, `mov x1, x21\n`);
 		emit_strdup(status);
 		emit_asm(status, `str x0, [x9]\n`);
 		emit_asm(status, `str x21, [x9, #8]\n`);

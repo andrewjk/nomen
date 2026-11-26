@@ -106,13 +106,13 @@ describe("StableList tail push stores through the view", () => {
 		// No per-push byte relay: the old flat-tail push_tail did
 		// memcpy + memset against the stage slot.
 		expect(code).not.toContain("push_tail");
-		// The view store's body holds the specialized string store (strdup),
-		// not a raw stage byte move.
+		// The view store's body holds the specialized string store (an
+		// owned string copy, marked `// str_copy`), not a raw stage byte move.
 		const view_start = code.indexOf("Buffer_string_store_in_slab:");
 		expect(view_start).toBeGreaterThan(-1);
 		const next_fn = code.indexOf("\n.p2align", view_start);
 		const view_body = code.slice(view_start, next_fn > view_start ? next_fn : undefined);
-		expect(view_body).not.toContain("bl _memcpy");
+		expect(view_body).not.toMatch(/bl _memcpy(?! \/\/ str_copy)/);
 	});
 
 	test("the C tail push calls the view store, not a stage relay", () => {

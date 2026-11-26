@@ -946,6 +946,7 @@ export function emit_enum_payload_strdups_at(
 				emit_asm(status, `bl ${p_struct.name}_copy\n`);
 			} else {
 				emit_asm(status, `ldr x13, ${payload_addr}\n`);
+				emit_asm(status, `ldr x1, [${base_reg}, #${(base_offset || 0) + payload_off + 8}]\n`);
 				emit_asm(status, `mov x0, x13\n`);
 				emit_strdup(status);
 				// Park the strdup'd copy (x0) before reloading the base — the pop

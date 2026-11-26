@@ -2337,6 +2337,7 @@ function build_access_method(
 					emit_asm(status, `ldr x0, [x19]\n`);
 					emit_free(status);
 					emit_asm(status, `mov x0, x20\n`);
+					emit_asm(status, `mov x1, x21\n`);
 					emit_strdup(status);
 					emit_asm(status, `str x0, [x19]\n`);
 					emit_asm(status, `str x21, [x19, #8]\n`);
@@ -2775,6 +2776,7 @@ function build_access_method(
 					emit_asm(status, `ldr x0, [x22]\n`);
 					emit_free(status);
 					emit_asm(status, `mov x0, x20\n`);
+					emit_asm(status, `mov x1, x21\n`);
 					emit_strdup(status);
 					emit_asm(status, `str x0, [x22]\n`);
 					emit_asm(status, `str x21, [x22, #8]\n`);

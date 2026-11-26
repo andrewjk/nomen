@@ -112,6 +112,7 @@ function emit_pointee_owned_copies_asm(
 		emit_asm(scratch, `ldr x0, [${base}, #${acc}]\n`);
 		const skip = `.Lbcs_${(scratch.label_counter = (scratch.label_counter ?? 0) + 1)}`;
 		emit_asm(scratch, `cbz x0, ${skip}\n`);
+		emit_asm(scratch, `ldr x1, [${base}, #${acc + 8}]\n`);
 		emit_strdup(scratch);
 		emit_asm(scratch, `str x0, [${base}, #${acc}]\n`);
 		emit_asm(scratch, `${skip}:\n`);
@@ -151,6 +152,7 @@ function emit_pointee_owned_copies_asm(
 			emit_asm(scratch, `ldr x0, [${base}, #${offset}]\n`);
 			const skip = `.Lbcs_${(scratch.label_counter = (scratch.label_counter ?? 0) + 1)}`;
 			emit_asm(scratch, `cbz x0, ${skip}\n`);
+			emit_asm(scratch, `ldr x1, [${base}, #${offset + 8}]\n`);
 			emit_strdup(scratch);
 			emit_asm(scratch, `str x0, [${base}, #${offset}]\n`);
 			emit_asm(scratch, `${skip}:\n`);

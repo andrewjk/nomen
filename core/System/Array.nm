@@ -78,7 +78,7 @@ pub struct Array<T>: Viewable {
 				// the displaced slot's bytes (no local: a named copy would be
 				// auto-freed too), then store a fresh deep copy.
 				free((self[index] as ptr char) as uint64)
-				self[index] = strdup(value)
+				self[index] = value.copy()
 			} else {
 				self[index] = value
 			}

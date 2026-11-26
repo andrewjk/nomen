@@ -234,7 +234,7 @@ pub func main = () {
 	// copy is strdup'd (the transfer makes s a heap receptacle), and the
 	// frees are the displaced literal at the reassign, t's flag-guarded
 	// donor free (skipped at runtime), and the transferred block at exit.
-	expect(count(a64, "bl _strdup")).toBe(1);
+	expect(count(a64, "// str_copy")).toBe(1);
 	expect(count(a64, "bl _free")).toBe(3);
 });
 
@@ -415,5 +415,5 @@ pub func main = () {
 	expect(c).toContain("if (!_mv_owns_u) { free(u.ptr); }");
 
 	const a64 = build_main(input, "aarch64");
-	expect(count(a64, "bl _strdup")).toBe(2);
+	expect(count(a64, "// str_copy")).toBe(2);
 });

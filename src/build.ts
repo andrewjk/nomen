@@ -843,14 +843,22 @@ export default function build(
 			`typedef struct { void* ptr; long len; } nomen_view;\n` +
 			`typedef struct { char* ptr; long len; } nomen_string;\n` +
 			`#define nomen_str_lit(s, n) ((nomen_string){ (s), (long)(n) })\n` +
+			// A bare prototype, not <stdlib.h>: a system include here would
+			// precede the runtime's _XOPEN_SOURCE define and pin the wrong
+			// ucontext_t layout (see the feature-test macro note below).
+			`void *malloc(unsigned long);\n` +
 			`#include <string.h>\n` +
-			// In audit mode wrap_c_allocators rewrites this strdup to
-			// nomen_strdup_wrap — declare it before use (the definition lives
-			// in audit_runtime.o, linked separately).
+			// In audit mode wrap_c_allocators rewrites strdup/malloc to the
+			// nomen_*_wrap counters — declare them before use (the definitions
+			// live in audit_runtime.o, linked separately).
 			(options.audit ? `void *nomen_strdup_wrap(const char *);\n` : "") +
 			`static nomen_string nomen_str_dup(nomen_string s) {\n` +
 			`\tif (!s.ptr) return s;\n` +
-			`\tnomen_string r = { strdup(s.ptr), s.len };\n` +
+			// Length-based, not strdup: strings are byte arrays and may
+			// hold NUL bytes, which strdup would truncate at.
+			`\tnomen_string r = { malloc(s.len + 1), s.len };\n` +
+			`\tmemcpy(r.ptr, s.ptr, s.len);\n` +
+			`\tr.ptr[s.len] = 0;\n` +
 			`\treturn r;\n` +
 			`}\n` +
 			status.code;

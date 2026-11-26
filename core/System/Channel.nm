@@ -203,8 +203,16 @@ pub mv struct Channel {
 				str x0, [sp, #16]         // save node across the strdup call
 				ldr x1, [sp, #0]          // value.ptr
 				cbz x1, .Lchannel_send_str_zero
-				mov x0, x1
-				bl _strdup                // x0 = owned copy (node owns its buffer)
+				// Owned copy by length (strings may hold NUL bytes):
+				// x0 = malloc(len + 1); memcpy(x0, ptr, len); x0[len] = 0
+				ldr x0, [sp, #8]          // value.len
+				add x0, x0, #1
+				bl _malloc
+				ldr x1, [sp, #0]          // value.ptr
+				ldr x2, [sp, #8]          // value.len
+				bl _memcpy                // x0 = owned copy (node owns its buffer)
+				ldr x2, [sp, #8]
+				strb wzr, [x0, x2]
 				b .Lchannel_send_str_have
 				.Lchannel_send_str_zero:
 				mov x0, #0

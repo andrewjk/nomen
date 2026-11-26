@@ -113,8 +113,8 @@ function build_tagged_union_enum(
 				// enum value's lifetime is independent of the producer's local
 				// (which is freed at its own scope exit). Bitwise assignment
 				// would leave the payload dangling after that free.
-				status.code += `r._data._${c.name}.${p.name}.ptr = strdup(${p.name}.ptr);\n`;
-				status.code += `r._data._${c.name}.${p.name}.len = ${p.name}.len;\n`;
+				// Length-based (nomen_str_dup): a payload may hold NUL bytes.
+				status.code += `r._data._${c.name}.${p.name} = nomen_str_dup(${p.name});\n`;
 			} else {
 				// Scalars and value structs copy by value; a class/trait
 				// payload copies the mv pointer (construction transfers
@@ -184,7 +184,7 @@ function build_tagged_union_enum(
 			for (const p of c.params) {
 				const ref = payload_is_reference(p.type, status);
 				if (p.type.name === "string" && !ref) {
-					status.code += `if (r.tag == ${node.name}_${c.name}) { r._data._${c.name}.${p.name}.ptr = strdup(r._data._${c.name}.${p.name}.ptr); }\n`;
+					status.code += `if (r.tag == ${node.name}_${c.name}) { r._data._${c.name}.${p.name} = nomen_str_dup(r._data._${c.name}.${p.name}); }\n`;
 				} else if (!ref) {
 					// A mv-STRUCT payload: byte-copying the blob would share the
 					// payload's owned heap state with the source — both deaths

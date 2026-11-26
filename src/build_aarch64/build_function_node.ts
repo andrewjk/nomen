@@ -1650,6 +1650,7 @@ function emit_ref_param_entry_dups(node: FunctionNode, status: BuildStatus) {
 				emit_var_address(status, "x0", param.name);
 			}
 			emit_asm(status, `str x0, [sp, #-16]!\n`);
+			emit_asm(status, `ldr x1, [x0, #${offset + 8}]\n`);
 			emit_asm(status, `ldr x0, [x0, #${offset}]\n`);
 			const nullable = !!struct?.fields.find((f) => f.name === field)?.type.is_nullable;
 			let skip_label: string | undefined;

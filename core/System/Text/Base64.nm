@@ -23,10 +23,6 @@
  * `decode` requires that padding. `encode_url` omits padding (the usual
  * form in URLs, JWTs and cookies); `decode_url` accepts input with or
  * without it.
- *
- * Known gap: on the C and aarch64 backends a decoded value that contains a
- * 0x00 byte is currently truncated at that byte when it is copied into the
- * result (FOLLOWUP.md, "Native string copies are not binary-safe").
  **/
 pub struct Base64 {
 	// Encode data with the standard alphabet, padded with `=`.

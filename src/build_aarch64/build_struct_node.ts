@@ -28,7 +28,7 @@ import { check_c_fallback } from "./build_raw_node.ts";
 import { ensure_runtime_for_method_a64, ensure_weak_runtime_a64 } from "./build_spawn_node.ts";
 import { build_body_with_cursor } from "./emit_nir.ts";
 import aarch64_size from "./utils/aarch64_size.ts";
-import { emit_free, emit_strdup } from "./utils/audit.ts";
+import { emit_free } from "./utils/audit.ts";
 import {
 	emit_destroy_for_anchor_slot,
 	emit_enum_payload_strdups_at,
@@ -66,6 +66,7 @@ import {
 import {
 	emit_owning_array_string_specialize,
 	emit_pair_store_to,
+	emit_strdup_literal,
 	emit_strdup_string,
 } from "./utils/string_pair.ts";
 import {
@@ -799,7 +800,14 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				emit_asm(status, `cbz ${src_reg}, ${skip_label}\n`);
 				with_live_arg_regs_spilled(status, param_regs.slice(slot - 1), () => {
 					emit_asm(status, `mov x0, ${src_reg}\n`);
-					emit_strdup(status);
+					// Length-based copy: the len half is the next slot.
+					if (len_src) {
+						emit_asm(status, `mov x1, ${len_src}\n`);
+					} else {
+						const k2 = slot + 1 - NUM_REG_ARGS;
+						emit_asm(status, `ldr x1, [x29, #${overflow_placeholder(func_name, k2)}]\n`);
+					}
+					emit_strdup_string(status);
 				});
 				// Write the strdup'd pointer back AFTER the pops — the restored
 				// live registers include src_reg's slot and would clobber it.
@@ -881,7 +889,12 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 							const skip = `.arr_elem_strdup_skip_${(status.label_counter =
 								(status.label_counter ?? 0) + 1)}`;
 							emit_asm(status, `cbz x0, ${skip}\n`);
-							emit_strdup(status);
+							// The copy's calls clobber the caller-saved src_reg
+							// (later elements still read through it) — park it.
+							emit_asm(status, `str ${src_reg}, [sp, #-16]!\n`);
+							emit_asm(status, `ldr x1, [x19, #${slot_off + 8}]\n`);
+							emit_strdup_string(status);
+							emit_asm(status, `ldr ${src_reg}, [sp], #16\n`);
 							emit_asm(status, `str x0, [x19, #${slot_off}]\n`);
 							emit_asm(status, `${skip}:\n`);
 						}
@@ -1043,7 +1056,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 						!field.type.is_view
 					) {
 						emit_asm(status, `mov x0, x1\n`);
-						emit_asm(status, `bl _strdup\n`);
+						emit_strdup_literal(status, string_literal_length(val));
 						emit_asm(status, `mov x1, x0\n`);
 					}
 					// Fat-string default: carry the compile-time length half,
@@ -1185,7 +1198,7 @@ function build_init_function(node: StructNode, status: BuildStatus) {
 				// unconditionally at destroy).
 				if (node.is_class || owns_strings_uniformly(node)) {
 					emit_asm(status, `mov x0, x1\n`);
-					emit_asm(status, `bl _strdup\n`);
+					emit_strdup_literal(status, string_literal_length(val));
 					emit_asm(status, `mov x1, x0\n`);
 				}
 				emit_asm(status, `mov x2, #${string_literal_length(val)}\n`);
@@ -1590,7 +1603,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 						!field.type.is_view
 					) {
 						emit_asm(status, `mov x0, x1\n`);
-						emit_asm(status, `bl _strdup\n`);
+						emit_strdup_literal(status, string_literal_length(val));
 						emit_asm(status, `mov x1, x0\n`);
 					}
 					// Fat-string default: carry the compile-time length half,
@@ -1718,7 +1731,7 @@ function build_custom_init_function(node: StructNode, func: FunctionNode, status
 				// unconditionally at destroy).
 				if (node.is_class || owns_strings_uniformly(node)) {
 					emit_asm(status, `mov x0, x1\n`);
-					emit_asm(status, `bl _strdup\n`);
+					emit_strdup_literal(status, string_literal_length(val));
 					emit_asm(status, `mov x1, x0\n`);
 				}
 				emit_asm(status, `mov x2, #${string_literal_length(val)}\n`);

@@ -10,10 +10,6 @@
  *		case .ok(bytes) -> Console.write("\{bytes.length}")   // 2
  *		case .fail(e) -> Console.write("bad hex")
  *	}
- *
- * Known gap: on the C and aarch64 backends a decoded value that contains a
- * 0x00 byte is currently truncated at that byte (FOLLOWUP.md, "Native
- * string copies are not binary-safe").
  **/
 pub struct Hex {
 	// Encode each byte of data as two lowercase hex digits.

@@ -429,6 +429,7 @@ function emit_strdup_field(
 ) {
 	emit_asm(status, `ldr x0, [${src}, #${foff}]\n`);
 	emit_asm(status, `cbz x0, .Lskip_strdup_${label_id}\n`);
+	emit_asm(status, `ldr x1, [${src}, #${foff + 8}]\n`);
 	emit_strdup(status);
 	emit_asm(status, `str x0, [${dst}, #${foff}]\n`);
 	emit_asm(status, `.Lskip_strdup_${label_id}:\n`);
@@ -757,6 +758,7 @@ function emit_owning_standalone_struct(elem: StructNode, func_name: string, stat
 			emit_asm(status, `cmp x1, x2\n`);
 			emit_asm(status, `b.eq ${lbl}\n`);
 			emit_asm(status, `mov x0, x1\n`);
+			emit_asm(status, `ldr x1, [x21, #${foff + 8}]\n`);
 			emit_strdup(status);
 			emit_asm(status, `str x0, [x20, #${foff}]\n`);
 			// Displaced-old reclaim: x2 still holds the slot's pre-copy
@@ -871,6 +873,7 @@ function emit_string_store_T(status: BuildStatus, self_reg: string) {
 	emit_asm(status, `b.eq ${done}\n`); // round-trip alias → keep slot as-is
 	emit_asm(status, `cbz x21, ${store_null}\n`); // NULL → zero the slot pair
 	emit_asm(status, `mov x0, x21\n`);
+	emit_asm(status, `mov x1, x22\n`);
 	emit_strdup(status);
 	emit_asm(status, `str x0, [x20]\n`);
 	emit_asm(status, `str x22, [x20, #8]\n`);
@@ -903,6 +906,7 @@ function emit_string_replace_T(status: BuildStatus, self_reg: string) {
 	emit_free(status); // free(old)
 	emit_asm(status, `cbz x21, ${skip}\n`); // NULL val → zero the slot pair
 	emit_asm(status, `mov x0, x21\n`);
+	emit_asm(status, `mov x1, x22\n`);
 	emit_strdup(status);
 	emit_asm(status, `str x0, [x20]\n`);
 	emit_asm(status, `str x22, [x20, #8]\n`);
@@ -1160,6 +1164,7 @@ function emit_owning_store_T(elem: StructNode, status: BuildStatus) {
 		emit_asm(status, `cmp x1, x2\n`);
 		emit_asm(status, `b.eq ${lbl}\n`);
 		emit_asm(status, `mov x0, x1\n`);
+		emit_asm(status, `ldr x1, [x21, #${foff + 8}]\n`);
 		emit_strdup(status);
 		emit_asm(status, `str x0, [x20, #${foff}]\n`);
 		emit_asm(status, `${lbl}:\n`);

@@ -131,7 +131,7 @@ Console.write("\\{xs.at_or(0, "fallback")}\\{xs.at_or(5, "fallback")}")
 			code.indexOf("List_string_at_or:"),
 			code.lastIndexOf(".return_List_string_at_or:"),
 		);
-		const strdups = at_or_body.match(/bl (_nomen_strdup_wrap|_strdup)/g) ?? [];
+		const strdups = at_or_body.match(/\/\/ str_copy/g) ?? [];
 		expect(strdups.length).toBe(2);
 	});
 

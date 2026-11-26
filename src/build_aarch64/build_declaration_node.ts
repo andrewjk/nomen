@@ -102,6 +102,7 @@ import {
 import {
 	emit_pair_load_x29,
 	emit_pair_store_x29,
+	emit_strdup_literal,
 	emit_strdup_string,
 } from "./utils/string_pair.ts";
 import {
@@ -2310,6 +2311,7 @@ export default function build_declaration_node(
 						// strdup the label ptr: the buffer OWNS its rows (the
 						// scope-exit walk frees each slot's ptr half).
 						emit_asm(status, `adr x0, ${resolve_array_element(raw, str_labels)}\n`);
+						emit_asm(status, `mov x1, #${string_literal_length(raw)}\n`);
 						emit_strdup(status);
 						emit_asm(status, `ldr x9, [x29, #${offset}]\n`);
 						emit_asm(status, `str x0, [x9, #${slot}]\n`);
@@ -2844,8 +2846,7 @@ export default function build_declaration_node(
 									// slots — never the literal's rodata.
 									const label = resolve_array_element(resolved, labels);
 									emit_asm(status, `adr x0, ${label}\n`);
-									emit_strdup(status);
-									emit_asm(status, `mov x1, #${string_literal_length(resolved)}\n`);
+									emit_strdup_literal(status, string_literal_length(resolved));
 									if (slot_offset < 0 || slot_offset + 8 > 504) {
 										emit_asm(status, `str x0, [x29, #${slot_offset}]\n`);
 										emit_asm(status, `str x1, [x29, #${slot_offset + 8}]\n`);
@@ -3569,8 +3570,7 @@ export default function build_declaration_node(
 				const label = `_str_fold_${decl_const_counter++}`;
 				emit_data(status, `${label}: .asciz ${escape_asciz(str_result)}\n.p2align 2\n`);
 				emit_asm(status, `adr x0, ${label}\n`);
-				emit_strdup(status);
-				emit_asm(status, `mov x1, #${string_literal_length(str_result)}\n`);
+				emit_strdup_literal(status, string_literal_length(str_result));
 				emit_pair_store_x29(status, offset);
 				mark_heap_string(status, node.name);
 			} else if (str_result !== null) {
@@ -3660,6 +3660,10 @@ export default function build_declaration_node(
 						mark_heap_string(status, node.name);
 					} else {
 						emit_asm(status, `ldr x0, [x29, #${src_off0 ?? 0}]\n`);
+						emit_asm(
+							status,
+							src_off0 !== undefined ? `ldr x1, [x29, #${src_off0 + 8}]\n` : `mov x1, #0\n`,
+						);
 						emit_strdup(status);
 						if (src_off0 !== undefined) {
 							emit_asm(status, `ldr x1, [x29, #${src_off0 + 8}]\n`);
@@ -3736,8 +3740,7 @@ export default function build_declaration_node(
 						const label = `_str_init_${decl_const_counter++}`;
 						emit_data(status, `${label}: .asciz ${escape_asciz(raw)}\n.p2align 2\n`);
 						emit_asm(status, `adr x0, ${label}\n`);
-						emit_strdup(status);
-						emit_asm(status, `mov x1, #${lit_len}\n`);
+						emit_strdup_literal(status, lit_len);
 						emit_pair_store_x29(status, offset);
 						mark_heap_string(status, node.name);
 					} else {
