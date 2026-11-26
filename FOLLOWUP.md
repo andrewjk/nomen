@@ -848,7 +848,3 @@ marking them `internal` would hide them.
 Several Controls type docs (`Form`, `OtpInput`, `Pagination`, `Window`, `App`)
 still spend their body on implementation history (GUI_PLAN tiers,
 STRUCT_PLAN phases, HANDLERS stages) rather than usage.
-
-Enum cases now take doc comments, but bitset flags still can't: a
-`BitsetNode`'s cases are bare strings with no source position, so
-`attach_doc_comments` has nothing to anchor them to.

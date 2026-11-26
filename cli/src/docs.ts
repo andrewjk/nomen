@@ -265,11 +265,12 @@ function collect_items(
 				if (b.visibility !== "pub") break;
 				items.push(
 					entry("bitset", b, b.name, type_header(text, b.start), {
-						members: b.cases.map((c) => ({
+						members: b.cases.map((c, i) => ({
 							kind: "case" as const,
 							name: c,
-							signature: c,
-							line: line_of(text, b.start),
+							signature: `case ${c}`,
+							doc: b.case_info?.[i]?.doc,
+							line: line_of(text, b.case_info?.[i]?.start ?? b.start),
 						})),
 					}),
 				);

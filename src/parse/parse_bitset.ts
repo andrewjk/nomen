@@ -24,12 +24,16 @@ export default function parse_bitset(
 	node.checked = checked;
 
 	if (expect("{", status)) {
-		while (accept("case", status)) {
+		node.case_info = [];
+		while (true) {
+			const case_start = get_index(status);
+			if (!accept("case", status)) break;
 			// Case names are allowed to be keywords — the name after `case`
 			// in a type body is unambiguous, and every use is dot-prefixed
 			// (`Flags.read`, match/`&` checks) — same exemption as the names
 			// after `func` and the type keywords.
 			node.cases.push(consume(status));
+			node.case_info.push({ start: case_start });
 		}
 		expect("}", status);
 

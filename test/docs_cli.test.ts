@@ -71,6 +71,13 @@ pub func helper = (int a, out int) {
 pub const ANSWER = 42 // not part of the signature
 
 func private_helper = () { }
+
+/** File permissions */
+pub bitset Perm {
+	/** May read **/
+	case read
+	case write
+}
 `,
 	);
 	fs.writeFileSync(
@@ -98,6 +105,7 @@ describe("nomen docs", () => {
 				"Lib::Pick",
 				"Lib::helper",
 				"Lib::ANSWER",
+				"Lib::Perm",
 				"Lib::Text::Words",
 			]);
 
@@ -133,7 +141,12 @@ describe("nomen docs", () => {
 			]);
 			expect(model.entries[3].signature).toBe("func helper = (int a, out int)");
 			expect(model.entries[4].signature).toBe("const ANSWER = 42");
-			expect(model.entries[5].members[0]).toMatchObject({
+			// Bitset flags take docs the same way.
+			expect(model.entries[5].members.map((m) => [m.signature, m.doc, m.line])).toEqual([
+				["case read", "May read", 57],
+				["case write", undefined, 58],
+			]);
+			expect(model.entries[6].members[0]).toMatchObject({
 				kind: "static",
 				signature: "func count = (string s, out int)",
 			});
@@ -157,7 +170,7 @@ describe("nomen docs", () => {
 			expect(md).toContain("- `case one(T value)` — Exactly one value");
 			expect(fs.existsSync(path.join(dir, "docs", "Lib", "Text", "Words.md"))).toBe(true);
 			const json = JSON.parse(fs.readFileSync(path.join(dir, "docs", "api.json"), "utf8"));
-			expect(json.entries).toHaveLength(6);
+			expect(json.entries).toHaveLength(7);
 		} finally {
 			console.log = log;
 			fs.rmSync(dir, { recursive: true });

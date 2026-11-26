@@ -596,6 +596,7 @@ export default function clone_node(node: BaseNode): BaseNode {
 			const n = node as BitsetNode;
 			const c = new BitsetNode(n.start, n.visibility, n.name, n.cases.slice());
 			c.checked = n.checked;
+			c.case_info = n.case_info?.map((ci) => ({ ...ci }));
 			c.allocations = n.allocations?.map(clone_node);
 			copy_namespace_stamps(c, n);
 			return c;

@@ -4,6 +4,12 @@ export default class BitsetNode extends BaseNode {
 	visibility: "pub" | "private" | "internal";
 	name: string;
 	cases: string[];
+	/**
+	 * Per-case source data, parallel to `cases`: where each `case` keyword
+	 * starts (so a doc comment can attach to it) and the attached doc. Kept
+	 * apart from `cases` so the many readers of the name list stay untouched.
+	 */
+	case_info?: { start: number; doc?: string }[];
 	/** True when this bitset is defined in the appended System library source. */
 	is_library?: boolean;
 	/**
