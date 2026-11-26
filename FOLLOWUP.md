@@ -883,11 +883,13 @@ answer:
 Binding the result to a local first (`const c = xs.copy()`, then `c.length`)
 works everywhere. Seen while adding `Array.copy()`.
 
-## `at_or` / `at_or_panic` on a nested array row are wrong on aarch64
+## Library accessors on a row of rows lose the nesting
 
-On a nested array's row, the library accessors misread the row on aarch64:
-`w.at(1).at_or(0, "?")` on `[["ab", "cd"], ["ef"]]` prints `?`, and
-`r.at(0).at_or_panic(1)` on rows of mv structs panics "index out of range".
-`.at(i)` on the same rows is correct. The library mono only sees the
-innermost element type, as with `Array.copy()` (which now copies nested rows
-inline instead). Seen while adding nested `Array.copy()`.
+On a 3+-level nested array, a library accessor that returns an element of a
+row whose elements are themselves rows (`t.at(1).at_or_panic(0)` on
+`[[[1, 2], [3]], [[4]]]`) is typed as the innermost element (`int`), so
+`.length` on it is "Field not found". The library mono only sees the
+innermost element type; its slot reads would also use that element's size,
+not the 8-byte row pointer. `.at(i)` carries the row type correctly, and
+accessors on a row of leaf elements work (fixed for aarch64, where the row's
+base pointer was passed instead of its data pointer).

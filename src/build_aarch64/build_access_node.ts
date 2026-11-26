@@ -3418,6 +3418,7 @@ function build_access_method(
 			} else {
 				build_node(node.target, status);
 				ensure_newline(status);
+				if (is_nested_row_read(node.target)) emit_asm(status, `add x0, x0, #8\n`);
 			}
 		} else {
 			build_node(node.target, status);
@@ -3425,8 +3426,9 @@ function build_access_method(
 			// A heap `Array<T>` value built by build_node (e.g. a field load
 			// `obj.items` → the buffer BASE pointer, or a call result) must be
 			// advanced to the DATA pointer the array methods expect (length at
-			// [base], data at [base+8]).
-			if (target_type.is_array && target_type.is_array_heap) {
+			// [base], data at [base+8]). A row read from a nested array
+			// (`g.at(1)`) is a row buffer's base pointer too.
+			if ((target_type.is_array && target_type.is_array_heap) || is_nested_row_read(node.target)) {
 				emit_asm(status, `add x0, x0, #8\n`);
 			}
 		}
@@ -4508,4 +4510,18 @@ function resolve_access_type(node: AccessNode, status: BuildStatus): Type | null
 	if (!struct) return null;
 	const field = struct.fields.find((f) => f.name === field_name);
 	return field?.type || null;
+}
+
+/**
+ * Whether `target` reads one ROW out of a nested array (`g.at(1)`,
+ * `g.at_or_panic(0)`): nested slots hold each row buffer's BASE pointer
+ * (length at [base]), so a method called on the row needs the data pointer.
+ */
+function is_nested_row_read(target: BaseNode): boolean {
+	if (target.node_type !== "access") return false;
+	const access = target as AccessNode;
+	if (access.access.node_type !== "access_func") return false;
+	const outer = type_from_value_node(access.target);
+	const result = (access.access as AccessFunctionCallNode).type;
+	return !!outer?.is_array && !!outer.elem && !!result?.is_array;
 }

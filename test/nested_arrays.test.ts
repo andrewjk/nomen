@@ -187,6 +187,23 @@ Console.write("\\{total(g)} \\{g.at(0).at(0)}")
 		await build_and_check_output(input, "nested_param", "10 1");
 	});
 
+	test("library accessors on a row (at_or / at_or_panic)", async () => {
+		const input = `
+mv struct Rec {
+	mv string name
+}
+var w = [["ab", "cd"], ["ef"]]
+Console.write(w.at(1).at_or(0, "?") + w.at(0).at_or(1, "?") + w.at(1).at_or(5, "?") + " ")
+var n = [[5, 6], [7]]
+Console.write("\\{n.at(1).at_or(0, 9)} \\{n.at(0).at_or_panic(1)} ")
+var r = [[Rec("a"), Rec("b")], [Rec("c")]]
+Console.write(r.at(0).at_or_panic(1).name + r.at(1).at_or_panic(0).name + " ")
+var t = [[[1, 2], [3]], [[4]]]
+Console.write("\\{t.at(0).at(1).at_or(0, 9)}")
+`;
+		await build_and_check_output(input, "nested_row_accessors", "efcd? 7 6 bc 3");
+	});
+
 	test("owning struct rows (mv element teardown)", async () => {
 		const input = `
 mv struct Rec {
