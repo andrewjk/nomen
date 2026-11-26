@@ -172,6 +172,25 @@ const y = x + 1
 		expect(errors.some((e) => e.message.includes("null"))).toBe(true);
 	});
 
+	test("nullable call results must be checked", () => {
+		const input = `
+func find = (int id, out int?) {
+    if id == 1 {
+        return 10
+    }
+    return null
+}
+
+const a = find(1)
+const b = a + 1
+if a != null {
+    const c = a + 1
+}
+const d = a ?? 0
+`;
+		expect(compile_main(input).map((e) => e.message)).toEqual(["Variable 'a' may be null"]);
+	});
+
 	test("nullable arrays", () => {
 		const input = `
 var Array<int>? xs = null

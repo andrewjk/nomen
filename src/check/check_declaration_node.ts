@@ -360,7 +360,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 					: decl.func_return_type || decl.type,
 			is_set: !!decl.value,
 			start: decl.start,
-			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
+			is_null: decl_starts_null(decl, status),
 			const_value: declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
 			func_params: decl.func_params?.map((p) => ({
@@ -414,7 +414,19 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 
 			const old_expected_type = status.expected_type;
 			status.expected_type = decl.type;
+			// A may-be-null value may initialize a nullable binding — a
+			// declared `T?`, or an inferred copy of a nullable read (`var z =
+			// x`); the binding inherits the null state (decl_starts_null).
+			const old_allow_null = status.allow_null_value;
+			if (
+				decl.type.is_nullable_array ||
+				(decl.type.is_nullable && !decl.type.is_array) ||
+				(!decl.type.name && decl.value.node_type === "value")
+			) {
+				status.allow_null_value = true;
+			}
 			const result = check_node(decl.value, status);
+			status.allow_null_value = old_allow_null;
 			status.expected_type = old_expected_type;
 
 			// ERRORS_PLAN: a postfix `!` anywhere in the initializer RETURNS
@@ -1203,7 +1215,7 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			type: decl.type,
 			is_set: !!decl.value,
 			start: decl.start,
-			is_null: decl.value?.node_type === "value" && (decl.value as any).value === "null",
+			is_null: decl_starts_null(decl, status),
 			const_value: declaration === "const" ? extract_const_value(decl.value) : undefined,
 			constraint: decl.constraint,
 			decl_depth: status.scope_depth,
@@ -1582,4 +1594,30 @@ export function element_slot_load(
 /** The slot-borrow primitive a read spelling lowers to. */
 function slot_load_primitive(call: AccessFunctionCallNode): string {
 	return call.name === "at" ? "slot_ptr" : "get_ptr";
+}
+
+/**
+ * Whether a declaration's binding MAY BE NULL as it starts: a `null`
+ * literal, or a nullable value produced by a call (`find(id)`,
+ * `grid.at_or_null(i)`) or a `?.` chain — read only after a `!= null` guard
+ * or through `??` / `?.`, exactly like a nullable parameter.
+ */
+function decl_starts_null(decl: DeclarationNode, status: CheckStatus): boolean {
+	const value = decl.value;
+	if (!value) return false;
+	if (value.node_type === "value") {
+		const name = (value as ValueNode).value;
+		if (name === "null") return true;
+		// A copy of a may-be-null binding may be null too.
+		return !!status.values.findLast((v) => v.name === name)?.is_null;
+	}
+	const is_call =
+		value.node_type === "func_call" ||
+		value.node_type === "null_access" ||
+		(value.node_type === "access" && (value as AccessNode).access.node_type === "access_func");
+	if (!is_call) return false;
+	// The PRODUCER's type decides: `var string? s = own.copy()` never holds
+	// null, whatever the declared type allows.
+	const t = type_from_value_node(value, status);
+	return !!t && (!!t.is_nullable_array || (!!t.is_nullable && !t.is_array));
 }

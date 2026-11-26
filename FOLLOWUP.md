@@ -886,14 +886,3 @@ declaration from a plain heap-array read is emitted as `long *w`. The
 ownership question is open too (alias or copy). Stores into an existing
 heap-array local now require a fresh array, `mv`, or `.copy()`, but plain
 declarations were not changed. Seen while adding `Array<T>?`.
-
-## Nullable call results are not null-checked before use
-
-Only a variable that starts as a literal `null` gets the "may be null" read
-error. A nullable call result is used unchecked: `const r = grid.at_or_null(9);
-r.length` compiles and dereferences null at runtime. This applies to every
-nullable return (`func f = (out Point?)`, `out string?`, `Array<T>?`), not just
-arrays. Fixing it means marking bindings initialized from a nullable call as
-possibly-null in the checker's null tracking, then narrowing them on
-`!= null`. Existing code that relies on the unchecked use would start failing.
-Seen while adding `Array<T>?`.

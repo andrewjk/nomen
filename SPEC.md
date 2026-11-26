@@ -260,6 +260,27 @@ var int? x = 5
 const y = x + 1          // OK, y = 6
 ```
 
+A nullable value returned by a call (or produced by `?.`) may be null, so its
+binding must be tested with `!= null` before use, or read through `??` or
+`?.`. It can be passed to a nullable parameter or stored in a nullable
+binding unchecked:
+
+```
+func find = (int id, out int?) {
+    if id == 1 {
+        return 10
+    }
+    return null
+}
+
+const a = find(1)
+const b = a + 1          // Error: Variable 'a' may be null
+if a != null {
+    const c = a + 1      // OK
+}
+const d = a ?? 0         // OK
+```
+
 A heap array can be nullable too: `Array<int>?` is an array that may be
 `null` (unlike `Array<int?>`, whose elements may be). It is a pointer, so
 `null` costs nothing extra. Test it with `== null` / `!= null` (which

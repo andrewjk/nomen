@@ -61,7 +61,9 @@ func find = (int flag, out Config?) {
 }
 func probe = () {
 	var Config? a = find(1)
-	Console.write_line(a.name)
+	if a != null {
+		Console.write_line(a.name)
+	}
 	var Config? b = find(0)
 	if b == null {
 		Console.write_line("miss")

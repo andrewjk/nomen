@@ -135,6 +135,9 @@ var int? x = null
 const y = x + 1     // Error: 'x' is null
 ```
 
+A nullable value returned by a call (or `?.`) may be null too: test it with
+`!= null`, or read it through `??` / `?.`, before using it.
+
 ### Visibility
 
 `pub` exports. Visibility tracks **namespaces** (docs/SCOPING.md):

@@ -664,7 +664,7 @@ export default function check_function_call(
 		const old_variadic_arg = status.checking_variadic_arg;
 		if (func_param) {
 			status.expected_type = func_param.type;
-			if (func_param.type.is_nullable) {
+			if (func_param.type.is_nullable || func_param.type.is_nullable_array) {
 				status.allow_null_value = true;
 			}
 			// A variadic-tuple parameter (`...[TK, TV] pairs`): the argument

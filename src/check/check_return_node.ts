@@ -171,7 +171,7 @@ export default function check_return_node(ret: ReturnNode, status: CheckStatus) 
 	// on a `T?` parameter errors with "Variable 'x' may be null" even though
 	// the return type is exactly as nullable as the value.
 	const old_allow_null = status.allow_null_value;
-	if (func?.return_type?.is_nullable) {
+	if (func?.return_type?.is_nullable || func?.return_type?.is_nullable_array) {
 		status.allow_null_value = true;
 	}
 
