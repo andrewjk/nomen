@@ -205,6 +205,14 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	inline_nested_access?: boolean;
 	/**
+	 * `g.at_or(i, fallback)` / `g.at_or_panic(i)` on a NESTED array whose
+	 * result is a row: the library mono only sees the innermost element, so
+	 * check_access_node types the result as the row, hoists the index (and
+	 * fallback) into locals (`params`), and the backends lower a bounds
+	 * check around the inline `.at(i)`.
+	 */
+	nested_checked_access?: "or" | "panic";
+	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring
 	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
 	 * the programmer, so the parameter constraint (bounds check) is skipped —

@@ -2,6 +2,7 @@ import type BuildStatus from "../build_c/BuildStatus.ts";
 import type_from_value_node from "../build_c/utils/type_from_value_node.ts";
 import find_enum, { find_enum_for_case } from "../build_common/find_enum.ts";
 import { mono_type_name, resolve_mono_type } from "../build_common/mono_name.ts";
+import nested_checked_parts from "../build_common/nested_checked_access.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import { has_flag_name } from "../build_common/nullable_struct.ts";
 import {
@@ -29,6 +30,7 @@ import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
 import IndexNode from "../nodes/IndexNode.ts";
 import OperationNode from "../nodes/OperationNode.ts";
+import PanicNode from "../nodes/PanicNode.ts";
 import type StructNode from "../nodes/StructNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
@@ -829,6 +831,12 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			}
 			// Plain `string .at(i)` — same fat-pair layout, inline ldrb.
 			if (build_string_at_inline(node, access_func, status)) {
+				return;
+			}
+			// `at_or` / `at_or_panic` returning a NESTED row: bounds-check the
+			// hoisted index around the inline `.at(i)` row read.
+			if (access_func.nested_checked_access) {
+				build_nested_checked_access(node, access_func, status);
 				return;
 			}
 			// `s.f(args)` where `f` is a func-typed FIELD: an indirect call
@@ -4524,4 +4532,42 @@ function is_nested_row_read(target: BaseNode): boolean {
 	const outer = type_from_value_node(access.target);
 	const result = (access.access as AccessFunctionCallNode).type;
 	return !!outer?.is_array && !!outer.elem && !!result?.is_array;
+}
+
+/**
+ * `g.at_or(i, fb)` / `g.at_or_panic(i)` on a nested array (the result is a
+ * row, `nested_checked_access`): x0 = the row's base pointer from the
+ * inline `.at(i)` when `0 <= i < g.length`, else the fallback (a row base
+ * pointer too) or a panic.
+ */
+function build_nested_checked_access(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	status: BuildStatus,
+): void {
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const fail = `.Lnca_fail_${id}`;
+	const done = `.Lnca_done_${id}`;
+	const { length, at } = nested_checked_parts(node, access_func);
+	build_node(length, status);
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	build_node(access_func.params[0], status);
+	ensure_newline(status);
+	emit_asm(status, `ldr x1, [sp], #16\n`);
+	emit_asm(status, `cmp x0, #0\n`);
+	emit_asm(status, `b.lt ${fail}\n`);
+	emit_asm(status, `cmp x0, x1\n`);
+	emit_asm(status, `b.ge ${fail}\n`);
+	build_node(at, status);
+	ensure_newline(status);
+	emit_asm(status, `b ${done}\n`);
+	emit_asm(status, `${fail}:\n`);
+	if (access_func.nested_checked_access === "or") {
+		build_node(access_func.params[1], status);
+	} else {
+		build_node(new PanicNode(node.start, "index out of range"), status);
+	}
+	ensure_newline(status);
+	emit_asm(status, `${done}:\n`);
 }

@@ -883,13 +883,11 @@ answer:
 Binding the result to a local first (`const c = xs.copy()`, then `c.length`)
 works everywhere. Seen while adding `Array.copy()`.
 
-## Library accessors on a row of rows lose the nesting
+## `first` / `at_end` / `at_or_null` on a nested array lose the nesting
 
-On a 3+-level nested array, a library accessor that returns an element of a
-row whose elements are themselves rows (`t.at(1).at_or_panic(0)` on
-`[[[1, 2], [3]], [[4]]]`) is typed as the innermost element (`int`), so
-`.length` on it is "Field not found". The library mono only sees the
-innermost element type; its slot reads would also use that element's size,
-not the 8-byte row pointer. `.at(i)` carries the row type correctly, and
-accessors on a row of leaf elements work (fixed for aarch64, where the row's
-base pointer was passed instead of its data pointer).
+On a nested array (where the element is a row), these library accessors are
+typed as the innermost element: `w.first().length` on `[["ab"], ["ef"]]` is
+"Field not found: length". The library mono only sees the innermost element
+type. `.at`, `.set`, `at_or` and `at_or_panic` are lowered inline for nested
+receivers instead (`inline_nested_access` / `nested_checked_access` in
+check_access_node); these three would need the same treatment.

@@ -327,3 +327,55 @@ Console.write("\\{s.get_or_panic(12)}")
 		}
 	});
 });
+
+// On a NESTED array the element is a row: the library mono only sees the
+// innermost element, so `at_or` / `at_or_panic` lower inline (a bounds
+// check around `.at(i)`), typed as the row.
+describe("nested array at_or / at_or_panic", () => {
+	test("rows, fallback rows, and deeper levels", async () => {
+		const input = `
+mv struct Rec {
+	mv string name
+}
+const w = [["ab", "cd"], ["ef"]]
+const row = w.at_or_panic(1)
+Console.write_line("\\{row.length} " + row.at_or(0, "?"))
+Console.write_line("\\{w.at_or_panic(0).length} \\{w.at_or(5, ["x", "y", "z"]).length}")
+const n = [[5, 6], [7]]
+const fb = [1, 2, 3, 4]
+var i = 1
+Console.write_line("\\{n.at_or(i, [1]).length} \\{n.at_or(i + 1, fb).length} \\{n.at_or(-1, [9]).at_or(0, 0)}")
+const t = [[[1, 2], [3]], [[4]]]
+Console.write_line("\\{t.at_or_panic(0).length} \\{t.at(1).at_or_panic(0).length} \\{t.at_or_panic(1).at_or_panic(0).at_or(0, 0)}")
+const r = [[Rec("a"), Rec("b")], [Rec("c")]]
+Console.write_line(r.at_or_panic(1).at_or_panic(0).name)
+`;
+		await build_and_check_output(input, "nested_at_or", "1 ef\n2 3\n1 4 9\n2 1 4\nc\n", false, {
+			audit: true,
+			js: true,
+		});
+	});
+
+	test("at_or_panic out of range panics", async () => {
+		const input = `
+const n = [[5, 6], [7]]
+var i = 1
+i += 1
+Console.write_line("\\{n.at_or_panic(i).length}")
+`;
+		await expect(build_and_check_output(input, "nested_at_or_panic", "")).rejects.toThrow(
+			"index out of range",
+		);
+	});
+
+	test("a fallback that is not a row is rejected", () => {
+		const input = `
+const n = [[5, 6], [7]]
+Console.write_line("\\{n.at_or(0, 1).length}")
+`;
+		const parsed = parse_with_imports(input);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Type mismatch in param: int (expected a row of int)",
+		);
+	});
+});
