@@ -132,6 +132,13 @@ keeps C's type checking meaningful.
 
 ### 6. Ownership of rows in library bodies
 
+**Done for `set` (inline, not via the mono):** a nested `g.set(i, row)`
+stays on the `inline_nested_access` store, which now deep-copies the value
+(`deep_array_copy` helpers) and frees the displaced row (`emit_row_free`
+in both backends); the checker's `hoist_row_value` makes the value a heap
+row first. Routing `set` through the mono would need a callable per-row
+copy/destroy symbol for the raw body, which neither backend has yet.
+
 With `T` = an owning row, the library's value-taking bodies inherit the
 owning-element contract: `set(i, value)` must take ownership of `value`
 and free the displaced row (recursively); `with(row, n)` must copy the

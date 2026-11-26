@@ -890,16 +890,6 @@ mono (`Array_Array_int`, docs/ARRAY_NESTED_MONO.md steps 1, 3, 4).
 `at_or_null` still can't: its result would be `Array<int>?`, and nullable
 heap arrays aren't supported yet (`var Array<int>? x = null` is rejected).
 
-## Nested `set` replaces a row unsoundly
-
-`g.set(1, [5, 6, 7])` on `var g = [[1, 2], [3]]` fails to compile on
-aarch64. `g.set(0, row)` with a row variable prints the wrong length, leaks
-one allocation and double-frees one (audit). The nested `set` is lowered
-inline (`inline_nested_access`), storing the row pointer without copying the
-new row or freeing the displaced one. The fix is step 6 of
-docs/ARRAY_NESTED_MONO.md (route `set` to the row mono, with copy-in and a
-recursive free of the displaced row).
-
 ## mv-struct row literal as a nested `at_or` fallback
 
 `r.at_or(i, [Rec("z")])` on an `Array<Array<Rec>>` (Rec has a string field)

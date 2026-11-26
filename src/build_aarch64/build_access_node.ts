@@ -60,6 +60,7 @@ import aarch64_size from "./utils/aarch64_size.ts";
 import { emit_free, emit_malloc, emit_strdup } from "./utils/audit.ts";
 import {
 	all_scope_frames,
+	emit_row_free,
 	find_anchor_slot,
 	mark_moved_if_struct,
 	trait_class_for,
@@ -2257,6 +2258,10 @@ function build_access_method(
 		const can_inline =
 			(!elem_struct?.is_class || target_type.elem) &&
 			(node.target.node_type === "value" || is_fixed_size_field || chained_receiver);
+		if (can_inline && nested_access && access_func.name === "set" && target_type.elem) {
+			build_nested_row_set(node, access_func, target_type.elem, status);
+			return;
+		}
 		if (can_inline) {
 			const elem_size = target_type.elem
 				? 8
@@ -4526,4 +4531,54 @@ function is_nested_row_read(target: BaseNode): boolean {
 	const outer = type_from_value_node(access.target);
 	const result = (access.access as AccessFunctionCallNode).type;
 	return !!outer?.is_array && !!outer.elem && !!result?.is_array;
+}
+
+/**
+ * `g.set(i, row)` on a nested array: store a deep copy of the row value
+ * (the checker made it a heap row buffer) and free the displaced row — the
+ * outer buffer owns its rows. The copy is taken before the free, since the
+ * value may alias the displaced row.
+ */
+function build_nested_row_set(
+	node: AccessNode,
+	access_func: AccessFunctionCallNode,
+	row: Type,
+	status: BuildStatus,
+): void {
+	build_node(access_func.params[1], status);
+	ensure_newline(status);
+	emit_deep_array_copy(status, row);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	// The outer buffer's base pointer.
+	if (node.target.node_type === "value") {
+		const name = (node.target as ValueNode).value;
+		const param_reg = get_param_reg(name, status);
+		if (param_reg) {
+			if (param_reg !== "x0") emit_asm(status, `mov x0, ${param_reg}\n`);
+		} else if (is_local_ref_var(name, status)) {
+			emit_deref_var_address(status, "x0", name);
+			emit_asm(status, `ldr x0, [x0]\n`);
+		} else {
+			emit_var_load(status, "x0", name, 8);
+		}
+	} else {
+		build_node(node.target, status);
+	}
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	build_node(access_func.params[0], status);
+	ensure_newline(status);
+	emit_asm(status, `ldr x9, [sp], #16\n`);
+	emit_asm(status, `add x9, x9, #8\n`);
+	emit_asm(status, `mov x10, #8\n`);
+	emit_asm(status, `madd x9, x0, x10, x9\n`);
+	emit_asm(status, `str x9, [sp, #-16]!\n`);
+	emit_asm(status, `ldr x0, [x9]\n`);
+	const skip = `.Lnrs_${(status.label_counter = (status.label_counter ?? 0) + 1)}`;
+	emit_asm(status, `cbz x0, ${skip}\n`);
+	emit_row_free(status, row);
+	emit_asm(status, `${skip}:\n`);
+	emit_asm(status, `ldr x9, [sp], #16\n`);
+	emit_asm(status, `ldr x0, [sp], #16\n`);
+	emit_asm(status, `str x0, [x9]\n`);
 }

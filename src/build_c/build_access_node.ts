@@ -31,6 +31,7 @@ import type FunctionNode from "../nodes/FunctionNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { string_transfer_donor_owns_heap } from "./build_assignment_node.ts";
+import { emit_row_free } from "./build_auto_free.ts";
 import { ensure_enum_case_take_c } from "./build_enum_node.ts";
 import { emit_nullable_arg_flag } from "./build_function_call_node.ts";
 import build_node from "./build_node.ts";
@@ -761,6 +762,29 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					status.code += `[`;
 					build_node(access_func.params[0], status);
 					status.code += `])`;
+					break;
+				}
+				if (access_func.name === "set" && target_type.elem) {
+					// Replacing a ROW (`g.set(i, row)`): the outer buffer owns
+					// its rows, so store a deep copy of the value (the checker
+					// made it a heap row buffer) and free the displaced row.
+					// The copy is taken first — the value may alias that row.
+					const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+					const row_c = array_elem_c_type(target_type);
+					const slot = `_nset_${id}`;
+					const fresh = `_nset_v_${id}`;
+					const old = `_nset_o_${id}`;
+					const saved = begin_code_scratch(status);
+					build_node(access_func.params[1], status);
+					const value = end_code_scratch(status, saved);
+					status.code += `({ ${row_c} ${fresh} = ${deep_array_copy_c(status, target_type.elem, value)}; `;
+					status.code += `${row_c}* ${slot} = &`;
+					emit_chained_base();
+					status.code += `[`;
+					build_node(access_func.params[0], status);
+					status.code += `]; ${row_c} ${old} = *${slot};\n`;
+					emit_row_free(status, target_type.elem, old);
+					status.code += `*${slot} = ${fresh}; })`;
 					break;
 				}
 				if (access_func.name === "set") {

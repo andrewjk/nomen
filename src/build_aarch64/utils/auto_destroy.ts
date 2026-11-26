@@ -1258,6 +1258,26 @@ function emit_nested_rows_destroy(status: BuildStatus, type: Type, depth = 0): v
 }
 
 /**
+ * Free ONE row of a nested array: x0 = the row's base pointer, of type
+ * `row` (its owned contents — deeper rows, string bytes, owning struct
+ * fields — then the buffer). Used by the nested `set`, which reclaims the
+ * row it displaces. The row is wrapped in a one-slot outer buffer on the
+ * stack so the shared rows walk does the work. x0 is clobbered.
+ */
+export function emit_row_free(status: BuildStatus, row: Type): void {
+	const outer = new Type(row.name);
+	outer.storage_kind = "heap_array";
+	outer.elem = row;
+	emit_asm(status, `sub sp, sp, #16\n`);
+	emit_asm(status, `str x0, [sp, #8]\n`);
+	emit_asm(status, `mov x1, #1\n`);
+	emit_asm(status, `str x1, [sp]\n`);
+	emit_asm(status, `mov x0, sp\n`);
+	emit_nested_rows_destroy(status, outer);
+	emit_asm(status, `add sp, sp, #16\n`);
+}
+
+/**
  * A heap-registered NESTED array declaration (`heap_nested_array_types`):
  * free every row (and its owned contents) through the buffer pointer, then
  * the buffer itself. x0 is clobbered.

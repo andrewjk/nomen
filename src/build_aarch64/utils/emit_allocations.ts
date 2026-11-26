@@ -56,6 +56,18 @@ export default function emit_allocations(node: BaseNode, status: BuildStatus) {
 		if (status.emitted_allocations.has(alloc)) continue;
 		status.emitted_allocations.add(alloc);
 		if (forwarded.has((alloc as DeclarationNode).name)) continue;
+		// A hoisted temp whose initializer carries its own hoisted temps (a
+		// nested array literal moved into a `_param_N` — its row temps hang
+		// off the literal, which the statement walk no longer reaches):
+		// emit those first.
+		const init = (alloc as DeclarationNode).value;
+		if (init) {
+			for (const inner of collect_allocations(init)) {
+				if (status.emitted_allocations.has(inner)) continue;
+				status.emitted_allocations.add(inner);
+				build_node(inner, status, true);
+			}
+		}
 		build_node(alloc, status, true);
 	}
 }

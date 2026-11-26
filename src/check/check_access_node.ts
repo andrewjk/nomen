@@ -764,11 +764,21 @@ export function check_access_function_node(
 			}
 			if (node.name === "set" && node.params.length === 2) {
 				const elem = target_type.elem ?? new Type(target_type.name);
-				for (const param of node.params) {
-					status.expected_type = elem;
-					check_node(param, status);
+				if (target_type.elem) {
+					// Replacing a ROW: the backends deep-copy the value into the
+					// slot and free the displaced row, so the value must be a
+					// heap row buffer (see hoist_row_value).
+					check_node(node.params[0], status);
+					const value = hoist_row_value(node.params[1], target_type.elem, status);
+					if (!value) return false;
+					node.params[1] = value;
+				} else {
+					for (const param of node.params) {
+						status.expected_type = elem;
+						check_node(param, status);
+					}
+					status.expected_type = undefined;
 				}
-				status.expected_type = undefined;
 				node.type = new Type("void");
 				node.inline_nested_access = true;
 				return true;
@@ -1665,6 +1675,54 @@ function check_spawn_start_on(
 		return false;
 	}
 	return true;
+}
+
+/**
+ * The row value of a nested `g.set(i, row)`, checked against the row type
+ * and made a HEAP row buffer the store can deep-copy from: an array literal
+ * is hoisted as a heap literal and a stack-array variable as a heap copy
+ * (both freed at scope exit); a heap row (variable, field, row read) passes
+ * through. Undefined (with an error) when the value is not a row.
+ */
+function hoist_row_value(
+	value: BaseNode,
+	row_type: Type,
+	status: CheckStatus,
+): BaseNode | undefined {
+	status.expected_type = row_type;
+	check_node(value, status);
+	status.expected_type = undefined;
+	const value_type = type_from_value_node(value, status);
+	if (
+		!value_type?.is_array ||
+		value_type.name !== row_type.name ||
+		!!value_type.elem !== !!row_type.elem
+	) {
+		add_error(
+			status,
+			`Type mismatch in param: ${value_type?.name ?? "?"} (expected a row of ${row_type.name})`,
+			value.start,
+		);
+		return undefined;
+	}
+	const heap_type = clone_type(row_type);
+	heap_type.storage_kind = "heap_array";
+	heap_type.length = undefined;
+	const is_stack_var = value.node_type === "value" && value_type.storage_kind === "stack_array";
+	if (!is_stack_var && value.node_type !== "array") return value;
+	const name = `_param_${status.var_name_counter.value++}`;
+	// A NESTED literal is heap-built at every level already (a plain
+	// declaration, like `const r = [[1], [2]]`); a flat one needs the heap
+	// literal form.
+	const decl_type = value.node_type === "array" && row_type.elem ? value_type : heap_type;
+	const decl = new DeclarationNode(value.start, "private", "const", name, decl_type, value);
+	if (is_stack_var) {
+		decl.is_heap_array_copy = true;
+	} else if (!row_type.elem) {
+		decl.is_heap_array_literal = true;
+	}
+	status.allocations.push(decl);
+	return new ValueNode(value.start, name, decl_type);
 }
 
 /** Array methods a NESTED receiver dispatches to its row-keyed mono

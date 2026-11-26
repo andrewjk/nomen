@@ -819,28 +819,55 @@ export function emit_nested_buffer_free(
 		// outer level must not free it again.
 		emit_nested_buffer_free(status, elem, row, depth + 1);
 	} else {
-		if (elem.name === "string") {
-			status.code += `\tfor (long ${j} = 0; ${j} < ${row}->length; ${j}++) {\n`;
-			status.code += `\t\tnomen_string* _d = (nomen_string*)((char*)${row} + sizeof(struct Array_string));\n`;
-			status.code += `\t\tfree(_d[${j}].ptr);\n`;
-			status.code += `\t}\n`;
-		} else {
-			const elem_struct = status.structs.find(
-				(s) => s.name === elem.name && !s.is_simple_type && !s.is_generic,
-			);
-			if (elem_struct && struct_needs_destroy(elem_struct, status)) {
-				status.code += `\tfor (long ${j} = 0; ${j} < ${row}->length; ${j}++) {\n`;
-				emit_struct_destroys(
-					status,
-					elem_struct,
-					`((struct ${elem.name}*)((char*)${row} + sizeof(struct Array_${elem.name})))[${j}]`,
-				);
-				status.code += `\t}\n`;
-			}
-		}
+		emit_flat_row_contents_free(status, elem, row, j);
 		status.code += `\tfree(${row});\n`;
 	}
 	status.code += `}\n`;
+	status.code += `free(${expr});\n`;
+}
+
+/** Free the OWNED contents of a flat (innermost) row `row` whose element
+ *  type is `elem`: every string slot's bytes, or every owning struct's
+ *  field destroys. The row buffer itself is left to the caller. */
+function emit_flat_row_contents_free(
+	status: BuildStatus,
+	elem: Type,
+	row: string,
+	j: string,
+): void {
+	if (elem.name === "string") {
+		status.code += `\tfor (long ${j} = 0; ${j} < ${row}->length; ${j}++) {\n`;
+		status.code += `\t\tnomen_string* _d = (nomen_string*)((char*)${row} + sizeof(struct Array_string));\n`;
+		status.code += `\t\tfree(_d[${j}].ptr);\n`;
+		status.code += `\t}\n`;
+		return;
+	}
+	const elem_struct = status.structs.find(
+		(s) => s.name === elem.name && !s.is_simple_type && !s.is_generic,
+	);
+	if (elem_struct && struct_needs_destroy(elem_struct, status)) {
+		status.code += `\tfor (long ${j} = 0; ${j} < ${row}->length; ${j}++) {\n`;
+		emit_struct_destroys(
+			status,
+			elem_struct,
+			`((struct ${elem.name}*)((char*)${row} + sizeof(struct Array_${elem.name})))[${j}]`,
+		);
+		status.code += `\t}\n`;
+	}
+}
+
+/**
+ * Free ONE row of a nested array — `expr` is the row's buffer pointer
+ * (`struct Array_<leaf>*`) of type `row`: its owned contents (rows of rows
+ * recursively, string bytes, owning struct fields), then the buffer. Used
+ * by the nested `set`, which reclaims the row it displaces.
+ */
+export function emit_row_free(status: BuildStatus, row: Type, expr: string): void {
+	if (row.elem) {
+		emit_nested_buffer_free(status, row, expr, 8);
+		return;
+	}
+	emit_flat_row_contents_free(status, row, expr, "_jr");
 	status.code += `free(${expr});\n`;
 }
 

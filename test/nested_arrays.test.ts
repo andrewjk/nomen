@@ -236,4 +236,44 @@ pub func main = () {
 			js: true,
 		});
 	});
+
+	test("set replaces a row (copy in, displaced row freed)", async () => {
+		const input = `import System
+mv struct Rec {
+	mv string name
+}
+pub func main = () {
+	var g = [[1, 2], [3]]
+	g.set(1, [5, 6, 7])
+	var row = [8, 9]
+	g.set(0, row)
+	g.set(1, g.at(0))
+	Console.write("\\{g.at(0).length} \\{g.at(1).length} \\{row.length} ")
+	var w = [["ab", "cd"], ["ef"]]
+	w.set(0, ["x"])
+	const r2 = ["p", "q"]
+	w.set(1, r2)
+	Console.write(w.at(0).at(0) + w.at(1).at(1) + r2.at(0) + " ")
+	var r = [[Rec("a"), Rec("b")], [Rec("c")]]
+	r.set(1, r.at(0))
+	Console.write(r.at(1).at(1).name + r.at(0).at(0).name + " ")
+	var t = [[[1, 2], [3]], [[4]]]
+	t.set(1, [[5, 6, 7], [8]])
+	t.at(0).set(1, [9, 9])
+	Console.write("\\{t.at(1).at(0).length} \\{t.at(0).at(1).length}")
+}
+`;
+		await build_and_check_output(input, "nested_set_rows", "2 2 2 xqp ba 3 2", true, {
+			audit: true,
+			js: true,
+		});
+	});
+
+	test("set with a non-row value is rejected", () => {
+		const parsed = parse(`var g = [[1, 2], [3]]
+g.set(0, 5)`);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Type mismatch in param: int (expected a row of int)",
+		);
+	});
 });
