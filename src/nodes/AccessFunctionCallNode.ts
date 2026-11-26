@@ -205,14 +205,6 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	inline_nested_access?: boolean;
 	/**
-	 * `g.at_or(i, fallback)` / `g.at_or_panic(i)` on a NESTED array whose
-	 * result is a row: the library mono only sees the innermost element, so
-	 * check_access_node types the result as the row, hoists the index (and
-	 * fallback) into locals (`params`), and the backends lower a bounds
-	 * check around the inline `.at(i)`.
-	 */
-	nested_checked_access?: "or" | "panic";
-	/**
 	 * A method on a NESTED array dispatched to the row-keyed mono
 	 * (`Array_Array_int_first`, docs/ARRAY_NESTED_MONO.md) whose result is a
 	 * row: the call yields the row's heap buffer (base) pointer.

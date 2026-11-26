@@ -1,3 +1,4 @@
+import { array_row_type } from "../check/utils/array_row_types.ts";
 import type AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import type AccessNode from "../nodes/AccessNode.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
@@ -15,6 +16,10 @@ export function element_copy_struct(
 	structs: StructNode[],
 ): StructNode | undefined {
 	if (!name) return undefined;
+	// A nested array's row (`Array_Rec` in `Array_Array_Rec`) is a buffer
+	// pointer; its copy ABI differs from a value struct's (row-T copy is
+	// docs/ARRAY_NESTED_MONO.md step 2 — nested `copy()` lowers inline).
+	if (array_row_type(name)) return undefined;
 	const st = structs.find(
 		(s) => s.name === name && !s.is_class && !s.is_simple_type && !s.is_generic,
 	);

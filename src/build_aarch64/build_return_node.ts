@@ -105,11 +105,11 @@ function current_return_is_string(status: BuildStatus): boolean {
 	// A `ptr string` return is a bare machine word (the element-borrow
 	// primitive's slot pointer — docs/HANDLERS.md Stage 4), never a fat
 	// string: the strdup/ownership normalization must not fire on it.
-	if (rt) return rt.name === "string" && !rt.is_view && !rt.is_pointer;
+	if (rt) return rt.name === "string" && !rt.is_view && !rt.is_pointer && !rt.is_array;
 	if (status.current_struct && status.current_function_name) {
 		const fn = status.current_struct.functions.find((f) => f.name === status.current_function_name);
 		const frt = fn?.return_type;
-		return !!frt && frt.name === "string" && !frt.is_view && !frt.is_pointer;
+		return !!frt && frt.name === "string" && !frt.is_view && !frt.is_pointer && !frt.is_array;
 	}
 	return false;
 }

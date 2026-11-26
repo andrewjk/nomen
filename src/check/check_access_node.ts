@@ -762,13 +762,6 @@ export function check_access_function_node(
 				node.inline_nested_access = true;
 				return true;
 			}
-			if (
-				target_type.elem &&
-				((node.name === "at_or" && node.params.length === 2) ||
-					(node.name === "at_or_panic" && node.params.length === 1))
-			) {
-				return check_nested_checked_access(node, target_type.elem, status);
-			}
 			if (node.name === "set" && node.params.length === 2) {
 				const elem = target_type.elem ?? new Type(target_type.name);
 				for (const param of node.params) {
@@ -1674,88 +1667,10 @@ function check_spawn_start_on(
 	return true;
 }
 
-/**
- * `g.at_or(i, fallback)` / `g.at_or_panic(i)` where `g` is a nested array
- * (the result is a row). The library mono would type the result as the
- * innermost element, so the call is lowered by the backends instead: the
- * index (and a non-variable fallback) is hoisted into a local so the bounds
- * check and the inline `.at` read it once, and the result is a borrow of
- * the row (or of the fallback), like `.at`.
- */
-function check_nested_checked_access(
-	node: AccessFunctionCallNode,
-	row_type: Type,
-	status: CheckStatus,
-): boolean {
-	const hoist = (param: BaseNode, type: Type, heap_literal: boolean): ValueNode => {
-		if (param.node_type === "value" && !(param as ValueNode).value.match(/^[-+]?\d/)) {
-			return param as ValueNode;
-		}
-		const name = `_param_${status.var_name_counter.value++}`;
-		const decl = new DeclarationNode(param.start, "private", "const", name, type, param);
-		if (heap_literal) decl.is_heap_array_literal = true;
-		status.allocations.push(decl);
-		return new ValueNode(param.start, name, type);
-	};
-	const index = node.params[0];
-	check_node(index, status);
-	const index_type = type_from_value_node(index, status);
-	if (index_type?.name && index_type.name !== "int") {
-		add_error(status, `Type mismatch in param: ${index_type.name} (expected int)`, index.start);
-		return false;
-	}
-	const params: BaseNode[] = [hoist(index, new Type("int"), false)];
-	if (node.name === "at_or") {
-		const fallback = node.params[1];
-		status.expected_type = row_type;
-		check_node(fallback, status);
-		status.expected_type = undefined;
-		const fallback_type = type_from_value_node(fallback, status);
-		if (
-			!fallback_type?.is_array ||
-			fallback_type.name !== row_type.name ||
-			!!fallback_type.elem !== !!row_type.elem
-		) {
-			add_error(
-				status,
-				`Type mismatch in param: ${fallback_type?.name ?? "?"} (expected a row of ${row_type.name})`,
-				fallback.start,
-			);
-			return false;
-		}
-		const heap_type = clone_type(row_type);
-		heap_type.storage_kind = "heap_array";
-		heap_type.length = undefined;
-		if (fallback.node_type === "value" && fallback_type.storage_kind === "stack_array") {
-			// A stack-array variable (`const fb = [1, 2]`): rows are heap
-			// buffers, so pass a heap copy (freed at scope exit).
-			const name = `_param_${status.var_name_counter.value++}`;
-			const decl = new DeclarationNode(
-				fallback.start,
-				"private",
-				"const",
-				name,
-				heap_type,
-				fallback,
-			);
-			decl.is_heap_array_copy = true;
-			status.allocations.push(decl);
-			params.push(new ValueNode(fallback.start, name, heap_type));
-		} else {
-			params.push(hoist(fallback, heap_type, fallback.node_type === "array"));
-		}
-	}
-	node.params = params;
-	node.type = clone_type(row_type);
-	node.inline_nested_access = true;
-	node.nested_checked_access = node.name === "at_or" ? "or" : "panic";
-	return true;
-}
-
 /** Array methods a NESTED receiver dispatches to its row-keyed mono
  *  (`Array<Array<int>>` → `Array_Array_int`, whose `T` is the row) — see
  *  docs/ARRAY_NESTED_MONO.md. */
-const ROW_MONO_METHODS = new Set(["first", "at_end"]);
+const ROW_MONO_METHODS = new Set(["first", "at_end", "at_or", "at_or_panic"]);
 
 /** The generic spelling of a nested array's row type (`Array<int>`,
  *  `Array<Array<int>>`, …) for monomorphizing `Array` on it. */

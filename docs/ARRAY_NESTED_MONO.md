@@ -1,6 +1,7 @@
 # Plan: monomorphize nested arrays on their real element type
 
-Status: steps 1, 3 and 4 started — `first` / `at_end` on nested receivers
+Status: steps 1, 3 and 4 started — `first` / `at_end` / `at_or` /
+`at_or_panic` on nested receivers
 dispatch to the row-keyed mono (`ROW_MONO_METHODS` in check_access_node,
 row types in `check/utils/array_row_types.ts`); the other methods still use
 the leaf mono and the special paths below. Written after the `Array.copy` /

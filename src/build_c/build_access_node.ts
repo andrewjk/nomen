@@ -9,7 +9,6 @@ import {
 	type InPlacePushFacts,
 } from "../build_common/in_place_push.ts";
 import { mono_type_name } from "../build_common/mono_name.ts";
-import nested_checked_parts from "../build_common/nested_checked_access.ts";
 import { is_nullable_scalar_type } from "../build_common/nullable_scalar.ts";
 import {
 	is_nullable_enum_with_data,
@@ -29,7 +28,6 @@ import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import type FunctionNode from "../nodes/FunctionNode.ts";
-import PanicNode from "../nodes/PanicNode.ts";
 import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import { string_transfer_donor_owns_heap } from "./build_assignment_node.ts";
@@ -646,26 +644,6 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// through the stored code pointer, cast to the field's signature.
 			if (access_func.is_func_field_call) {
 				build_func_field_call(node, access_func, status);
-				return;
-			}
-			// `at_or` / `at_or_panic` returning a NESTED row: bounds-check the
-			// hoisted index around the inline `.at(i)` row read.
-			if (access_func.nested_checked_access) {
-				const { length, at } = nested_checked_parts(node, access_func);
-				const scratch = (n: BaseNode): string => {
-					const saved = begin_code_scratch(status);
-					build_node(n, status);
-					return end_code_scratch(status, saved);
-				};
-				const index = scratch(access_func.params[0]);
-				let fail: string;
-				if (access_func.nested_checked_access === "or") {
-					fail = scratch(access_func.params[1]);
-				} else {
-					const panic = scratch(new PanicNode(node.start, "index out of range"));
-					fail = `({ ${panic} (${array_elem_c_type(target_type)})0; })`;
-				}
-				status.code += `((${index} >= 0 && ${index} < ${scratch(length)}) ? ${scratch(at)} : ${fail})`;
 				return;
 			}
 			// `copy()` of a NESTED array: the library mono only sees the

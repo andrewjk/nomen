@@ -1761,9 +1761,13 @@ export default function build_declaration_node(
 			// carrier's own cleanup frees.) Mirrors the aarch64 declaration
 			// path.
 			{
-				const binding_struct = status.structs.find(
-					(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
-				);
+				// A row binding (`const row = g.at_or_panic(i)`) is an array of
+				// structs, not a struct value.
+				const binding_struct = node.type?.is_array
+					? undefined
+					: status.structs.find(
+							(s) => s.name === node.type?.name && !s.is_simple_type && !s.is_class,
+						);
 				const init_access =
 					node.value?.node_type === "access"
 						? ((node.value as AccessNode).access as { node_type?: string; name?: string })

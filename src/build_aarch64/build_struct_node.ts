@@ -2175,6 +2175,7 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				param.type.is_view ||
 				(param.type.name === "string" &&
 					!param.type.is_ref &&
+					!param.type.is_array &&
 					!(param.is_self_param && param.is_ref))
 			) {
 				slot_idx += 2;
@@ -2199,9 +2200,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			// stays in the callee-saved register path too (see
 			// build_function_node).
 			const is_struct_type =
-				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
-				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
-				!!status.traits.find((t) => t.name === param.type.name);
+				!param.type.is_array_heap &&
+				(!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+					!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
+					!!status.traits.find((t) => t.name === param.type.name));
 			if (is_struct_type && callee_idx < callee_saved.length) {
 				const saved_reg = callee_saved[callee_idx++];
 				if (saved_reg !== "x19" || !needs_x19) {
@@ -2228,6 +2230,13 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 			}
 			if (param.type.is_ref) {
 				status.function_ref_params!.add(param.name);
+			}
+			// A heap-array param (a nested array's row `T` in a row-keyed
+			// Array mono) holds the row's buffer pointer: a value use loads it
+			// (mirrors build_function_node's `heap_array_vars` registration).
+			if (param.type.is_array_heap && !param.is_self_param && !param.is_variadic) {
+				if (!status.heap_array_vars) status.heap_array_vars = new Set();
+				status.heap_array_vars.add(param.name);
 			}
 			const param_struct = status.structs.find((s) => s.name === param.type.name && s.is_class);
 			if (param_struct) {
@@ -2383,9 +2392,10 @@ function build_struct_functions(node: StructNode, status: BuildStatus) {
 				continue;
 			}
 			const is_struct_type =
-				!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
-				!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
-				!!status.traits.find((t) => t.name === param.type.name);
+				!param.type.is_array_heap &&
+				(!!status.structs.find((s) => s.name === param.type.name && !s.is_simple_type) ||
+					!!status.enums.find((e) => e.name === param.type.name && e.has_associated_data) ||
+					!!status.traits.find((t) => t.name === param.type.name));
 			if (!is_struct_type) {
 				// A `ref T` param receives an 8-byte pointer to the caller's
 				// storage regardless of T's size, so the local slot must

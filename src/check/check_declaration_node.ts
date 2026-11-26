@@ -304,7 +304,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			if (
 				decl.value?.node_type === "access" &&
 				(decl.value as AccessNode).access.node_type === "access_func" &&
-				((decl.value as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+				(((decl.value as AccessNode).access as AccessFunctionCallNode).inline_nested_access ===
+					true ||
+					((decl.value as AccessNode).access as AccessFunctionCallNode).returns_row === true)
 			) {
 				decl.transferred_to_outer = true;
 			}
@@ -465,7 +467,9 @@ export default function check_declaration_node(decl: DeclarationNode, status: Ch
 			if (
 				decl.value?.node_type === "access" &&
 				(decl.value as AccessNode).access.node_type === "access_func" &&
-				((decl.value as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+				(((decl.value as AccessNode).access as AccessFunctionCallNode).inline_nested_access ===
+					true ||
+					((decl.value as AccessNode).access as AccessFunctionCallNode).returns_row === true)
 			) {
 				decl.transferred_to_outer = true;
 			}

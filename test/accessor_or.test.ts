@@ -356,6 +356,25 @@ Console.write_line(r.at_or_panic(1).at_or_panic(0).name)
 		});
 	});
 
+	test("row bindings of string and mv-struct rows", async () => {
+		const input = `
+mv struct Rec {
+	mv string name
+}
+const r = [[Rec("a"), Rec("b")], [Rec("c")]]
+var i = 1
+const row = r.at_or_panic(i)
+Console.write_line(row.at_or_panic(0).name + r.at_or_panic(0).at_or_panic(1).name)
+const w = [["ab", "cd"], ["ef"]]
+const wr = w.at_or(i + 4, ["x", "y", "z"])
+Console.write_line("\\{wr.length} " + wr.at_or(2, "?"))
+`;
+		await build_and_check_output(input, "nested_at_or_bindings", "cb\n3 z\n", false, {
+			audit: true,
+			js: true,
+		});
+	});
+
 	test("at_or_panic out of range panics", async () => {
 		const input = `
 const n = [[5, 6], [7]]
@@ -375,7 +394,7 @@ Console.write_line("\\{n.at_or(0, 1).length}")
 `;
 		const parsed = parse_with_imports(input);
 		expect(parsed.errors.map((e) => e.message)).toContain(
-			"Type mismatch in param: int (expected a row of int)",
+			"Type mismatch in param: int (expected Array<int>)",
 		);
 	});
 });
