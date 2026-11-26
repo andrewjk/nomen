@@ -11,9 +11,21 @@
  * How a child dimension is sized: auto (to content), fixed, percent, or fill
  **/
 pub enum LayoutLength {
+	/**
+	 * Size to the content's natural size.
+	 **/
 	case auto // size to content (intrinsic measurement)
+	/**
+	 * Exactly `pixels` points.
+	 **/
 	case fixed(int pixels) // exact size
+	/**
+	 * `numerator` percent of the available space (50 is half).
+	 **/
 	case percent(int numerator) // numerator/100 of available space (e.g. 50 = 50%)
+	/**
+	 * Take all the available space (the same as `grow = 1`).
+	 **/
 	case fill // fill all available space (same as grow=1)
 }
 
@@ -21,9 +33,21 @@ pub enum LayoutLength {
  * How a child is positioned within available space (start / center / end / stretch)
  **/
 pub enum Alignment {
+	/**
+	 * Align to the start (top or left).
+	 **/
 	case start
+	/**
+	 * Center.
+	 **/
 	case center
+	/**
+	 * Align to the end (bottom or right).
+	 **/
 	case end
+	/**
+	 * Stretch to fill the cross axis.
+	 **/
 	case stretch
 }
 
@@ -33,10 +57,25 @@ pub enum Alignment {
  * Per-child layout preferences: requested dimensions, flex grow/shrink weights, and alignment
  **/
 pub struct LayoutParams {
+	/**
+	 * How wide the child is.
+	 **/
 	pub var LayoutLength width = .auto
+	/**
+	 * How tall the child is.
+	 **/
 	pub var LayoutLength height = .auto
+	/**
+	 * The child's share of any spare space along the stack (0 doesn't grow).
+	 **/
 	pub var grow = 0 // flex weight for distributing surplus space
+	/**
+	 * The child's share of any shortfall along the stack (0 doesn't shrink).
+	 **/
 	pub var shrink = 0 // flex weight for distributing deficit
+	/**
+	 * How the child sits across the stack, overriding the stack's alignment.
+	 **/
 	pub var Alignment align_self = .stretch // cross-axis alignment override
 }
 

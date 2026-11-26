@@ -9,8 +9,14 @@
  * Continuous control: read `value` each frame in the manual event loop.
  **/
 pub mv struct Slider: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A slider in `window` ranging from `min` to `max`.
+	 **/
 	pub func #init = (self, Window window, float min, float max) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -82,6 +88,10 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -113,6 +123,9 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * Set the lowest value.
+	 **/
 	pub func set_min = (self, float min) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -140,6 +153,9 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * Set the highest value.
+	 **/
 	pub func set_max = (self, float max) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -167,6 +183,9 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * Move the slider to `value`.
+	 **/
 	pub func set_value = (self, float value) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -194,6 +213,9 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * The slider's current value.
+	 **/
 	pub func value = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -221,6 +243,9 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -248,6 +273,9 @@ pub mv struct Slider: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -257,6 +285,9 @@ pub mv struct Slider: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

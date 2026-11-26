@@ -10,8 +10,14 @@
  * group view (TODO stubs; see GUI_PLAN Tier 1 #17).
  **/
 pub mv struct GroupBox: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A titled box in `window` for grouping related controls.
+	 **/
 	pub func #init = (self, Window window, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -65,6 +71,10 @@ pub mv struct GroupBox: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -92,6 +102,9 @@ pub mv struct GroupBox: Control {
 		}
 	}
 
+	/**
+	 * Set the control's title.
+	 **/
 	pub func set_title = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -121,6 +134,9 @@ pub mv struct GroupBox: Control {
 		}
 	}
 
+	/**
+	 * The control's title.
+	 **/
 	pub func get_title = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -154,8 +170,9 @@ pub mv struct GroupBox: Control {
 		}
 	}
 
-	// The NSBoxType (0 = primary/boxed) — exposes the native style for tests
-	// and diagnostics.
+	/**
+	 * The native box style (0 is the standard boxed style), for tests and diagnostics.
+	 **/
 	pub func box_type = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -183,6 +200,9 @@ pub mv struct GroupBox: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -208,6 +228,9 @@ pub mv struct GroupBox: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -217,6 +240,9 @@ pub mv struct GroupBox: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

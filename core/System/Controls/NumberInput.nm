@@ -15,21 +15,35 @@
  * `handle`).
  **/
 pub mv struct NumberInput {
+	/**
+	 * The text field half.
+	 **/
 	mv TextBox box
+	/**
+	 * The stepper half.
+	 **/
 	mv Stepper step
 
+	/**
+	 * A number field with a stepper beside it, in `window`.
+	 **/
 	pub func #init = (ref self, Window window) {
 		self.box = TextBox(window)
 		self.step = Stepper(window)
 	}
 
-	// The stepper's range and nudge size.
+	/**
+	 * Set the lowest and highest values and how much each stepper click changes the value.
+	 **/
 	pub func set_range = (ref self {}, float min, float max, float increment) {
 		self.step.set_min(min)
 		self.step.set_max(max)
 		self.step.set_increment(increment)
 	}
 
+	/**
+	 * Set the value, updating both the stepper and the text.
+	 **/
 	// Drive BOTH controls: the stepper holds the value, the text mirrors it
 	// (the float's %f rendering).
 	pub func set_value = (ref self {}, float v) {
@@ -38,12 +52,18 @@ pub mv struct NumberInput {
 		self.box.set_text(text)
 	}
 
-	// The current value (the stepper's — typed text is not parsed back in
-	// v1; the next nudge overwrites the text).
+	/**
+	 * The current value. Text typed into the field isn't read back yet; the next stepper
+	 * click overwrites it.
+	 **/
 	pub func value = (self, out float) {
 		return self.step.value()
 	}
 
+	/**
+	 * Add the field and stepper to `grid` under `parent`, as a row with the field filling
+	 * the width and the stepper at its natural size.
+	 **/
 	// Wire the pair into the caller's grid under `parent`: an hstack with
 	// the box filling the row and the stepper at its intrinsic width.
 	// Hit-testing works through the usual grid.contains on the fields'

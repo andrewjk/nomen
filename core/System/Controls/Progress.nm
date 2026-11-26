@@ -11,8 +11,14 @@
  * uses a distinct class) see `Spinner`.
  **/
 pub mv struct Progress: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An empty progress bar in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -92,6 +98,10 @@ pub mv struct Progress: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -123,8 +133,11 @@ pub mv struct Progress: Control {
 		}
 	}
 
-	// The filled fraction, 0..1. iOS stores a float (32-bit); the value is
-	// therefore only float32-exact there (0.25, 0.5, … are).
+	/**
+	 * Set how full the bar is, from 0 to 1.
+	 **/
+	// iOS stores a float (32-bit); the value is therefore only float32-exact there
+	// (0.25, 0.5, … are).
 	pub func set_value = (self, float value) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -152,6 +165,9 @@ pub mv struct Progress: Control {
 		}
 	}
 
+	/**
+	 * How full the bar is, from 0 to 1.
+	 **/
 	pub func value = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -179,9 +195,10 @@ pub mv struct Progress: Control {
 		}
 	}
 
-	// Switch between the determinate bar and the barber-pole. Determinate
-	// values are kept across the switch; an indeterminate bar animates on
-	// its own (no per-frame pump needed).
+	/**
+	 * Switch between a bar that shows `value` and an animated "busy" bar. The value is kept
+	 * across the switch, and the busy bar animates by itself.
+	 **/
 	pub func set_indeterminate = (self, bool indeterminate) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -225,6 +242,9 @@ pub mv struct Progress: Control {
 		}
 	}
 
+	/**
+	 * Whether the bar is in its animated "busy" mode.
+	 **/
 	pub func is_indeterminate = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -252,6 +272,9 @@ pub mv struct Progress: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -279,6 +302,9 @@ pub mv struct Progress: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -288,6 +314,9 @@ pub mv struct Progress: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

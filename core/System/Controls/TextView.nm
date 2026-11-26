@@ -12,6 +12,9 @@
  * constraints like every other leaf.
  **/
 pub mv struct TextView: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -19,6 +22,9 @@ pub mv struct TextView: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * An empty multi-line text editor in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -116,6 +122,10 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -147,6 +157,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * Replace the control's text.
+	 **/
 	pub func set_text = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -182,6 +195,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * Set the hint text shown while the field is empty.
+	 **/
 	// The placeholder: gray hint text shown while the view is empty. Unlike
 	// set_text, it is not the view's value — get_text still reports "" until
 	// the user types. AppKit has no public NSTextView placeholder API, so this
@@ -223,6 +239,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * The control's current text.
+	 **/
 	pub func get_text = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -262,6 +281,9 @@ pub mv struct TextView: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -271,6 +293,9 @@ pub mv struct TextView: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

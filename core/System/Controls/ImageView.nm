@@ -11,8 +11,14 @@
  * reads false) — there is no error channel for images.
  **/
 pub mv struct ImageView: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An empty image view in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -72,6 +78,10 @@ pub mv struct ImageView: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -103,7 +113,9 @@ pub mv struct ImageView: Control {
 		}
 	}
 
-	// Load the image at `path`. A missing/undecodable file clears the view.
+	/**
+	 * Show the image file at `path`. A missing or unreadable file clears the view.
+	 **/
 	pub func set_path = (self, string path) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -147,7 +159,9 @@ pub mv struct ImageView: Control {
 		}
 	}
 
-	// Load a named system symbol (SF Symbols). An unknown name clears the view.
+	/**
+	 * Show the named system symbol (an SF Symbols name). An unknown name clears the view.
+	 **/
 	pub func set_symbol = (self, string name) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -189,7 +203,9 @@ pub mv struct ImageView: Control {
 		}
 	}
 
-	// True when the view currently holds an image.
+	/**
+	 * Whether the view is showing an image.
+	 **/
 	pub func has_image = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -217,6 +233,9 @@ pub mv struct ImageView: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -244,6 +263,9 @@ pub mv struct ImageView: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -253,6 +275,9 @@ pub mv struct ImageView: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

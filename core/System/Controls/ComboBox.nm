@@ -13,8 +13,14 @@
  * iOS blocks are TODO stubs).
  **/
 pub mv struct ComboBox: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An empty combo box in `window`: a text field with a drop-down list of suggestions.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -63,6 +69,10 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -90,6 +100,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Add `title` to the end of the drop-down list.
+	 **/
 	pub func add_item = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -119,6 +132,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Remove every item from the list.
+	 **/
 	pub func remove_all = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -142,6 +158,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * The number of items in the list.
+	 **/
 	pub func item_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -169,7 +188,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
-	// A fresh copy of item `index`'s text (mv — the caller owns it).
+	/**
+	 * The text of item `index`.
+	 **/
 	pub func item = (self, int index, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -205,6 +226,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * The control's current text.
+	 **/
 	// The edited/selected text, polled (a fresh copy — the caller owns it).
 	pub func get_text = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -241,6 +265,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Replace the control's text.
+	 **/
 	pub func set_text = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -270,8 +297,10 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
-	// The selected item's index, polled; -1 = no selection. (User free-typing
-	// clears it; a programmatic set_text does not.)
+	/**
+	 * The index of the selected list item, or -1 when none is (typing in the field clears
+	 * the selection; `set_text` does not).
+	 **/
 	pub func selected_index = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -299,6 +328,10 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_select`: whether the selection changed since the last poll.
+	 * Read the new selection from the control.
+	 **/
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the user
 	// selected a list entry (or pressed Return) since the last drain — the
 	// record is consumed. User-driven only: AppKit sends the combo's action
@@ -331,6 +364,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Select list item `index`.
+	 **/
 	pub func set_selected = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -356,6 +392,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -371,6 +410,9 @@ pub mv struct ComboBox: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -380,6 +422,9 @@ pub mv struct ComboBox: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

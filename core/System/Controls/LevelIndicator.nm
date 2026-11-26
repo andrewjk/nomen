@@ -11,8 +11,14 @@
  * 1 discrete capacity, 2 continuous capacity, 3 rating (stars).
  **/
 pub mv struct LevelIndicator: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A level indicator in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -64,6 +70,10 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -91,7 +101,10 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
-	// 0 relevancy, 1 discrete capacity, 2 continuous capacity, 3 rating stars.
+	/**
+	 * Set the look: 0 relevancy bar, 1 discrete capacity, 2 continuous capacity, 3 star
+	 * rating.
+	 **/
 	pub func set_style = (self, int style) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -117,6 +130,9 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * Set the value that shows as full.
+	 **/
 	pub func set_max = (self, float max) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -142,6 +158,9 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * Set the level, from 0 to `max()`.
+	 **/
 	pub func set_value = (self, float value) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -167,6 +186,9 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * The current level.
+	 **/
 	pub func value = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -194,6 +216,9 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * The value that shows as full.
+	 **/
 	pub func max = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -221,6 +246,9 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -246,6 +274,9 @@ pub mv struct LevelIndicator: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -255,6 +286,9 @@ pub mv struct LevelIndicator: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

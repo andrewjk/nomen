@@ -2,8 +2,17 @@
  * A picked color's 0-255 components (`ColorPicker.rgb`'s return value)
  **/
 pub struct Rgb {
+	/**
+	 * Red, from 0 to 255.
+	 **/
 	pub var red = 0
+	/**
+	 * Green, from 0 to 255.
+	 **/
 	pub var green = 0
+	/**
+	 * Blue, from 0 to 255.
+	 **/
 	pub var blue = 0
 }
 
@@ -19,8 +28,14 @@ pub struct Rgb {
  * round trip is exact to ±1 (the getters round).
  **/
 pub mv struct ColorPicker: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A color well in `window`; clicking it opens the system color panel.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -80,6 +95,10 @@ pub mv struct ColorPicker: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -111,7 +130,9 @@ pub mv struct ColorPicker: Control {
 		}
 	}
 
-	// Set the well's color from 0-255 components.
+	/**
+	 * Set the color from red, green and blue components, each 0 to 255.
+	 **/
 	pub func set_rgb = (self, int red, int green, int blue) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -151,9 +172,10 @@ pub mv struct ColorPicker: Control {
 		}
 	}
 
-	// The well's current color as 0-255 components ([red, green, blue]).
-	// A color the user picked from the panel can land between two 255ths —
-	// the components round to the nearest.
+	/**
+	 * The current color as 0–255 components. A color picked in the panel is rounded to the
+	 * nearest step.
+	 **/
 	pub func rgb = (self, out Rgb) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -213,6 +235,9 @@ pub mv struct ColorPicker: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -240,6 +265,9 @@ pub mv struct ColorPicker: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -249,6 +277,9 @@ pub mv struct ColorPicker: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

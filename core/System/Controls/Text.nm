@@ -13,6 +13,9 @@
  * GUI.md, "Click events" and the `#handle` note).
  **/
 pub mv struct Text: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -20,6 +23,9 @@ pub mv struct Text: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * An empty text label in `window`. Set its text with `set_text`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -107,6 +113,9 @@ pub mv struct Text: Control {
 		}
 	}
 
+	/**
+	 * Replace the control's text.
+	 **/
 	pub func set_text = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -142,6 +151,9 @@ pub mv struct Text: Control {
 		}
 	}
 
+	/**
+	 * The control's current text.
+	 **/
 	// The label's current text, read from the native control (the label
 	// carries no Nomen-side text cache).
 	pub func get_text = (self, out string) {
@@ -183,8 +195,9 @@ pub mv struct Text: Control {
 		}
 	}
 
-	// Switch the label between the regular and bold system font. Bold is for
-	// section headings, so they read as headers rather than sibling labels.
+	/**
+	 * Use the bold system font (for section headings) or the regular one.
+	 **/
 	pub func set_bold = (self, bool bold) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -233,6 +246,9 @@ pub mv struct Text: Control {
 	// line is `text.length × 8` wide and 8px tall (see GUI.md "Native control
 	// refactor"). The default frame is 0,0,0,0; layout drives the real rectangle.
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -241,6 +257,9 @@ pub mv struct Text: Control {
 		return s
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -249,6 +268,10 @@ pub mv struct Text: Control {
 		return s
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {

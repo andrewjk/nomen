@@ -23,9 +23,18 @@
  * Tier 2).
  **/
 pub mv struct ListView: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
+	/**
+	 * The native table inside the scroll view (internal).
+	 **/
 	var uint64 table = 0
 
+	/**
+	 * An empty single-column list in `window`.
+	 **/
 	// File-scope helpers: the row storage (shared — one List per process)
 	// and the delegate class answering the two data-source questions.
 	pub func #init = (self, Window window) {
@@ -269,7 +278,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// Append a row (a NUL-terminated copy is stored) and reload.
+	/**
+	 * Add a row with `text` at the end.
+	 **/
 	pub func add_row = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -295,7 +306,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// Replace row `index`'s text and reload.
+	/**
+	 * Replace the text of row `index`.
+	 **/
 	pub func set_row = (self, int index, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -325,7 +338,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// Delete row `index` and reload.
+	/**
+	 * Remove row `index`.
+	 **/
 	pub func remove_row = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -351,7 +366,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// Delete every row and reload.
+	/**
+	 * Remove every row.
+	 **/
 	pub func clear = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -377,6 +394,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
+	/**
+	 * The number of rows.
+	 **/
 	pub func row_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -402,7 +422,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// A fresh copy of row `index`'s text (mv — the caller owns it).
+	/**
+	 * The text of row `index`.
+	 **/
 	pub func row = (self, int index, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -432,8 +454,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// The selected row, polled (no change callback in the manual loop);
-	// -1 = no selection.
+	/**
+	 * The selected row, or -1 when nothing is selected.
+	 **/
 	pub func selected_row = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -459,6 +482,10 @@ pub mv struct ListView: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_select`: whether the selection changed since the last poll.
+	 * Read the new selection from the control.
+	 **/
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
 	// selected row changed since the last drain — user clicks AND
 	// programmatic select_row (the delegate observes both; a pre-selection
@@ -492,7 +519,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
-	// Select a row programmatically (deselects the rest).
+	/**
+	 * Select row `index`, deselecting any other.
+	 **/
 	pub func select_row = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -526,6 +555,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -541,6 +573,10 @@ pub mv struct ListView: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -569,6 +605,9 @@ pub mv struct ListView: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -577,6 +616,9 @@ pub mv struct ListView: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

@@ -10,8 +10,14 @@
  * number-input is exactly that pairing).
  **/
 pub mv struct Stepper: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An up/down stepper in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -87,6 +93,10 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -118,6 +128,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Set the lowest value.
+	 **/
 	pub func set_min = (self, float min) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -145,6 +158,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Set the highest value.
+	 **/
 	pub func set_max = (self, float max) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -172,7 +188,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
-	// The per-click step size.
+	/**
+	 * Set how much each click changes the value.
+	 **/
 	pub func set_increment = (self, float increment) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -200,6 +218,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Set the value.
+	 **/
 	pub func set_value = (self, float value) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -227,7 +248,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
-	// The current value — polled per frame (each click lands between frames).
+	/**
+	 * The current value.
+	 **/
 	pub func value = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -255,6 +278,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -282,6 +308,9 @@ pub mv struct Stepper: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -291,6 +320,9 @@ pub mv struct Stepper: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

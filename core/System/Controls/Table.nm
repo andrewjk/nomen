@@ -20,9 +20,18 @@
  * grid; see GUI_PLAN Tier 2 — the iOS blocks are TODO stubs).
  **/
 pub mv struct Table: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
+	/**
+	 * The native table inside the scroll view (internal).
+	 **/
 	var uint64 table = 0
 
+	/**
+	 * An empty table with `cols` columns in `window`.
+	 **/
 	// File-scope helper: the cell pool (shared — one Table per process) and
 	// the delegate class answering the row count and building reusable cell
 	// views.
@@ -400,7 +409,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// Set a column's header label (the live column title).
+	/**
+	 * Set the header label of column `col`.
+	 **/
 	pub func set_header = (self, int col, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -442,7 +453,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// Append an empty row and reload; cells render as "" until set_cell.
+	/**
+	 * Add an empty row at the end; its cells are blank until `set_cell`.
+	 **/
 	pub func add_row = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -468,7 +481,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// Set one cell's text and reload.
+	/**
+	 * Set the text of the cell at `row`, `col`.
+	 **/
 	pub func set_cell = (self, int row, int col, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -494,7 +509,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// Delete row `index` and reload.
+	/**
+	 * Remove row `index`.
+	 **/
 	pub func remove_row = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -520,7 +537,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// Delete every row and reload.
+	/**
+	 * Remove every row.
+	 **/
 	pub func clear = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -546,6 +565,9 @@ pub mv struct Table: Control {
 		}
 	}
 
+	/**
+	 * The number of rows.
+	 **/
 	pub func row_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -571,6 +593,9 @@ pub mv struct Table: Control {
 		}
 	}
 
+	/**
+	 * The number of columns.
+	 **/
 	pub func col_count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -596,7 +621,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// A fresh copy of cell (row, col)'s text (mv — the caller owns it).
+	/**
+	 * The text of the cell at `row`, `col`.
+	 **/
 	pub func cell = (self, int row, int col, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -632,8 +659,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// The selected row, polled (no change callback in the manual loop);
-	// -1 = no selection.
+	/**
+	 * The selected row, or -1 when nothing is selected.
+	 **/
 	pub func selected_row = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -659,6 +687,10 @@ pub mv struct Table: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_select`: whether the selection changed since the last poll.
+	 * Read the new selection from the control.
+	 **/
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
 	// selected row changed since the last drain — user clicks AND
 	// programmatic select_row (the delegate observes both; a pre-selection
@@ -692,7 +724,9 @@ pub mv struct Table: Control {
 		}
 	}
 
-	// Select a row programmatically (deselects the rest).
+	/**
+	 * Select row `index`, deselecting any other.
+	 **/
 	pub func select_row = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -726,6 +760,9 @@ pub mv struct Table: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -741,6 +778,10 @@ pub mv struct Table: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -769,6 +810,9 @@ pub mv struct Table: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -777,6 +821,9 @@ pub mv struct Table: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

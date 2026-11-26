@@ -18,8 +18,14 @@
  * GUI_PLAN Tier 2; defer with TODO stubs).
  **/
 pub mv struct Tabs: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A tab view in `window` with `count` pages. Label them with `set_label`.
+	 **/
 	// File-scope helper: the page view class. It answers `-contentView` with
 	// `self` so Window-expecting constructors add their controls to the page
 	// view (registered once, like NomenResizeDelegate).
@@ -189,11 +195,13 @@ pub mv struct Tabs: Control {
 		}
 	}
 
-	// A Window-shaped handle to page `index`'s view: pass it to control
-	// constructors and `Container.layout` to host controls on that page. The
-	// value retains the page view (+1), so its scope-exit `#destroy` releases
-	// its OWN reference and the Tabs' stays balanced — keep the Tabs alive at
-	// least as long as the returned value.
+	/**
+	 * A `Window` handle for page `index`: pass it to control constructors and
+	 * `Container.layout` to put controls on that page. Keep the tab view alive at least as
+	 * long as the handle.
+	 **/
+	// The value retains the page view (+1), so its scope-exit `#destroy` releases its
+	// OWN reference and the Tabs' stays balanced.
 	pub func content_window = (self, int index, out Window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -247,6 +255,9 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * Set the label of tab `index`.
+	 **/
 	pub func set_label = (self, int index, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -280,6 +291,9 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * Show page `index`.
+	 **/
 	pub func set_selected = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -305,6 +319,9 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * The index of the page showing.
+	 **/
 	pub func selected_index = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -338,6 +355,10 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_select`: whether the selection changed since the last poll.
+	 * Read the new selection from the control.
+	 **/
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the
 	// selected tab changed since the last drain — user clicks AND
 	// programmatic set_selected (the delegate observes both; a
@@ -370,6 +391,9 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * The number of pages.
+	 **/
 	pub func count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -397,6 +421,9 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -412,6 +439,10 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -440,6 +471,9 @@ pub mv struct Tabs: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -448,6 +482,9 @@ pub mv struct Tabs: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

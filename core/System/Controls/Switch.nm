@@ -9,8 +9,14 @@
  * Pairs with CheckBox: check = task state, switch = preference.
  **/
 pub mv struct Switch: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An off switch in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -74,6 +80,10 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -105,6 +115,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Check or uncheck the control.
+	 **/
 	pub func set_checked = (self, bool checked) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -134,6 +147,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Whether the control is checked.
+	 **/
 	pub func is_checked = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -165,6 +181,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -192,6 +211,9 @@ pub mv struct Switch: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -201,6 +223,9 @@ pub mv struct Switch: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

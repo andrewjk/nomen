@@ -7,6 +7,9 @@
  * the inline instance (the `.` accessor); methods keep the pointer form.
  **/
 pub mv struct TextBox: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -14,6 +17,9 @@ pub mv struct TextBox: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * An empty single-line text field in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -111,6 +117,10 @@ pub mv struct TextBox: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -142,6 +152,9 @@ pub mv struct TextBox: Control {
 		}
 	}
 
+	/**
+	 * Replace the control's text.
+	 **/
 	pub func set_text = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -177,6 +190,9 @@ pub mv struct TextBox: Control {
 		}
 	}
 
+	/**
+	 * Set the hint text shown while the field is empty.
+	 **/
 	// The placeholder: gray hint text shown while the field is empty. Unlike
 	// set_text, it is not the field's value — get_text still reports "" until
 	// the user types.
@@ -220,6 +236,10 @@ pub mv struct TextBox: Control {
 	// naming convention is the contract. Arming and native plumbing live
 	// inside the drains.
 
+	/**
+	 * Handler hook behind `on_click`: whether the control was clicked since the last poll.
+	 * Use either `on_click` or `was_clicked` for a control, not both.
+	 **/
 	// Click edge (the gesture recognizer arms this view — see
 	// nomen_window_clicks_init; arming is idempotent per handle).
 	pub func take_click = (self, out bool) {
@@ -227,16 +247,26 @@ pub mv struct TextBox: Control {
 		return nomen_control_take_click(self.handle)
 	}
 
+	/**
+	 * Handler hook behind `on_focus`: whether the control gained keyboard focus this frame.
+	 **/
 	// Focus edge: true the frame this control GAINED first-responder status.
 	pub func take_focus = (self, out bool) {
 		return nomen_control_take_focus(self.handle)
 	}
 
+	/**
+	 * Handler hook behind `on_blur`: whether the control lost keyboard focus this frame.
+	 **/
 	// Blur edge: true the frame this control LOST first-responder status.
 	pub func take_blur = (self, out bool) {
 		return nomen_control_take_blur(self.handle)
 	}
 
+	/**
+	 * Handler hook behind `on_input`: whether the control's text changed since the last
+	 * poll.
+	 **/
 	// Text-input edge: true when the control's text changed since the last
 	// drain (the field editor writes through to stringValue while typing —
 	// each keystroke is one edge). First drain baselines silently.
@@ -244,6 +274,9 @@ pub mv struct TextBox: Control {
 		return nomen_control_take_input(self.handle)
 	}
 
+	/**
+	 * The control's current text.
+	 **/
 	pub func get_text = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -283,6 +316,10 @@ pub mv struct TextBox: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_submit`: whether the user pressed Return in the field since
+	 * the last poll. Read the text with `get_text()`.
+	 **/
 	// The on_submit desugar's drain (docs/HANDLERS.md tier 2): true when
 	// the user committed this field (Return) since the last drain — the
 	// record is consumed, one commit fires an arm exactly once.
@@ -316,6 +353,9 @@ pub mv struct TextBox: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -325,6 +365,9 @@ pub mv struct TextBox: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

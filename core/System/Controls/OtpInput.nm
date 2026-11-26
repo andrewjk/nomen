@@ -8,12 +8,30 @@
  * fields are hit-tested through their handles like every control's).
  **/
 pub mv struct OtpInput {
+	/**
+	 * Digit field 1.
+	 **/
 	mv SecureField f0
+	/**
+	 * Digit field 2.
+	 **/
 	mv SecureField f1
+	/**
+	 * Digit field 3.
+	 **/
 	mv SecureField f2
+	/**
+	 * Digit field 4.
+	 **/
 	mv SecureField f3
+	/**
+	 * Digit field 5.
+	 **/
 	mv SecureField f4
 
+	/**
+	 * A five-digit code entry in `window`.
+	 **/
 	pub func #init = (ref self, Window window) {
 		self.f0 = SecureField(window)
 		self.f1 = SecureField(window)
@@ -22,8 +40,9 @@ pub mv struct OtpInput {
 		self.f4 = SecureField(window)
 	}
 
-	// Wire the five fields into the caller's grid under `parent`: an hstack
-	// of fixed-width boxes.
+	/**
+	 * Add the five fields to `grid` under `parent`, as a row of fixed-width boxes.
+	 **/
 	pub func add_to = (ref self {}, ref Container grid { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int parent, int span) {
 		var int hs = grid.add_hstack(parent, 8, span)
 		grid.add_to(hs, self.f0.handle, 36, 28, 0, 1)
@@ -33,13 +52,17 @@ pub mv struct OtpInput {
 		grid.add_to(hs, self.f4.handle, 36, 28, 0, 1)
 	}
 
-	// The concatenated contents of the five fields, in order.
+	/**
+	 * The text of the five fields joined in order.
+	 **/
 	pub func code = (self, out string) {
 		return self.f0.get_text() + self.f1.get_text() + self.f2.get_text()
 		+self.f3.get_text() + self.f4.get_text()
 	}
 
-	// Empty every field.
+	/**
+	 * Empty every field.
+	 **/
 	pub func clear = (ref self {}) {
 		self.f0.set_text("")
 		self.f1.set_text("")

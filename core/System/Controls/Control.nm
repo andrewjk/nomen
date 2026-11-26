@@ -14,16 +14,22 @@
  * The polymorphic interface every UI node implements (measure / set_frame / intrinsic_size)
  **/
 pub trait Control {
-	// Given these constraints, report the size you want to be.
-	// Must satisfy min_width ≤ result.width ≤ max_width (ditto height).
+	/**
+	 * The size this control wants, within `constraints`: the result must lie between their
+	 * minimum and maximum on each axis.
+	 **/
 	func measure = (self, BoxConstraints constraints, out Size)
 
-	// Apply a concrete rectangle. For native controls this calls setFrame: on the
-	// platform handle. For containers this also arranges children.
+	/**
+	 * Apply a concrete rectangle, in points. Native controls move their platform view;
+	 * containers also arrange their children.
+	 **/
 	func set_frame = (ref self, int x, int y, int width, int height)
 
-	// What size would you be with unbounded space? (Used by parents to decide
-	// wrapping, scrolling, etc. Default: call measure with infinity.)
+	/**
+	 * The size this control would be with unlimited space. Parents use it to decide on
+	 * wrapping, scrolling and so on.
+	 **/
 	func intrinsic_size = (self, out Size)
 }
 

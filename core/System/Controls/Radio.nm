@@ -13,6 +13,9 @@
  * NSRadioButton). iOS defers to Segmented or a checkmark list.
  **/
 pub mv struct Radio: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
 	// The `#handle` hook synthesizes `NameHandle` — a copyable, non-owning
@@ -20,6 +23,9 @@ pub mv struct Radio: Control {
 	// capture this control without moving it. See GUI.md, "Handles".
 	#handle = () { }
 
+	/**
+	 * A radio button labelled `title` in `window`.
+	 **/
 	pub func #init = (self, Window window, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -81,6 +87,10 @@ pub mv struct Radio: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -108,6 +118,9 @@ pub mv struct Radio: Control {
 		}
 	}
 
+	/**
+	 * Set the control's title.
+	 **/
 	pub func set_title = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -137,6 +150,9 @@ pub mv struct Radio: Control {
 		}
 	}
 
+	/**
+	 * Check or uncheck the control.
+	 **/
 	pub func set_checked = (self, bool checked) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -164,6 +180,9 @@ pub mv struct Radio: Control {
 		}
 	}
 
+	/**
+	 * Whether the control is checked.
+	 **/
 	pub func is_checked = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -193,6 +212,9 @@ pub mv struct Radio: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -218,6 +240,9 @@ pub mv struct Radio: Control {
 		}
 	}
 
+	/**
+	 * Whether the control was clicked since the last check. Each click is reported once.
+	 **/
 	// ── Control trait conformance ──
 	// Edge-triggered click poll: true exactly once per click (the record
 	// is consumed). Backed by the native target/action queue —
@@ -227,6 +252,10 @@ pub mv struct Radio: Control {
 		return nomen_control_take_click(self.handle)
 	}
 
+	/**
+	 * Handler hook behind `on_click`: whether the control was clicked since the last poll.
+	 * Use either `on_click` or `was_clicked` for a control, not both.
+	 **/
 	// The on_click desugar's drain (docs/HANDLERS.md): the synthesized pump
 	// arm polls this per frame. Same edge as was_clicked — register one way
 	// or the other, never both (first consumer wins).
@@ -234,6 +263,9 @@ pub mv struct Radio: Control {
 		return nomen_control_take_click(self.handle)
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -242,6 +274,9 @@ pub mv struct Radio: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

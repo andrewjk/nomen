@@ -20,9 +20,18 @@
  * (TODO stubs; see GUI_PLAN Tier 2).
  **/
 pub mv struct Scrollable: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
+	/**
+	 * The native document view that holds the content (internal).
+	 **/
 	var uint64 doc = 0
 
+	/**
+	 * A scroll view in `window`. Add controls to it through `content_window`.
+	 **/
 	// File-scope helper: the document view class. It answers `-contentView`
 	// with `self` so Window-expecting constructors add their controls to the
 	// document view (registered once, like NomenResizeDelegate).
@@ -124,12 +133,12 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
-	// A Window-shaped handle to the document view: pass it to control
-	// constructors and `Container.layout` to host controls in the scroll
-	// view. The value retains the document view (+1), so its scope-exit
-	// `#destroy` releases its OWN reference and the Scrollable's stays
-	// balanced — keep the Scrollable alive at least as long as the returned
-	// value.
+	/**
+	 * A `Window` handle for the scrolling content: pass it to control constructors and
+	 * `Container.layout`. Keep the scroll view alive at least as long as the handle.
+	 **/
+	// The value retains the document view (+1), so its scope-exit `#destroy` releases
+	// its OWN reference and the Scrollable's stays balanced.
 	pub func content_window = (self, out Window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -177,6 +186,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * The native handle of the content view. Pass it with `handle` to
+	 * `Container.set_document` so the window's relayout keeps the content sized.
+	 **/
 	// The document view's native handle — pair with `handle` to register
 	// this scroll view's document via `Container.set_document` (the
 	// Window.run relayout registry). Scalars, so the registration call
@@ -185,6 +198,10 @@ pub mv struct Scrollable: Control {
 		return self.doc
 	}
 
+	/**
+	 * Set the size of the scrolling content. Call it after measuring the content's grid and
+	 * before laying it out. Content shorter than the scroll view is stretched to fill it.
+	 **/
 	// Size the document view to the laid-out content. Call between the
 	// content grid's unbounded `measure` and its `layout(content)` — the
 	// flip needs the document height to equal the content height before
@@ -228,6 +245,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Scroll to the top of the content. Call it once after the first layout, since a new
+	 * scroll view starts at the bottom.
+	 **/
 	// Scroll so the top of the document is visible. The document view is
 	// unflipped (the engine's flip math owns the coordinates), and NSScrollView
 	// initially shows an unflipped document's bottom-left corner — call once
@@ -277,6 +298,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * How far the content is scrolled down from its top, in points (0 at the top). Add it
+	 * to a click's y within the scroll view to find the content point under it.
+	 **/
 	// How far the document is scrolled from its top, in document pixels
 	// (0 = top). Add this to a window-space click y (minus the scroll view's
 	// own origin) before hit-testing content children — see the Scrollable
@@ -316,6 +341,9 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Scroll to the bottom of the content.
+	 **/
 	// Scroll so the BOTTOM of the document is visible (the unflipped document
 	// shows its bottom by default, so this restores the initial view after a
 	// `scroll_to_top`).
@@ -356,6 +384,9 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -383,6 +414,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -411,6 +446,9 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -419,6 +457,9 @@ pub mv struct Scrollable: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {
@@ -469,6 +510,10 @@ pub mv struct Scrollable: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_scroll`: whether the scroll view scrolled this frame. Read
+	 * the amounts with `win.scroll_dx()` and `win.scroll_dy()`.
+	 **/
 	// The on_scroll desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. True on any frame whose pump saw
 	// scroll-wheel events; the deltas ride the dispatch window —

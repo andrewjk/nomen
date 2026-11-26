@@ -2,7 +2,13 @@
  * The popover content area's size (`Popover.content_size`'s return value)
  **/
 pub struct PopSize {
+	/**
+	 * Width in points.
+	 **/
 	pub var width = 0
+	/**
+	 * Height in points.
+	 **/
 	pub var height = 0
 }
 
@@ -21,8 +27,14 @@ pub struct PopSize {
 // design work. iOS defers to UIPopoverPresentationController (TODO stubs; see
 // GUI_PLAN Tier 1 #21).
 pub mv struct Popover: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A popover belonging to `window`. Size it, then `show` it next to a control.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -82,7 +94,9 @@ pub mv struct Popover: Control {
 		}
 	}
 
-	// Resize the popover's content area.
+	/**
+	 * Set the size of the popover's content area, in points.
+	 **/
 	pub func set_content_size = (self, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -110,7 +124,9 @@ pub mv struct Popover: Control {
 		}
 	}
 
-	// The content area's current size.
+	/**
+	 * The size of the content area.
+	 **/
 	pub func content_size = (self, out PopSize) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -156,9 +172,10 @@ pub mv struct Popover: Control {
 		}
 	}
 
-	// Present the popover anchored above the view `handle` names (any
-	// control's handle). Non-blocking; the user dismisses it by clicking
-	// elsewhere (transient behavior).
+	/**
+	 * Show the popover above the control with native handle `anchor`. Returns at once; the
+	 * popover closes when the user clicks elsewhere.
+	 **/
 	pub func show = (self, uint64 anchor) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -190,6 +207,9 @@ pub mv struct Popover: Control {
 		}
 	}
 
+	/**
+	 * Close the popover.
+	 **/
 	pub func dismiss = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -215,7 +235,9 @@ pub mv struct Popover: Control {
 		}
 	}
 
-	// True while the popover is on screen.
+	/**
+	 * Whether the popover is on screen.
+	 **/
 	pub func is_shown = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -245,17 +267,27 @@ pub mv struct Popover: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	// A popover is window-coordinated: the layout engine never frames it.
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		// No-op: the popover positions itself relative to its anchor.
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var s = Size()
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var s = Size()
 		return s

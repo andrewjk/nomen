@@ -10,8 +10,14 @@
  * free; UISearchTextField is the iOS 13+ equivalent.
  **/
 pub mv struct SearchField: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An empty search field in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -85,6 +91,10 @@ pub mv struct SearchField: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -116,6 +126,9 @@ pub mv struct SearchField: Control {
 		}
 	}
 
+	/**
+	 * Replace the control's text.
+	 **/
 	pub func set_text = (self, string text) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -151,6 +164,9 @@ pub mv struct SearchField: Control {
 		}
 	}
 
+	/**
+	 * Set the hint text shown while the field is empty.
+	 **/
 	// The gray hint text shown while the field is empty; not the value —
 	// get_text still reports "" until the user types.
 	pub func set_placeholder = (self, string text) {
@@ -188,6 +204,9 @@ pub mv struct SearchField: Control {
 		}
 	}
 
+	/**
+	 * The control's current text.
+	 **/
 	pub func get_text = (self, out string) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -227,6 +246,10 @@ pub mv struct SearchField: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_submit`: whether the user pressed Return in the field since
+	 * the last poll. Read the text with `get_text()`.
+	 **/
 	// The on_submit desugar's drain (docs/HANDLERS.md tier 2): true when
 	// the user committed this field (Return) since the last drain — the
 	// record is consumed, one commit fires an arm exactly once.
@@ -259,6 +282,9 @@ pub mv struct SearchField: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -268,6 +294,9 @@ pub mv struct SearchField: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

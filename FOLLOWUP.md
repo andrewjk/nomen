@@ -834,19 +834,20 @@ comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
 
-## Controls API docs (`/docs` API reference)
+## System library API reference (`/docs`) leftovers
 
-Every non-UI type in `core/System/` now has `/** … **/` docs on its public
-members, but `core/System/Controls/` is still mostly bare signatures (~640
-undocumented members — `Container` and `Window` alone have ~130). Convert the
-user-facing `//` notes there the same way (doc first, implementation notes as
-`//` underneath).
+Every public member in `core/System/`, Controls included, now has a
+`/** … **/` doc. What's left:
 
 Unmarked struct members default to `pub`, so internal state fields
-(`Map.used`, `Map.hashes`, `List.items`), runtime handles (`Task.future`,
-`Channel.mu`) and `raw_*` / `find_slot`-style helpers appear in the
-reference. They are documented as "internal" for now; marking them
-`internal` would hide them.
+(`Map.used`, `Map.hashes`, `List.items`, `Container`'s ~30 layout buffers),
+runtime handles (`Task.future`, `Channel.mu`) and `raw_*` / `find_slot`-style
+helpers appear in the reference. They are documented as "internal" for now;
+marking them `internal` would hide them.
+
+Several Controls type docs (`Form`, `OtpInput`, `Pagination`, `Window`, `App`)
+still spend their body on implementation history (GUI_PLAN tiers,
+STRUCT_PLAN phases, HANDLERS stages) rather than usage.
 
 Enum cases now take doc comments, but bitset flags still can't: a
 `BitsetNode`'s cases are bare strings with no source position, so

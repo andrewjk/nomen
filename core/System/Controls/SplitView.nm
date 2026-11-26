@@ -22,8 +22,15 @@
  * Tier 2; the iOS blocks are TODO stubs).
  **/
 pub mv struct SplitView: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * A split view in `window` with `count` resizable panes, side by side when `vertical`
+	 * is set and stacked otherwise.
+	 **/
 	// File-scope helper: the pane view class (answers `-contentView` with
 	// `self`; registered once, like NomenResizeDelegate).
 	pub func #init = (self, Window window, int count: count > 0, bool vertical) {
@@ -245,11 +252,13 @@ pub mv struct SplitView: Control {
 		}
 	}
 
-	// A Window-shaped handle to pane `index`'s view: pass it to control
-	// constructors and `Container.layout` to host controls on that pane. The
-	// value retains the pane view (+1), so its scope-exit `#destroy` releases
-	// its OWN reference and the SplitView's stays balanced — keep the
-	// SplitView alive at least as long as the returned value.
+	/**
+	 * A `Window` handle for pane `index`: pass it to control constructors and
+	 * `Container.layout` to put controls in that pane. Keep the split view alive at least
+	 * as long as the handle.
+	 **/
+	// The value retains the pane view (+1), so its scope-exit `#destroy` releases its
+	// OWN reference and the SplitView's stays balanced.
 	pub func content_window = (self, int index, out Window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -303,6 +312,9 @@ pub mv struct SplitView: Control {
 		}
 	}
 
+	/**
+	 * The number of panes.
+	 **/
 	pub func count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -330,8 +342,10 @@ pub mv struct SplitView: Control {
 		}
 	}
 
-	// Move divider `index`. For a vertical split the position is the left
-	// edge of the pane after the divider, in points from the left.
+	/**
+	 * Move divider number `divider` to `position` points: for a vertical split, the left
+	 * edge of the pane after it, measured from the left.
+	 **/
 	pub func set_position = (ref self {}, float position, int divider) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -367,8 +381,10 @@ pub mv struct SplitView: Control {
 		}
 	}
 
-	// Divider 0's position: the first pane's width (vertical split) or
-	// height (horizontal split), in points.
+	/**
+	 * The first divider's position: the first pane's width (vertical split) or height
+	 * (horizontal split), in points.
+	 **/
 	pub func position = (self, out float) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -406,6 +422,9 @@ pub mv struct SplitView: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -421,6 +440,10 @@ pub mv struct SplitView: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
@@ -449,6 +472,9 @@ pub mv struct SplitView: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
 		var s = Size()
@@ -457,6 +483,9 @@ pub mv struct SplitView: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

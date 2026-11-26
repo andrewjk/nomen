@@ -12,9 +12,18 @@
  * so `is_spinning` reads true exactly between start() and stop().
  **/
 pub mv struct Spinner: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
+	/**
+	 * Whether the spinner is animating (read it with `is_spinning`).
+	 **/
 	var spinning = false
 
+	/**
+	 * A stopped activity spinner in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -92,6 +101,10 @@ pub mv struct Spinner: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -123,6 +136,9 @@ pub mv struct Spinner: Control {
 		}
 	}
 
+	/**
+	 * Start the spinning animation.
+	 **/
 	pub func start = (ref self {}) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -154,6 +170,9 @@ pub mv struct Spinner: Control {
 		}
 	}
 
+	/**
+	 * Stop the spinning animation.
+	 **/
 	pub func stop = (ref self {}) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -185,10 +204,16 @@ pub mv struct Spinner: Control {
 		}
 	}
 
+	/**
+	 * Whether the spinner is animating.
+	 **/
 	pub func is_spinning = (self, out bool) {
 		return self.spinning
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -216,6 +241,9 @@ pub mv struct Spinner: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -225,6 +253,9 @@ pub mv struct Spinner: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {

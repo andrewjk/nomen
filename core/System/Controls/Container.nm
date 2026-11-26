@@ -391,67 +391,169 @@ pub func native_frame = (uint64 handle, out string) {
  * a `Control`-taking function, stored in a `HandleBuffer<Control>`, etc.).
  **/
 pub mv struct Container: Control {
+	/**
+	 * Each node's kind (internal).
+	 **/
 	mv kinds = Buffer<int>()
+	/**
+	 * Each leaf's width kind, a LEN_* code (internal).
+	 **/
 	// Per-leaf requested size, stored as a (kind, value) pair per axis. The
 	// kind is one of LEN_* (auto/fixed/percent/fill); the value is the pixel
 	// count for `fixed` or the percent numerator for `percent` (0 otherwise).
 	// The legacy int-based `add`/`add_to` translate `w`/`h` into these pairs
 	// (non-zero → fixed, 0 → auto); `add_len`/`add_to_len` store any case.
 	mv w_kinds = Buffer<int>()
+	/**
+	 * Each leaf's width value (internal).
+	 **/
 	mv w_vals = Buffer<int>()
+	/**
+	 * Each leaf's height kind, a LEN_* code (internal).
+	 **/
 	mv h_kinds = Buffer<int>()
+	/**
+	 * Each leaf's height value (internal).
+	 **/
 	mv h_vals = Buffer<int>()
+	/**
+	 * Each container's spacing (internal).
+	 **/
 	mv gaps = Buffer<int>() // container spacing
+	/**
+	 * Each node's parent (internal).
+	 **/
 	mv pars = Buffer<int>() // parent index, encoded as parent + 1 (0 = root)
+	/**
+	 * Each node's grid column span (internal).
+	 **/
 	mv spans = Buffer<int>() // grid column span
+	/**
+	 * Each grid's column count (internal).
+	 **/
 	mv cols = Buffer<int>() // grid column count (on grid nodes)
+	/**
+	 * Each leaf's native handle (internal).
+	 **/
 	mv handles = Buffer<int>() // leaf native handle (0 = none/container)
+	/**
+	 * Each block's padding (internal).
+	 **/
 	mv pads = Buffer<int>() // per-node inset (padding) for Block
+	/**
+	 * Each node's grow weight (internal).
+	 **/
 	mv grows = Buffer<int>() // flex weight: absorbs surplus on the main axis
+	/**
+	 * Each node's shrink weight (internal).
+	 **/
 	mv shrinks = Buffer<int>() // flex weight: absorbs deficit on the main axis
+	/**
+	 * Each node's cross-axis alignment (internal).
+	 **/
 	mv aligns = Buffer<int>() // cross-axis alignment (ALIGN_*)
+	/**
+	 * Each node's needs-relayout flag (internal).
+	 **/
 	// Per-node dirty flag for incremental relayout: a dirty node (and its
 	// descendants) is re-measured on the next `compute`/`layout`; a clean node
 	// returns its cached size. `mark_dirty` sets a node, walks up to the root
 	// (ancestors must re-flow) and down through descendants (their constraints
 	// may change), so a clean node always has unchanged constraints.
 	mv dirty = Buffer<int>()
+	/**
+	 * How many times each node has been measured (internal; see `measure_count`).
+	 **/
 	// How many times a node's `measure` body actually ran — purely for tests
 	// that want to observe which subtrees were re-measured.
 	mv measured_count = Buffer<int>()
+	/**
+	 * Each node's computed x (internal).
+	 **/
 	mv rx = Buffer<int>()
+	/**
+	 * Each node's computed y (internal).
+	 **/
 	mv ry = Buffer<int>()
+	/**
+	 * Each node's computed width (internal).
+	 **/
 	mv rw = Buffer<int>()
+	/**
+	 * Each node's computed height (internal).
+	 **/
 	mv rh = Buffer<int>()
+	/**
+	 * Each leaf's last applied x (internal).
+	 **/
 	// Previously-applied frame per node (leaf only), used by the dirty-rect
 	// tracker: a leaf enters the dirty list only when its resolved frame
 	// differs from this baseline. Initialised to -1 so the first layout marks
 	// every leaf dirty.
 	mv prx = Buffer<int>()
+	/**
+	 * Each leaf's last applied y (internal).
+	 **/
 	mv pry = Buffer<int>()
+	/**
+	 * Each leaf's last applied width (internal).
+	 **/
 	mv prw = Buffer<int>()
+	/**
+	 * Each leaf's last applied height (internal).
+	 **/
 	mv prh = Buffer<int>()
+	/**
+	 * The width limit each node was last measured under (internal).
+	 **/
 	// The constraints each node's cached size was measured under (the
 	// measure_node cache gate). A clean node re-uses its cached size only
 	// when the constraints are unchanged — otherwise a standalone
 	// `measure(bc)` after an external resize answered with the PREVIOUS
 	// constraint's width (the page-scroll shrink-per-resize bug).
 	mv mw = Buffer<int>()
+	/**
+	 * The height limit each node was last measured under (internal).
+	 **/
 	mv mh = Buffer<int>()
+	/**
+	 * The leaves whose frames changed in the last layout (internal; see `dirty_rect`).
+	 **/
 	// Dirty-rect list: the node indices (leaves) whose frame changed in the
 	// most recent `compute`/`layout`, in the order discovered. `dirty_count`
 	// / `dirty_rect` expose it; `apply` repaints only these.
 	mv dirty_idx = Buffer<int>()
+	/**
+	 * The number of changed leaves (internal).
+	 **/
 	var dirty_n = 0
+	/**
+	 * The root node's index (internal).
+	 **/
 	var root = 0
+	/**
+	 * The number of nodes (internal).
+	 **/
 	var count = 0
+	/**
+	 * The inset around the whole layout, in points.
+	 **/
 	var padding = 0
+	/**
+	 * The width of the last layout (internal).
+	 **/
 	// Last available size passed to `compute`/`layout`. When it changes the
 	// whole tree is marked dirty (the external constraint changed); when it's
 	// the same, only explicitly `mark_dirty`'d subtrees are re-measured.
 	var int last_w = -1
+	/**
+	 * The height of the last layout (internal).
+	 **/
 	var int last_h = -1
 
+	/**
+	 * Allocate the node arrays (internal).
+	 **/
 	func init_buffers = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int cap) {
 		self.kinds.grow_int(cap)
 		self.w_kinds.grow_int(cap)
@@ -482,6 +584,9 @@ pub mv struct Container: Control {
 		self.dirty_idx.grow_int(cap)
 	}
 
+	/**
+	 * Create the root node (internal).
+	 **/
 	func make_root = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int kind, int gap, int col_count) {
 		self.init_buffers(32)
 		self.kinds.store_int(0, kind)
@@ -509,6 +614,9 @@ pub mv struct Container: Control {
 		self.count = 1
 	}
 
+	/**
+	 * The first child of `parent`, or -1 (internal).
+	 **/
 	func first_child = (self, int parent, out int) {
 		var int p = parent + 1
 		var i = 0
@@ -518,6 +626,9 @@ pub mv struct Container: Control {
 		return -1
 	}
 
+	/**
+	 * The next child of `parent` after `after`, or -1 (internal).
+	 **/
 	func next_sibling = (self, int after, int parent, out int) {
 		var int p = parent + 1
 		var int i = after + 1
@@ -527,6 +638,9 @@ pub mv struct Container: Control {
 		return -1
 	}
 
+	/**
+	 * Add a node under `parent` and return its index (internal; the `add*` methods use it).
+	 **/
 	// Core append: store a node (leaf or container) as a child of `parent`
 	// (a node index; use root_index() for the top level), returning the new
 	// node's index. All the public add* helpers route through here.
@@ -588,23 +702,22 @@ pub mv struct Container: Control {
 		return idx
 	}
 
-	// Index of the root node — pass this as `parent` to add children to the
-	// top level (the plain `add` helper already does this for leaves).
+	/**
+	 * The root node's index. Pass it as `parent` to add to the top level.
+	 **/
 	pub func root_index = (self, out int) {
 		return self.root
 	}
 
-	// Add a leaf child (a native control by handle) under the root. `w`/`h` of
-	// 0 mean "fill" on the cross axis (or "no intrinsic opinion" on the main
-	// axis, where `grow` then absorbs the surplus); a non-zero `w`/`h` is an
-	// exact pixel size. `span` is the grid column span (use 1 for
-	// VStack/HStack). `grow` is the flex weight for sharing surplus space on
-	// the parent's main axis (0 = hold at intrinsic size); `align` is the
-	// cross-axis alignment (default ALIGN_STRETCH = 3, the original "fill the
-	// cross axis" behavior); `shrink` is the flex weight for sharing a deficit
-	// when the children's total exceeds the main-axis content size (0 = never
-	// shrink, the original behavior). For `.percent` / `.fill` / mixed sizing,
-	// use `add_len`.
+	/**
+	 * Add the control with native handle `handle` to the top level, `w` × `h` points (0 for
+	 * either means fill the space). `span` is the number of grid columns it covers (1 in a
+	 * stack).
+	 *
+	 * `grow` and `shrink` are its share of spare space or of a shortfall along the stack (0
+	 * keeps its size), and `align` places it across the stack (an `ALIGN_*` code; stretch
+	 * by default).
+	 **/
 	pub func add = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
@@ -629,8 +742,10 @@ pub mv struct Container: Control {
 		self.set_leaf_size(idx, w, h)
 	}
 
-	// Add a leaf child under an explicit `parent` (a node index returned by an
-	// add_vstack/add_hstack/add_grid/add_zstack call).
+	/**
+	 * `add`, under node `parent` (an index from `add_vstack`, `add_hstack`, `add_grid`,
+	 * `add_zstack` or `add_block`).
+	 **/
 	pub func add_to = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -656,15 +771,10 @@ pub mv struct Container: Control {
 		self.set_leaf_size(idx, w, h)
 	}
 
-	// Add a leaf child under the root with an explicit per-axis size kind.
-	// `w_kind`/`h_kind` are `LEN_*` constants (LEN_AUTO/LEN_FIXED/LEN_PERCENT/
-	// LEN_FILL); `w_val`/`h_val` are the pixel count for LEN_FIXED or the
-	// percent numerator (0-100) for LEN_PERCENT — ignored for LEN_AUTO/
-	// LEN_FILL. This is the explicit-size escape hatch when neither `add`
-	// (which only expresses fixed/auto) nor a future LayoutLength-taking
-	// helper fits; e.g. `add_kind(0, LEN_PERCENT, 50, LEN_FIXED, 30, 1)`
-	// asks for 50% of the cross axis and a fixed 30px on the main axis.
-	// `span`/`grow`/`align`/`shrink` match `add`.
+	/**
+	 * `add`, with each axis's size given as a `LEN_*` kind and a value (points for
+	 * `LEN_FIXED`, percent for `LEN_PERCENT`, ignored otherwise).
+	 **/
 	pub func add_kind = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
@@ -691,8 +801,9 @@ pub mv struct Container: Control {
 		self.set_leaf_kind(idx, w_kind, w_val, h_kind, h_val)
 	}
 
-	// Add a leaf child with explicit per-axis size kinds under an explicit
-	// `parent` (a node index returned by an add_* container helper).
+	/**
+	 * `add_kind`, under node `parent`.
+	 **/
 	pub func add_to_kind = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -720,11 +831,10 @@ pub mv struct Container: Control {
 		self.set_leaf_kind(idx, w_kind, w_val, h_kind, h_val)
 	}
 
-	// Add a leaf child under the root, passing `LayoutLength` values directly:
-	// `v.add_len(handle, LayoutLength.percent(50), LayoutLength.fixed(30), 1)`.
-	// The ergonomic form of `add_kind` — each axis's enum case is translated
-	// to the internal (kind, value) pair. `span`/`grow`/`align`/`shrink`
-	// match `add`.
+	/**
+	 * `add`, with each axis's size as a `LayoutLength`:
+	 * `v.add_len(handle, LayoutLength.percent(50), LayoutLength.fixed(30), 1)`.
+	 **/
 	pub func add_len = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
@@ -749,8 +859,9 @@ pub mv struct Container: Control {
 		self.set_leaf_kind(idx, length_kind(w), length_val(w), length_kind(h), length_val(h))
 	}
 
-	// Add a leaf child with `LayoutLength` sizes under an explicit `parent`
-	// (a node index returned by an add_* container helper).
+	/**
+	 * `add_len`, under node `parent`.
+	 **/
 	pub func add_to_len = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -776,11 +887,9 @@ pub mv struct Container: Control {
 		self.set_leaf_kind(idx, length_kind(w), length_val(w), length_kind(h), length_val(h))
 	}
 
-	// Add a leaf that sizes to its native control's `intrinsicContentSize` on
-	// both axes — the "no size hints" form. Equivalent to
-	// `add_kind(handle, LEN_INTRINSIC, 0, LEN_INTRINSIC, 0, span, …)`. For
-	// per-axis intrinsic (e.g. fill the cross axis, intrinsic height) use
-	// `add_kind` directly. `span`/`grow`/`align`/`shrink` match `add`.
+	/**
+	 * `add`, sized to the control's own natural size on both axes.
+	 **/
 	pub func add_intrinsic = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		uint64 handle,
@@ -803,8 +912,9 @@ pub mv struct Container: Control {
 		self.set_leaf_kind(idx, LEN_INTRINSIC, 0, LEN_INTRINSIC, 0)
 	}
 
-	// `add_intrinsic` under an explicit `parent` (a node index returned by an
-	// add_* container helper).
+	/**
+	 * `add_intrinsic`, under node `parent`.
+	 **/
 	pub func add_to_intrinsic = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -828,6 +938,10 @@ pub mv struct Container: Control {
 		self.set_leaf_kind(idx, LEN_INTRINSIC, 0, LEN_INTRINSIC, 0)
 	}
 
+	/**
+	 * Remove the control with native handle `handle` from the layout. Returns false if it
+	 * isn't there. Call it before the control is destroyed.
+	 **/
 	// Remove the leaf whose native handle matches, deleting its node from the
 	// tree: every per-node array is backward-shifted over the slot and parent
 	// indices above it are fixed up, so the node vanishes from measure,
@@ -906,9 +1020,9 @@ pub mv struct Container: Control {
 		return true
 	}
 
-	// Translate the legacy int (w, h) into a (kind, value) pair: 0 → auto
-	// (no intrinsic; fills a bounded axis, stays 0 on an unbounded axis so
-	// `grow` decides), non-zero → fixed.
+	/**
+	 * Store a leaf's size from `add`'s `w` and `h` (internal).
+	 **/
 	func set_leaf_size = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w, int h) {
 		if w == 0 {
 			self.w_kinds.store_int(idx, LEN_AUTO)
@@ -926,7 +1040,9 @@ pub mv struct Container: Control {
 		}
 	}
 
-	// Store the per-axis (kind, value) pair directly.
+	/**
+	 * Store a leaf's size kinds and values (internal).
+	 **/
 	func set_leaf_kind = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w_kind, int w_val, int h_kind, int h_val) {
 		self.w_kinds.store_int(idx, w_kind)
 		self.w_vals.store_int(idx, w_val)
@@ -934,8 +1050,10 @@ pub mv struct Container: Control {
 		self.h_vals.store_int(idx, h_val)
 	}
 
-	// Add a nested container under `parent`; returns the new node's index so
-	// children can be added to it via add_to (or another nested container).
+	/**
+	 * Add a vertical stack under `parent`, with `spacing` points between children, and
+	 * return its index. The other arguments are as for `add`.
+	 **/
 	pub func add_vstack = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -949,6 +1067,10 @@ pub mv struct Container: Control {
 		return self.append_node(parent, KIND_VSTACK, 0, spacing, 0, span, grow, shrink, align)
 	}
 
+	/**
+	 * Add a horizontal stack under `parent`, with `spacing` points between children, and
+	 * return its index. The other arguments are as for `add`.
+	 **/
 	pub func add_hstack = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -962,6 +1084,10 @@ pub mv struct Container: Control {
 		return self.append_node(parent, KIND_HSTACK, 0, spacing, 0, span, grow, shrink, align)
 	}
 
+	/**
+	 * Add empty space to the top level. With `grow` above 0 it takes up the spare room,
+	 * pushing the controls after it to the far end.
+	 **/
 	// Add a spacer: a flexible empty leaf (no native handle) that simply
 	// occupies layout space. With `grow > 0` it absorbs the surplus on the
 	// parent's main axis — the classic "push the rest of the row/column to the
@@ -973,6 +1099,9 @@ pub mv struct Container: Control {
 		self.append_node(self.root, KIND_LEAF, 0, 0, 0, span, grow, shrink, align)
 	}
 
+	/**
+	 * `add_spacer`, under node `parent`.
+	 **/
 	pub func add_spacer_to = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -984,6 +1113,11 @@ pub mv struct Container: Control {
 		self.append_node(parent, KIND_LEAF, 0, 0, 0, span, grow, shrink, align)
 	}
 
+	/**
+	 * Add a grid of `cols` columns under `parent`, with `spacing` points between cells, and
+	 * return its index. Children fill it row by row; a child's `span` sets how many columns
+	 * it covers.
+	 **/
 	pub func add_grid = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -998,6 +1132,10 @@ pub mv struct Container: Control {
 		return self.append_node(parent, KIND_GRID, 0, spacing, cols, span, grow, shrink, align)
 	}
 
+	/**
+	 * Add a layer stack under `parent` and return its index. Its children all take the same
+	 * rect, each drawn over the ones before.
+	 **/
 	pub func add_zstack = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -1010,13 +1148,10 @@ pub mv struct Container: Control {
 		return self.append_node(parent, KIND_ZSTACK, 0, 0, 0, span, grow, shrink, align)
 	}
 
-	// Add a Block: a single-child container with insets (padding) on all four
-	// sides. It forwards its content rect (frame minus 2·padding) to its one
-	// child via `add_to(block, …)`. `measure` subtracts the insets from the
-	// constraints and returns the child size plus the insets; `arrange` places
-	// the child inside the inset content rect. Like the other containers this
-	// is a node in the SoA tree, so it needs no trait model — it recurses
-	// through `first_child`/`next_sibling` like everything else.
+	/**
+	 * Add a block to the top level: a one-child container with `padding` points around its
+	 * child. Returns its index; add the child with `add_to`.
+	 **/
 	pub func add_block = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int padding,
@@ -1031,6 +1166,9 @@ pub mv struct Container: Control {
 		return idx
 	}
 
+	/**
+	 * `add_block`, under node `parent`.
+	 **/
 	pub func add_block_to = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
@@ -1046,6 +1184,9 @@ pub mv struct Container: Control {
 		return idx
 	}
 
+	/**
+	 * Measure node `idx` within the given limits (internal).
+	 **/
 	// Measure a node against box constraints. Returns the resolved width and
 	// stores the resolved height in rh[idx] (and the width in rw[idx]).
 	func measure_node = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
@@ -1273,6 +1414,9 @@ pub mv struct Container: Control {
 		return cols * col_w
 	}
 
+	/**
+	 * Place node `idx` and its children in the given rect (internal).
+	 **/
 	func arrange_node = (self, int idx, int x, int y, int w, int h) {
 		self.rx.store_int(idx, x)
 		self.ry.store_int(idx, y)
@@ -1493,6 +1637,9 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Find the leaves whose frames changed (internal).
+	 **/
 	// Recompute the dirty-rect list: any leaf whose resolved frame differs
 	// from its previously-applied frame is appended to `dirty_idx` (in tree
 	// order) and its baseline is advanced. Hidden leaves keep a stable
@@ -1526,20 +1673,25 @@ pub mv struct Container: Control {
 		}
 	}
 
-	// Number of leaves whose frame changed in the most recent `compute`/
-	// `layout` (the current dirty-rect list length).
+	/**
+	 * The number of controls whose frames changed in the last `compute` or `layout`.
+	 **/
 	pub func dirty_count = (self, out int) {
 		return self.dirty_n
 	}
 
-	// The i-th dirty rectangle (new frame) as "x,y,w,h", where i is in
-	// [0, dirty_count). The rect is the leaf's current resolved frame — the
-	// region the compositor must repaint.
+	/**
+	 * The new frame of changed control `i` (0 to `dirty_count() - 1`), as "x,y,w,h".
+	 **/
 	pub func dirty_rect = (self, int i, out string) {
 		var int idx = self.dirty_idx.load_int(i)
 		return self.rx.load_int(idx).to_string() + "," + self.ry.load_int(idx).to_string() + "," + self.rw.load_int(idx).to_string() + "," + self.rh.load_int(idx).to_string()
 	}
 
+	/**
+	 * Make node `idx` be measured again on the next `compute` or `layout`, along with its
+	 * parents and children. Call it after changing what a control shows.
+	 **/
 	// Mark a node dirty for incremental relayout: the node, its ancestors (their
 	// size may change as a result), and its descendants (their constraints flow
 	// down from this node) are all re-measured on the next `compute`/`layout`.
@@ -1559,12 +1711,16 @@ pub mv struct Container: Control {
 		}
 	}
 
-	// How many times a node's `measure` body has actually run (incremental
-	// relayout lets this stay put for clean subtrees). Test/observability aid.
+	/**
+	 * How many times node `i` has been measured (for tests).
+	 **/
 	pub func measure_count = (self, int i, out int) {
 		return self.measured_count.load_int(i)
 	}
 
+	/**
+	 * Move every control to its computed frame (internal).
+	 **/
 	func apply = (self, int content_w, int content_h) {
 		// Only repaint the dirty leaves — the compositor's dirty-rect win.
 		var k = 0
@@ -1615,6 +1771,9 @@ pub mv struct Container: Control {
 	// main-axis fill, dirty tracking, and native `apply` on top of this same
 	// math. A `Container` passed as a `Control` dispatches through these.
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var int w = self.measure_node(
 			self.root,
@@ -1630,10 +1789,17 @@ pub mv struct Container: Control {
 		return s
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		self.arrange_node(self.root, x, y, width, height)
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	pub func intrinsic_size = (self, out Size) {
 		var int w = self.measure_node(self.root, 0, INF, 0, INF)
 		var int h = self.rh.load_int(self.root)
@@ -1643,6 +1809,10 @@ pub mv struct Container: Control {
 		return s
 	}
 
+	/**
+	 * Lay out within `avail_w` × `avail_h` without moving any controls (for tests). Read the
+	 * results with `fmt_frame`.
+	 **/
 	// Pure measure + arrange against a size (no native calls). For testing.
 	// The root fills its main axis (VStack → height, HStack → width) so that
 	// children with `grow > 0` have surplus to absorb; the cross axis stays at
@@ -1670,9 +1840,10 @@ pub mv struct Container: Control {
 		self.collect_dirty()
 	}
 
-	// Measure + arrange against the window's content rect (minus padding) and
-	// apply frames to every leaf, flipping y against the content height. The
-	// root fills its main axis (see `compute`).
+	/**
+	 * Lay out within `win`'s content area (less `padding`) and move every control to its
+	 * frame.
+	 **/
 	pub func layout = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, Window win) {
 		var int cw = win.content_width()
 		var int ch = win.content_height()
@@ -1700,6 +1871,10 @@ pub mv struct Container: Control {
 		self.apply(cw, ch)
 	}
 
+	/**
+	 * For manual-loop apps: lay out again in `win` as the user drags the window's edge.
+	 * `run` apps get this from `Window.set_content`.
+	 **/
 	// Install a windowDidResize: delegate so the layout re-runs *during* a
 	// live window resize. AppKit runs its own blocking tracking loop for the
 	// whole drag (our manual event loop is stuck inside sendEvent: and can't
@@ -1955,11 +2130,9 @@ pub mv struct Container: Control {
 		}
 	}
 
-	// Install the windowDidResize: delegate WITHOUT setting the target pair
-	// (nomen_set_resize_target — call that first, e.g. from Window's
-	// set_content). Window.run arms the delegate so the ROOT layout re-runs
-	// live during AppKit's blocking resize drag; set_resize_callback is the
-	// combined form for manual-loop apps.
+	/**
+	 * Start live relayout during window resizes (internal; `Window.run` calls it).
+	 **/
 	pub func arm_resize_delegate = (Window win) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -1989,6 +2162,11 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Make this grid the content of a `Scrollable`, so `Window.run` lays it out and sizes
+	 * the scroll area whenever the window resizes. Pass the scroll view's `handle` and
+	 * `doc_handle()`.
+	 **/
 	// Register this grid as the document of a Scrollable, for Window.run's
 	// relayout: on every content-rect change the framework re-runs the
 	// document dance (measure unbounded → set_content_size → layout, plus a
@@ -2087,6 +2265,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Make this grid the content of a pane, such as a `Tabs` page or `SplitView` pane, so
+	 * `Window.run` lays it out again whenever the window resizes. Pass the pane's handle.
+	 **/
 	// Register this grid as a PANE root: after every framework relayout pass
 	// (first post-show + every resize — Window.relayout), the grid is re-laid
 	// into its companion window (`pane_handle`). Pane hosts re-frame on their
@@ -2176,6 +2358,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_right_click`: whether there was a right-click this frame.
+	 * Read where with `win.click_x()` and `win.click_y()`.
+	 **/
 	// The on_right_click desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. The record is WINDOW-level — the same
 	// edge FrameEvents.click reports as 2, stamped by every process_events
@@ -2211,6 +2397,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_mouse_down`: whether any mouse button went down this frame.
+	 * Read which with `win.mouse_button()`.
+	 **/
 	// The on_mouse_down desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. The exhaustive window-level edge —
 	// EVERY mouse-down (left, right, middle, mouse 4+), not just the two
@@ -2246,6 +2436,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_double_click`: whether there was a left double-click this
+	 * frame.
+	 **/
 	// The on_double_click desugar's drain (docs/HANDLERS.md tier 2): the
 	// sugar over the mouse-down record — left button (1) with a click count
 	// of 2, the list-row "open" gesture. Window-level and broadcast, like
@@ -2281,6 +2475,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_key_down`: whether a key went down this frame. Read which
+	 * with `win.key_code()`.
+	 **/
 	// The on_key_down / on_key_up desugars' drains (docs/HANDLERS.md): the
 	// synthesized pump arm polls these per frame. The keyboard record is
 	// window-level and broadcast (like the mouse records): every registered
@@ -2317,6 +2515,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_key_up`: whether a key came up this frame. Read which with
+	 * `win.key_up_code()`.
+	 **/
 	pub func take_key_up = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -2342,6 +2544,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_mouse_move`: whether the pointer moved this frame. Read where
+	 * with `win.mouse_x()` and `win.mouse_y()`.
+	 **/
 	// The on_mouse_move desugar's drain (docs/HANDLERS.md): the synthesized
 	// pump arm polls this per frame. True on any frame whose pump saw a
 	// pointer move or drag; the position rides the dispatch window —
@@ -2374,6 +2580,10 @@ pub mv struct Container: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_resize`: whether the window resized this frame. Read the new
+	 * size with `win.resize_width()` and `win.resize_height()`.
+	 **/
 	// The on_resize desugar's drain (docs/HANDLERS.md): fires on the frame
 	// whose content rect changed. The framework has ALREADY re-laid-out the
 	// registered roots — the handler re-lays-out app-owned panes (tab
@@ -2407,8 +2617,11 @@ pub mv struct Container: Control {
 		}
 	}
 
-	// Hit test: is point (cx, cy) (top-left origin, as returned by click_x/
-	// click_y) inside the leaf with the given handle?
+	/**
+	 * Whether point (`cx`, `cy`) lies in the control with native handle `handle`.
+	 * Coordinates are from the content area's top left, as `click_x` and `click_y` report
+	 * them.
+	 **/
 	pub func contains = (self, uint64 handle, int cx, int cy, out bool) {
 		var int needle = handle as int
 		var i = 0
@@ -2434,6 +2647,10 @@ pub mv struct Container: Control {
 		return false
 	}
 
+	/**
+	 * The native handle of the frontmost visible control at (`cx`, `cy`), or 0 if there is
+	 * none.
+	 **/
 	// Compositor hit test: walk the frame tree front-to-back and return the
 	// frontmost leaf whose frame contains (cx, cy) (top-left origin, matching
 	// `click_x`/`click_y` and `contains`). For every container we test children
@@ -2447,13 +2664,16 @@ pub mv struct Container: Control {
 		return self.handles.load_int(idx) as uint64
 	}
 
-	// Same as `hit_test` but returns the frontmost leaf's node index (root is 0;
-	// -1 = no hit). Handy for callers that want the node rather than the handle
-	// (e.g. to read the resolved frame via `fmt_frame`).
+	/**
+	 * `hit_test`, returning the control's node index instead (-1 if there is none).
+	 **/
 	pub func hit_test_index = (self, int cx, int cy, out int) {
 		return self.hit_test_node(self.root, cx, cy)
 	}
 
+	/**
+	 * Hit-test node `idx` and its children (internal).
+	 **/
 	func hit_test_node = (self, int idx, int cx, int cy, out int) {
 		var int kind = self.kinds.load_int(idx)
 		if kind == KIND_LEAF {
@@ -2487,7 +2707,9 @@ pub mv struct Container: Control {
 		return result
 	}
 
-	// Format a child's resolved frame as "x,y,w,h" (root is 0; children start at 1).
+	/**
+	 * The computed frame of node `i` as "x,y,w,h" (the root is 0).
+	 **/
 	pub func fmt_frame = (self, int i, out string) {
 		return self.rx.load_int(i).to_string() + "," + self.ry.load_int(i).to_string() + "," + self.rw.load_int(i).to_string() + "," + self.rh.load_int(i).to_string()
 	}

@@ -5,14 +5,41 @@
  * A flat, buffer-backed layout tree — nodes stored in parallel arrays for the layout engine
  **/
 pub mv struct Layout {
+	/**
+	 * Each node's kind: 0 leaf, 1 vstack, 2 hstack.
+	 **/
 	mv kinds = Buffer<int>() // 0=leaf, 1=vstack, 2=hstack
+	/**
+	 * Each leaf's natural width (0 for stacks).
+	 **/
 	mv ws = Buffer<int>() // intrinsic width (leaf) or 0
+	/**
+	 * Each leaf's natural height (0 for stacks).
+	 **/
 	mv hs = Buffer<int>() // intrinsic height (leaf) or 0
+	/**
+	 * Each stack's spacing between children.
+	 **/
 	mv gaps = Buffer<int>() // spacing between children (containers)
+	/**
+	 * Each node's parent index (-1 for the root).
+	 **/
 	mv par = Buffer<int>() // parent index (-1 = root)
+	/**
+	 * Each node's computed x, after `arrange`.
+	 **/
 	mv rx = Buffer<int>() // result x
+	/**
+	 * Each node's computed y, after `arrange`.
+	 **/
 	mv ry = Buffer<int>() // result y
+	/**
+	 * Each node's computed width, after `arrange`.
+	 **/
 	mv rw = Buffer<int>() // result width
+	/**
+	 * Each node's computed height, after `arrange`.
+	 **/
 	mv rh = Buffer<int>() // result height
 }
 

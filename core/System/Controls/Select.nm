@@ -11,8 +11,14 @@
  * defers (TODO stubs below; see GUI_PLAN Tier 1 #9).
  **/
 pub mv struct Select: Control {
+	/**
+	 * The native platform handle for this control (internal; 0 until it is created).
+	 **/
 	var uint64 handle = 0
 
+	/**
+	 * An empty pop-up menu button in `window`.
+	 **/
 	pub func #init = (self, Window window) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -62,6 +68,10 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * Place the control at (`x`, `y`) with the given size, in points. Layout containers
+	 * call this for you (`Control` conformance).
+	 **/
 	pub func set_frame = (ref self {}, int x, int y, int width, int height) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -89,7 +99,9 @@ pub mv struct Select: Control {
 		}
 	}
 
-	// Append a choice to the menu. The first item added becomes selected.
+	/**
+	 * Add a choice. The first one added starts selected.
+	 **/
 	pub func add_item = (self, string title) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -119,6 +131,9 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * Remove every choice.
+	 **/
 	pub func clear_items = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -144,6 +159,9 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * Select choice `index`.
+	 **/
 	pub func select_index = (self, int index) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -169,7 +187,9 @@ pub mv struct Select: Control {
 		}
 	}
 
-	// The selected item's position, or -1 when nothing is selected.
+	/**
+	 * The selected choice's index, or -1 when nothing is selected.
+	 **/
 	pub func selected_index = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -197,6 +217,10 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * Handler hook behind `on_select`: whether the selection changed since the last poll.
+	 * Read the new selection from the control.
+	 **/
 	// The on_select desugar's drain (docs/HANDLERS.md): true when the user
 	// selected an item since the last drain (the record is consumed).
 	// User-driven only — AppKit sends the popup's action for user picks,
@@ -229,6 +253,9 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * The number of choices.
+	 **/
 	pub func count = (self, out int) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -256,6 +283,9 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * Show or hide the control.
+	 **/
 	pub func set_hidden = (self, bool hidden) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
@@ -281,6 +311,9 @@ pub mv struct Select: Control {
 		}
 	}
 
+	/**
+	 * The control's natural size given unlimited space (`Control` conformance).
+	 **/
 	// ── Control trait conformance ──
 	pub func intrinsic_size = (self, out Size) {
 		var [w, h] = native_intrinsic(self.handle)
@@ -290,6 +323,9 @@ pub mv struct Select: Control {
 		return s
 	}
 
+	/**
+	 * The size the control wants, within `constraints` (`Control` conformance).
+	 **/
 	pub func measure = (self, BoxConstraints constraints, out Size) {
 		var Size s = self.intrinsic_size()
 		if s.width > constraints.max_width {
