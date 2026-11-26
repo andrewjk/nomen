@@ -3,6 +3,7 @@ import { mono_type_name } from "../build_common/mono_name.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
 import ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
+import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
 import Type from "../nodes/Type.ts";
@@ -11,6 +12,7 @@ import { instantiate_generic_type } from "./check_function_call_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import { is_owned_array_call } from "./utils/hoist_array_temp.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import {
 	borrowed_param_transfer_error,
@@ -265,7 +267,7 @@ function hoist_array_elements(array: ArrayValuesNode, status: CheckStatus, elem_
 		// hoisted when the middle literal was checked in place). Keep the
 		// reference: wrapping it in an alias temp would add a pointer-copy
 		// declaration per slot for nothing.
-		if (value.node_type === "value" && (value as ValueNode).type?.is_array) continue;
+		if (is_hoisted_row_temp(value, status)) continue;
 		const decl_name = `_param_${status.var_name_counter.value++}`;
 		const decl = new DeclarationNode(
 			value.start,
@@ -273,14 +275,81 @@ function hoist_array_elements(array: ArrayValuesNode, status: CheckStatus, elem_
 			"const",
 			decl_name,
 			clone_type(elem_type),
-			value,
+			row_source(value, elem_type, status),
 		);
+		// A stack-array variable row (`const r = [7]`, then `[r, [3]]`) is
+		// copied into a fresh heap row — the slot needs its own buffer.
+		if (is_stack_array_value(value, status) && !elements_need_copy(elem_type, status)) {
+			decl.is_heap_array_copy = true;
+			decl.type.storage_kind = "heap_array";
+			decl.type.length = undefined;
+		}
 		// The OUTER array owns the buffer: its auto-free frees each inner one,
 		// so the temp's own free is skipped (see transferred_to_outer).
 		decl.transferred_to_outer = true;
 		status.allocations.push(decl);
 		array.values[i] = new ValueNode(value.start, decl_name, clone_type(elem_type));
 	}
+}
+
+/** A `_param_N` row temp an inner literal level already hoisted. */
+function is_hoisted_row_temp(value: BaseNode, status: CheckStatus): boolean {
+	if (value.node_type !== "value" || !(value as ValueNode).type?.is_array) return false;
+	const name = (value as ValueNode).value;
+	return status.allocations.some((d) => d.name === name && d.transferred_to_outer);
+}
+
+/** A row slot owns its buffer, so a row value that something else still
+ *  owns (a variable, a field, a borrowed element) is copied in: a heap row
+ *  through `copy()`; a stack-array variable by the declaration's
+ *  `is_heap_array_copy`. Literals and owned call results move in as-is. */
+function row_source(value: BaseNode, elem_type: Type, status: CheckStatus): BaseNode {
+	if (value.node_type === "array" || is_owned_array_call(value)) return value;
+	// A scalar literal where a row belongs (`[[1]] + [1]`, `[1]` for an
+	// `int[][]`): it was checked against the row type, which stamps it.
+	if (
+		value.node_type === "value" &&
+		/^([-+]?[\d.]|["'`]|true$|false$)/.test((value as ValueNode).value)
+	) {
+		add_error(
+			status,
+			`Type mismatch in array: ${elem_type.name} (expected Array<${elem_type.name}>)`,
+			value.start,
+		);
+		return value;
+	}
+	if (is_stack_array_value(value, status)) {
+		if (!elements_need_copy(elem_type, status)) return value;
+		// String / struct elements: the heap copy of the stack array still
+		// shares them, so the slot takes a `copy()` of that copy.
+		const temp_name = `_param_${status.var_name_counter.value++}`;
+		const temp_type = clone_type(elem_type);
+		temp_type.storage_kind = "heap_array";
+		temp_type.length = undefined;
+		const temp = new DeclarationNode(value.start, "private", "const", temp_name, temp_type, value);
+		temp.is_heap_array_copy = true;
+		status.allocations.push(temp);
+		value = new ValueNode(value.start, temp_name, clone_type(temp_type));
+	}
+	const copy = new AccessNode(value.start, value, new AccessFunctionCallNode(value.start, "copy"));
+	const old_expected = status.expected_type;
+	status.expected_type = clone_type(elem_type);
+	check_node(copy, status);
+	status.expected_type = old_expected;
+	return copy;
+}
+
+/** Elements whose byte copy would share owned state (strings, structs). */
+function elements_need_copy(row: Type, status: CheckStatus): boolean {
+	if (row.name === "string") return true;
+	return status.structs.some((s) => s.name === row.name && !s.is_simple_type && !s.is_class);
+}
+
+/** A stack-array variable (compile-time length, not a heap `Array<T>`). */
+function is_stack_array_value(value: BaseNode, status: CheckStatus): boolean {
+	if (value.node_type !== "value") return false;
+	const type = type_from_value_node(value, status);
+	return !!type?.is_array && type.storage_kind !== "heap_array" && !!type.length && !type.elem;
 }
 
 /**

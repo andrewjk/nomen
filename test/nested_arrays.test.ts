@@ -311,4 +311,40 @@ pub func main = () {
 			"Type mismatch in param: int (expected a row of int)",
 		);
 	});
+
+	test("literal rows from variables are copied in", async () => {
+		const input = `import System
+mv struct Rec {
+	mv string name
+}
+func make = (out Array<int>) {
+	return Array<int>.with(4, 2)
+}
+pub func main = () {
+	var r = [7, 8]
+	var h = [r, [3], r]
+	r.set(0, 1)
+	h.at(0).set(1, 5)
+	Console.write("\\{h.at(0).at(0)} \\{h.at(2).at(1)} \\{r.at(1)} ")
+	var hr = Array<int>.with(7, 2)
+	var g = [hr, make()]
+	hr.set(0, 1)
+	Console.write("\\{g.at(0).at(0)} \\{g.at(1).at(1)} ")
+	const s = ["a"]
+	var hs = Array<string>.with("b", 1)
+	const q = [Rec("x")]
+	const w = [s, hs]
+	const k = [q, q]
+	Console.write(w.at(0).at(0) + w.at(1).at(0) + k.at(1).at(0).name + " ")
+	const n = [[1], [2, 3]]
+	const t = [n, [[4]], n]
+	const u = [n.at(1), [4]]
+	Console.write("\\{t.at(2).at(1).at(1)} \\{u.at(0).length}")
+}
+`;
+		await build_and_check_output(input, "nested_literal_var_rows", "7 8 8 7 4 abx 3 2", true, {
+			audit: true,
+			js: true,
+		});
+	});
 });

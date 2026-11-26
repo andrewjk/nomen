@@ -85,7 +85,7 @@ pub func main = () {
 			"Type mismatch in param: string (expected int)",
 		);
 		expect(errors("const a = [[1]] + [1]")).toContain(
-			"Type mismatch in param: int (expected the same nesting of int)",
+			"Type mismatch in array: int (expected Array<int>)",
 		);
 		expect(errors(`const a = [[1]] * "x"`)).toContain(
 			"Type mismatch in param: string (expected int)",

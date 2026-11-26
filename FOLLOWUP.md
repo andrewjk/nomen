@@ -891,9 +891,3 @@ int.slice": the call still takes the leaf mono. `slice` returns `view T`,
 and a view of rows would need view types that carry the row type (`elem`)
 through the checker and all three backends, so it was left out of the
 nested `with` change. `copy()` and then indexing works as a stopgap.
-
-## Nested array literal with a variable row crashes on aarch64
-
-`const r = [7]` then `const h = [r, [3]]` (a nested literal whose row is a
-stack-array variable) segfaults at run time on aarch64. Literal rows
-(`[[7], [3]]`) work. Seen while adding nested `+` / `*`.

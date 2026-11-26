@@ -41,6 +41,10 @@ export default interface BuildStatus {
 	 *  to the statement boundary: evaluation order and loop-fresh values then
 	 *  match the native backends (which assign the temp at the use site). */
 	allocations?: Map<string, BaseNode>;
+	/** The temps among `allocations` that are copies of their initializer
+	 *  (`is_heap_array_copy`: a stack-array variable copied into a nested
+	 *  literal's row slot) — inlined as `__copy(...)`. */
+	copy_allocations?: Set<string>;
 	/** Recursion guard while inlining an allocation. */
 	inlining?: Set<string>;
 	/** On-demand library lowering: emitted code, pending declarations, and the

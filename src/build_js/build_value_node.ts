@@ -55,7 +55,7 @@ export default function build_value_node(node: ValueNode, status: BuildStatus): 
 		status.inlining.add(value);
 		const text = expr(allocation, status);
 		status.inlining.delete(value);
-		return `(${text})`;
+		return status.copy_allocations?.has(value) ? `__copy(${text})` : `(${text})`;
 	}
 	if (value === "true" || value === "false") return value;
 	if (value === "null") return "null";

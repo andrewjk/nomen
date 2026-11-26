@@ -64,6 +64,9 @@ function index_allocations(root: BaseNode, status: BuildStatus): void {
 			const name = (allocation as unknown as { name?: string }).name;
 			const value = (allocation as unknown as { value?: BaseNode }).value;
 			if (name && value) status.allocations?.set(name, value);
+			if (name && (allocation as unknown as { is_heap_array_copy?: boolean }).is_heap_array_copy) {
+				(status.copy_allocations ??= new Set()).add(name);
+			}
 		}
 		for (const child of child_nodes(node)) visit(child);
 	};
