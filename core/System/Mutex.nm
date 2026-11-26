@@ -27,7 +27,7 @@ pub mv struct Mutex {
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 handle = 0
+	internal var uint64 handle = 0
 
 	/**
 	 * A new, unlocked mutex.

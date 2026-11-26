@@ -40,7 +40,7 @@ pub mv struct CharIndex {
 	/**
 	 * The runs of multi-byte characters (internal).
 	 **/
-	mv runs = List<CharRun>()
+	internal mv runs = List<CharRun>()
 	/**
 	 * The number of characters in the text.
 	 **/
@@ -155,7 +155,7 @@ pub mv struct CharIndex {
 	 **/
 	// Rightmost run whose key (char_start when by_char, else byte_index) is
 	// <= target, or -1 when all runs start after it.
-	func rightmost_run = (self, int target, bool by_char, out int) {
+	internal func rightmost_run = (self, int target, bool by_char, out int) {
 		var lo = 0
 		var int hi = self.runs.length - 1
 		var int found = -1

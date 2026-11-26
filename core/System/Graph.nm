@@ -12,19 +12,19 @@ pub mv struct Graph<T>: Enumerable {
 	/**
 	 * Node values, by node index (internal storage).
 	 **/
-	var values = Buffer<T>()
+	internal var values = Buffer<T>()
 	/**
 	 * Each node's first outgoing edge, or -1 (internal storage).
 	 **/
-	mv head_edge = Buffer<int>()
+	internal mv head_edge = Buffer<int>()
 	/**
 	 * Each edge's target node (internal storage; read it with `edge_target(e)`).
 	 **/
-	mv edge_target = Buffer<int>()
+	internal mv edge_target = Buffer<int>()
 	/**
 	 * Each edge's next sibling edge, or -1 (internal storage).
 	 **/
-	mv edge_next = Buffer<int>()
+	internal mv edge_next = Buffer<int>()
 	/**
 	 * The number of nodes.
 	 **/

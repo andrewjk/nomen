@@ -29,7 +29,7 @@ pub struct Atomic<T> {
 	// The machine word. Private by discipline: mutate through the methods
 	// (direct assignment replaces the atomic — the checker's freeze blocks
 	// that through borrowed captures).
-	var uint64 word = 0
+	internal var uint64 word = 0
 
 	/**
 	 * The current value.

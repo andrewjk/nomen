@@ -49,21 +49,21 @@ pub mv struct Pagination {
 	/**
 	 * The number of pages (internal).
 	 **/
-	var pages = 1
+	internal var pages = 1
 	/**
 	 * The current page (internal; read it with `page()`).
 	 **/
-	var current = 0
+	internal var current = 0
 	/**
 	 * The handler id from `on_page_change`, or -1 (internal).
 	 **/
 	// The up-call plumbing: the dispatch id the app enrolled (—1 = none)
 	// and whether a page change is waiting for the next tick.
-	var int page_change_id = -1
+	internal var int page_change_id = -1
 	/**
 	 * Whether a page change is waiting to be reported (internal).
 	 **/
-	var page_change_pending = false
+	internal var page_change_pending = false
 
 	/**
 	 * A page picker in `window` with `pages` numbered buttons (1 to 5) between "<" and ">".

@@ -36,13 +36,13 @@ pub mv struct Form {
 	 **/
 	mv Text l3
 	/**
-	 * The number of rows added (internal).
+	 * The number of rows added so far.
 	 **/
 	var rows = 0
 	/**
 	 * The grid index of the vstack holding the rows (internal; -1 before `add_to`).
 	 **/
-	var int rows_stack = -1
+	internal var int rows_stack = -1
 
 	/**
 	 * A form titled `title` in `window`. Call `add_to`, then `add_row` for each row, before

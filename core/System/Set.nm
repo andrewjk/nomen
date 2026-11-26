@@ -27,15 +27,15 @@ pub mv struct Set<T: Hashable + Equatable> {
 	/**
 	 * The value slots of the hash table (internal storage).
 	 **/
-	var slots = Buffer<T>()
+	internal var slots = Buffer<T>()
 	/**
 	 * Per-slot occupancy flags (internal storage).
 	 **/
-	mv used = Buffer<int>()
+	internal mv used = Buffer<int>()
 	/**
 	 * Per-slot stored value hashes (internal storage).
 	 **/
-	mv hashes = Buffer<int>()
+	internal mv hashes = Buffer<int>()
 
 	/**
 	 * Add `value` to the set. Does nothing when an equal value is already present. The
@@ -237,7 +237,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 	/**
 	 * Internal: the slot holding `value`, or the empty slot where it would go.
 	 **/
-	func find_slot = (self, T value, uint32 h, int cap, out int: out >= 0 && out < cap) {
+	internal func find_slot = (self, T value, uint32 h, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two: `hash mod cap` via a mask, non-negative
 		// for any hash — no adjustment needed.
 		var int idx = (h as int) & (cap - 1)
@@ -266,7 +266,7 @@ pub mv struct Set<T: Hashable + Equatable> {
 	// compares (values arrive unique — they came from a valid set). The old
 	// form re-inserted via `self.add(mv v)`, re-hashing every value and
 	// re-comparing values on every probed slot.
-	func rehash = (ref self { hashes, slots, used }, int new_cap) {
+	internal func rehash = (ref self { hashes, slots, used }, int new_cap) {
 		var Buffer<T> old_slots = mv self.slots swap Buffer<T>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()
 		var Buffer<int> old_hashes = mv self.hashes swap Buffer<int>()

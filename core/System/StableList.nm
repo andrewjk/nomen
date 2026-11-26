@@ -40,14 +40,14 @@ pub mv struct StableList<T> {
 	 **/
 	// Chunk 0: an exact-cap 256-slot slab, allocated on first push, never
 	// grown — a realloc would move its slots and invalidate `slot_ptr` aliases.
-	var items = Buffer<T>()
+	internal var items = Buffer<T>()
 	/**
 	 * The directory of later storage chunks (internal).
 	 **/
 	// Directory of chunk-1.. slab addresses (uint64 words, `calloc`'d slabs of
 	// 256 T_SIZE bytes). The directory's slot array may realloc; the slabs it
 	// points at never move.
-	mv chunks = Buffer<uint64>()
+	internal mv chunks = Buffer<uint64>()
 	/**
 	 * Scratch view used while storing into later chunks (internal).
 	 **/
@@ -57,7 +57,7 @@ pub mv struct StableList<T> {
 	// clears it. A field (not a local) because an owning Buffer local is
 	// auto-destroyed at scope exit and would free the borrowed slab. Its own
 	// slab is always null, so its field destroy reclaims nothing.
-	var stage = Buffer<T>()
+	internal var stage = Buffer<T>()
 
 	/**
 	 * Append `value` to the end of the list. Existing elements never move, so references to

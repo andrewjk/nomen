@@ -19,13 +19,14 @@
 // scrolled. iOS defers to UIScrollView (TODO stubs; see GUI_PLAN Tier 2).
 pub mv struct Scrollable: Control {
 	/**
-	 * The native platform handle for this control (internal; 0 until it is created).
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
 	 **/
 	var uint64 handle = 0
 	/**
 	 * The native document view that holds the content (internal).
 	 **/
-	var uint64 doc = 0
+	internal var uint64 doc = 0
 
 	/**
 	 * A scroll view in `window`. Add controls to it through `content_window`.

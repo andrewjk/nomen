@@ -182,7 +182,7 @@ pub mv struct Tcp {
 	/**
 	 * Low-level: create a non-blocking socket and return its descriptor (-1 on failure).
 	 **/
-	func socket_fd = (out int) {
+	internal func socket_fd = (out int) {
 		#if META.arch == "c" {
 			#raw("file") {
 				#include <sys/socket.h>
@@ -233,7 +233,7 @@ pub mv struct Tcp {
 	 * Low-level: create a socket listening on `port` and return its descriptor (-1 on
 	 * failure).
 	 **/
-	func listen_fd = (int port, int backlog, out int) {
+	internal func listen_fd = (int port, int backlog, out int) {
 		#if META.arch == "c" {
 			#raw {
 				int handle = socket(AF_INET, SOCK_STREAM, 0);
@@ -285,7 +285,7 @@ pub mv struct Tcp {
 	/**
 	 * Low-level: accept a connection on the `listener` descriptor (-1 on failure).
 	 **/
-	func accept_fd = (int listener, out int) {
+	internal func accept_fd = (int listener, out int) {
 		#if META.arch == "c" {
 			#raw {
 				for (;;) {
@@ -318,7 +318,7 @@ pub mv struct Tcp {
 	 * Low-level: connect the descriptor `handle` to `host`:`port`. Returns 0 on success, or
 	 * an error code (1 DNS lookup, 3 connect).
 	 **/
-	func connect_to = (int handle, string host, int port, out int) {
+	internal func connect_to = (int handle, string host, int port, out int) {
 		#if META.arch == "c" {
 			#raw {
 				char portstr[16];
@@ -364,7 +364,7 @@ pub mv struct Tcp {
 	/**
 	 * Low-level: send all of `data` on the descriptor `handle`. Returns false on failure.
 	 **/
-	func send_all = (int handle, string data, out bool) {
+	internal func send_all = (int handle, string data, out bool) {
 		#if META.arch == "c" {
 			#raw {
 				long off = 0;
@@ -408,7 +408,7 @@ pub mv struct Tcp {
 	/**
 	 * Low-level: receive up to `max` bytes from the descriptor `handle`.
 	 **/
-	func recv_some = (int handle, int max, mv out string) {
+	internal func recv_some = (int handle, int max, mv out string) {
 		#if META.arch == "c" {
 			#raw {
 				long cap = max > 0 ? max : 1;
@@ -462,7 +462,7 @@ pub mv struct Tcp {
 	/**
 	 * Low-level: receive from the descriptor `handle` until the peer closes.
 	 **/
-	func recv_until_close = (int handle, mv out string) {
+	internal func recv_until_close = (int handle, mv out string) {
 		#if META.arch == "c" {
 			#raw {
 				long cap = 4096, len = 0;
@@ -520,7 +520,7 @@ pub mv struct Tcp {
 	/**
 	 * Low-level: close the descriptor `handle`.
 	 **/
-	func close_fd = (int handle) {
+	internal func close_fd = (int handle) {
 		#if META.arch == "c" {
 			#raw {
 				if (handle >= 0) close(handle);

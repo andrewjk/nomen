@@ -43,11 +43,11 @@ pub struct WeakHandle<T> {
 	 * The registry slot (internal).
 	 **/
 	// The registry slot id and the generation captured at creation.
-	var uint64 id = 0
+	internal var uint64 id = 0
 	/**
 	 * The slot generation captured at creation (internal).
 	 **/
-	var uint64 gen = 0
+	internal var uint64 gen = 0
 
 	/**
 	 * The object, or null when it has been destroyed. Bind the result to `T?` and check it.

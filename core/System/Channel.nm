@@ -41,24 +41,24 @@ pub mv struct Channel {
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 mu = 0
+	internal var uint64 mu = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 not_empty_cv = 0
+	internal var uint64 not_empty_cv = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 head = 0
+	internal var uint64 head = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 tail = 0
+	internal var uint64 tail = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
 	// Head of the parked-fiber wait list (guarded by mu). Send wakes it.
-	pub var uint64 waiters = 0
+	internal var uint64 waiters = 0
 
 	/**
 	 * An empty channel.

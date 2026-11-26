@@ -40,7 +40,7 @@ pub struct Directory {
 	/**
 	 * Low-level `create`: returns the errno (0 on success) instead of a `Result`.
 	 **/
-	func raw_create = (string path, out int) {
+	internal func raw_create = (string path, out int) {
 		#if META.arch == "c" {
 			#raw("file") {
 				#include <errno.h>
@@ -83,7 +83,7 @@ pub struct Directory {
 	/**
 	 * Low-level `remove`: returns the errno (0 on success) instead of a `Result`.
 	 **/
-	func raw_remove = (string path, out int) {
+	internal func raw_remove = (string path, out int) {
 		#if META.arch == "c" {
 			#raw {
 				if (rmdir(path.ptr)) return errno;

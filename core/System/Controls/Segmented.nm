@@ -8,7 +8,8 @@
 // set/poll per frame like every other control.
 pub mv struct Segmented: Control {
 	/**
-	 * The native platform handle for this control (internal; 0 until it is created).
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
 	 **/
 	var uint64 handle = 0
 

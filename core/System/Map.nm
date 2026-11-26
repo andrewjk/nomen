@@ -29,19 +29,19 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	/**
 	 * The key slots of the hash table (internal storage; unused slots hold no key).
 	 **/
-	var keys = Buffer<TK>()
+	internal var keys = Buffer<TK>()
 	/**
 	 * The value slots of the hash table (internal storage).
 	 **/
-	var values = Buffer<TV>()
+	internal var values = Buffer<TV>()
 	/**
 	 * Per-slot occupancy flags (internal storage).
 	 **/
-	mv used = Buffer<int>()
+	internal mv used = Buffer<int>()
 	/**
 	 * Per-slot stored key hashes (internal storage).
 	 **/
-	mv hashes = Buffer<int>()
+	internal mv hashes = Buffer<int>()
 
 	/**
 	 * A map holding the given `[key, value]` pairs: `Map<string, int>(["a", 1], ["b", 2])`,
@@ -356,7 +356,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	/**
 	 * Internal: the slot holding `key`, or the empty slot where it would go.
 	 **/
-	func find_slot = (self, TK key, uint32 h, int cap, out int: out >= 0 && out < cap) {
+	internal func find_slot = (self, TK key, uint32 h, int cap, out int: out >= 0 && out < cap) {
 		// cap is a power of two, so this is `hash mod cap` via a mask —
 		// non-negative for any hash (two's complement), no adjustment.
 		var int idx = (h as int) & (cap - 1)
@@ -385,7 +385,7 @@ pub mv struct Map<TK: Hashable + Equatable, TV> {
 	// the other half of the Swiss-table trick; the old form re-inserted via
 	// `self.set(mv k, mv v)`, re-hashing every key and re-comparing keys on
 	// every probed slot.
-	func rehash = (ref self { hashes, keys, used, values }, int new_cap) {
+	internal func rehash = (ref self { hashes, keys, used, values }, int new_cap) {
 		var Buffer<TK> old_keys = mv self.keys swap Buffer<TK>()
 		var Buffer<TV> old_values = mv self.values swap Buffer<TV>()
 		var Buffer<int> old_used = mv self.used swap Buffer<int>()

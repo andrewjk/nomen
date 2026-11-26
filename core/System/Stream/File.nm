@@ -41,7 +41,7 @@ pub mv struct File {
 	/**
 	 * The underlying OS file handle (internal; 0 while not open).
 	 **/
-	var uint64 handle = 0
+	internal var uint64 handle = 0
 	/**
 	 * Set once a read reaches the end of the file.
 	 **/
@@ -52,7 +52,7 @@ pub mv struct File {
 	 **/
 	// errno of the last operation; 0 = success. Raw #arch bodies set it,
 	// the Result-returning wrappers map it to FileError.
-	var last_error = 0
+	internal var last_error = 0
 
 	/**
 	 * The `FileError` case for an errno value.
@@ -82,7 +82,7 @@ pub mv struct File {
 	 **/
 	// Open the file at `path` with a C mode string ("r", "w", "a", …).
 	// Stores the handle and records errno (0 on success) in `last_error`.
-	func raw_open = (ref self {}, string path, string mode) {
+	internal func raw_open = (ref self {}, string path, string mode) {
 		#if META.arch == "c" {
 			#raw("file") {
 				#include <errno.h>
@@ -136,7 +136,7 @@ pub mv struct File {
 	// Close the handle, recording errno in `last_error` (0 on success). Also
 	// performed automatically by #destroy; calling close explicitly releases
 	// the resource early.
-	func raw_close = (ref self {}) {
+	internal func raw_close = (ref self {}) {
 		#if META.arch == "c" {
 			#raw {
 				if (self->handle) {
@@ -189,7 +189,7 @@ pub mv struct File {
 	 **/
 	// Declared `mv out string`: the raw body mallocs a fresh buffer and hands ownership
 	// to the caller.
-	func raw_read_all = (ref self {}, mv out string) {
+	internal func raw_read_all = (ref self {}, mv out string) {
 		#if META.arch == "c" {
 			#raw {
 				FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -268,7 +268,7 @@ pub mv struct File {
 	 * Low-level `writeAll`: records the errno in `last_error` instead of returning a
 	 * `Result`.
 	 **/
-	func raw_write_all = (ref self {}, string data) {
+	internal func raw_write_all = (ref self {}, string data) {
 		#if META.arch == "c" {
 			#raw {
 				FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -313,7 +313,7 @@ pub mv struct File {
 	 * Low-level `readLine`: sets `eof` and `last_error` instead of returning a `Result`.
 	 **/
 	// The raw body mallocs a fresh buffer — `mv out string` transfers it.
-	func raw_read_line = (ref self {}, mv out string) {
+	internal func raw_read_line = (ref self {}, mv out string) {
 		#if META.arch == "c" {
 			#raw {
 				FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -421,7 +421,7 @@ pub mv struct File {
 	 * Low-level `writeLine`: records the errno in `last_error` instead of returning a
 	 * `Result`.
 	 **/
-	func raw_write_line = (ref self {}, string data) {
+	internal func raw_write_line = (ref self {}, string data) {
 		#if META.arch == "c" {
 			#raw {
 				FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -469,7 +469,7 @@ pub mv struct File {
 	 * Low-level `readChunk`: sets `eof` and `last_error` instead of returning a `Result`.
 	 **/
 	// The raw body mallocs a fresh buffer — `mv out string` transfers it.
-	func raw_read_chunk = (ref self {}, int size, mv out string) {
+	internal func raw_read_chunk = (ref self {}, int size, mv out string) {
 		#if META.arch == "c" {
 			#raw {
 				FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -537,7 +537,7 @@ pub mv struct File {
 	 * Low-level `writeChunk`: records the errno in `last_error` instead of returning a
 	 * `Result`.
 	 **/
-	func raw_write_chunk = (ref self {}, string data, int size) {
+	internal func raw_write_chunk = (ref self {}, string data, int size) {
 		#if META.arch == "c" {
 			#raw {
 				FILE *f = (FILE*)(unsigned long long)self->handle;
@@ -604,7 +604,7 @@ pub mv struct File {
 	/**
 	 * Low-level `delete`: returns the errno (0 on success) instead of a `Result`.
 	 **/
-	func raw_delete = (string path, out int) {
+	internal func raw_delete = (string path, out int) {
 		#if META.arch == "c" {
 			#raw {
 				if (remove(path.ptr)) return errno;

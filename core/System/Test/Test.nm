@@ -64,30 +64,31 @@ pub mv struct Tester {
 	 * The number of assertions that passed in the current test (internal).
 	 **/
 	// Assertion tallies for the current test.
-	var passed = 0
+	internal var passed = 0
 	/**
 	 * The number of assertions that failed in the current test (internal).
 	 **/
-	var failed = 0
+	internal var failed = 0
 
 	/**
 	 * The number of failures across the whole file (internal).
 	 **/
 	// Tallies for the whole file, so `done` records stay per-test while the
 	// process still knows whether anything failed overall.
-	var total_failed = 0
+	internal var total_failed = 0
 
 	/**
 	 * The name of the running test (internal).
 	 **/
-	mv current = ""
+	internal mv current = ""
 	/**
 	 * When the running test started (internal).
 	 **/
-	var uint64 started = 0
+	internal var uint64 started = 0
 
 	/**
-	 * Benchmark capture state read by the harness (internal).
+	 * Whether a benchmark is waiting to be timed. The `nomen test` harness reads and resets it;
+	 * tests don't use it directly.
 	 **/
 	// Benchmark capture state. `bench`/`bench_n` record the label and sample
 	// count here; the `nomen test` harness reads them after running the test
@@ -96,7 +97,8 @@ pub mv struct Tester {
 	// is reconstructed by the harness from the call site, not stored here.
 	var bench_pending = false
 	/**
-	 * Benchmark capture state read by the harness (internal).
+	 * The label of the benchmark waiting to be timed. The `nomen test` harness reads it; tests
+	 * don't use it directly.
 	 **/
 	mv bench_label = ""
 	/**
@@ -335,7 +337,7 @@ pub mv struct Tester {
 	/**
 	 * Internal: record a failed assertion with `message`.
 	 **/
-	func record_failure = (ref self {}, string message) {
+	internal func record_failure = (ref self {}, string message) {
 		self.failed += 1
 		self.total_failed += 1
 		self.has_failed = true

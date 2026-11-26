@@ -833,14 +833,3 @@ per-group sync hoist (~~+5%). The scaffolding (region/reduce planners, the
 comparison-only exactness gate, the clobber set, the sentinels, the .cap
 discharge) is correct and green — recovery is straightforward from this
 note plus the round-1 analysis below.
-
-## System library API reference (`/docs`) leftovers
-
-Every public member in `core/System/`, Controls included, now has a
-`/** … **/` doc. What's left:
-
-Unmarked struct members default to `pub`, so internal state fields
-(`Map.used`, `Map.hashes`, `List.items`, `Container`'s ~30 layout buffers),
-runtime handles (`Task.future`, `Channel.mu`) and `raw_*` / `find_slot`-style
-helpers appear in the reference. They are documented as "internal" for now;
-marking them `internal` would hide them.

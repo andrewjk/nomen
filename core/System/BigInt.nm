@@ -33,7 +33,7 @@ pub mv struct BigInt {
 	/**
 	 * The 64-bit limbs of the magnitude, least significant first (internal storage).
 	 **/
-	mv digits = Buffer<int>()
+	internal mv digits = Buffer<int>()
 
 	/**
 	 * Zero.
@@ -70,7 +70,7 @@ pub mv struct BigInt {
 	// The canonical sign: 0 for a zero magnitude, ±1 otherwise — derived
 	// from the magnitude so a stale stored sign can never leak into a
 	// comparison or a producer.
-	func eff_sign = (self, out int) {
+	internal func eff_sign = (self, out int) {
 		if self.len == 1 && self.get(0) == 0 {
 			return 0
 		}
@@ -83,7 +83,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: reset to zero.
 	 **/
-	func set_zero = (ref self { digits }) {
+	internal func set_zero = (ref self { digits }) {
 		self.ensure(1)
 		self.set(0, 0)
 		self.len = 1
@@ -96,7 +96,7 @@ pub mv struct BigInt {
 	// Store a producer's computed sign, canonicalized against the final
 	// magnitude: a zero result is sign 0 no matter what the sign arithmetic
 	// produced (0 * -1 == 0, an equal-magnitude subtraction, a zero quotient).
-	func finish_sign = (ref self {}, int s) {
+	internal func finish_sign = (ref self {}, int s) {
 		if self.len == 1 && self.get(0) == 0 {
 			self.sign = 0
 			return
@@ -114,7 +114,7 @@ pub mv struct BigInt {
 	// splice); the C backend (single TU, -O2) showed no difference either
 	// way, so the raw blocks win on single-sourcing grounds being equal.
 	// See docs/CORE_RAW.md "unsafe outcomes".
-	inline func get = (self, int i, out uint64) {
+	internal inline func get = (self, int i, out uint64) {
 		unsafe {
 			var ptr uint64 limbs = self.digits.data as ptr uint64
 			return limbs[i]
@@ -124,7 +124,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: set limb `i`.
 	 **/
-	inline func set = (ref self {}, int i, uint64 val) {
+	internal inline func set = (ref self {}, int i, uint64 val) {
 		unsafe {
 			var ptr uint64 limbs = self.digits.data as ptr uint64
 			limbs[i] = val
@@ -142,7 +142,7 @@ pub mv struct BigInt {
 	// data_ptr as Nomen cost pidigits ~30% (the inline splice perturbs the
 	// whole-function asm plan); the C backend was identical either way.
 	// See docs/CORE_RAW.md "unsafe outcomes".
-	inline func data_ptr = (self, out uint64) {
+	internal inline func data_ptr = (self, out uint64) {
 		return self.digits.data
 	}
 
@@ -152,7 +152,7 @@ pub mv struct BigInt {
 	// Same story as get/set above: the hoisted-pointer limb accessors stay
 	// raw for the aarch64 splice path. `data_ptr` is called once per loop
 	// (to hoist the slab address), so its Nomen body is free.
-	inline func get_at = (self, uint64 ptr, int i, out uint64) {
+	internal inline func get_at = (self, uint64 ptr, int i, out uint64) {
 		unsafe {
 			var ptr uint64 limbs = ptr as ptr uint64
 			return limbs[i]
@@ -162,7 +162,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: set limb `i` through a hoisted storage address.
 	 **/
-	inline func set_at = (ref self {}, uint64 ptr, int i, uint64 val) {
+	internal inline func set_at = (ref self {}, uint64 ptr, int i, uint64 val) {
 		unsafe {
 			var ptr uint64 limbs = ptr as ptr uint64
 			limbs[i] = val
@@ -172,21 +172,21 @@ pub mv struct BigInt {
 	/**
 	 * Internal: make room for `needed` limbs.
 	 **/
-	func ensure = (ref self { digits }, int needed) {
+	internal func ensure = (ref self { digits }, int needed) {
 		self.digits.grow_int(needed)
 	}
 
 	/**
 	 * Internal: zero the first `len` limbs.
 	 **/
-	func clear = (ref self { digits }, int len) {
+	internal func clear = (ref self { digits }, int len) {
 		self.digits.zero_int(len)
 	}
 
 	/**
 	 * Internal: copy `count` limbs of `src` from `start`.
 	 **/
-	func copy_range_from = (ref self { digits }, BigInt src, int start, int count) {
+	internal func copy_range_from = (ref self { digits }, BigInt src, int start, int count) {
 		self.ensure(count)
 		var i = 0
 		while i < count; i += 1 {
@@ -204,7 +204,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: add `other` shifted up by `shift` limbs into this magnitude.
 	 **/
-	func add_at = (ref self { digits }, BigInt other, int shift) {
+	internal func add_at = (ref self { digits }, BigInt other, int shift) {
 		self.ensure(other.len + shift + 1)
 		var carry = 0
 		var i = 0
@@ -238,7 +238,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: subtract `other` shifted up by `shift` limbs from this magnitude.
 	 **/
-	func sub_at = (ref self {}, BigInt other, int shift) {
+	internal func sub_at = (ref self {}, BigInt other, int shift) {
 		var borrow = 0
 		var i = 0
 		while i < other.len; i += 1 {
@@ -283,7 +283,7 @@ pub mv struct BigInt {
 	// canonical positive magnitude (sign 0 for a zero/empty slice). The count
 	// and start clamp to src's length: a slice past the end reads as fewer
 	// limbs or zero, never garbage. Used by the Toom-3 split.
-	func slice_limbs = (ref self { digits }, BigInt src, int start, int count) {
+	internal func slice_limbs = (ref self { digits }, BigInt src, int start, int count) {
 		var int eff_start = start
 		if eff_start < 0 {
 			eff_start = 0
@@ -320,7 +320,7 @@ pub mv struct BigInt {
 	// A fresh value holding `coef` shifted up by `shift` limbs (a signed
 	// move: sign and magnitude carry over). Used to place the signed Toom-3
 	// coefficients at their limb offsets through the fully signed add_to.
-	func shifted = (ref self { digits }, BigInt coef, int shift) {
+	internal func shifted = (ref self { digits }, BigInt coef, int shift) {
 		self.ensure(coef.len + shift)
 		self.clear(coef.len + shift)
 		var i = 0
@@ -336,7 +336,7 @@ pub mv struct BigInt {
 	 **/
 	// Halve the magnitude exactly: callers guarantee the value is even (the
 	// Toom-3 even combinations always are). Sign untouched.
-	func div2_exact = (ref self { digits }) {
+	internal func div2_exact = (ref self { digits }) {
 		var uint64 carry = 0
 		var int i = self.len - 1
 		while i >= 0; i -= 1 {
@@ -360,7 +360,7 @@ pub mv struct BigInt {
 	// inv3 = 3^(-1) mod 2^64, limb i of the quotient is
 	// (x_i - carry_i) * inv3 mod 2^64, and the carry into the next limb is
 	// floor((3*q_i + c_i - x_i) / 2^64) which stays in [0, 3]. Sign untouched.
-	func div3_exact = (ref self { digits }) {
+	internal func div3_exact = (ref self { digits }) {
 		const uint64 inv3 = 12297829382473034411
 		var uint64 c = 0
 		var i = 0
@@ -400,7 +400,7 @@ pub mv struct BigInt {
 	// ___udivti3 (linked via clang) instead of a 64-iteration bit loop — ~30x
 	// faster. The unsigned compare (b.hs) is required: hi/d can have their
 	// sign bit set.
-	inline func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
+	internal inline func div128 = (self, uint64 hi, uint64 lo, uint64 d, out uint64) {
 		#if META.arch == "c" {
 			#raw {
 				if (hi >= d) return 18446744073709551615ULL;
@@ -431,7 +431,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: the high 64 bits of the 128-bit product `a * b`.
 	 **/
-	inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
+	internal inline func mul_wide_hi = (self, uint64 a, uint64 b, out uint64) {
 		#if META.arch == "c" {
 			#raw {
 				unsigned __int128 product = (unsigned __int128)(unsigned long long)a * (unsigned long long)b;
@@ -470,7 +470,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: compare magnitudes, ignoring sign (-1, 0 or 1).
 	 **/
-	func mag_cmp = (self, BigInt other, out int) {
+	internal func mag_cmp = (self, BigInt other, out int) {
 		if self.len != other.len {
 			if self.len > other.len {
 				return 1
@@ -502,7 +502,7 @@ pub mv struct BigInt {
 	// larger's sign; a zero operand degenerates to a copy. This is the one
 	// place the sign machine meets the limb machines — every rule is here,
 	// not duplicated at call sites.
-	func signed_add = (ref self { digits }, BigInt a, BigInt b, bool flip_b) {
+	internal func signed_add = (ref self { digits }, BigInt a, BigInt b, bool flip_b) {
 		var int sa = a.eff_sign()
 		var int sb = b.eff_sign()
 		if flip_b {
@@ -560,7 +560,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: set this magnitude to `|a| + |b|`.
 	 **/
-	func mag_add_to = (ref self { digits }, BigInt a, BigInt b) {
+	internal func mag_add_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			var uint64 a_val = a.get(0)
 			var uint64 b_val = b.get(0)
@@ -625,7 +625,7 @@ pub mv struct BigInt {
 	/**
 	 * Internal: set this magnitude to `|a| - |b|` (requires `|a| >= |b|`).
 	 **/
-	func mag_sub_to = (ref self { digits }, BigInt a, BigInt b) {
+	internal func mag_sub_to = (ref self { digits }, BigInt a, BigInt b) {
 		if a.len == 1 && b.len == 1 {
 			self.ensure(1)
 			self.set(0, a.get(0) - b.get(0))
@@ -680,7 +680,7 @@ pub mv struct BigInt {
 	// multiplies replace Karatsuba's three ~1/2-size ones. self = a*b; self
 	// may alias a or b (the parts are extracted before any write); scratch
 	// must not alias self, a, or b.
-	func mul_toom3 = (ref self { digits }, BigInt a, BigInt b, ref BigInt scratch { digits }) {
+	internal func mul_toom3 = (ref self { digits }, BigInt a, BigInt b, ref BigInt scratch { digits }) {
 		const int mul_sign = a.eff_sign() * b.eff_sign()
 		var int max_len = a.len
 		if b.len > max_len {

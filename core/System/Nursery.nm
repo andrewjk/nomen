@@ -29,13 +29,13 @@ pub struct Nursery: Sendable {
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 futures_ptr = 0
+	internal var uint64 futures_ptr = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 count_ptr = 0
+	internal var uint64 count_ptr = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 cap_ptr = 0
+	internal var uint64 cap_ptr = 0
 }

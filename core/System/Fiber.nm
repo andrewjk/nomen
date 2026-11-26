@@ -59,20 +59,20 @@ pub mv struct Fiber<T> : Spawnable<T> {
 	 **/
 	// The packed task closure (a `struct nomen_closure *`); owned by this
 	// value until start/start_on/nursery.start transfers it to the runtime.
-	pub var uint64 task = 0
+	internal var uint64 task = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
 	// Result-slot / cancel-flag / future handles for the (single) launch.
-	pub var uint64 result_slot = 0
+	internal var uint64 result_slot = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 cancel_flag = 0
+	internal var uint64 cancel_flag = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 future = 0
+	internal var uint64 future = 0
 	/**
 	 * Whether the call has been started (or detached).
 	 **/
@@ -87,15 +87,15 @@ pub mv struct Fiber<T> : Spawnable<T> {
 	// through these stored pointers — registration follows the scope that
 	// created the deferred call, not the one that happens to start it. See
 	// Thread.nm's matching fields.
-	pub var uint64 nursery_futures = 0
+	internal var uint64 nursery_futures = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 nursery_count = 0
+	internal var uint64 nursery_count = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 nursery_cap = 0
+	internal var uint64 nursery_cap = 0
 
 	/**
 	 * Start the call as a fiber and return a `Task` for it.

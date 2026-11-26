@@ -401,7 +401,7 @@ pub mv struct Container: Control {
 	/**
 	 * Each node's kind (internal).
 	 **/
-	mv kinds = Buffer<int>()
+	internal mv kinds = Buffer<int>()
 	/**
 	 * Each leaf's width kind, a LEN_* code (internal).
 	 **/
@@ -410,55 +410,55 @@ pub mv struct Container: Control {
 	// count for `fixed` or the percent numerator for `percent` (0 otherwise).
 	// The legacy int-based `add`/`add_to` translate `w`/`h` into these pairs
 	// (non-zero → fixed, 0 → auto); `add_len`/`add_to_len` store any case.
-	mv w_kinds = Buffer<int>()
+	internal mv w_kinds = Buffer<int>()
 	/**
 	 * Each leaf's width value (internal).
 	 **/
-	mv w_vals = Buffer<int>()
+	internal mv w_vals = Buffer<int>()
 	/**
 	 * Each leaf's height kind, a LEN_* code (internal).
 	 **/
-	mv h_kinds = Buffer<int>()
+	internal mv h_kinds = Buffer<int>()
 	/**
 	 * Each leaf's height value (internal).
 	 **/
-	mv h_vals = Buffer<int>()
+	internal mv h_vals = Buffer<int>()
 	/**
 	 * Each container's spacing (internal).
 	 **/
-	mv gaps = Buffer<int>() // container spacing
+	internal mv gaps = Buffer<int>() // container spacing
 	/**
 	 * Each node's parent (internal).
 	 **/
-	mv pars = Buffer<int>() // parent index, encoded as parent + 1 (0 = root)
+	internal mv pars = Buffer<int>() // parent index, encoded as parent + 1 (0 = root)
 	/**
 	 * Each node's grid column span (internal).
 	 **/
-	mv spans = Buffer<int>() // grid column span
+	internal mv spans = Buffer<int>() // grid column span
 	/**
 	 * Each grid's column count (internal).
 	 **/
-	mv cols = Buffer<int>() // grid column count (on grid nodes)
+	internal mv cols = Buffer<int>() // grid column count (on grid nodes)
 	/**
 	 * Each leaf's native handle (internal).
 	 **/
-	mv handles = Buffer<int>() // leaf native handle (0 = none/container)
+	internal mv handles = Buffer<int>() // leaf native handle (0 = none/container)
 	/**
 	 * Each block's padding (internal).
 	 **/
-	mv pads = Buffer<int>() // per-node inset (padding) for Block
+	internal mv pads = Buffer<int>() // per-node inset (padding) for Block
 	/**
 	 * Each node's grow weight (internal).
 	 **/
-	mv grows = Buffer<int>() // flex weight: absorbs surplus on the main axis
+	internal mv grows = Buffer<int>() // flex weight: absorbs surplus on the main axis
 	/**
 	 * Each node's shrink weight (internal).
 	 **/
-	mv shrinks = Buffer<int>() // flex weight: absorbs deficit on the main axis
+	internal mv shrinks = Buffer<int>() // flex weight: absorbs deficit on the main axis
 	/**
 	 * Each node's cross-axis alignment (internal).
 	 **/
-	mv aligns = Buffer<int>() // cross-axis alignment (ALIGN_*)
+	internal mv aligns = Buffer<int>() // cross-axis alignment (ALIGN_*)
 	/**
 	 * Each node's needs-relayout flag (internal).
 	 **/
@@ -467,29 +467,29 @@ pub mv struct Container: Control {
 	// returns its cached size. `mark_dirty` sets a node, walks up to the root
 	// (ancestors must re-flow) and down through descendants (their constraints
 	// may change), so a clean node always has unchanged constraints.
-	mv dirty = Buffer<int>()
+	internal mv dirty = Buffer<int>()
 	/**
 	 * How many times each node has been measured (internal; see `measure_count`).
 	 **/
 	// How many times a node's `measure` body actually ran — purely for tests
 	// that want to observe which subtrees were re-measured.
-	mv measured_count = Buffer<int>()
+	internal mv measured_count = Buffer<int>()
 	/**
 	 * Each node's computed x (internal).
 	 **/
-	mv rx = Buffer<int>()
+	internal mv rx = Buffer<int>()
 	/**
 	 * Each node's computed y (internal).
 	 **/
-	mv ry = Buffer<int>()
+	internal mv ry = Buffer<int>()
 	/**
 	 * Each node's computed width (internal).
 	 **/
-	mv rw = Buffer<int>()
+	internal mv rw = Buffer<int>()
 	/**
 	 * Each node's computed height (internal).
 	 **/
-	mv rh = Buffer<int>()
+	internal mv rh = Buffer<int>()
 	/**
 	 * Each leaf's last applied x (internal).
 	 **/
@@ -497,19 +497,19 @@ pub mv struct Container: Control {
 	// tracker: a leaf enters the dirty list only when its resolved frame
 	// differs from this baseline. Initialised to -1 so the first layout marks
 	// every leaf dirty.
-	mv prx = Buffer<int>()
+	internal mv prx = Buffer<int>()
 	/**
 	 * Each leaf's last applied y (internal).
 	 **/
-	mv pry = Buffer<int>()
+	internal mv pry = Buffer<int>()
 	/**
 	 * Each leaf's last applied width (internal).
 	 **/
-	mv prw = Buffer<int>()
+	internal mv prw = Buffer<int>()
 	/**
 	 * Each leaf's last applied height (internal).
 	 **/
-	mv prh = Buffer<int>()
+	internal mv prh = Buffer<int>()
 	/**
 	 * The width limit each node was last measured under (internal).
 	 **/
@@ -518,30 +518,30 @@ pub mv struct Container: Control {
 	// when the constraints are unchanged — otherwise a standalone
 	// `measure(bc)` after an external resize answered with the PREVIOUS
 	// constraint's width (the page-scroll shrink-per-resize bug).
-	mv mw = Buffer<int>()
+	internal mv mw = Buffer<int>()
 	/**
 	 * The height limit each node was last measured under (internal).
 	 **/
-	mv mh = Buffer<int>()
+	internal mv mh = Buffer<int>()
 	/**
 	 * The leaves whose frames changed in the last layout (internal; see `dirty_rect`).
 	 **/
 	// Dirty-rect list: the node indices (leaves) whose frame changed in the
 	// most recent `compute`/`layout`, in the order discovered. `dirty_count`
 	// / `dirty_rect` expose it; `apply` repaints only these.
-	mv dirty_idx = Buffer<int>()
+	internal mv dirty_idx = Buffer<int>()
 	/**
 	 * The number of changed leaves (internal).
 	 **/
-	var dirty_n = 0
+	internal var dirty_n = 0
 	/**
 	 * The root node's index (internal).
 	 **/
-	var root = 0
+	internal var root = 0
 	/**
 	 * The number of nodes (internal).
 	 **/
-	var count = 0
+	internal var count = 0
 	/**
 	 * The inset around the whole layout, in points.
 	 **/
@@ -552,16 +552,16 @@ pub mv struct Container: Control {
 	// Last available size passed to `compute`/`layout`. When it changes the
 	// whole tree is marked dirty (the external constraint changed); when it's
 	// the same, only explicitly `mark_dirty`'d subtrees are re-measured.
-	var int last_w = -1
+	internal var int last_w = -1
 	/**
 	 * The height of the last layout (internal).
 	 **/
-	var int last_h = -1
+	internal var int last_h = -1
 
 	/**
 	 * Allocate the node arrays (internal).
 	 **/
-	func init_buffers = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int cap) {
+	internal func init_buffers = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int cap) {
 		self.kinds.grow_int(cap)
 		self.w_kinds.grow_int(cap)
 		self.w_vals.grow_int(cap)
@@ -594,7 +594,7 @@ pub mv struct Container: Control {
 	/**
 	 * Create the root node (internal).
 	 **/
-	func make_root = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int kind, int gap, int col_count) {
+	internal func make_root = (ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals }, int kind, int gap, int col_count) {
 		self.init_buffers(32)
 		self.kinds.store_int(0, kind)
 		self.w_kinds.store_int(0, LEN_AUTO)
@@ -624,7 +624,7 @@ pub mv struct Container: Control {
 	/**
 	 * The first child of `parent`, or -1 (internal).
 	 **/
-	func first_child = (self, int parent, out int) {
+	internal func first_child = (self, int parent, out int) {
 		var int p = parent + 1
 		var i = 0
 		while i < self.count; i += 1 {
@@ -636,7 +636,7 @@ pub mv struct Container: Control {
 	/**
 	 * The next child of `parent` after `after`, or -1 (internal).
 	 **/
-	func next_sibling = (self, int after, int parent, out int) {
+	internal func next_sibling = (self, int after, int parent, out int) {
 		var int p = parent + 1
 		var int i = after + 1
 		while i < self.count; i += 1 {
@@ -659,7 +659,7 @@ pub mv struct Container: Control {
 	// the deficit weight; `align` is the cross-axis alignment (ALIGN_*).
 	// (The aarch64 backend now spills args past the 8-register ABI limit, so
 	// this signature no longer has to stay within 8 register params.)
-	func append_node = (
+	internal func append_node = (
 		ref self { aligns, cols, dirty, dirty_idx, gaps, grows, h_kinds, h_vals, handles, kinds, measured_count, mh, mw, pads, pars, prh, prw, prx, pry, rh, rw, rx, ry, shrinks, spans, w_kinds, w_vals },
 		int parent,
 		int kind,
@@ -1030,7 +1030,7 @@ pub mv struct Container: Control {
 	/**
 	 * Store a leaf's size from `add`'s `w` and `h` (internal).
 	 **/
-	func set_leaf_size = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w, int h) {
+	internal func set_leaf_size = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w, int h) {
 		if w == 0 {
 			self.w_kinds.store_int(idx, LEN_AUTO)
 			self.w_vals.store_int(idx, 0)
@@ -1050,7 +1050,7 @@ pub mv struct Container: Control {
 	/**
 	 * Store a leaf's size kinds and values (internal).
 	 **/
-	func set_leaf_kind = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w_kind, int w_val, int h_kind, int h_val) {
+	internal func set_leaf_kind = (ref self { h_kinds, h_vals, w_kinds, w_vals }, int idx, int w_kind, int w_val, int h_kind, int h_val) {
 		self.w_kinds.store_int(idx, w_kind)
 		self.w_vals.store_int(idx, w_val)
 		self.h_kinds.store_int(idx, h_kind)
@@ -1196,7 +1196,7 @@ pub mv struct Container: Control {
 	 **/
 	// Measure a node against box constraints. Returns the resolved width and
 	// stores the resolved height in rh[idx] (and the width in rw[idx]).
-	func measure_node = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
+	internal func measure_node = (self, int idx, int min_w, int max_w, int min_h, int max_h, out int) {
 		var int kind = self.kinds.load_int(idx)
 		// Incremental relayout: a clean node's constraints are unchanged, so
 		// reuse its cached size instead of re-measuring the subtree. The cached
@@ -1424,7 +1424,7 @@ pub mv struct Container: Control {
 	/**
 	 * Place node `idx` and its children in the given rect (internal).
 	 **/
-	func arrange_node = (self, int idx, int x, int y, int w, int h) {
+	internal func arrange_node = (self, int idx, int x, int y, int w, int h) {
 		self.rx.store_int(idx, x)
 		self.ry.store_int(idx, y)
 		self.rw.store_int(idx, w)
@@ -1652,7 +1652,7 @@ pub mv struct Container: Control {
 	// order) and its baseline is advanced. Hidden leaves keep a stable
 	// (0,0,0,0) frame, so toggling visibility and re-laying-out marks them
 	// dirty exactly once, like any other frame change.
-	func collect_dirty = (ref self { dirty_idx, prh, prw, prx, pry }) {
+	internal func collect_dirty = (ref self { dirty_idx, prh, prw, prx, pry }) {
 		self.dirty_n = 0
 		var i = 0
 		while i < self.count; i += 1 {
@@ -1728,7 +1728,7 @@ pub mv struct Container: Control {
 	/**
 	 * Move every control to its computed frame (internal).
 	 **/
-	func apply = (self, int content_w, int content_h) {
+	internal func apply = (self, int content_w, int content_h) {
 		// Only repaint the dirty leaves — the compositor's dirty-rect win.
 		var k = 0
 		while k < self.dirty_n; k += 1 {
@@ -2140,7 +2140,7 @@ pub mv struct Container: Control {
 	/**
 	 * Start live relayout during window resizes (internal; `Window.run` calls it).
 	 **/
-	pub func arm_resize_delegate = (Window win) {
+	internal func arm_resize_delegate = (Window win) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				Class Dc = nomen_delegate_class();
@@ -2681,7 +2681,7 @@ pub mv struct Container: Control {
 	/**
 	 * Hit-test node `idx` and its children (internal).
 	 **/
-	func hit_test_node = (self, int idx, int cx, int cy, out int) {
+	internal func hit_test_node = (self, int idx, int cx, int cy, out int) {
 		var int kind = self.kinds.load_int(idx)
 		if kind == KIND_LEAF {
 			if is_visible(self.handles.load_int(idx) as uint64) {

@@ -12,15 +12,15 @@ pub mv struct LinkedList<T>: Enumerable {
 	/**
 	 * Node values, by node index (internal storage).
 	 **/
-	var values = Buffer<T>()
+	internal var values = Buffer<T>()
 	/**
 	 * Each node's next node, or -1 (internal storage).
 	 **/
-	mv nexts = Buffer<int>()
+	internal mv nexts = Buffer<int>()
 	/**
 	 * Each node's previous node, or -1 (internal storage).
 	 **/
-	mv prevs = Buffer<int>()
+	internal mv prevs = Buffer<int>()
 	/**
 	 * The index of the first node added, or -1 when the list is empty.
 	 **/

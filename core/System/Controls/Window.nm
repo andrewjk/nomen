@@ -8,7 +8,8 @@
  **/
 pub mv struct Window: Control {
 	/**
-	 * The native platform handle for this control (internal; 0 until it is created).
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
 	 **/
 	var uint64 handle = 0
 
@@ -1038,7 +1039,7 @@ pub mv struct Window: Control {
 	// Stamp the resize record — run's resize detection calls this (the
 	// record lives in C statics shared with Container.take_resize; params
 	// because raw blocks in deep control flow can only address them).
-	func stamp_resize = (self, bool on, int w, int h) {
+	internal func stamp_resize = (self, bool on, int w, int h) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_last_resized;
@@ -1135,7 +1136,7 @@ pub mv struct Window: Control {
 	 * Whether the user clicked the close button and the app hasn't answered yet (internal;
 	 * `run` asks `App.close_requested`).
 	 **/
-	pub func close_pending = (self, out bool) {
+	internal func close_pending = (self, out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_close_pending;
@@ -1163,7 +1164,7 @@ pub mv struct Window: Control {
 	/**
 	 * Forget a pending close request (internal; used by `run`).
 	 **/
-	pub func clear_close_pending = (self) {
+	internal func clear_close_pending = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_close_pending;
@@ -1251,7 +1252,7 @@ pub mv struct Window: Control {
 	/**
 	 * Mark the app as quitting (internal).
 	 **/
-	func set_quit_flag = (self) {
+	internal func set_quit_flag = (self) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_app_quit;
@@ -1280,7 +1281,7 @@ pub mv struct Window: Control {
 	 * Whether the Dock icon was clicked while every window was closed (internal; `run`
 	 * reopens the window).
 	 **/
-	pub func reopen_flag = (out bool) {
+	internal func reopen_flag = (out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_app_reopen;
@@ -1308,7 +1309,7 @@ pub mv struct Window: Control {
 	/**
 	 * Whether the app is quitting (internal).
 	 **/
-	func quit_flag = (out bool) {
+	internal func quit_flag = (out bool) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern int nomen_app_quit;
@@ -1507,7 +1508,7 @@ pub mv struct Window: Control {
 	// scroll_to_top), then every registered pane root's layout (tabs pages /
 	// split panes re-frame when THIS pass frames their host view — the app
 	// cannot know the moment, so registration hands the timing here).
-	func relayout = (self, int first) {
+	internal func relayout = (self, int first) {
 		#if META.arch == "c" && META.platform == "macos" {
 			#raw {
 				extern void nomen_layout_thunk(struct Container *, struct Window *);

@@ -35,15 +35,15 @@ pub mv struct Task<T> : Awaitable {
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 result_slot = 0
+	internal var uint64 result_slot = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 cancel_flag = 0
+	internal var uint64 cancel_flag = 0
 	/**
 	 * Runtime handle (internal).
 	 **/
-	pub var uint64 future = 0
+	internal var uint64 future = 0
 
 	// INTERNAL (library-only): constructs a zeroed handle. `Thread.start` /
 	// `Fiber.start` build the Task they return through this — a user can

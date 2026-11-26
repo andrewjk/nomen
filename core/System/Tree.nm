@@ -12,19 +12,19 @@ pub mv struct Tree<T>: Enumerable {
 	/**
 	 * Node values, by node index (internal storage).
 	 **/
-	var values = Buffer<T>()
+	internal var values = Buffer<T>()
 	/**
 	 * Each node's left child, or -1 (internal storage).
 	 **/
-	mv lefts = Buffer<int>()
+	internal mv lefts = Buffer<int>()
 	/**
 	 * Each node's right child, or -1 (internal storage).
 	 **/
-	mv rights = Buffer<int>()
+	internal mv rights = Buffer<int>()
 	/**
 	 * Each node's parent, or -1 (internal storage).
 	 **/
-	mv parents = Buffer<int>()
+	internal mv parents = Buffer<int>()
 	/**
 	 * The number of nodes.
 	 **/

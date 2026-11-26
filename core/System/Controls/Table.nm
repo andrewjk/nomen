@@ -18,13 +18,14 @@
 // embeddable grid; see GUI_PLAN Tier 2 — the iOS blocks are TODO stubs).
 pub mv struct Table: Control {
 	/**
-	 * The native platform handle for this control (internal; 0 until it is created).
+	 * The control's native handle: pass it to `Container` methods such as `add` to lay the
+	 * control out, and to `contains` to hit-test it (0 until the control is created).
 	 **/
 	var uint64 handle = 0
 	/**
 	 * The native table inside the scroll view (internal).
 	 **/
-	var uint64 table = 0
+	internal var uint64 table = 0
 
 	/**
 	 * An empty table with `cols` columns in `window`.

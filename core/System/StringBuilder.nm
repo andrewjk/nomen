@@ -21,15 +21,15 @@ pub mv struct StringBuilder {
 	/**
 	 * The address of the byte buffer (internal storage; 0 while empty).
 	 **/
-	var uint64 data = 0
+	internal var uint64 data = 0
 	/**
 	 * The number of bytes written so far (internal; read it with `length()`).
 	 **/
-	var len = 0
+	internal var len = 0
 	/**
 	 * The buffer's capacity in bytes (internal).
 	 **/
-	var cap = 0
+	internal var cap = 0
 
 	// Ensure capacity for at least `needed` bytes. Grows geometrically.
 	// Plain Nomen + the memory externs — no pointer arithmetic needed, so

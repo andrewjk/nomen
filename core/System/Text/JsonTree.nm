@@ -45,7 +45,7 @@ pub mv struct JsonTree {
 	/**
 	 * The node pool (internal storage; use the accessors).
 	 **/
-	mv nodes = StableList<JsonNode>()
+	internal mv nodes = StableList<JsonNode>()
 
 	/**
 	 * Append a fresh null node and return its index.

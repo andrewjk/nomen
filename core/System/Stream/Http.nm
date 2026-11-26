@@ -40,12 +40,12 @@ pub struct Http {
 	// 1 = DNS resolution, 2 = socket creation, 3 = connect, 6 = send failed.
 	// Mirrors Tcp's codes on the connect path; the Result-returning wrappers
 	// map it to HttpError.
-	var last_error = 0
+	internal var last_error = 0
 
 	/**
 	 * The `HttpError` case for an internal failure code.
 	 **/
-	func error_of = (int err, out HttpError) {
+	internal func error_of = (int err, out HttpError) {
 		switch {
 			case err == 1 {
 				return HttpError.dns
@@ -71,7 +71,7 @@ pub struct Http {
 	// (sends `body` and the Content-* headers). Sets self->status (0 on
 	// failure) and self->last_error, and returns the response body (empty string
 	// on failure).
-	func raw_exchange = (ref self {}, string method, string url, string body, mv out string) {
+	internal func raw_exchange = (ref self {}, string method, string url, string body, mv out string) {
 		// Parse the URL: [http://]host[:port][/path]
 		var host_start = 0
 		if url.starts_with("http://") {

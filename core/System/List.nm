@@ -9,7 +9,7 @@ pub mv struct List<T>: Viewable {
 	/**
 	 * The backing storage. Use the list's methods rather than touching it directly.
 	 **/
-	var items = Buffer<T>()
+	internal var items = Buffer<T>()
 
 	/**
 	 * Append `value` to the end of the list, growing the storage when it is full. The value
