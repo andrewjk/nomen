@@ -10,6 +10,9 @@ import { get_struct_size } from "./struct_layout.ts";
  */
 export function pointer_element_size(elem: Type, status: BuildStatus): number {
 	const name = elem.name;
+	// A nested array's row element (an Array mono's row `T`) is its heap
+	// buffer pointer, whatever the leaf is.
+	if (elem.is_array_heap) return 8;
 	if (name === "string") return 16;
 	const struct = status.structs.find((s) => s.name === name && !s.is_simple_type);
 	if (struct && !struct.is_class) return get_struct_size(name, status);
@@ -61,6 +64,10 @@ export function emit_index_address(size: number, status: BuildStatus) {
 export function emit_index_load(elem: Type, status: BuildStatus) {
 	const name = elem.name;
 	const size = pointer_element_size(elem, status);
+	if (elem.is_array_heap) {
+		emit_asm(status, `ldr x0, [x9]\n`);
+		return;
+	}
 	if (name === "string") {
 		emit_asm(status, `ldp x0, x1, [x9]\n`);
 		return;
@@ -85,6 +92,10 @@ export function emit_index_load(elem: Type, status: BuildStatus) {
 export function emit_index_store(elem: Type, status: BuildStatus) {
 	const name = elem.name;
 	const size = pointer_element_size(elem, status);
+	if (elem.is_array_heap) {
+		emit_asm(status, `str x0, [x9]\n`);
+		return;
+	}
 	if (name === "string") {
 		emit_asm(status, `stp x0, x1, [x9]\n`);
 		return;

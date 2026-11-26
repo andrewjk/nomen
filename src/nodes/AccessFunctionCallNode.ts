@@ -213,6 +213,12 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	nested_checked_access?: "or" | "panic";
 	/**
+	 * A method on a NESTED array dispatched to the row-keyed mono
+	 * (`Array_Array_int_first`, docs/ARRAY_NESTED_MONO.md) whose result is a
+	 * row: the call yields the row's heap buffer (base) pointer.
+	 */
+	returns_row?: boolean;
+	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring
 	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
 	 * the programmer, so the parameter constraint (bounds check) is skipped —

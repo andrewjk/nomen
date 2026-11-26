@@ -4,6 +4,8 @@ import Type from "../nodes/Type.ts";
 import ValueNode from "../nodes/ValueNode.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { array_row_type } from "./utils/array_row_types.ts";
+import { clone_type } from "./utils/tuple_struct.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import type_name from "./utils/type_name.ts";
 
@@ -56,7 +58,10 @@ export default function check_index_node(node: IndexNode, status: CheckStatus): 
 
 	if (array_elem_name) {
 		node.is_array_target = true;
-		node.type = new Type(array_elem_name);
+		// A nested array's row element (`Array_int` in `Array_Array_int`)
+		// is the row's heap-array type — an 8-byte buffer pointer.
+		const row = array_row_type(array_elem_name);
+		node.type = row ? clone_type(row) : new Type(array_elem_name);
 	} else {
 		node.type = new Type(target_type.name);
 	}

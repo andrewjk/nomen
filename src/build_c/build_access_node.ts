@@ -1525,6 +1525,7 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 							(node.target as AccessNode).access.node_type === "access_func")) &&
 					method_type?.name === "string" &&
 					!method_type.is_view &&
+					!method_type.is_array &&
 					!is_string_borrow(node.target);
 				let owned_recv_temp: string | undefined;
 				let owned_recv_val: string | undefined;

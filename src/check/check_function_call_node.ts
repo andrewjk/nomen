@@ -26,6 +26,7 @@ import check_function_call from "./check_function_call.ts";
 import check_function_node from "./check_function_node.ts";
 import check_node from "./check_node.ts";
 import type CheckStatus from "./CheckStatus.ts";
+import { array_row_type, heap_array_type_of, register_array_row } from "./utils/array_row_types.ts";
 import { maybe_record_capture } from "./utils/captures.ts";
 import { resolve_case_enum_type } from "./utils/case_enum.ts";
 import check_init_assigns_all_fields from "./utils/check_init_fields.ts";
@@ -62,6 +63,7 @@ import { resolve_declared_struct } from "./utils/resolve_declared_type.ts";
 import { spawn_arg_root_name } from "./utils/spawn_region.ts";
 import synthesize_lambda_name from "./utils/synthesize_lambda_name.ts";
 import { bind_trait_defaults } from "./utils/trait_defaults.ts";
+import { clone_type } from "./utils/tuple_struct.ts";
 import type_from_value from "./utils/type_from_value.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import validate_spawn_args_sendable from "./utils/validate_spawn_args_sendable.ts";
@@ -826,7 +828,8 @@ export function monomorphize(
 			cloned.return_type = materialize_generic_enum_type(cloned.return_type, status);
 		}
 		for (const param of cloned.params) {
-			param.type = substitute_type(param.type, substitution);
+			// substitute_param_signature substitutes param.type (once — a second
+			// pass would rebuild a nested array's row type without its heap kind).
 			substitute_param_signature(param, substitution);
 			if (param.type.type_args?.length) {
 				param.type = materialize_generic_enum_type(param.type, status);
@@ -967,7 +970,8 @@ export function monomorphize(
 		cloned.return_type = new Type(mono_name);
 		cloned.type_params = [];
 		for (const param of cloned.params) {
-			param.type = substitute_type(param.type, substitution);
+			// substitute_param_signature substitutes param.type (once — a second
+			// pass would rebuild a nested array's row type without its heap kind).
 			substitute_param_signature(param, substitution);
 			if (param.constraint) {
 				substitute_raw_in_node(
@@ -1180,6 +1184,9 @@ export function flatten_nested_generic_arg(t: Type, status: CheckStatus): Type {
 	if (type_contains_unresolved_param(t, status)) return t;
 	const inner_mono = monomorphize(inner_generic, t.type_args, status);
 	if (!inner_mono) return t;
+	if (inner_generic.name === "Array" && !t.is_array) {
+		register_array_row(inner_mono.name, heap_array_type_of(t));
+	}
 	const flat = new Type(inner_mono.name, t.is_static, t.is_array, t.length);
 	flat.storage_kind = t.storage_kind;
 	flat.is_ref = t.is_ref;
@@ -1302,7 +1309,8 @@ export function synthesize_generic_trait_defaults(struct: StructNode, status: Ch
 			cloned.file_id = struct.file_id;
 			cloned.return_type = substitute_type(cloned.return_type, substitution);
 			for (const param of cloned.params) {
-				param.type = substitute_type(param.type, substitution);
+				// substitute_param_signature substitutes param.type (once — a second
+				// pass would rebuild a nested array's row type without its heap kind).
 				substitute_param_signature(param, substitution);
 			}
 			// The trait's `self` param is typed as the trait name (e.g. `Box`);
@@ -2559,6 +2567,18 @@ function substitute_func_params(
 
 export function substitute_type(type: Type, substitution: Map<string, string>): Type {
 	const resolved_name = substitution.get(type.name) || type.name;
+	// A nested array's row `T` (`Array_int` in `Array_Array_int`): the
+	// heap-array type it stands for, not the `Array_int` struct value.
+	const row =
+		resolved_name !== type.name && !type.is_array ? array_row_type(resolved_name) : undefined;
+	if (row) {
+		const out = clone_type(row);
+		out.is_ref = type.is_ref;
+		out.is_view = type.is_view;
+		out.is_const_ref = type.is_const_ref;
+		out.is_nullable = type.is_nullable;
+		return out;
+	}
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
 	new_type.is_ref = type.is_ref;
 	new_type.is_view = type.is_view;
@@ -2744,6 +2764,8 @@ function substitute_raw_types(
 		const resolved = substitution.get(param.type.name);
 		if (!resolved) continue;
 		if (param.is_self_param) continue;
+		// A nested array's row is passed as its buffer pointer — by value.
+		if (array_row_type(resolved)) continue;
 		const s = structs.find((x) => x.name === resolved);
 		// Dereference struct params in raw blocks (they're passed by pointer
 		// but the raw C code assumes pass-by-value). Skip class params —
@@ -2792,6 +2814,8 @@ function raw_type_size(
 	tables: NullableTypeTables,
 	traits: RawTraitTable = [],
 ): number {
+	// A nested array's row element is its buffer pointer.
+	if (array_row_type(name)) return 8;
 	// The shared layout model (build_common/layout.ts) — the native ABI the
 	// raw asm strides and unsafe-Nomen T_SIZE expressions ride. Riding the
 	// same walk `get_struct_size` emits from keeps a substituted stride in
@@ -2925,9 +2949,16 @@ function substitute_raw_in_node(
 			// - Non-simple struct types need `struct T` prefix (the typedef
 			//   may not be in scope, especially in headers)
 			// - Class types need `struct T*` (they're heap-allocated pointers)
-			const struct_node = structs.find((s) => s.name === type && !s.is_simple_type);
+			// A nested array's row (`Array_int` in `Array_Array_int`) is a
+			// buffer pointer, not the `Array_int` struct value.
+			const struct_node = array_row_type(type)
+				? undefined
+				: structs.find((s) => s.name === type && !s.is_simple_type);
 			let c_type_name: string;
-			if (struct_node?.is_class) {
+			if (array_row_type(type)) {
+				// A nested array's row element: the row buffer pointer.
+				c_type_name = `struct ${type} *`;
+			} else if (struct_node?.is_class) {
 				c_type_name = `struct ${type} *`;
 			} else if (struct_node) {
 				c_type_name = `struct ${type}`;
@@ -3577,7 +3608,8 @@ function specialize_function(
 	}
 
 	for (const param of cloned.params) {
-		param.type = substitute_type(param.type, substitution);
+		// substitute_param_signature substitutes param.type (once — a second
+		// pass would rebuild a nested array's row type without its heap kind).
 		substitute_param_signature(param, substitution);
 	}
 	if (cloned.return_type.name) {
@@ -4060,7 +4092,9 @@ function restamp_index_in_node(node: BaseNode | undefined | null, mono_struct_na
 			const target_is_self = target.node_type === "value" && (target as ValueNode).value === "self";
 			if (target_is_self && mono_struct_name.startsWith("Array_")) {
 				idx.is_array_target = true;
-				idx.type = new Type(mono_struct_name.slice("Array_".length));
+				const elem_name = mono_struct_name.slice("Array_".length);
+				const row = array_row_type(elem_name);
+				idx.type = row ? clone_type(row) : new Type(elem_name);
 			} else {
 				const elem = restamp_resolve_type(target);
 				if (elem?.name) idx.type = new Type(elem.name);

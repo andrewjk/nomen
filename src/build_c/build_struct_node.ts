@@ -14,6 +14,7 @@ import { classify_param } from "../build_common/param_classify.ts";
 import scan_force_heap_strings from "../build_common/scan_force_heap_strings.ts";
 import { moved_param_is_consumed } from "../build_common/scan_moved_param_consumed.ts";
 import { param_is_string_transfer } from "../build_common/string_transfer.ts";
+import { array_row_type } from "../check/utils/array_row_types.ts";
 import { is_overloaded, mangled_label } from "../check/utils/function_overload.ts";
 import type BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
@@ -935,8 +936,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			if (param.type.is_view && !param.is_self_param) {
 				status.function_view_params.add(c_function_name(param.name));
 			}
-			const param_struct = status.structs.find((s) => s.name === param.type.name);
-			const param_trait = status.traits.find((t) => t.name === param.type.name);
+			// A heap-array param (a nested array's row `T`) is its buffer
+			// pointer passed by value, whatever its element type is.
+			const param_struct = param.type.is_array_heap
+				? undefined
+				: status.structs.find((s) => s.name === param.type.name);
+			const param_trait = param.type.is_array_heap
+				? undefined
+				: status.traits.find((t) => t.name === param.type.name);
 			// Only struct/trait/self/ref params and non-simple `var` params are
 			// emitted as pointers (see build_parameter_node). A `var int x` is
 			// by-value, so it must NOT be in function_ref_params. A method of
@@ -1057,7 +1064,11 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			? mangled_label(func, node.name)
 			: `${node.name}_${func.name.replace(/#/g, "")}`;
 		const emit_label = func_label_name;
-		if (func.return_type.is_array) {
+		if (func.return_type.is_array_heap && array_row_type(node.name.slice("Array_".length))) {
+			// A row-keyed Array mono (`Array_Array_int`) returning `T`: the
+			// row's heap buffer pointer (docs/ARRAY_NESTED_MONO.md).
+			status.code += `struct Array_${func.return_type.name} *${emit_label}(`;
+		} else if (func.return_type.is_array) {
 			// Returning array data pointer (e.g. out Array<T> becomes T[] after monomorphization)
 			// The #arch: c block returns void* containing struct header + data
 			status.code += `void* ${emit_label}(`;

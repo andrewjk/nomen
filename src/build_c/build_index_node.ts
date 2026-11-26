@@ -15,6 +15,8 @@ import type_from_value_node from "./utils/type_from_value_node.ts";
 export function pointer_element_c_type(elem: Type, status: BuildStatus): string {
 	const name = elem.name;
 	const struct = status.structs.find((s) => s.name === name && !s.is_simple_type);
+	// A nested array's row element: the row's heap buffer pointer.
+	if (elem.is_array_heap) return `struct Array_${name} *`;
 	if (name === "string") return "nomen_string";
 	if (struct?.is_class) return `struct ${name} *`;
 	if (struct) return `struct ${name}`;

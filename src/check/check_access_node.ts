@@ -134,7 +134,9 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		!(
 			node.target.node_type === "access" &&
 			(node.target as AccessNode).access.node_type === "access_func" &&
-			((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+			(((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access ===
+				true ||
+				((node.target as AccessNode).access as AccessFunctionCallNode).returns_row === true)
 		) &&
 		// D3: a STRING call result stays inline — the call-site borrow/owned
 		// normalization (string_return_analysis) already emits a balanced
@@ -785,8 +787,11 @@ export function check_access_function_node(
 			// its own type args — `Box<Cell>[]` monomorphizes Array for
 			// `Box_Cell`, not bare `Box`.
 			if (array_struct.type_params.length > 0) {
-				const elem_type = new Type(target_type.name);
+				let elem_type = new Type(target_type.name);
 				elem_type.type_args = target_type.type_args;
+				if (target_type.elem && ROW_MONO_METHODS.has(node.name)) {
+					elem_type = row_generic_type(target_type.elem);
+				}
 				const mono = monomorphize(array_struct, [elem_type], status);
 				if (mono) {
 					effective_type = new Type(mono.name);
@@ -1134,6 +1139,12 @@ export function check_access_function_node(
 
 	if (struct && is_overloaded(struct, node.name)) {
 		node.mangled_name = mangled_label(func, struct.name);
+	} else if (struct && target_type.elem && ROW_MONO_METHODS.has(node.name)) {
+		// A nested receiver dispatches to the ROW-keyed mono
+		// (`Array_Array_int`); the backends otherwise rebuild the symbol
+		// from the leaf (`Array_int_first`).
+		node.mangled_name = `${struct.name}_${node.name}`;
+		node.returns_row = !!func.return_type?.is_array_heap;
 	}
 
 	// A `mv out T` method transfers ownership of its result to the caller
@@ -1739,4 +1750,19 @@ function check_nested_checked_access(
 	node.inline_nested_access = true;
 	node.nested_checked_access = node.name === "at_or" ? "or" : "panic";
 	return true;
+}
+
+/** Array methods a NESTED receiver dispatches to its row-keyed mono
+ *  (`Array<Array<int>>` → `Array_Array_int`, whose `T` is the row) — see
+ *  docs/ARRAY_NESTED_MONO.md. */
+const ROW_MONO_METHODS = new Set(["first", "at_end"]);
+
+/** The generic spelling of a nested array's row type (`Array<int>`,
+ *  `Array<Array<int>>`, …) for monomorphizing `Array` on it. */
+function row_generic_type(row: Type): Type {
+	const inner = row.elem ? row_generic_type(row.elem) : new Type(row.name);
+	if (!row.elem) inner.type_args = row.type_args;
+	const generic = new Type("Array");
+	generic.type_args = [inner];
+	return generic;
 }

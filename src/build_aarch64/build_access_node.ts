@@ -1574,12 +1574,14 @@ function build_access_field(node: AccessNode, status: BuildStatus) {
 			emit_asm(status, `ldr x0, [x0]\n`);
 			return;
 		}
-		// A NESTED-array row (`g.at(i).length`): the at call yields the inner
-		// heap-array pointer; its length word is at [ptr + 0].
+		// A NESTED-array row (`g.at(i).length`, `g.first().length`): the call
+		// yields the inner heap-array pointer; its length word is at [ptr + 0].
 		if (
 			node.target.node_type === "access" &&
 			(node.target as AccessNode).access.node_type === "access_func" &&
-			((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access === true
+			(((node.target as AccessNode).access as AccessFunctionCallNode).inline_nested_access ===
+				true ||
+				((node.target as AccessNode).access as AccessFunctionCallNode).returns_row === true)
 		) {
 			build_node(node.target, status);
 			ensure_newline(status);

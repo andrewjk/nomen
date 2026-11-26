@@ -599,6 +599,7 @@ export default function build_return_node(
 			ret_type.name === "string" &&
 			!ret_type.is_view &&
 			!ret_type.is_pointer &&
+			!ret_type.is_array &&
 			node.value.node_type === "access";
 		// A bare string literal return (`return "Wizard"`) is not heap-allocated;
 		// the caller's auto_free would crash freeing it. strdup to make it owned.
@@ -606,6 +607,7 @@ export default function build_return_node(
 			ret_type.name === "string" &&
 			!ret_type.is_view &&
 			!ret_type.is_pointer &&
+			!ret_type.is_array &&
 			node.value.node_type === "value" &&
 			(node.value as ValueNode).value.length >= 2 &&
 			(node.value as ValueNode).value.startsWith('"') &&
@@ -629,6 +631,7 @@ export default function build_return_node(
 			ret_type.name === "string" &&
 			!ret_type.is_view &&
 			!ret_type.is_pointer &&
+			!ret_type.is_array &&
 			node.value.node_type === "value" &&
 			!returns_string_literal
 		) {
@@ -791,7 +794,8 @@ export default function build_return_node(
 			expr_is_simple &&
 			!returns_bare_self &&
 			!returns_borrowed_string &&
-			!ret_type.is_view;
+			!ret_type.is_view &&
+			!ret_type.is_array;
 		if (needs_type_erasure_cast) {
 			status.code += return_is_class ? `(struct ${mono_ret_name}*)` : `(struct ${mono_ret_name})`;
 		}

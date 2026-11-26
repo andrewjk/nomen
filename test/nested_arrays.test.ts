@@ -214,4 +214,26 @@ Console.write("\\{g.at(0).at(1).name} \\{g.at(1).at(0).name} \\{g.at(0).length}"
 `;
 		await build_and_check_output(input, "nested_mv_rows", "b c 2");
 	});
+
+	test("first / at_end return the row (row-keyed Array mono)", async () => {
+		const input = `import System
+mv struct Rec {
+	mv string name
+}
+pub func main = () {
+	const g = [[1, 2], [3]]
+	Console.write("\\{g.first().length} \\{g.at_end().length} \\{g.first().at_or(1, 0)} ")
+	const w = [["ab", "cd"], ["ef"]]
+	Console.write(w.first().at_or(1, "?") + w.at_end().at_or(0, "?") + " ")
+	const r = [[Rec("a"), Rec("b")], [Rec("c")]]
+	Console.write(r.first().at_or_panic(1).name + r.at_end().at_or_panic(0).name + " ")
+	const t = [[[1, 2], [3]], [[4, 5, 6]]]
+	Console.write("\\{t.first().length} \\{t.at_end().first().length} \\{t.first().at_end().at_or(0, 9)}")
+}
+`;
+		await build_and_check_output(input, "nested_first_at_end", "2 1 2 cdef bc 2 3 3", true, {
+			audit: true,
+			js: true,
+		});
+	});
 });

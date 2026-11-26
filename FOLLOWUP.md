@@ -883,11 +883,9 @@ answer:
 Binding the result to a local first (`const c = xs.copy()`, then `c.length`)
 works everywhere. Seen while adding `Array.copy()`.
 
-## `first` / `at_end` / `at_or_null` on a nested array lose the nesting
+## `at_or_null` on a nested array
 
-On a nested array (where the element is a row), these library accessors are
-typed as the innermost element: `w.first().length` on `[["ab"], ["ef"]]` is
-"Field not found: length". The library mono only sees the innermost element
-type. `.at`, `.set`, `at_or` and `at_or_panic` are lowered inline for nested
-receivers instead (`inline_nested_access` / `nested_checked_access` in
-check_access_node); these three would need the same treatment.
+`first` and `at_end` on a nested receiver now dispatch to a row-keyed Array
+mono (`Array_Array_int`, docs/ARRAY_NESTED_MONO.md steps 1, 3, 4).
+`at_or_null` still can't: its result would be `Array<int>?`, and nullable
+heap arrays aren't supported yet (`var Array<int>? x = null` is rejected).
