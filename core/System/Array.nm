@@ -2,14 +2,8 @@
  * A fixed-length array of values, created with a literal (`[1, 2, 3]`) and addressable by index
  **/
 pub struct Array<T>: Viewable {
-	/**
-	 * The number of elements. Fixed when the array is created.
-	 **/
 	pub const int length
 
-	/**
-	 * An array holding `items` in order (what an array literal like `[1, 2, 3]` creates).
-	 **/
 	pub func #init = (self, ...T items) {
 		#if META.arch == "c" {
 			#raw {
@@ -38,10 +32,6 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
-	/**
-	 * The element at `index`. The index must be provably within `[0, length)`; use `at_or`,
-	 * `at_or_null` or `at_or_panic` when it can't be proven at compile time.
-	 **/
 	// Inline-storage element access — `unsafe` Nomen single-sourced for both
 	// backends (docs/CORE_RAW.md roadmap item 2). `self[index]` lowers to the
 	// element base each backend already uses for Array receivers (C skips the
@@ -52,19 +42,12 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
-	/**
-	 * The first element. The array must be provably non-empty.
-	 **/
 	pub func first = (self: self.length > 0, out T) {
 		unsafe {
 			return self[0]
 		}
 	}
 
-	/**
-	 * Replace the element at `index` with `value`. The index must be provably within
-	 * `[0, length)`.
-	 **/
 	// The string-slot specialization the raw `#if T_NEEDS_STRDUP` blocks used
 	// to express: T_NEEDS_STRDUP is a per-instantiation constant the
 	// monomorphizer substitutes (true for string, false otherwise) and folds,
@@ -85,9 +68,6 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
-	/**
-	 * The element at `index`, or `fallback` when `index` is out of range.
-	 **/
 	// Bounds-checked accessors — the runtime-checked escape hatch for
 	// indices the constraint checker can't prove (see PERF.md gap 5). Unlike
 	// every other Array method these have Nomen-level bodies: the method-call
@@ -101,9 +81,6 @@ pub struct Array<T>: Viewable {
 		return fallback
 	}
 
-	/**
-	 * The element at `index`. Panics when `index` is outside `[0, length)`.
-	 **/
 	pub func at_or_panic = (self, int index, out T) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -111,10 +88,9 @@ pub struct Array<T>: Viewable {
 		panic("index out of range")
 	}
 
-	/**
-	 * The element at `index`, or `null` when `index` is out of range
-	 * (`arr.at_or_null(i) ?? fallback`).
-	 **/
+	// Nullable checked access: the element when index is inside self.length,
+	// `null` otherwise — the escape hatch for indices the constraint
+	// checker can't prove (`arr.at_or_null(i) ?? fallback`).
 	pub func at_or_null = (self, int index, out T?) {
 		if index >= 0 && index < self.length {
 			return self.at(index)
@@ -122,19 +98,15 @@ pub struct Array<T>: Viewable {
 		return null
 	}
 
-	/**
-	 * The last element. The array must not be empty.
-	 **/
 	pub func at_end = (self, out T) {
 		unsafe {
 			return self[self.length - 1]
 		}
 	}
 
-	/**
-	 * A borrowed view of the elements in `[start, end)`, without copying. The view may not
-	 * outlive the array and is invalidated if the array is reassigned.
-	 **/
+	// A non-mv (ptr, len) slice [start, end) over self's inline element
+	// storage, returned as a `view T`. Borrows from self (may not outlive it,
+	// invalidated on reassignment). Element access via view.at / view.length.
 	pub func slice = (
 		self,
 		int start: start >= 0 && start <= self.length,
@@ -161,9 +133,6 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
-	/**
-	 * A new array of `count` elements, each a copy of `value` (`Array.with(0, 10)`).
-	 **/
 	pub func with = (T value, int count: count >= 0, out Array<T>: out.length == count) {
 		#if META.arch == "c" {
 			#raw {
@@ -398,134 +367,248 @@ pub struct Array<T>: Viewable {
 		}
 	}
 
-	/**
-	 * A new array holding this array's elements followed by `other`'s.
-	 **/
-	pub func add = (self, Array other, out Array) {
+	/// A fresh array holding `self`'s elements followed by `other`'s (the
+	/// `+` operator). Elements are copied like `copy()` does: strings get
+	/// their own bytes and a struct with a `copy()` goes through it.
+	pub func add = (self, Array<T> other, out Array<T>: out.length == self.length + other.length) {
 		#if META.arch == "c" {
 			#raw {
 				long _self_len = self->length;
 				long _other_len = other->length;
-				long _result_len = _self_len + _other_len;
+				long _len = _self_len + _other_len;
 				long _header = sizeof(*self);
-				void* _result = malloc(_header + _result_len * T_SIZE);
+				void* _result = malloc(_header + _len * T_SIZE);
 				((long*)_result)[0] = 0;
-				((long*)_result)[1] = _result_len;
+				((long*)_result)[1] = _len;
 				T* _data = (T*)((char*)_result + _header);
-				T* self_data = (T*)((char*)self + _header);
-				T* other_data = (T*)((char*)other + _header);
-				memcpy(_data, self_data, _self_len * T_SIZE);
-				memcpy(_data + _self_len, other_data, _other_len * T_SIZE);
-				return _result;
-			}
-		}
-		#if META.arch == "aarch64" {
-			#raw {
-				// x19 = self (first elem), x20 = other (first elem), x8 = return buf (first elem)
-				// Length prefix is at [base - 8]
-
-				// Save return buffer (clobbered by _memcpy)
-				str x8, [sp, #-16]!
-
-				// Load lengths and store result length
-				ldr x2, [x19, #-8]
-				ldr x3, [x20, #-8]
-				add x4, x2, x3
-				ldr x8, [sp]
-				str x4, [x8, #-8]
-
-				// self_bytes = self_len * T_SIZE
-				mov x5, #T_SIZE
-				mul x5, x2, x5
-
-				// memcpy(return_buf, self, self_bytes)
-				mov x0, x8
-				mov x1, x19
-				mov x2, x5
-				bl _memcpy
-
-				// Reload return buf and self_len (clobbered by memcpy)
-				ldr x8, [sp]
-				ldr x2, [x19, #-8]
-				mov x5, #T_SIZE
-				mul x5, x2, x5
-
-				// other_bytes
-				ldr x3, [x20, #-8]
-				mov x6, #T_SIZE
-				mul x6, x3, x6
-
-				// memcpy(return_buf + self_bytes, other, other_bytes)
-				add x0, x8, x5
-				mov x1, x20
-				mov x2, x6
-				bl _memcpy
-
-				add sp, sp, #16
-			}
-		}
-	}
-
-	/**
-	 * A new array holding this array's elements repeated `other` times.
-	 **/
-	pub func mul = (self, int other, out Array) {
-		#if META.arch == "c" {
-			#raw {
-				long _self_len = self->length;
-				long _result_len = _self_len * other;
-				long _header = sizeof(*self);
-				void* _result = malloc(_header + _result_len * T_SIZE);
-				((long*)_result)[0] = 0;
-				((long*)_result)[1] = _result_len;
-				T* _data = (T*)((char*)_result + _header);
-				T* self_data = (T*)((char*)self + _header);
-				for (long i = 0; i < other; i++) {
-					memcpy(_data + i * _self_len, self_data, _self_len * T_SIZE);
+				T* _a = (T*)((char*)self + _header);
+				T* _b = (T*)((char*)other + _header);
+				for (long i = 0; i < _len; i++) {
+					T* _src = i < _self_len ? &_a[i] : &_b[i - _self_len];
+					#if T_HAS_COPY
+						_data[i] = T_copy(_src);
+					#elif T_NEEDS_STRDUP
+						_data[i] = nomen_str_dup(*_src);
+					#else
+						_data[i] = *_src;
+					#endif
 				}
 				return _result;
 			}
 		}
 		#if META.arch == "aarch64" {
 			#raw {
-				// x19 = self (first elem), x1 = multiplier, x8 = return buf (first elem)
+				// x19 = self (first elem, length at [-8]); x1 = other's base
+				// pointer (an Array<T> param: [ptr]=length, [ptr+8..]=data).
+				// Returns x0 = heap-allocated array pointer ([ptr]=length, [ptr+8..]=data).
+				stp x20, x21, [sp, #-16]!
+				stp x22, x23, [sp, #-16]!
+				stp x24, x25, [sp, #-16]!
+				stp x26, x27, [sp, #-16]!
+				add x20, x1, #8             // x20 = other (first elem; survives the calls)
+				ldr x21, [x19, #-8]         // x21 = self length
+				ldr x22, [x20, #-8]         // x22 = other length
+				add x23, x21, x22           // x23 = result length
 
-				// Save return buf and multiplier
-				stp x8, x1, [sp, #-16]!
+				mov x2, #T_SIZE
+				mul x0, x23, x2
+				add x0, x0, #8
+				bl _malloc
+				mov x24, x0                 // x24 = base pointer
+				str x23, [x24]
 
-				// self_len and self_bytes
-				ldr x2, [x19, #-8]
-				mov x5, #T_SIZE
-				mul x5, x2, x5
-
-				// result_len = self_len * multiplier
-				mul x3, x2, x1
-				ldr x8, [sp]
-				str x3, [x8, #-8]
-
-				// Loop: copy self to result multiplier times
-				mov x4, #0
-
-				.Larray_mul_loop:
-				ldr x1, [sp, #8]
-				cmp x4, x1
-				b.ge .Larray_mul_end
-
-				// dest = return_buf + x4 * self_bytes
-				ldr x8, [sp]
-				mul x6, x4, x5
-				add x0, x8, x6
-
-				// memcpy(dest, self, self_bytes)
+				// memcpy(base + 8, self, self_len * T_SIZE)
+				add x0, x24, #8
 				mov x1, x19
-				mov x2, x5
+				mov x2, #T_SIZE
+				mul x2, x21, x2
+				bl _memcpy
+				// memcpy(base + 8 + self_bytes, other, other_len * T_SIZE)
+				mov x2, #T_SIZE
+				mul x3, x21, x2
+				add x0, x24, #8
+				add x0, x0, x3
+				mov x1, x20
+				mul x2, x22, x2
 				bl _memcpy
 
-				add x4, x4, #1
+				// T_FAT (string): give each slot its own copy of the bytes.
+				mov x7, #T_FAT
+				cmp x7, #1
+				b.ne .Larray_add_structs
+				mov x25, #0
+				.Larray_add_loop:
+				cmp x25, x23
+				b.ge .Larray_add_end
+				add x26, x24, #8
+				add x26, x26, x25, lsl #4   // x26 = &slot[i]
+				ldr x0, [x26]
+				cbz x0, .Larray_add_next
+				ldr x0, [x26, #8]
+				add x0, x0, #1
+				bl _malloc                  // malloc(len + 1)
+				ldr x1, [x26]
+				ldr x2, [x26, #8]
+				bl _memcpy
+				ldr x2, [x26, #8]
+				strb wzr, [x0, x2]
+				str x0, [x26]
+				.Larray_add_next:
+				add x25, x25, #1
+				b .Larray_add_loop
+
+				// T_HAS_COPY: rebuild each slot through T_copy(x0 = &src, x8 = &dst).
+				.Larray_add_structs:
+				mov x7, #T_HAS_COPY
+				cmp x7, #1
+				b.ne .Larray_add_end
+				mov x25, #0
+				.Larray_add_struct_loop:
+				cmp x25, x23
+				b.ge .Larray_add_end
+				mov x2, #T_SIZE
+				cmp x25, x21
+				b.ge .Larray_add_struct_other
+				mul x3, x25, x2
+				add x0, x19, x3
+				b .Larray_add_struct_dst
+				.Larray_add_struct_other:
+				sub x3, x25, x21
+				mul x3, x3, x2
+				add x0, x20, x3
+				.Larray_add_struct_dst:
+				mul x3, x25, x2
+				add x8, x24, #8
+				add x8, x8, x3
+				bl T_copy
+				add x25, x25, #1
+				b .Larray_add_struct_loop
+
+				.Larray_add_end:
+				mov x0, x24
+				ldp x26, x27, [sp], #16
+				ldp x24, x25, [sp], #16
+				ldp x22, x23, [sp], #16
+				ldp x20, x21, [sp], #16
+			}
+		}
+	}
+
+	/// A fresh array holding `self`'s elements repeated `count` times (the
+	/// `*` operator); a count below 1 gives an empty array. Elements are
+	/// copied like `copy()` does.
+	pub func mul = (self, int count, out Array<T>) {
+		#if META.arch == "c" {
+			#raw {
+				long _self_len = self->length;
+				long _count = count < 0 ? 0 : count;
+				long _len = _self_len * _count;
+				long _header = sizeof(*self);
+				void* _result = malloc(_header + _len * T_SIZE);
+				((long*)_result)[0] = 0;
+				((long*)_result)[1] = _len;
+				T* _data = (T*)((char*)_result + _header);
+				T* _a = (T*)((char*)self + _header);
+				for (long i = 0; i < _len; i++) {
+					T* _src = &_a[i % _self_len];
+					#if T_HAS_COPY
+						_data[i] = T_copy(_src);
+					#elif T_NEEDS_STRDUP
+						_data[i] = nomen_str_dup(*_src);
+					#else
+						_data[i] = *_src;
+					#endif
+				}
+				return _result;
+			}
+		}
+		#if META.arch == "aarch64" {
+			#raw {
+				// x19 = self (first elem), x1 = count.
+				// Returns x0 = heap-allocated array pointer ([ptr]=length, [ptr+8..]=data).
+				stp x21, x22, [sp, #-16]!
+				stp x23, x24, [sp, #-16]!
+				stp x25, x26, [sp, #-16]!
+				mov x22, x1
+				cmp x22, #0
+				csel x22, x22, xzr, gt      // x22 = max(count, 0)
+				ldr x21, [x19, #-8]         // x21 = self length
+				mul x23, x21, x22           // x23 = result length
+
+				mov x2, #T_SIZE
+				mul x0, x23, x2
+				add x0, x0, #8
+				bl _malloc
+				mov x24, x0                 // x24 = base pointer
+				str x23, [x24]
+
+				// memcpy(base + 8 + k * self_bytes, self, self_bytes) per repeat
+				mov x25, #0
+				.Larray_mul_copy:
+				cmp x25, x22
+				b.ge .Larray_mul_copied
+				mov x2, #T_SIZE
+				mul x2, x21, x2
+				mul x3, x25, x2
+				add x0, x24, #8
+				add x0, x0, x3
+				mov x1, x19
+				bl _memcpy
+				add x25, x25, #1
+				b .Larray_mul_copy
+				.Larray_mul_copied:
+
+				// T_FAT (string): give each slot its own copy of the bytes.
+				mov x7, #T_FAT
+				cmp x7, #1
+				b.ne .Larray_mul_structs
+				mov x25, #0
+				.Larray_mul_loop:
+				cmp x25, x23
+				b.ge .Larray_mul_end
+				add x26, x24, #8
+				add x26, x26, x25, lsl #4   // x26 = &slot[i]
+				ldr x0, [x26]
+				cbz x0, .Larray_mul_next
+				ldr x0, [x26, #8]
+				add x0, x0, #1
+				bl _malloc                  // malloc(len + 1)
+				ldr x1, [x26]
+				ldr x2, [x26, #8]
+				bl _memcpy
+				ldr x2, [x26, #8]
+				strb wzr, [x0, x2]
+				str x0, [x26]
+				.Larray_mul_next:
+				add x25, x25, #1
 				b .Larray_mul_loop
 
+				// T_HAS_COPY: rebuild each slot through T_copy(x0 = &src, x8 = &dst).
+				.Larray_mul_structs:
+				mov x7, #T_HAS_COPY
+				cmp x7, #1
+				b.ne .Larray_mul_end
+				mov x25, #0
+				.Larray_mul_struct_loop:
+				cmp x25, x23
+				b.ge .Larray_mul_end
+				udiv x3, x25, x21
+				msub x3, x3, x21, x25       // x3 = i % self_len
+				mov x2, #T_SIZE
+				mul x3, x3, x2
+				add x0, x19, x3
+				mul x3, x25, x2
+				add x8, x24, #8
+				add x8, x8, x3
+				bl T_copy
+				add x25, x25, #1
+				b .Larray_mul_struct_loop
+
 				.Larray_mul_end:
-				add sp, sp, #16
+				mov x0, x24
+				ldp x25, x26, [sp], #16
+				ldp x23, x24, [sp], #16
+				ldp x21, x22, [sp], #16
 			}
 		}
 	}

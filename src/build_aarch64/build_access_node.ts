@@ -837,6 +837,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_nested_with(access_func, access_func.type.elem, status);
 				return;
 			}
+			// `xs + ys` / `xs * n` on a nested array: deep-copied rows.
+			if (access_func.nested_op && access_func.type?.elem) {
+				build_nested_op(node.target, access_func, access_func.type.elem, status);
+				return;
+			}
 			// `s.f(args)` where `f` is a func-typed FIELD: an indirect call
 			// through the stored code pointer (`ldr x8, …; blr x8`).
 			if (access_func.is_func_field_call) {
@@ -3612,7 +3617,10 @@ function build_access_method(
 	const arg_builds_in_loop = (i: number): boolean => {
 		if (view_arg_set.has(i) || string_arg_set.has(i) || nullable_scalar_arg_set.has(i)) return true;
 		if ((access_func.ref_param_indices ?? []).includes(i)) return true;
-		const param_type = (access_func.params[i] as any).type?.name || "";
+		// An array argument (`Array<Rec>`) is a pointer, whatever its element.
+		const param_type = (access_func.params[i] as any).type?.is_array
+			? ""
+			: (access_func.params[i] as any).type?.name || "";
 		if (is_struct_type(param_type, status) || is_enum_with_data_type(param_type, status)) {
 			return true;
 		}
@@ -3637,7 +3645,8 @@ function build_access_method(
 	for (let i = access_func.params.length - 1; i >= 0; i--) {
 		const param = access_func.params[i];
 		const is_ref_param = access_func.ref_param_indices?.includes(i);
-		const param_type = (param as any).type?.name || "";
+		// An array argument (`Array<Rec>`) is a pointer, whatever its element.
+		const param_type = (param as any).type?.is_array ? "" : (param as any).type?.name || "";
 		// A nullable SCALAR method argument is a (value, flag) pair:
 		// `null` → both zero; a bare nullable variable → its value + flag;
 		// anything else → the value with flag = 1.
@@ -4637,4 +4646,94 @@ function build_nested_with(
 	emit_asm(status, `${done}:\n`);
 	emit_asm(status, `ldr x0, [sp, #16]\n`);
 	emit_asm(status, `add sp, sp, #64\n`);
+}
+
+/**
+ * `xs + ys` / `xs * n` on a NESTED array (rewrite_array_operator): a fresh
+ * outer buffer whose slots are deep copies of the source rows (`xs`'s then
+ * `ys`'s, or `xs`'s `n` times over). Both arrays are heap base pointers.
+ * Returns x0 = the outer buffer's base pointer. Loop state lives on the
+ * stack: [sp] = k, [sp+16] = outer, [sp+32] = total, [sp+48] = ys or the
+ * clamped count, [sp+64] = xs.
+ */
+function build_nested_op(
+	target: BaseNode,
+	access_func: AccessFunctionCallNode,
+	row: Type,
+	status: BuildStatus,
+): void {
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const loop = `.Lno_loop_${id}`;
+	const done = `.Lno_done_${id}`;
+	const from_b = `.Lno_b_${id}`;
+	const picked = `.Lno_src_${id}`;
+	const is_add = access_func.nested_op === "add";
+	build_node(target, status);
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	build_node(access_func.params[0], status);
+	ensure_newline(status);
+	if (!is_add) {
+		emit_asm(status, `cmp x0, #0\n`);
+		emit_asm(status, `csel x0, x0, xzr, gt\n`);
+	}
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	// total = len(xs) + len(ys), or len(xs) * count
+	emit_asm(status, `ldr x1, [sp, #16]\n`);
+	emit_asm(status, `ldr x1, [x1]\n`);
+	emit_asm(status, `ldr x2, [sp]\n`);
+	if (is_add) {
+		emit_asm(status, `ldr x2, [x2]\n`);
+		emit_asm(status, `add x0, x1, x2\n`);
+	} else {
+		emit_asm(status, `mul x0, x1, x2\n`);
+	}
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `mov x1, #8\n`);
+	emit_asm(status, `mul x0, x0, x1\n`);
+	emit_asm(status, `add x0, x0, #8\n`);
+	emit_malloc(status);
+	emit_asm(status, `ldr x1, [sp]\n`);
+	emit_asm(status, `str x1, [x0]\n`);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `mov x0, #0\n`);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `ldr x0, [sp]\n`);
+	emit_asm(status, `ldr x1, [sp, #32]\n`);
+	emit_asm(status, `cmp x0, x1\n`);
+	emit_asm(status, `b.ge ${done}\n`);
+	// x0 = the source row for slot k
+	emit_asm(status, `ldr x2, [sp, #64]\n`);
+	emit_asm(status, `ldr x3, [x2]\n`);
+	if (is_add) {
+		emit_asm(status, `cmp x0, x3\n`);
+		emit_asm(status, `b.ge ${from_b}\n`);
+		emit_asm(status, `add x2, x2, #8\n`);
+		emit_asm(status, `ldr x0, [x2, x0, lsl #3]\n`);
+		emit_asm(status, `b ${picked}\n`);
+		emit_asm(status, `${from_b}:\n`);
+		emit_asm(status, `sub x0, x0, x3\n`);
+		emit_asm(status, `ldr x2, [sp, #48]\n`);
+		emit_asm(status, `add x2, x2, #8\n`);
+		emit_asm(status, `ldr x0, [x2, x0, lsl #3]\n`);
+		emit_asm(status, `${picked}:\n`);
+	} else {
+		emit_asm(status, `udiv x4, x0, x3\n`);
+		emit_asm(status, `msub x0, x4, x3, x0\n`);
+		emit_asm(status, `add x2, x2, #8\n`);
+		emit_asm(status, `ldr x0, [x2, x0, lsl #3]\n`);
+	}
+	emit_deep_array_copy(status, row);
+	emit_asm(status, `ldr x1, [sp]\n`);
+	emit_asm(status, `ldr x2, [sp, #16]\n`);
+	emit_asm(status, `add x2, x2, #8\n`);
+	emit_asm(status, `str x0, [x2, x1, lsl #3]\n`);
+	emit_asm(status, `ldr x0, [sp]\n`);
+	emit_asm(status, `add x0, x0, #1\n`);
+	emit_asm(status, `str x0, [sp]\n`);
+	emit_asm(status, `b ${loop}\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x0, [sp, #16]\n`);
+	emit_asm(status, `add sp, sp, #80\n`);
 }

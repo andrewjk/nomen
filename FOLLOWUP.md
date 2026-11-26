@@ -869,20 +869,6 @@ reads through it then fail with clang errors: "member reference type
 `view` is treated as the string view type regardless of the parameter's
 struct type. Seen while testing `Array<T>` fields; it is unrelated to them.
 
-## `.length` on an array-returning call is wrong on native backends
-
-`.length` read straight off a call that returns a heap array gives the wrong
-answer:
-
-- `make().length` (with `func make = (out Array<int>)`) prints 0 on aarch64.
-- `Array<int>.with(1, 3).length` prints 1 and leaks the buffer on C. The C
-  build emits `sizeof(Array_int_with(1L, 3L)) / sizeof(long)`, the
-  fixed-array length idiom, against a pointer.
-- `xs.copy().length` hits the same paths: 1 on C, 0 on aarch64. JS is correct.
-
-Binding the result to a local first (`const c = xs.copy()`, then `c.length`)
-works everywhere. Seen while adding `Array.copy()`.
-
 ## `at_or_null` on a nested array
 
 `first` and `at_end` on a nested receiver now dispatch to a row-keyed Array
@@ -898,24 +884,6 @@ to 'Array<Rec>' parameter 'fallback'". This is the general rule for
 mv-struct array literals passed to `Array<T>` params (check_function_call),
 which now applies because nested `at_or` calls the row-keyed library mono.
 
-## Array `+` / `*` operators (flat and nested)
-
-`+` and `*` on arrays lower to the library `Array.add` / `Array.mul`
-(find_custom_operator). They are broken even for flat arrays:
-
-- On aarch64 the result is a stack buffer sized from the compile-time
-  `node.type.length` (build_operation_node, around line 1813), so a
-  heap-array operand gives the wrong size: `[1, 2] * 2` has length 3.
-- `+` on two string arrays fails to link on aarch64 (undefined symbols
-  `a` and `b`).
-- The library bodies memcpy the slots, so string, struct and row elements
-  end up shared between the operands and the result (double free).
-
-Nested receivers (`Array<Array<int>>`) need the same row-keyed mono and
-per-row copies as `with` (docs/ARRAY_NESTED_MONO.md step 6), and that only
-makes sense once the flat operators are fixed. Seen while adding nested
-`Array<Array<T>>.with`.
-
 ## `slice` on a nested array
 
 `g.slice(0, 1)` on an `Array<Array<int>>` fails with "Function not found:
@@ -923,3 +891,9 @@ int.slice": the call still takes the leaf mono. `slice` returns `view T`,
 and a view of rows would need view types that carry the row type (`elem`)
 through the checker and all three backends, so it was left out of the
 nested `with` change. `copy()` and then indexing works as a stopgap.
+
+## Nested array literal with a variable row crashes on aarch64
+
+`const r = [7]` then `const h = [r, [3]]` (a nested literal whose row is a
+stack-array variable) segfaults at run time on aarch64. Literal rows
+(`[[7], [3]]`) work. Seen while adding nested `+` / `*`.

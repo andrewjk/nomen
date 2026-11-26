@@ -2859,6 +2859,10 @@ const combined = [1, 2] + [3, 4]    // [1, 2, 3, 4]
 const repeated = [1, 2] * 3         // [1, 2, 1, 2, 1, 2]
 ```
 
+`+` and `*` build a fresh `Array<T>` that owns copies of the elements (strings
+get their own bytes; structs and nested rows are copied), so the result never
+shares storage with its operands. A count below 1 gives an empty array.
+
 ### Ranges
 
 ```

@@ -673,6 +673,50 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					`${o}; })`;
 				return;
 			}
+			// `xs + ys` / `xs * n` on a NESTED array (rewrite_array_operator):
+			// a fresh outer buffer, each slot a deep copy of a source row.
+			if (access_func.nested_op && access_func.type?.elem) {
+				const outer = access_func.type;
+				const row = outer.elem!;
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const arr = `struct Array_${outer.name}`;
+				const header = `sizeof(${arr})`;
+				const slot = array_elem_c_type(outer);
+				const scratch = (n: BaseNode): string => {
+					const saved = begin_code_scratch(status);
+					build_node(n, status);
+					return end_code_scratch(status, saved);
+				};
+				const slots = (p: string): string => `((${slot}*)((char*)${p} + ${header}))`;
+				const a = `_no_a_${id}`;
+				const b = `_no_b_${id}`;
+				const na = `_no_na_${id}`;
+				const n = `_no_n_${id}`;
+				const o = `_no_o_${id}`;
+				const k = `_no_k_${id}`;
+				const src = `_no_s_${id}`;
+				let head: string;
+				let pick: string;
+				if (access_func.nested_op === "add") {
+					head =
+						`${arr}* ${b} = (${arr}*)(${scratch(access_func.params[0])}); ` +
+						`long ${n} = ${na} + ${b}->length; `;
+					pick = `${k} < ${na} ? ${slots(a)}[${k}] : ${slots(b)}[${k} - ${na}]`;
+				} else {
+					head =
+						`long ${b} = ${scratch(access_func.params[0])}; ` +
+						`long ${n} = ${na} * (${b} < 0 ? 0 : ${b}); `;
+					pick = `${slots(a)}[${k} % ${na}]`;
+				}
+				status.code +=
+					`({ ${arr}* ${a} = (${arr}*)(${scratch(node.target)}); long ${na} = ${a}->length; ${head}` +
+					`${arr}* ${o} = malloc(${header} + ${n} * sizeof(${slot})); ` +
+					`${o}->_vt = 0; ${o}->length = ${n}; ` +
+					`for (long ${k} = 0; ${k} < ${n}; ${k}++) { ${slot} ${src} = ${pick}; ` +
+					`${slots(o)}[${k}] = ${deep_array_copy_c(status, row, src)}; } ` +
+					`${o}; })`;
+				return;
+			}
 			// `copy()` of a NESTED array: the library mono only sees the
 			// innermost element, so copy every row level inline.
 			if (access_func.deep_array_copy && access_func.type) {
@@ -1237,8 +1281,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 						access_func.params[i].node_type === "value"
 							? (access_func.params[i] as ValueNode).value
 							: "";
+					// An array argument (`Array<Rec>`) is a pointer, whatever its element.
 					const arg_is_struct_or_trait =
-						!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
+						(!param_type.is_array &&
+							!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type)) ||
 						!!status.traits.find((t) => t.name === param_type.name) ||
 						!!status.class_vars?.has(param_value);
 					if (arg_is_struct_or_trait) {
@@ -1927,8 +1973,10 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 					// Also treat class_vars as struct/class args — ValueNode types
 					// inside monomorphized method bodies may still be unresolved
 					// generic param names (e.g. `T` instead of `Animal`).
+					// An array argument (`Array<Rec>`) is a pointer, whatever its element.
 					const arg_is_struct_or_trait =
-						!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type) ||
+						(!param_type.is_array &&
+							!!status.structs.find((s) => s.name === param_type.name && !s.is_simple_type)) ||
 						!!status.traits.find((t) => t.name === param_type.name) ||
 						!!status.class_vars?.has(param_value);
 					// STRUCT_PLAN_3 B4/T2 — a value-struct conformer argument to a

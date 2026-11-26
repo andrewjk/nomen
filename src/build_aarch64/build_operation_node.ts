@@ -1809,9 +1809,6 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 	}
 
 	if (node.operator_func) {
-		const left_type = type_from_value_node(node.left_value);
-		const is_array_op = node.operator_func.struct_name.startsWith("Array") && left_type.is_array;
-
 		// An enum-with-data operator result uses sret like a struct (see
 		// build_function_node) — preset x8 with a caller-owned temp.
 		const return_struct = status.structs.find(
@@ -1826,20 +1823,6 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 				status,
 				return_struct ? get_struct_size(node.type!.name, status) : return_enum_size!,
 			);
-		}
-
-		// For array + and *, allocate result with length prefix and call the
-		// monomorphized Array function (e.g. Array_int_add)
-		if (is_array_op) {
-			const elem_size = aarch64_size(left_type.name);
-			const result_len = node.type?.length
-				? parseInt((node.type.length as any).value || "0", 10)
-				: 0;
-
-			// Allocate result buffer with length prefix; x8 is (re)preset
-			// immediately before the call (see the note there).
-			const alloc_start = allocate_stack_space(status, 8 + elem_size * result_len);
-			return_temp_offset = alloc_start + 8;
 		}
 
 		// Check if operands are owned heap temps before building them. A
@@ -1932,10 +1915,7 @@ export default function build_operation_node(node: OperationNode, status: BuildS
 		// its result into the operand call's temp instead of ours (the
 		// `p + mk(...)` corruption — x0/x1 carry the operand addresses and
 		// are untouched by this add).
-		if (
-			return_temp_offset !== undefined &&
-			(return_struct || return_enum_size !== undefined || is_array_op)
-		) {
+		if (return_temp_offset !== undefined && (return_struct || return_enum_size !== undefined)) {
 			emit_asm(status, `add x8, x29, #${return_temp_offset}\n`);
 		}
 

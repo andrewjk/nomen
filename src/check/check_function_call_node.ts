@@ -2580,6 +2580,10 @@ export function substitute_type(type: Type, substitution: Map<string, string>): 
 		return out;
 	}
 	const new_type = new Type(resolved_name, type.is_static, type.is_array, type.length);
+	// Keep an `Array<T>`'s heap storage (the constructor's `is_array` makes
+	// every array a stack one, so a generic `Array<T> other` param lowered
+	// to a raw `T*`).
+	if (type.storage_kind === "heap_array") new_type.storage_kind = "heap_array";
 	new_type.is_ref = type.is_ref;
 	new_type.is_view = type.is_view;
 	new_type.is_const_ref = type.is_const_ref;
@@ -2766,6 +2770,8 @@ function substitute_raw_types(
 		if (param.is_self_param) continue;
 		// A nested array's row is passed as its buffer pointer — by value.
 		if (array_row_type(resolved)) continue;
+		// So is an `Array<T>` param (`Array<Rec> other`), whatever its T.
+		if (param.type.is_array) continue;
 		const s = structs.find((x) => x.name === resolved);
 		// Dereference struct params in raw blocks (they're passed by pointer
 		// but the raw C code assumes pass-by-value). Skip class params —

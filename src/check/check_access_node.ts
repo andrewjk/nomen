@@ -44,6 +44,7 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import { try_check_handler_registration } from "./utils/handlers.ts";
+import { hoist_array_temp, is_owned_array_call } from "./utils/hoist_array_temp.ts";
 import is_visible from "./utils/is_visible.ts";
 import { accessor_context, decl_is_builtin_scoped, decl_namespace } from "./utils/namespaces.ts";
 import {
@@ -342,6 +343,11 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 					new AccessFieldNode(node.target.start, "__value"),
 				);
 				return check_access_node(node, status);
+			}
+			// `make().length`, `(xs + ys).at(0)`: read off a named temp, which
+			// gives the backends a home for the array and frees it after use.
+			if (target_type.is_array && is_owned_array_call(node.target)) {
+				node.target = hoist_array_temp(node.target, target_type, status);
 			}
 			if (node.access.node_type === "access_field") {
 				return check_access_field_node(
@@ -1354,6 +1360,8 @@ export function check_access_function_node(
 				// Clone so we don't mutate the shared monomorphized return_type.
 				const t = node.type;
 				node.type = new Type(t.name, t.is_static, t.is_array, t.length);
+				// An `out Array<T>` result stays a heap array (`Array<int>.with`).
+				if (t.storage_kind === "heap_array") node.type.storage_kind = "heap_array";
 				node.type.is_ref = t.is_ref;
 				node.type.type_args = t.type_args;
 			}

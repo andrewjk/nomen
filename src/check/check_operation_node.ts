@@ -6,6 +6,7 @@ import { get_built_in_type, is_negatable_type } from "../built_in_types.ts";
 import AccessFieldNode from "../nodes/AccessFieldNode.ts";
 import AccessFunctionCallNode from "../nodes/AccessFunctionCallNode.ts";
 import AccessNode from "../nodes/AccessNode.ts";
+import type ArrayValuesNode from "../nodes/ArrayValuesNode.ts";
 import BaseNode from "../nodes/BaseNode.ts";
 import DeclarationNode from "../nodes/DeclarationNode.ts";
 import FunctionCallNode from "../nodes/FunctionCallNode.ts";
@@ -33,6 +34,7 @@ import {
 	mangled_label,
 } from "./utils/function_overload.ts";
 import get_null_check_var from "./utils/get_null_check_var.ts";
+import { hoist_array_temp, is_owned_array_call } from "./utils/hoist_array_temp.ts";
 import hoist_struct_params from "./utils/hoist_struct_params.ts";
 import { is_owning_struct_type } from "./utils/ownership.ts";
 import { find_result_enum, result_display_name } from "./utils/result_display.ts";
@@ -367,7 +369,9 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 	// the left tuple's shape (`[1, "a"] + [2, true]` widens, not mismatches).
 	// Under the tuple context above, the expected elements after the left's
 	// arity are the right operand's expectation.
-	let right_expected: Type | undefined = left_type;
+	// `xs * n` repeats an array: the count is an int.
+	let right_expected: Type | undefined =
+		left_type.is_array && op.op === "*" ? new Type("int") : left_type;
 	const left_elems = op.op === "+" ? tuple_element_types(left_type, status) : undefined;
 	if (left_elems) {
 		right_expected = undefined;
@@ -399,6 +403,12 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		if (right_elems) {
 			return rewrite_tuple_concat(op, left_elems, right_elems, status);
 		}
+	}
+
+	// `xs + ys` / `xs * n` on arrays: the library `Array.add` / `Array.mul`
+	// as an ordinary method call on heap operands (a fresh, owning result).
+	if (left_type.is_array && (op.op === "+" || op.op === "*")) {
+		return rewrite_array_operator(op, left_type, right_type, status);
 	}
 
 	// Check for custom operator on struct (including arrays, which use the Array struct)
@@ -452,20 +462,6 @@ export default function check_operation_node(op: OperationNode, status: CheckSta
 		// own operator obligations (`#op_div = (self, Vec2 other: other.x !=
 		// 0, …)` makes `self.x / other.x` verify).
 		verify_operator_param_constraint(func, op, left_type, right_type, status, false);
-
-		// Propagate array length for + and * operations
-		if (left_type.is_array && op.type.is_array) {
-			const left_len = left_type.length ? parseInt((left_type.length as any).value || "0") : 0;
-			const right_val = value_from_value_node(op.right_value);
-
-			if (op.op === "+" && right_type.is_array) {
-				const right_len = right_type.length ? parseInt((right_type.length as any).value || "0") : 0;
-				op.type.length = new ValueNode(-1, (left_len + right_len).toString(), new Type("int"));
-			} else if (op.op === "*" && right_type.name === "int" && /^(\+|-)*\d+$/.test(right_val)) {
-				const multiplier = parseInt(right_val);
-				op.type.length = new ValueNode(-1, (left_len * multiplier).toString(), new Type("int"));
-			}
-		}
 
 		// String concat is a read-only consumer of both operands (it copies
 		// them into a fresh buffer), so a borrow-position `to_string()` operand
@@ -961,6 +957,158 @@ function rewrite_tuple_concat(
 	constructor.type = new_type;
 	replace_with_call(op, constructor);
 	return result;
+}
+
+/**
+ * `xs + ys` → `xs.add(ys)` and `xs * n` → `xs.mul(n)`: the library methods
+ * build a fresh heap array and copy each element (strings get their own
+ * bytes, structs go through their `copy()`), like `xs.copy()`. The library
+ * bodies read the heap header, so a stack-array operand is first copied to
+ * a heap temp (`_param_N`, freed at scope exit).
+ */
+function rewrite_array_operator(
+	op: OperationNode,
+	left_type: Type,
+	right_type: Type,
+	status: CheckStatus,
+): boolean {
+	const name = op.op === "+" ? "add" : "mul";
+	if (op.op === "+" && !right_type.is_array) {
+		add_error(
+			status,
+			`Type mismatch in param: ${right_type.name} (expected Array<${left_type.name}>)`,
+			op.right_value.start,
+		);
+		return false;
+	}
+	if (left_type.elem) return rewrite_nested_array_operator(op, left_type, right_type, status);
+	const left = heap_array_operand(op.left_value, left_type, status);
+	const right =
+		op.op === "+" ? heap_array_operand(op.right_value, right_type, status) : op.right_value;
+	const call = new AccessFunctionCallNode(op.start, name);
+	call.params = [right];
+	const access = new AccessNode(op.start, left, call);
+	const result = check_node(access, status);
+	replace_node(op, access);
+	return result;
+}
+
+/**
+ * `xs + ys` / `xs * n` on a nested array: an `add` / `mul` call marked
+ * `nested_op` that the backends lower inline (each row deep-copied, like
+ * nested `with`). The result is a nested heap array whose cleanup walks the
+ * rows.
+ */
+function rewrite_nested_array_operator(
+	op: OperationNode,
+	left_type: Type,
+	right_type: Type,
+	status: CheckStatus,
+): boolean {
+	const name = op.op === "+" ? "add" : "mul";
+	// A literal right operand is checked against the left's type, so its
+	// own type always matches; its items must still be rows.
+	const literal_items =
+		op.right_value.node_type === "array" ? (op.right_value as ArrayValuesNode).values : [];
+	// (A scalar literal item is stamped with the expected row type, so look
+	// at its spelling: a number, string, char or bool literal.)
+	// A scalar item may already sit in a hoisted temp; read through it.
+	const item_source = (v: BaseNode): BaseNode => {
+		if (v.node_type !== "value") return v;
+		const name = (v as ValueNode).value;
+		return status.allocations.find((d) => d.name === name)?.value ?? v;
+	};
+	const flat_literal = literal_items.some((item) => {
+		const v = item_source(item);
+		return (
+			v.node_type === "value" && /^([-+]?[\d.]|["'`]|true$|false$)/.test((v as ValueNode).value)
+		);
+	});
+	if (op.op === "+" && (flat_literal || !same_nesting(left_type, right_type))) {
+		add_error(
+			status,
+			`Type mismatch in param: ${right_type.name} (expected the same nesting of ${left_type.name})`,
+			op.right_value.start,
+		);
+		return false;
+	}
+	if (op.op === "*" && !/^u?int(8|16|32|64)?$/.test(right_type.name ?? "")) {
+		add_error(
+			status,
+			`Type mismatch in param: ${right_type.name} (expected int)`,
+			op.right_value.start,
+		);
+		return false;
+	}
+	const left = nested_array_operand(op.left_value, left_type, status);
+	const right =
+		op.op === "+" ? nested_array_operand(op.right_value, right_type, status) : op.right_value;
+	const call = new AccessFunctionCallNode(op.start, name);
+	call.params = [right];
+	const result = heap_nested_type(left_type);
+	call.type = result;
+	call.nested_op = name;
+	call.owned_return = true;
+	const access = new AccessNode(op.start, left, call);
+	replace_node(op, access);
+	return true;
+}
+
+/** Same leaf and the same number of row levels. */
+function same_nesting(a: Type, b: Type): boolean {
+	if (!b.is_array || a.name !== b.name) return false;
+	if (!a.elem || !b.elem) return !a.elem && !b.elem;
+	return same_nesting(a.elem, b.elem);
+}
+
+/** A heap copy of a nested array type at every level, with no lengths. */
+function heap_nested_type(type: Type): Type {
+	const out = new Type(type.name);
+	out.storage_kind = "heap_array";
+	out.type_args = type.type_args;
+	if (type.elem) out.elem = heap_nested_type(type.elem);
+	return out;
+}
+
+/** A nested operand the inline lowering can read: a literal (heap-built at
+ *  every level) or an owned call result is bound to a `_param_N` const;
+ *  anything else is read in place. */
+function nested_array_operand(value: BaseNode, type: Type, status: CheckStatus): BaseNode {
+	if (value.node_type === "array" || is_owned_array_call(value)) {
+		return hoist_array_temp(value, type, status);
+	}
+	return value;
+}
+
+/** A heap-array spelling of the array operand `value`: heap values pass
+ *  through; a stack array (variable, field or literal — told apart by its
+ *  compile-time `length`, like a call argument bound to an `Array<T>`
+ *  param) becomes a heap `_param_N` temp. */
+function heap_array_operand(value: BaseNode, type: Type, status: CheckStatus): BaseNode {
+	// A chained operator (`(xs * 2) + ys`) or other owned call result:
+	// name it so it is freed after use.
+	if (is_owned_array_call(value)) return hoist_array_temp(value, type, status);
+	if (type.storage_kind === "heap_array" || !type.length || type.elem) return value;
+	const heap_type = new Type(type.name);
+	heap_type.storage_kind = "heap_array";
+	heap_type.type_args = type.type_args;
+	const name = `_param_${status.var_name_counter.value++}`;
+	const decl = new DeclarationNode(value.start, "private", "const", name, heap_type, value);
+	if (value.node_type === "array") {
+		decl.is_heap_array_literal = true;
+	} else {
+		decl.is_heap_array_copy = true;
+	}
+	status.allocations.push(decl);
+	return new ValueNode(value.start, name, heap_type);
+}
+
+/** Turn `target` into `source` in place (every field), so parents holding
+ *  `target` see the new node. */
+function replace_node(target: BaseNode, source: BaseNode): void {
+	for (const key of Object.keys(target)) delete (target as any)[key];
+	Object.assign(target, source);
+	Object.setPrototypeOf(target, Object.getPrototypeOf(source));
 }
 
 /**

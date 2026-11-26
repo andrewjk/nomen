@@ -217,6 +217,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	nested_with?: boolean;
 	/**
+	 * `xs + ys` / `xs * n` on a NESTED array (rewrite_array_operator): a
+	 * fresh outer buffer whose row slots are deep copies of the operands'
+	 * rows, lowered inline by the backends (the library `add` / `mul` would
+	 * share the row buffers).
+	 */
+	nested_op?: "add" | "mul";
+	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring
 	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
 	 * the programmer, so the parameter constraint (bounds check) is skipped —

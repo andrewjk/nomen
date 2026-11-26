@@ -254,6 +254,12 @@ function build_method_call(
 				// Deep: nested rows and value-struct elements get their own
 				// copies (scalars and strings are identity under `__copy`).
 				return `__copy(${list})`;
+			case "add":
+				// `xs + ys`: a fresh array of copies, like `copy`.
+				return `__copy(${list}.concat(${args[0]}))`;
+			case "mul":
+				// `xs * n`: `n` copies of `xs` (none for n < 1).
+				return `((xs, n) => { const o = []; for (let i = 0; i < Number(n); i++) o.push(...__copy(xs)); return o; })(${list}, ${args[0]})`;
 		}
 		return unsupported(`array.${name}`);
 	}

@@ -30,9 +30,10 @@ export function element_copy_struct(
 	return copy ? st : undefined;
 }
 
-/** True for `xs.copy()` on a heap `Array<T>`: the result owns its elements
- *  (fresh strings, rows, and struct copies), so its cleanup destroys them
- *  like a literal-built array's. */
+/** True for `xs.copy()` — or `xs.add(ys)` / `xs.mul(n)`, which `+` / `*`
+ *  lower to — on a heap `Array<T>`: the result owns its elements (fresh
+ *  strings, rows, and struct copies), so its cleanup destroys them like a
+ *  literal-built array's. */
 export function is_array_copy_call(node: BaseNode | undefined): boolean {
 	if (!node || node.node_type !== "access") return false;
 	const af = (node as AccessNode).access;
@@ -40,9 +41,9 @@ export function is_array_copy_call(node: BaseNode | undefined): boolean {
 	const call = af as AccessFunctionCallNode;
 	// The library mono's lowered signature returns a `T` array (its
 	// `out Array<T>`), which tells it apart from another type's `copy`.
+	const arity = call.name === "copy" ? 0 : call.name === "add" || call.name === "mul" ? 1 : -1;
 	return (
-		call.name === "copy" &&
-		call.params.length === 0 &&
+		call.params.length === arity &&
 		!!call.type?.is_array &&
 		!!call.resolved_function?.return_type?.is_array
 	);

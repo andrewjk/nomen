@@ -6,8 +6,9 @@ dispatch to the row-keyed mono (`ROW_MONO_METHODS` in check_access_node,
 row types in `check/utils/array_row_types.ts`). `set` and the static
 `Array<Array<T>>.with(row, n)` lower inline (`.set` deep-copies the value
 and frees the displaced row; `with` deep-copies the seed into each slot,
-`nested_with`). The other methods still use the leaf mono and the special
-paths below; `slice`, `add` and `mul` are in FOLLOWUP.md. Written after the `Array.copy` /
+`nested_with`), as do `+` / `*` (`nested_op`, each row deep-copied). The
+other methods still use the leaf mono and the special paths below; `slice`
+is in FOLLOWUP.md. Written after the `Array.copy` /
 `at_or` nested-row fixes, which each added a special path for nested
 arrays.
 
@@ -47,7 +48,7 @@ Each works around the leaf-only mono for a subset of methods:
 | `deep_array_copy`       | check_access_node; `build_c/utils/deep_array_copy.ts`; `build_aarch64/utils/deep_array_copy.ts` | `copy`                                  |
 | `is_nested_row_read`    | aarch64 build_access_node                                                                       | base→data pointer for a method on a row |
 
-Still broken: `at_or_null`, `slice`, `add`, `mul` on nested receivers. About 45 references to these flags across
+Still broken: `at_or_null` and `slice` on nested receivers. About 45 references to these flags across
 `src/`.
 
 ## The fix
