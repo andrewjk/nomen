@@ -373,8 +373,7 @@ module.exports = grammar({
 
 		// The value must start on the `return` line: a bare `return` followed by
 		// a statement on the next line stays bare.
-		return_statement: ($) =>
-			prec.right(seq("return", optional(seq($._same_line, $._expression)))),
+		return_statement: ($) => prec.right(seq("return", optional(seq($._same_line, $._expression)))),
 
 		break_statement: (_) => "break",
 
