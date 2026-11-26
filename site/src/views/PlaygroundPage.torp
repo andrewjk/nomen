@@ -285,8 +285,12 @@ self.postMessage({ type: "done" });
 			id="repl"
 			class={$props?.embed ? "embed" : ""}
 			onmount={() => {
-				run(false);
-				schedule_highlight(0);
+				// The first run and highlight happen once; later ones are
+				// user-driven, so don't subscribe to the state they read
+				$peek(() => {
+					run(false);
+					schedule_highlight(0);
+				});
 			}}
 		>
 			<header id="repl-header">

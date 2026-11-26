@@ -18,10 +18,10 @@
 		"icons": "tsx scripts/generate-favicons.ts"
 	},
 	"dependencies": {
-		"@torpor/adapter-cloudflare": "^1.0.26",
-		"@torpor/build": "^1.8.5",
-		"@torpor/unplugin": "^1.2.9",
-		"@torpor/view": "^1.2.6",
+		"@torpor/adapter-cloudflare": "^1.0.31",
+		"@torpor/build": "^1.11.0",
+		"@torpor/unplugin": "^1.2.14",
+		"@torpor/view": "^1.4.0",
 		"nomen-shiki": "workspace:^",
 		"phosphor-torpor": "^1.0.2"
 	},
