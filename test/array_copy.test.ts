@@ -89,20 +89,75 @@ pub func main = () {
 		);
 	});
 
-	test("elements that own heap memory are rejected", () => {
-		const system = get_library(path.resolve("core"));
-		const errors = parse(
-			`import System
-mv struct Box2 {
+	test("struct elements copy through their own copy()", async () => {
+		await run(
+			"array_copy_structs",
+			`
+mv struct Tag {
 	mv string s
+	var int n
 }
 
 pub func main = () {
-	const Array<Array<int>> grid = [[1, 2], [3, 4]]
-	const g = grid.copy()
-	const Array<Box2> boxes = [Box2("a".to_string())]
-	const b = boxes.copy()
-	Console.write_line("\\{g.length} \\{b.length}")
+	const Array<Tag> tags = [Tag("a".to_string(), 1), Tag("b".to_string(), 2)]
+	var c = tags.copy()
+	if c.length > 1 {
+		c.set(0, Tag("z".to_string(), 9))
+		Console.write_line(tags.at(0).s + c.at(0).s + c.at(1).s + " \\{c.at(1).n} \\{c.length}")
+	}
+}
+`,
+			"azb 2 2\n",
+		);
+	});
+
+	test("nested arrays copy every row", async () => {
+		await run(
+			"array_copy_nested",
+			`
+mv struct Rec {
+	mv string name
+}
+
+pub func main = () {
+	const g = [[1, 2], [3, 4]]
+	var h = g.copy()
+	if h.length > 1 {
+		var row = h.at(1)
+		if row.length > 0 {
+			row.set(0, 5)
+		}
+		Console.write_line("\\{g.at(1).at(0)} \\{h.at(1).at(0)} \\{h.at(0).at(1)} \\{h.length}")
+	}
+	const w = [["ab", "cd"], ["ef"]]
+	const v = w.copy()
+	if v.length > 1 {
+		Console.write_line(v.at(1).at(0) + v.at(0).at(1) + " \\{v.at(0).length}")
+	}
+	const t = [[[1, 2], [3]], [[4]]]
+	const u = t.copy()
+	if u.length > 1 {
+		Console.write_line("\\{u.at(0).length} \\{u.at(1).length}")
+	}
+	const r = [[Rec("a"), Rec("b")], [Rec("c")]]
+	const q = r.copy()
+	if q.length > 1 {
+		Console.write_line(q.at(0).at(1).name + q.at(1).at(0).name)
+	}
+}
+`,
+			"3 5 2 2\nefcd 2\n2 1\nbc\n",
+		);
+	});
+
+	test("elements with no copy story are rejected", () => {
+		const system = get_library(path.resolve("core"));
+		const errors = parse(
+			`import System
+pub func main = () {
+	const nodes = [Box<int>(3)]
+	const c = nodes.copy()
+	Console.write_line("\\{c.length}")
 }
 `,
 			system,
@@ -111,27 +166,29 @@ pub func main = () {
 		).errors.map((e) => e.message);
 		expect(
 			errors.filter((e) => e.startsWith("copy() would share the elements' heap memory")),
-		).toHaveLength(2);
+		).toHaveLength(1);
 	});
 
-	test("a struct with a heap-owning Array<T> field gets no copy", () => {
-		const system = get_library(path.resolve("core"));
-		const errors = parse(
-			`import System
-mv struct Grid {
+	test("a struct's copy deep-copies nested array fields", async () => {
+		await run(
+			"array_copy_struct_deep_fields",
+			`
+mv struct Board {
 	var Array<Array<int>> rows
+	var Array<Array<string>> names
 }
 
 pub func main = () {
-	const g = Grid([[1, 2], [3]])
-	const h = g.copy()
-	Console.write_line("\\{h.rows.length}")
+	const a = Board([[1, 2], [3]], [["n"]])
+	const b = a.copy()
+	if b.rows.length > 1 {
+		if b.names.length > 0 {
+			Console.write_line("\\{b.rows.at(0).at(1)} \\{b.rows.at(1).length} " + b.names.at(0).at(0))
+		}
+	}
 }
 `,
-			system,
-			undefined,
-			{ allow_internal: true },
-		).errors.map((e) => e.message);
-		expect(errors.some((e) => e.includes("Grid.copy"))).toBe(true);
+			"2 1 n\n",
+		);
 	});
 });

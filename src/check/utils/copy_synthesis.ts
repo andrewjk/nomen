@@ -1,3 +1,4 @@
+import { element_copy_struct } from "../../build_common/element_copy.ts";
 import { direct_string_fields } from "../../build_common/has_string_fields.ts";
 import { is_load_deep_copy_container, mono_struct_name } from "../../build_common/mono_name.ts";
 import AccessFieldNode from "../../nodes/AccessFieldNode.ts";
@@ -21,15 +22,40 @@ import { destroy_releases, type_owns_heap } from "./ownership.ts";
  *  elements are plain values or strings (mirrors the checker's `copy()`
  *  element gate in check_function_call — nested arrays and heap-owning
  *  elements would be shared). */
-function heap_array_copyable(type: Type, status: CheckStatus): boolean {
+function heap_array_copyable(
+	type: Type,
+	status: CheckStatus,
+	visited: Set<string> = new Set(),
+): boolean {
 	if (type.storage_kind !== "heap_array" || type.is_ref || type.is_view || type.is_nullable) {
 		return false;
 	}
-	if (type.elem) return false;
-	if (type.name === "string") return true;
-	const elem = new Type(type.name);
+	return array_elements_copyable(type, status, visited);
+}
+
+/** Whether `Array.copy()` on an array of `type` gives the copy its own
+ *  memory: plain values byte-copy, strings get their own bytes, nested rows
+ *  are copied level by level, and a value struct copies through its own
+ *  `copy()` (present or synthesizable). Classes, traits, boxes, and structs
+ *  with no copy story would be shared. */
+export function array_elements_copyable(
+	type: Type,
+	status: CheckStatus,
+	visited: Set<string> = new Set(),
+): boolean {
+	const name = type.name;
+	if (!name || name === "string") return true;
+	const elem = new Type(name);
 	elem.type_args = type.type_args;
-	return !type_owns_heap(elem, status);
+	if (!type_owns_heap(elem, status)) return true;
+	if (is_box_type(name, status.structs)) return false;
+	const st = status.structs.find((s) => s.name === name);
+	if (!st || st.is_class || st.is_generic || st.is_simple_type) return false;
+	if (element_copy_struct(name, status.structs)) return true;
+	// A self-referential element (`Array<Node>` inside `Node`): the walk
+	// is already deciding this struct.
+	if (visited.has(name)) return false;
+	return struct_is_copyable(st, status, new Set([...visited, name]));
 }
 
 function struct_has_function(struct: StructNode, name: string): boolean {
@@ -133,7 +159,7 @@ function struct_owns_resource(
 		if (field.type.name === "string" && !field.type.is_array) continue;
 		// An `Array<T>` field of plain values or strings copies through
 		// `Array.copy()`.
-		if (heap_array_copyable(field.type, status)) continue;
+		if (heap_array_copyable(field.type, status, visited)) continue;
 		if (field.type.is_nullable) return true;
 		// STRUCT_PLAN_3 B2: a `Box<T>` field OWNS its pointee — the wrapper
 		// destroy reclaims it — so the struct owns a resource and is never

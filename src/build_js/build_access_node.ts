@@ -246,7 +246,9 @@ function build_method_call(
 			case "slice":
 				return `${list}.slice(Number(${args[0]}), Number(${args[1]}))`;
 			case "copy":
-				return `${list}.slice()`;
+				// Deep: nested rows and value-struct elements get their own
+				// copies (scalars and strings are identity under `__copy`).
+				return `__copy(${list})`;
 		}
 		return unsupported(`array.${name}`);
 	}

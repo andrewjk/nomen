@@ -50,6 +50,7 @@ import {
 	next_lambda_ret_temp,
 } from "./utils/closure.ts";
 import { begin_code_scratch, end_code_scratch } from "./utils/code_scratch.ts";
+import deep_array_copy_c from "./utils/deep_array_copy.ts";
 import { emit_boxed_value_struct_c, try_emit_boxed_trait_arg_c } from "./utils/trait_box.ts";
 import type_from_value_node from "./utils/type_from_value_node.ts";
 import { c_view_string_arg } from "./utils/view_value.ts";
@@ -643,6 +644,15 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			// through the stored code pointer, cast to the field's signature.
 			if (access_func.is_func_field_call) {
 				build_func_field_call(node, access_func, status);
+				return;
+			}
+			// `copy()` of a NESTED array: the library mono only sees the
+			// innermost element, so copy every row level inline.
+			if (access_func.deep_array_copy && access_func.type) {
+				const saved = begin_code_scratch(status);
+				build_node(node.target, status);
+				const src = end_code_scratch(status, saved);
+				status.code += deep_array_copy_c(status, access_func.type, src);
 				return;
 			}
 			// `view T` builtins operate on the universal (ptr, len) slice directly:

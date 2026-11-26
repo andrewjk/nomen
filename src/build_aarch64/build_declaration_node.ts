@@ -14,6 +14,7 @@ import {
 	struct_needs_destroy,
 	struct_needs_auto_destroy,
 } from "../build_common/destroy_analysis.ts";
+import { is_array_copy_call } from "../build_common/element_copy.ts";
 import fold_string_const from "../build_common/fold_string_const.ts";
 import { direct_string_fields, owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import is_compiler_temp_name from "../build_common/is_compiler_temp_name.ts";
@@ -2980,6 +2981,19 @@ export default function build_declaration_node(
 			if (class_element) {
 				if (!status.heap_class_arrays) status.heap_class_arrays = new Map();
 				status.heap_class_arrays.set(node.name, 0);
+			}
+			// `xs.copy()` of owning value-struct elements: each slot is the
+			// element's own fresh copy, so scope exit destroys every element
+			// (like a literal-built array). Other calls keep their element
+			// ownership to themselves (`Array.with` byte-copies one seed).
+			if (!node.type.elem && is_array_copy_call(node.value)) {
+				const copied_struct = status.structs.find(
+					(s) => s.name === node.type.name && !s.is_simple_type && !s.is_class && !s.is_generic,
+				);
+				if (copied_struct && struct_needs_destroy(copied_struct, status)) {
+					if (!status.heap_struct_arrays) status.heap_struct_arrays = new Map();
+					status.heap_struct_arrays.set(node.name, copied_struct.name);
+				}
 			}
 			if (status.function_return_label) {
 				const offset = allocate_stack_space(status, 8);

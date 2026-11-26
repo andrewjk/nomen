@@ -1335,6 +1335,17 @@ export function check_access_function_node(
 			if (node.inferred_array_length && node.type.is_array) {
 				node.type.length = new ValueNode(-1, node.inferred_array_length, new Type("int"));
 			}
+			// `copy()` of a nested array returns the same nesting (a fresh
+			// heap buffer at every level): the backends copy each row level
+			// (deep_array_copy) and the result's cleanup walks the rows.
+			if (node.name === "copy" && target_type.elem && node.type.is_array) {
+				const copied = clone_type(node.type);
+				copied.storage_kind = "heap_array";
+				copied.length = undefined;
+				copied.elem = clone_type(target_type.elem);
+				node.type = copied;
+				node.deep_array_copy = true;
+			}
 		}
 	}
 

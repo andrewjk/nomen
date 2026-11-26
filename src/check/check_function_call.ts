@@ -43,6 +43,7 @@ import { value_owns_closure } from "./utils/captures.ts";
 import check_func_argument_signature from "./utils/check_func_argument_signature.ts";
 import check_merged_missing_return from "./utils/check_merged_missing_return.ts";
 import check_type_and_value_match from "./utils/check_type_and_value_match.ts";
+import { array_elements_copyable } from "./utils/copy_synthesis.ts";
 import evaluate_const_condition, {
 	evaluate_numeric_or_bool,
 	NON_NEGATIVE_FIELDS,
@@ -71,7 +72,6 @@ import {
 } from "./utils/interp_arg_kinds.ts";
 import is_visible from "./utils/is_visible.ts";
 import { accessor_context, decl_is_builtin_scoped, decl_namespace } from "./utils/namespaces.ts";
-import { type_owns_heap } from "./utils/ownership.ts";
 import {
 	borrowed_param_transfer_error,
 	enclosing_function_param,
@@ -338,24 +338,21 @@ export default function check_function_call(
 	set_resolved_function(node, func);
 	lint_regex_entry_pattern(node, func, status);
 
-	// `Array.copy()` deep-copies string elements only — any other element
-	// that owns heap memory (a nested array, an mv struct) would be shared
-	// between the two arrays and freed twice.
+	// `Array.copy()` deep-copies strings, nested rows, and struct elements
+	// through their own `copy()`. Any other element that owns heap memory
+	// (a class, a struct without a `copy()`) would be shared between the two
+	// arrays and freed twice.
 	if (
 		func.name === "copy" &&
 		node.node_type === "access_func" &&
 		target_type?.is_array &&
-		target_type.storage_kind !== "stack_array"
+		!array_elements_copyable(target_type, status)
 	) {
-		const elem = new Type(target_type.name);
-		elem.type_args = target_type.type_args;
-		if (target_type.elem || (elem.name !== "string" && type_owns_heap(elem, status))) {
-			add_error(
-				status,
-				`copy() would share the elements' heap memory --> copy() supports arrays of plain values and strings`,
-				node.start,
-			);
-		}
+		add_error(
+			status,
+			`copy() would share the elements' heap memory --> copy() supports plain values, strings, arrays, and structs with a copy()`,
+			node.start,
+		);
 	}
 
 	// Scope gate (docs/SCOPING.md): the calling file must reach the callee's

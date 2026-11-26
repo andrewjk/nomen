@@ -71,6 +71,7 @@ import {
 	materialize_func_value_a64,
 } from "./utils/closure_a64.ts";
 import { emit_asm, ensure_newline } from "./utils/code_buffer.ts";
+import { emit_deep_array_copy } from "./utils/deep_array_copy.ts";
 import { owns_specialized_primitive } from "./utils/owning_buffer_specialize.ts";
 import { emit_index_address, pointer_element_size } from "./utils/ptr_access.ts";
 import { is_auto_inline_method } from "./utils/scan_inline_candidates.ts";
@@ -4033,6 +4034,12 @@ function build_access_method(
 			emit_asm(status, `ldr x1, [sp], #16\n`);
 			emit_asm(status, `ldr x0, [sp], #16\n`);
 		}
+	} else if (access_func.deep_array_copy && access_func.type) {
+		// `copy()` of a NESTED array: x0 is the receiver's data pointer
+		// (count at [x0, #-8]); copy every row level inline — the library
+		// mono only sees the innermost element.
+		emit_asm(status, `sub x0, x0, #8\n`);
+		emit_deep_array_copy(status, access_func.type);
 	} else if (
 		inline_func &&
 		overflow_count === 0 &&

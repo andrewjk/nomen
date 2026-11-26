@@ -175,12 +175,17 @@ const zeros = Array.with(0, 3)      // Array<int> of [0, 0, 0] (inferred int)
 const strs = Array<string>.with("x", 2)  // Array<string> of ["x", "x"]
 ```
 
-`copy()` returns a new heap array with its own storage. String elements are
-deep-copied, so changing the copy never touches the source:
+`copy()` returns a new heap array with its own storage, so changing the copy
+never touches the source. The copy is deep: string elements get their own
+bytes, nested arrays copy every row, and struct elements are copied with their
+own `copy()`. Elements that can't be copied (a `Box<T>`, say) are a compile
+error:
 
 ```
 const Array<string> names = Array.with("x", 2)
 var mine = names.copy()             // independent of `names`
+const grid = [[1, 2], [3, 4]]
+var grid2 = grid.copy()             // new rows too
 ```
 
 Internally `Array<T>` is identical to `T[]`; casts, indexing (`.at`/`.set`),
@@ -194,8 +199,7 @@ share the buffer. The struct frees the buffer (and any element strings) when
 it is destroyed, and reassigning the field frees the displaced buffer. The
 stored array must be fresh or explicitly moved in with `mv`. The struct's
 `copy()` copies each `Array<T>` field with `Array.copy()`, so a field whose
-elements own heap memory (a nested array, an `mv struct`) leaves the struct
-without a `copy()`:
+elements can't be copied leaves the struct without a `copy()`:
 
 ```
 mv struct Blocks {

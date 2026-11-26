@@ -840,13 +840,14 @@ Dynamic `Array<T>` fields now require an `mv struct`. The struct's destroy
 frees the buffer, and so does a field reassignment
 (`test/array_struct_fields.test.ts`). Still open:
 
-- **No struct `copy` for heap-owning array elements.** The synthesized
-  `copy` copies `Array<T>` fields with `Array.copy()`, so a struct whose
-  array field holds nested arrays or mv structs gets no `copy` (see below).
-- **`Array.copy()` handles plain values and strings only.** The checker
-  rejects `copy()` on arrays whose elements own heap memory (nested arrays,
-  mv structs), because a bytewise copy would share their storage. A deep
-  copy for those needs a per-element `copy`.
+- **`Array.copy()` rejects elements with no copy story.** Nested arrays,
+  strings and structs with a `copy()` are deep-copied; anything else that
+  owns heap memory (a `Box<T>`, a struct whose fields can't be copied) is
+  rejected, because the copy would share it.
+- **`Array<Self>` fields crash the compiler.** `mv struct Node { var
+Array<Node> kids }` overflows the stack in `layout_type_alignment` /
+  `layout_struct_size` (`src/build_common/layout.ts`), with or without a
+  `copy()`. Seen while adding nested `Array.copy()`.
 - **`mv Array<T>` parameters don't transfer into fields.** Storing one
   (`self.items = mv other`) is rejected, because the callee's moved-param
   teardown would free the buffer the field now holds. A real transfer
@@ -881,3 +882,12 @@ answer:
 
 Binding the result to a local first (`const c = xs.copy()`, then `c.length`)
 works everywhere. Seen while adding `Array.copy()`.
+
+## `at_or` / `at_or_panic` on a nested array row are wrong on aarch64
+
+On a nested array's row, the library accessors misread the row on aarch64:
+`w.at(1).at_or(0, "?")` on `[["ab", "cd"], ["ef"]]` prints `?`, and
+`r.at(0).at_or_panic(1)` on rows of mv structs panics "index out of range".
+`.at(i)` on the same rows is correct. The library mono only sees the
+innermost element type, as with `Array.copy()` (which now copies nested rows
+inline instead). Seen while adding nested `Array.copy()`.

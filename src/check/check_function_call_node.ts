@@ -1,5 +1,6 @@
 import add_error from "../add_error.ts";
 import { struct_needs_destroy } from "../build_common/destroy_analysis.ts";
+import { element_copy_struct } from "../build_common/element_copy.ts";
 import { fold_asm_constants } from "../build_common/fold_asm_constants.ts";
 import { layout_size_of_name } from "../build_common/layout.ts";
 import { mono_type_name, type StructTable } from "../build_common/mono_name.ts";
@@ -2992,6 +2993,18 @@ function substitute_raw_in_node(
 			// blocks via a `mov xN, #T_FAT / cmp / b.cond` dispatch that
 			// fold_asm_constants folds to a constant branch after substitution.
 			value = value.replace(new RegExp(`\\b${param}_FAT\\b`, "g"), type === "string" ? "1" : "0");
+			// T_HAS_COPY / T_copy: an element struct with its own `copy()`
+			// (element_copy_struct) — `Array.copy()` calls `T_copy` per
+			// element so the copy owns its own heap state.
+			const copy_struct = element_copy_struct(type, structs);
+			value = value.replace(new RegExp(`\\b${param}_HAS_COPY\\b`, "g"), copy_struct ? "1" : "0");
+			// Without one the call sits in a dead arm (C `#if 0`, an asm
+			// branch fold_asm_constants skips but leaves in place), so it
+			// names a symbol that always links.
+			value = value.replace(
+				new RegExp(`\\b${param}_copy\\b`, "g"),
+				copy_struct ? `${type}_copy` : pure_asm ? "_memcpy" : "memcpy",
+			);
 			// T_IS_VALUE_STRUCT: 1 for a concrete non-class value struct (the
 			// by-reference parameter convention store_take's body relies on),
 			// 0 otherwise. Raw C bodies guard on it via `#if` so the emitted

@@ -15,6 +15,13 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 * signature, aarch64 loads it and `blr`s).
 	 */
 	is_func_field_call?: boolean;
+	/**
+	 * `xs.copy()` on a NESTED heap array (`Array<Array<T>>`), set by
+	 * check_access_node: the library `copy` mono only sees the innermost
+	 * element, so the backends copy every row level inline (the result type
+	 * keeps the receiver's `elem` chain).
+	 */
+	deep_array_copy?: boolean;
 	ref_param_indices?: number[];
 	move_param_indices?: number[];
 	/**

@@ -5,6 +5,7 @@ import {
 	struct_needs_auto_destroy,
 	struct_needs_destroy,
 } from "../build_common/destroy_analysis.ts";
+import { is_array_copy_call } from "../build_common/element_copy.ts";
 import { owns_strings_uniformly } from "../build_common/has_string_fields.ts";
 import { mono_type_name, resolve_struct_type } from "../build_common/mono_name.ts";
 import { has_flag_name, is_nullable_struct_type } from "../build_common/nullable_struct.ts";
@@ -707,7 +708,9 @@ export function free_scoped_declarations(
 				// the callee's business (e.g. `Array.with` byte-copies one
 				// seed into every slot, which must not be freed n times).
 				const elem_struct_type =
-					!elem_is_class && !elem_is_string && dec.value?.node_type === "array"
+					!elem_is_class &&
+					!elem_is_string &&
+					(dec.value?.node_type === "array" || is_array_copy_call(dec.value))
 						? status.structs.find((s) => s.name === elem_name && !s.is_simple_type && !s.is_generic)
 						: undefined;
 				if (elem_is_class) {

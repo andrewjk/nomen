@@ -310,7 +310,9 @@ pub struct Array<T>: Viewable {
 				T* _data = (T*)((char*)_result + _header);
 				T* _src = (T*)((char*)self + _header);
 				for (long i = 0; i < _len; i++) {
-					#if T_NEEDS_STRDUP
+					#if T_HAS_COPY
+						_data[i] = T_copy(&_src[i]);
+					#elif T_NEEDS_STRDUP
 						_data[i] = nomen_str_dup(_src[i]);
 					#else
 						_data[i] = _src[i];
@@ -346,7 +348,7 @@ pub struct Array<T>: Viewable {
 				// (length-based, so NUL bytes survive).
 				mov x7, #T_FAT
 				cmp x7, #1
-				b.ne .Larray_copy_end
+				b.ne .Larray_copy_structs
 				mov x22, #0                 // i = 0
 				.Larray_copy_loop:
 				cmp x22, x21
@@ -367,6 +369,26 @@ pub struct Array<T>: Viewable {
 				.Larray_copy_next:
 				add x22, x22, #1
 				b .Larray_copy_loop
+
+				// T_HAS_COPY (a struct with its own copy()): rebuild each
+				// slot through T_copy(x0 = &src[i], x8 = &dst[i]), over the
+				// memcpy'd bytes (they are the source's, never freed here).
+				.Larray_copy_structs:
+				mov x7, #T_HAS_COPY
+				cmp x7, #1
+				b.ne .Larray_copy_end
+				mov x22, #0                 // i = 0
+				.Larray_copy_struct_loop:
+				cmp x22, x21
+				b.ge .Larray_copy_end
+				mov x2, #T_SIZE
+				mul x23, x22, x2            // x23 = i * T_SIZE
+				add x0, x19, x23            // &src[i]
+				add x8, x20, #8
+				add x8, x8, x23             // &dst[i]
+				bl T_copy
+				add x22, x22, #1
+				b .Larray_copy_struct_loop
 
 				.Larray_copy_end:
 				mov x0, x20                 // return heap pointer

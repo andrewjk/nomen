@@ -94,6 +94,8 @@ const strs = Array<string>.with("x", 2)
 		const input = `
 const Array<string> names = Array.with("x", 2)
 var mine = names.copy()
+const grid = [[1, 2], [3, 4]]
+var grid2 = grid.copy()
 `;
 		expect(compile_main(input)).toEqual([]);
 	});
