@@ -63,6 +63,32 @@ pub func main = () {
 		);
 	});
 
+	test("a struct's synthesized copy copies its Array<T> fields", async () => {
+		await run(
+			"array_copy_struct_copy",
+			`
+mv struct Roster {
+	var Array<string> names
+	var Array<int> scores = Array.with(1, 2)
+	mv string label = "r"
+}
+
+pub func main = () {
+	const a = Roster(Array.with("x", 2))
+	var b = a.copy()
+	if b.names.length > 0 {
+		b.names.set(0, "y")
+	}
+	if b.scores.length > 0 {
+		b.scores.set(0, 7)
+	}
+	Console.write_line(a.names.at_or(0, "?") + b.names.at_or(0, "?") + " \\{a.scores.at_or(0, 0)} \\{b.scores.at_or(0, 0)} \\{b.scores.length} " + b.label)
+}
+`,
+			"xy 1 7 2 r\n",
+		);
+	});
+
 	test("elements that own heap memory are rejected", () => {
 		const system = get_library(path.resolve("core"));
 		const errors = parse(
@@ -86,5 +112,26 @@ pub func main = () {
 		expect(
 			errors.filter((e) => e.startsWith("copy() would share the elements' heap memory")),
 		).toHaveLength(2);
+	});
+
+	test("a struct with a heap-owning Array<T> field gets no copy", () => {
+		const system = get_library(path.resolve("core"));
+		const errors = parse(
+			`import System
+mv struct Grid {
+	var Array<Array<int>> rows
+}
+
+pub func main = () {
+	const g = Grid([[1, 2], [3]])
+	const h = g.copy()
+	Console.write_line("\\{h.rows.length}")
+}
+`,
+			system,
+			undefined,
+			{ allow_internal: true },
+		).errors.map((e) => e.message);
+		expect(errors.some((e) => e.includes("Grid.copy"))).toBe(true);
 	});
 });

@@ -1561,6 +1561,16 @@ export function emit_destroy_for_decl(
 	// array (transferred to the caller) already returned above. Nested field
 	// destroys (addr_offset set) keep the struct walk — the registries key
 	// TOP-LEVEL variable names only.
+	// An `Array<T>` buffer moved into an owning struct (`moved_to_owner`) is
+	// the struct's to free — the return-path walks reach it by name.
+	if (
+		addr_offset === undefined &&
+		all_scope_frames(status).some((frame) =>
+			frame.some((d) => d.name === decl_name && d.moved_to_owner),
+		)
+	) {
+		return;
+	}
 	if (addr_offset === undefined && emit_heap_array_decl_destroy(status, decl_name)) {
 		return;
 	}

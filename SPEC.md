@@ -192,7 +192,10 @@ A dynamic `Array<T>` struct field owns its heap buffer, so only an
 `mv struct` may declare one — a plain struct is Copyable, and a copy would
 share the buffer. The struct frees the buffer (and any element strings) when
 it is destroyed, and reassigning the field frees the displaced buffer. The
-stored array must be fresh or explicitly moved in with `mv`:
+stored array must be fresh or explicitly moved in with `mv`. The struct's
+`copy()` copies each `Array<T>` field with `Array.copy()`, so a field whose
+elements own heap memory (a nested array, an `mv struct`) leaves the struct
+without a `copy()`:
 
 ```
 mv struct Blocks {
@@ -213,7 +216,7 @@ func make_names = (mv out Names) {
 }
 
 func clone_names = (Names src, mv out Names) {
-    return Names(src.items.copy())       // a copy gives the new struct its own buffer
+    return src.copy()                    // copy() copies each Array<T> field
 }
 ```
 

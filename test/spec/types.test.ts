@@ -118,7 +118,7 @@ func make_names = (mv out Names) {
 }
 
 func clone_names = (Names src, mv out Names) {
-	return Names(src.items.copy())
+	return src.copy()
 }
 `;
 		expect(compile_module(input)).toEqual([]);

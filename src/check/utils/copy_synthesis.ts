@@ -15,7 +15,22 @@ import Type from "../../nodes/Type.ts";
 import ValueNode from "../../nodes/ValueNode.ts";
 import type CheckStatus from "../CheckStatus.ts";
 import { is_box_type } from "./box.ts";
-import { destroy_releases } from "./ownership.ts";
+import { destroy_releases, type_owns_heap } from "./ownership.ts";
+
+/** Whether `type` is an `Array<T>` field that `Array.copy()` can copy: its
+ *  elements are plain values or strings (mirrors the checker's `copy()`
+ *  element gate in check_function_call — nested arrays and heap-owning
+ *  elements would be shared). */
+function heap_array_copyable(type: Type, status: CheckStatus): boolean {
+	if (type.storage_kind !== "heap_array" || type.is_ref || type.is_view || type.is_nullable) {
+		return false;
+	}
+	if (type.elem) return false;
+	if (type.name === "string") return true;
+	const elem = new Type(type.name);
+	elem.type_args = type.type_args;
+	return !type_owns_heap(elem, status);
+}
 
 function struct_has_function(struct: StructNode, name: string): boolean {
 	return struct.functions.some((f) => f.name === name);
@@ -88,6 +103,7 @@ export function struct_is_copyable(
 function struct_needs_copy(struct: StructNode, status: CheckStatus): boolean {
 	if (direct_string_fields(struct).length > 0) return true;
 	for (const field of struct.fields) {
+		if (heap_array_copyable(field.type, status)) return true;
 		if (field.type.is_ref || field.type.is_view || field.type.is_array) continue;
 		if (field_copy_call(field.type, status)) return true;
 	}
@@ -115,6 +131,9 @@ function struct_owns_resource(
 	for (const field of struct.fields) {
 		if (field.type.is_ref || field.type.is_view) continue;
 		if (field.type.name === "string" && !field.type.is_array) continue;
+		// An `Array<T>` field of plain values or strings copies through
+		// `Array.copy()`.
+		if (heap_array_copyable(field.type, status)) continue;
 		if (field.type.is_nullable) return true;
 		// STRUCT_PLAN_3 B2: a `Box<T>` field OWNS its pointee — the wrapper
 		// destroy reclaims it — so the struct owns a resource and is never
@@ -300,7 +319,11 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 	const arg_copy_fields = new Set<string>();
 	const call_args = ctor_args.map((name) => {
 		const field = struct.fields.find((f) => f.name === name);
-		if (field && !field.value && ctor_arg_deep_copy(field.type, status)) {
+		if (
+			field &&
+			!field.value &&
+			(ctor_arg_deep_copy(field.type, status) || heap_array_copyable(field.type, status))
+		) {
 			arg_copy_fields.add(name);
 			return method_call(field_access("self", name), "copy");
 		}
@@ -319,6 +342,18 @@ function build_copy(struct: StructNode, status: CheckStatus): FunctionNode {
 	];
 	for (const field of struct.fields) {
 		if (arg_copy_fields.has(field.name)) continue;
+		if (heap_array_copyable(field.type, status)) {
+			// A defaulted `Array<T>` field: the shell ctor seeded a fresh
+			// default buffer, which the field store frees (no alias stamp).
+			const assign = new AssignmentNode(
+				-1,
+				field_access("c", field.name),
+				method_call(field_access("self", field.name), "copy"),
+			);
+			assign.synthesized_copy_store = true;
+			statements.push(assign);
+			continue;
+		}
 		const right = field_copy_call(field.type, status)
 			? method_call(field_access("self", field.name), "copy")
 			: field_access("self", field.name);

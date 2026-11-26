@@ -840,10 +840,9 @@ Dynamic `Array<T>` fields now require an `mv struct`. The struct's destroy
 frees the buffer, and so does a field reassignment
 (`test/array_struct_fields.test.ts`). Still open:
 
-- **No synthesized struct `copy`.** `h.copy()` on a struct with an
-  `Array<T>` field reports "Function not found: Holder.copy". `Array.copy()`
-  now exists, so the synthesized copy can call it per field
-  (`Holder(src.xs.copy())` works by hand today).
+- **No struct `copy` for heap-owning array elements.** The synthesized
+  `copy` copies `Array<T>` fields with `Array.copy()`, so a struct whose
+  array field holds nested arrays or mv structs gets no `copy` (see below).
 - **`Array.copy()` handles plain values and strings only.** The checker
   rejects `copy()` on arrays whose elements own heap memory (nested arrays,
   mv structs), because a bytewise copy would share their storage. A deep
