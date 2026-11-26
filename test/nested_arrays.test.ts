@@ -2,6 +2,7 @@ import { expect, describe, test } from "vite-plus/test";
 
 import parse from "../src/parse";
 import build_and_check_output from "./build_and_check_output";
+import parse_with_imports from "./parse_with_imports";
 
 /**
  * Nested arrays (`int[][]`, `Array<Array<int>>`, `[[1, 2], [3, 4]]`, and
@@ -272,6 +273,40 @@ pub func main = () {
 	test("set with a non-row value is rejected", () => {
 		const parsed = parse(`var g = [[1, 2], [3]]
 g.set(0, 5)`);
+		expect(parsed.errors.map((e) => e.message)).toContain(
+			"Type mismatch in param: int (expected a row of int)",
+		);
+	});
+
+	test("with fills independent row copies", async () => {
+		const input = `import System
+mv struct Rec {
+	mv string name
+}
+pub func main = () {
+	const row = [1, 2]
+	var s = Array<Array<int>>.with(row, 3)
+	s.at(0).set(0, 9)
+	s.set(2, [7])
+	Console.write("\\{s.length} \\{s.at(0).at(0)} \\{s.at(1).at(0)} \\{s.at(2).length} \\{row.at(0)} ")
+	const w = Array<Array<string>>.with(["a", "b"], 2)
+	var r = Array<Array<Rec>>.with([Rec("x")], 2)
+	r.set(0, [Rec("q"), Rec("z")])
+	Console.write(w.at(1).at(1) + r.at(0).at(1).name + r.at(1).at(0).name + " ")
+	const g = [[1], [2, 3]]
+	const t = Array<Array<Array<int>>>.with(g, 2)
+	const e = Array<Array<int>>.with([], 2)
+	Console.write("\\{t.length} \\{t.at(1).at(1).at(1)} \\{e.at(1).length}")
+}
+`;
+		await build_and_check_output(input, "nested_with_rows", "3 9 1 1 1 bzx 2 3 0", true, {
+			audit: true,
+			js: true,
+		});
+	});
+
+	test("with a non-row value is rejected", () => {
+		const parsed = parse_with_imports(`const s = Array<Array<int>>.with(5, 2)`);
 		expect(parsed.errors.map((e) => e.message)).toContain(
 			"Type mismatch in param: int (expected a row of int)",
 		);

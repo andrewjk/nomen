@@ -647,6 +647,32 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 				build_func_field_call(node, access_func, status);
 				return;
 			}
+			// `Array<Array<T>>.with(row, n)`: n slots, each a deep copy of
+			// the row (a heap row buffer — see check_nested_with).
+			if (access_func.nested_with && access_func.type?.elem) {
+				const outer = access_func.type;
+				const row = outer.elem!;
+				const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+				const header = `sizeof(struct Array_${outer.name})`;
+				const slot = array_elem_c_type(outer);
+				const scratch = (n: BaseNode): string => {
+					const saved = begin_code_scratch(status);
+					build_node(n, status);
+					return end_code_scratch(status, saved);
+				};
+				const v = `_nw_v_${id}`;
+				const n = `_nw_n_${id}`;
+				const o = `_nw_o_${id}`;
+				const k = `_nw_k_${id}`;
+				status.code +=
+					`({ ${slot} ${v} = ${scratch(access_func.params[0])}; long ${n} = ${scratch(access_func.params[1])}; ` +
+					`struct Array_${outer.name}* ${o} = malloc(${header} + ${n} * sizeof(${slot})); ` +
+					`${o}->_vt = 0; ${o}->length = ${n}; ` +
+					`for (long ${k} = 0; ${k} < ${n}; ${k}++) { ` +
+					`((${slot}*)((char*)${o} + ${header}))[${k}] = ${deep_array_copy_c(status, row, v)}; } ` +
+					`${o}; })`;
+				return;
+			}
 			// `copy()` of a NESTED array: the library mono only sees the
 			// innermost element, so copy every row level inline.
 			if (access_func.deep_array_copy && access_func.type) {

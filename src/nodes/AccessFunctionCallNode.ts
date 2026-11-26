@@ -211,6 +211,12 @@ export default class AccessFunctionCallNode extends BaseNode {
 	 */
 	returns_row?: boolean;
 	/**
+	 * `Array<Array<T>>.with(row, n)` (static, a ROW element): lowered inline
+	 * by the backends — `n` slots, each a deep copy of the row (params[0], a
+	 * heap row buffer). Stamped by check_access_node's check_nested_with.
+	 */
+	nested_with?: boolean;
+	/**
 	 * Set when this `.at(i)` call was synthesized by array destructuring
 	 * (`var [a, b] = arr`). The index is a compile-time constant chosen by
 	 * the programmer, so the parameter constraint (bounds check) is skipped —

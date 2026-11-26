@@ -832,6 +832,11 @@ export default function build_access_node(node: AccessNode, status: BuildStatus)
 			if (build_string_at_inline(node, access_func, status)) {
 				return;
 			}
+			// `Array<Array<T>>.with(row, n)`: n deep copies of the row.
+			if (access_func.nested_with && access_func.type?.elem) {
+				build_nested_with(access_func, access_func.type.elem, status);
+				return;
+			}
 			// `s.f(args)` where `f` is a func-typed FIELD: an indirect call
 			// through the stored code pointer (`ldr x8, …; blr x8`).
 			if (access_func.is_func_field_call) {
@@ -4581,4 +4586,55 @@ function build_nested_row_set(
 	emit_asm(status, `ldr x9, [sp], #16\n`);
 	emit_asm(status, `ldr x0, [sp], #16\n`);
 	emit_asm(status, `str x0, [x9]\n`);
+}
+
+/**
+ * `Array<Array<T>>.with(row, n)` (check_nested_with): a fresh outer buffer
+ * of `n` row slots, each a deep copy of `row` (params[0], a heap row base
+ * pointer). Returns x0 = the outer buffer's base pointer. Loop state lives
+ * on the stack: [sp] = k, [sp+16] = outer, [sp+32] = n, [sp+48] = row.
+ */
+function build_nested_with(
+	access_func: AccessFunctionCallNode,
+	row: Type,
+	status: BuildStatus,
+): void {
+	const id = (status.label_counter = (status.label_counter ?? 0) + 1);
+	const loop = `.Lnw_loop_${id}`;
+	const done = `.Lnw_done_${id}`;
+	build_node(access_func.params[0], status);
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	build_node(access_func.params[1], status);
+	ensure_newline(status);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `mov x1, #8\n`);
+	emit_asm(status, `mul x0, x0, x1\n`);
+	emit_asm(status, `add x0, x0, #8\n`);
+	emit_malloc(status);
+	emit_asm(status, `ldr x1, [sp]\n`);
+	emit_asm(status, `str x1, [x0]\n`);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `mov x0, #0\n`);
+	emit_asm(status, `str x0, [sp, #-16]!\n`);
+	emit_asm(status, `${loop}:\n`);
+	emit_asm(status, `ldr x0, [sp]\n`);
+	emit_asm(status, `ldr x1, [sp, #32]\n`);
+	emit_asm(status, `cmp x0, x1\n`);
+	emit_asm(status, `b.ge ${done}\n`);
+	emit_asm(status, `ldr x0, [sp, #48]\n`);
+	emit_deep_array_copy(status, row);
+	emit_asm(status, `ldr x1, [sp]\n`);
+	emit_asm(status, `ldr x2, [sp, #16]\n`);
+	emit_asm(status, `add x2, x2, #8\n`);
+	emit_asm(status, `mov x3, #8\n`);
+	emit_asm(status, `madd x2, x1, x3, x2\n`);
+	emit_asm(status, `str x0, [x2]\n`);
+	emit_asm(status, `ldr x0, [sp]\n`);
+	emit_asm(status, `add x0, x0, #1\n`);
+	emit_asm(status, `str x0, [sp]\n`);
+	emit_asm(status, `b ${loop}\n`);
+	emit_asm(status, `${done}:\n`);
+	emit_asm(status, `ldr x0, [sp, #16]\n`);
+	emit_asm(status, `add sp, sp, #64\n`);
 }

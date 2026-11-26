@@ -806,6 +806,10 @@ export function check_access_function_node(
 		const array_struct = status.structs.find((s) => s.name === "Array");
 		if (array_struct && array_struct.type_params.length > 0) {
 			const type_args = (target as ValueNode).type_args;
+			// `Array<Array<int>>.with(row, n)`: the element is a ROW.
+			if (node.name === "with" && type_args?.length === 1 && type_args[0].is_array) {
+				return check_nested_with(node, type_args[0], status);
+			}
 			if (type_args?.length) {
 				// Explicit type args: Array<int>.with(0, 3)
 				const mono = monomorphize(array_struct, type_args, status);
@@ -1723,6 +1727,57 @@ function hoist_row_value(
 	}
 	status.allocations.push(decl);
 	return new ValueNode(value.start, name, decl_type);
+}
+
+/**
+ * `Array<Array<T>>.with(row, n)`: `n` independent rows, each a deep copy
+ * of `row` (the library mono would store the one seed pointer in every
+ * slot). The backends lower it inline (`nested_with`); the result is a
+ * nested heap array whose cleanup walks the rows.
+ */
+function check_nested_with(
+	node: AccessFunctionCallNode,
+	row_arg: Type,
+	status: CheckStatus,
+): boolean {
+	if (node.params.length !== 2) {
+		add_error(status, `Array.with expects a value and a count`, node.start);
+		return false;
+	}
+	const row = clone_type(row_arg);
+	row.storage_kind = "heap_array";
+	row.length = undefined;
+	// The inline lowering spells every level's buffer (`struct Array_<leaf>`),
+	// so make sure the leaf mono exists even when no flat `Array<leaf>` does.
+	for (let level: Type | undefined = row; level; level = level.elem) {
+		instantiate_generic_type(level, status);
+	}
+	const value = hoist_row_value(node.params[0], row, status);
+	if (!value) return false;
+	status.expected_type = new Type("int");
+	check_node(node.params[1], status);
+	status.expected_type = undefined;
+	const count_type = type_from_value_node(node.params[1], status);
+	if (count_type?.name && !is_integerish_name(count_type.name)) {
+		add_error(
+			status,
+			`Type mismatch in param: ${count_type.name} (expected int)`,
+			node.params[1].start,
+		);
+		return false;
+	}
+	node.params[0] = value;
+	const result = new Type(row.name);
+	result.storage_kind = "heap_array";
+	result.elem = row;
+	node.type = result;
+	node.nested_with = true;
+	node.owned_return = true;
+	return true;
+}
+
+function is_integerish_name(name: string): boolean {
+	return /^u?int(8|16|32|64)?$/.test(name);
 }
 
 /** Array methods a NESTED receiver dispatches to its row-keyed mono

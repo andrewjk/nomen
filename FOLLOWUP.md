@@ -897,3 +897,29 @@ is rejected: "Cannot pass an array of mv value struct 'Rec' (string fields)
 to 'Array<Rec>' parameter 'fallback'". This is the general rule for
 mv-struct array literals passed to `Array<T>` params (check_function_call),
 which now applies because nested `at_or` calls the row-keyed library mono.
+
+## Array `+` / `*` operators (flat and nested)
+
+`+` and `*` on arrays lower to the library `Array.add` / `Array.mul`
+(find_custom_operator). They are broken even for flat arrays:
+
+- On aarch64 the result is a stack buffer sized from the compile-time
+  `node.type.length` (build_operation_node, around line 1813), so a
+  heap-array operand gives the wrong size: `[1, 2] * 2` has length 3.
+- `+` on two string arrays fails to link on aarch64 (undefined symbols
+  `a` and `b`).
+- The library bodies memcpy the slots, so string, struct and row elements
+  end up shared between the operands and the result (double free).
+
+Nested receivers (`Array<Array<int>>`) need the same row-keyed mono and
+per-row copies as `with` (docs/ARRAY_NESTED_MONO.md step 6), and that only
+makes sense once the flat operators are fixed. Seen while adding nested
+`Array<Array<T>>.with`.
+
+## `slice` on a nested array
+
+`g.slice(0, 1)` on an `Array<Array<int>>` fails with "Function not found:
+int.slice": the call still takes the leaf mono. `slice` returns `view T`,
+and a view of rows would need view types that carry the row type (`elem`)
+through the checker and all three backends, so it was left out of the
+nested `with` change. `copy()` and then indexing works as a stopgap.

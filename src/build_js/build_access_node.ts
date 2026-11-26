@@ -124,6 +124,11 @@ function build_method_call(
 		);
 	}
 
+	// `Array<Array<T>>.with(row, n)`: n independent copies of the row.
+	if (access.nested_with) {
+		return `((v, n) => { const o = []; for (let i = 0; i < Number(n); i++) o.push(__copy(v)); return o; })(${args.join(", ")})`;
+	}
+
 	if (access.is_static) {
 		if (target_type === "Console") return `Console_${name}(${args.join(", ")})`;
 		if (target_type === "Format") return `Format_${name}(${args.join(", ")})`;
