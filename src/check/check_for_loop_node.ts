@@ -116,6 +116,22 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 			check_for_loop_node(for_loop, status);
 			return;
 		}
+		// `for x of v` over a `view T` (`view v = xs.slice(1, 3)`): the same
+		// index loop over the view's intrinsic `.length` / `.at` (a view of a
+		// nested array's rows binds each row as a borrow).
+		if (list_type.is_view && !enumerable) {
+			if (for_loop.item_is_ref) {
+				add_error(
+					status,
+					`'ref' iteration is not supported for a view — views are read-only`,
+					for_loop.item.start,
+				);
+				return;
+			}
+			desugar_array_for_loop(for_loop, list_type, view_element_type(list_type), status);
+			check_for_loop_node(for_loop, status);
+			return;
+		}
 		// `for x of some_list` (a `List<T>`) iterates ELEMENTS, exactly like
 		// arrays: desugar to an index loop with the element bound from
 		// `.at()`. (`Enumerable` types keep yielding indices — see below.)
@@ -165,6 +181,14 @@ export default function check_for_loop_node(for_loop: ForLoopNode, status: Check
 		// (`arena.get(handle).children`) cannot discharge its desugared
 		// `.at` bounds and miscompiles on aarch64 (see FOLLOWUP.md), so it
 		// falls through to the clear must-be-array-or-Enumerable error.
+		// An inline view expression (`for x of xs.slice(1, 3)`): the view
+		// is a load-only (ptr, len) pair, so re-evaluating it per iteration
+		// in the desugared index loop is safe.
+		if (list_type.is_view && !is_enumerable && !for_loop.item_is_ref) {
+			desugar_array_for_loop(for_loop, list_type, view_element_type(list_type), for_status);
+			check_for_loop_node(for_loop, for_status);
+			return;
+		}
 		const chained_list_elem = list_element_type(list_type, for_status);
 		if (chained_list_elem && !is_enumerable && chain_is_call_free(for_loop.list)) {
 			if (for_loop.item_is_ref) {
@@ -373,6 +397,14 @@ function element_type_is_borrowable(t: Type, status: CheckStatus): boolean {
 	if (t.name === "string") return true;
 	const elem = status.structs.find((s) => s.name === t.name || s.name === mono_type_name(t));
 	return !!elem && !elem.is_class && !elem.is_simple_type && !elem.is_generic;
+}
+
+/** What `.at` on a view yields: a row (view of a nested array's rows), a
+ *  `char` (a string's own view), or the view's `T` (undefined: the name). */
+function view_element_type(view: Type): Type | undefined {
+	if (view.elem) return view.elem;
+	if (view.name === "string" && !view.view_of_elements) return new Type("char");
+	return undefined;
 }
 
 function desugar_array_for_loop(

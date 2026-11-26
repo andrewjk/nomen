@@ -730,7 +730,8 @@ export function check_access_function_node(
 	// `.to_string` is string-only (it materializes a char slice into a string).
 	// Views are read-only — there is no `.set`.
 	if (target_type.is_view) {
-		const elem_name = target_type.name === "string" ? "char" : target_type.name;
+		const elem_name =
+			target_type.name === "string" && !target_type.view_of_elements ? "char" : target_type.name;
 		if (node.name === "at" && node.params.length === 1) {
 			for (const param of node.params) {
 				check_node(param, status);
@@ -1387,11 +1388,18 @@ export function check_access_function_node(
 			}
 		}
 	}
+	// `slice` of an array views its elements (`view string` over a string
+	// array holds strings, not a string's chars).
+	if (result && node.name === "slice" && target_type.is_array && node.type?.is_view) {
+		node.type = clone_type(node.type);
+		node.type.view_of_elements = true;
+	}
 	// `slice` of a nested array: a view of its rows (the row-keyed mono's
 	// (ptr, len) over the row slots), whose `.at` reads a borrowed row.
 	if (result && node.nested_slice && target_type.elem) {
 		const view = new Type(target_type.name);
 		view.is_view = true;
+		view.view_of_elements = true;
 		view.type_args = target_type.type_args;
 		view.elem = clone_type(target_type.elem);
 		node.type = view;

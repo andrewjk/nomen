@@ -64,7 +64,8 @@ import { c_view_string_arg } from "./utils/view_value.ts";
 function view_element_c_type(view_type: Type, status: BuildStatus): string {
 	// A view of a nested array's rows: each slot is a row buffer pointer.
 	if (view_type.elem) return `struct Array_${view_type.name} *`;
-	const elem_name = view_type.name === "string" ? "char" : view_type.name;
+	const elem_name =
+		view_type.name === "string" && !view_type.view_of_elements ? "char" : view_type.name;
 	const is_struct = !!status.structs.find((s) => s.name === elem_name && !s.is_simple_type);
 	if (is_struct) return `struct ${elem_name}`;
 	return c_type(elem_name);

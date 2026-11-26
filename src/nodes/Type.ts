@@ -109,6 +109,14 @@ export default class Type {
 	elem?: Type;
 
 	/**
+	 * A `view T` over an ARRAY's elements (`xs.slice(1, 3)`), as opposed to
+	 * a string's own char view (`text.slice(0, 5)`). Both spell `view
+	 * string` for a string array, so this tells their elements apart: `T`
+	 * here, `char` for a string's view.
+	 */
+	view_of_elements?: boolean;
+
+	/**
 	 * For anonymous enum types `[.ok(T1, T2), .error]`, the case list.
 	 * When set, `name` is "anon_enum". Like tuples, these are materialized
 	 * into a generated enum during check (see materialize_anon_enum_type);

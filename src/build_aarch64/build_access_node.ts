@@ -233,7 +233,7 @@ function build_view_op(
 	// guaranteed `.to_string` implies a `view string` — default to string.
 	const view_elem = t?.name || "string";
 
-	const elem_name = view_elem === "string" ? "char" : view_elem;
+	const elem_name = view_elem === "string" && !t?.view_of_elements ? "char" : view_elem;
 
 	if (access_func.name === "at" && access_func.params.length === 1) {
 		// index → x0, then x1=index, x0=ptr
@@ -258,6 +258,13 @@ function build_view_op(
 			emit_asm(status, `mov x2, #${size}\n`);
 			emit_asm(status, `bl _memcpy\n`);
 			emit_asm(status, `add x0, x29, #${temp_offset}\n`); // reload dst
+			return true;
+		}
+		// A string element (a view over a string ARRAY): the 16-byte
+		// (ptr, len) slot, borrowed — into (x0, x1).
+		if (elem_name === "string") {
+			emit_asm(status, `add x0, x0, x1, lsl #4\n`);
+			emit_asm(status, `ldp x0, x1, [x0]\n`);
 			return true;
 		}
 		// Primitive element: scaled load based on element width. char is a

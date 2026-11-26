@@ -884,8 +884,11 @@ to 'Array<Rec>' parameter 'fallback'". This is the general rule for
 mv-struct array literals passed to `Array<T>` params (check_function_call),
 which now applies because nested `at_or` calls the row-keyed library mono.
 
-## `for ... of` over a `view`
+## `view string` parameters can't hold a string array's view
 
-`for x of v` where `v` is a `view T` (`view v = xs.slice(0, 2)`) is
-rejected: "For loop list must be an array, List, or Enumerable, not int".
-Indexing with `v.at(i)` works. Seen while adding nested `slice`.
+A `view string` parameter always means a view of a string's chars, so
+`func f = (view string v)` called with `words.slice(0, 2)` (a `string[]`)
+would read its elements as chars. Local views know which they are
+(`Type.view_of_elements`, set by `slice` on an array), but a parameter
+annotation has no spelling for "a view of strings". Needs syntax, e.g. a
+distinct element-view annotation. Seen while adding `for ... of` over views.
