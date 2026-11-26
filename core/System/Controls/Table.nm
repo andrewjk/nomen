@@ -1,24 +1,21 @@
 /**
- * A multi-column data table with header labels (NSTableView, view-based)
+ * A table of text with several columns and a header row
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * The data-source bridge generalizes ListView's (see that file) from rows
- * to a GRID: cells live in a fixed-capacity C-global pool, addressed
- * row-major (`text[row * cols + col]`); the column count is fixed at
- * construction. Cells render through VIEW-BASED table cells
- * (`tableView:viewForTableColumn:row:` returning an NSTableCellView whose
- * identifier matches its column) so AppKit REUSES the views as rows scroll
- * — the same recycling native tables get. Headers are live column labels
- * (`set_header`). One Table per process (shared pool — the same trade
- * ListView makes). Selection is POLLED (`selected_row`), like every value
- * in the manual loop. Named `Table` with no stdlib collision (the ListView
- * `List<T>` lesson). macOS-only (no iOS counterpart for a plain embeddable
- * grid; see GUI_PLAN Tier 2 — the iOS blocks are TODO stubs).
+ * The number of columns is set when it is created. Label them with `set_header`, add rows
+ * with `add_row` and fill them with `set_cell`. Read the selection with `selected_row` or
+ * respond to it with `on_select`. Only one `Table` can exist at a time. macOS only.
  **/
+// The data-source bridge generalizes ListView's (see that file) from rows to a
+// GRID: cells live in a fixed-capacity C-global pool, addressed row-major
+// (`text[row * cols + col]`); the column count is fixed at construction. Cells
+// render through VIEW-BASED table cells (`tableView:viewForTableColumn:row:`
+// returning an NSTableCellView whose identifier matches its column) so AppKit
+// REUSES the views as rows scroll — the same recycling native tables get.
+// Headers are live column labels (`set_header`). One Table per process (shared
+// pool — the same trade ListView makes). Selection is POLLED (`selected_row`),
+// like every value in the manual loop. Named `Table` with no stdlib collision
+// (the ListView `List<T>` lesson). macOS-only (no iOS counterpart for a plain
+// embeddable grid; see GUI_PLAN Tier 2 — the iOS blocks are TODO stubs).
 pub mv struct Table: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

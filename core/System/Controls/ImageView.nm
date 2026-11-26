@@ -1,15 +1,12 @@
 /**
- * A static image (file path or named system symbol)
+ * A static image, from a file or a named system symbol
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * `set_path` loads from the filesystem; `set_symbol` uses the system
- * symbol/SF Symbol set. A failed load leaves the view empty (`has_image`
- * reads false) — there is no error channel for images.
+ * Load it with `set_path` or `set_symbol`. A failed load leaves the view empty, which
+ * `has_image` reports.
  **/
+// `set_path` loads from the filesystem; `set_symbol` uses the system symbol/SF
+// Symbol set. A failed load leaves the view empty (`has_image` reads false) —
+// there is no error channel for images.
 pub mv struct ImageView: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

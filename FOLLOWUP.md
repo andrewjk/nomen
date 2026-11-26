@@ -844,7 +844,3 @@ Unmarked struct members default to `pub`, so internal state fields
 runtime handles (`Task.future`, `Channel.mu`) and `raw_*` / `find_slot`-style
 helpers appear in the reference. They are documented as "internal" for now;
 marking them `internal` would hide them.
-
-Several Controls type docs (`Form`, `OtpInput`, `Pagination`, `Window`, `App`)
-still spend their body on implementation history (GUI_PLAN tiers,
-STRUCT_PLAN phases, HANDLERS stages) rather than usage.

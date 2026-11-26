@@ -1,20 +1,22 @@
 /**
- * A page-picker row — prev/next plus one numbered Button per page composed
+ * A page picker: "<" and ">" buttons around up to five numbered page buttons
  *
- * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
- * control, no drawing — a row of Buttons wired into the caller's grid.
- * The page count is fixed at construction (1..5; spare buttons are hidden
- * and skipped by the layout's hidden-leaf pass). The composite is its own
- * HANDLER HOST (docs/HANDLERS.md Stage 2): #init registers a handler per
- * button and the arms keep `current` up to date — the run loop forwards
- * into whatever app field hosts the pagination. Changes the app cares
- * about travel UP via the id up-call (Stage 3): `on_page_change(id)`
- * enrolls interest, the mutators raise the pending flag, and the app
- * forwards itself down once per frame — `pag.tick(ref self, ref win)` —
- * for the callback into its `run_handler`. Value polling (`page`) remains
- * for apps that don't need the event. Handles (`prev_handle`/
- * `next_handle`/`page_handle`) remain for coordinate hit-testing.
+ * Add it to your grid with `add_to`. Read the current page with `page`, or respond to page
+ * changes with `on_page_change`; for that, call `tick` from `App.frame` each frame.
  **/
+// PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+// control, no drawing — a row of Buttons wired into the caller's grid. The page
+// count is fixed at construction (1..5; spare buttons are hidden and skipped by
+// the layout's hidden-leaf pass). The composite is its own HANDLER HOST
+// (docs/HANDLERS.md Stage 2): #init registers a handler per button and the arms
+// keep `current` up to date — the run loop forwards into whatever app field
+// hosts the pagination. Changes the app cares about travel UP via the id
+// up-call (Stage 3): `on_page_change(id)` enrolls interest, the mutators raise
+// the pending flag, and the app forwards itself down once per frame —
+// `pag.tick(ref self, ref win)` — for the callback into its `run_handler`.
+// Value polling (`page`) remains for apps that don't need the event. Handles
+// (`prev_handle`/ `next_handle`/`page_handle`) remain for coordinate
+// hit-testing.
 pub mv struct Pagination {
 	/**
 	 * The "<" button.

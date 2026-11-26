@@ -1,10 +1,8 @@
 /**
- * A push-button control that triggers an action when clicked
+ * A push button
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is an AppKit handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * Create it with its title, add its `handle` to a `Container`, and respond to clicks with
+ * `on_click`.
  **/
 pub mv struct Button: Control {
 	/**

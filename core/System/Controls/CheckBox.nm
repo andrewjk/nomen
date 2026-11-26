@@ -1,10 +1,7 @@
 /**
- * A toggle control with a title and checked/hidden state
+ * A checkbox with a title
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is an AppKit handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * Read its state with `is_checked`, or respond to changes with `on_click`.
  **/
 pub mv struct CheckBox: Control {
 	/**

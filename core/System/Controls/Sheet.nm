@@ -1,20 +1,15 @@
 /**
- * A modal sheet attached to a window (the macOS "forms slide out of the
- * title bar" presentation)
+ * A dialog that slides down from a window's title bar
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * fields are platform handles, so the value is movable and its `#destroy`
- * releases what they name. The constructor's `self` is the inline instance
- * (the `.` accessor); methods keep the pointer form.
- *
- * The sheet is its own NSWindow presented attached to the host — so its
- * contentView is just another layout root: `content_window` hands back a
- * Window-shaped value whose contentView is the sheet's, and every control
- * constructor (and `Container.layout`) accepts it like any window.
- * `present`/`dismiss` are non-blocking (completion-handler form); iOS
- * defers to UISheetPresentationController (TODO stubs; see GUI_PLAN
- * Tier 1 #20).
+ * Create controls with `content_window()` as their window and lay them out there, then
+ * `present` the sheet and `dismiss` it when done. Neither call waits.
  **/
+// The sheet is its own NSWindow presented attached to the host — so its
+// contentView is just another layout root: `content_window` hands back a
+// Window-shaped value whose contentView is the sheet's, and every control
+// constructor (and `Container.layout`) accepts it like any window.
+// `present`/`dismiss` are non-blocking (completion-handler form); iOS defers to
+// UISheetPresentationController (TODO stubs; see GUI_PLAN Tier 1 #20).
 pub mv struct Sheet: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

@@ -1,17 +1,19 @@
 /**
- * A labeled group of rows — GroupBox + Label rows composed
+ * A titled box of labeled rows, such as a sign-in form
  *
- * PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
- * control, no drawing — a GroupBox draws the framed, titled panel while a
- * padded vstack of label+control rows lays out ON TOP of it: both live in
- * a ZStack node of the caller's grid (same rect; the later child paints on
- * top), so the whole assembly lays out in the caller's single
- * `grid.layout(win)` pass.
- *
- * Rows are added BEFORE the first layout: `add_row` pairs one of four
- * pre-created labels with a control handle the caller owns (up to 4 rows).
- * Hit-test the row controls through their own handles, as everywhere else.
+ * Create it, add it to your grid with `add_to`, then add up to four rows with `add_row`,
+ * each pairing a label with a control you own. Do this before the first layout.
  **/
+// PURE COMPOSITION (GUI_PLAN Tier 3 "reachable earlier"): no new native
+// control, no drawing — a GroupBox draws the framed, titled panel while a
+// padded vstack of label+control rows lays out ON TOP of it: both live in a
+// ZStack node of the caller's grid (same rect; the later child paints on top),
+// so the whole assembly lays out in the caller's single `grid.layout(win)`
+// pass.
+//
+// Rows are added BEFORE the first layout: `add_row` pairs one of four
+// pre-created labels with a control handle the caller owns (up to 4 rows).
+// Hit-test the row controls through their own handles, as everywhere else.
 pub mv struct Form {
 	/**
 	 * The framed, titled panel behind the rows.

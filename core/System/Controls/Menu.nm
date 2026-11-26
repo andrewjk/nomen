@@ -1,22 +1,18 @@
 /**
- * A context menu attachable to any control (NSMenu via `view.menu`)
+ * A context menu shown when the user right-clicks a control
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Right-clicking an attached control shows the menu natively — AppKit runs
- * its own modal tracking loop, so the manual event loop is untouched. Each
- * item carries a tag (its index) and a shared target whose action records
- * the tag in a C global; `clicked_item` polls it (edge-triggered: the read
- * resets it to -1, "none"), and `on_item_select` is the registered form —
- * the drain consumes the selection, the handler reads it through
- * `selected_item`.
- * iOS presentation differs (UIContextMenu-
- * Interaction needs a scene-attached view — see GUI_PLAN Tier 2; the iOS
- * blocks are TODO stubs).
+ * Add items with `add_item`, `attach` the menu to a control, then respond to choices with
+ * `on_item_select` (reading which with `selected_item`) or poll `clicked_item` each frame.
+ * macOS only.
  **/
+// Right-clicking an attached control shows the menu natively — AppKit runs its
+// own modal tracking loop, so the manual event loop is untouched. Each item
+// carries a tag (its index) and a shared target whose action records the tag in
+// a C global; `clicked_item` polls it (edge-triggered: the read resets it to
+// -1, "none"), and `on_item_select` is the registered form — the drain consumes
+// the selection, the handler reads it through `selected_item`. iOS presentation
+// differs (UIContextMenu- Interaction needs a scene-attached view — see
+// GUI_PLAN Tier 2; the iOS blocks are TODO stubs).
 pub mv struct Menu: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

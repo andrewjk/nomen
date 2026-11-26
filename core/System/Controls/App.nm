@@ -1,61 +1,62 @@
 /**
- * The App contract: the object Window.run drives
+ * The object `Window.run` drives: conform a struct to it to write a windowed app
  *
- * The WinForms/Swift shape for a manual-loop toolkit: instead of pumping
- * `Window.process_events` and re-checking sizes in a `while` loop, the app
- * declares a struct conforming to `App`, moves it into `win.run(mv app)`,
- * and the WINDOW owns everything else — the event pump, the autorelease
- * pool, resize detection, and the relayout of the hosted content (the root
- * `Container` from `win.set_content` plus every `Scrollable.set_content`
- * document). The app implements four hooks:
+ * Create the controls and layout in your struct's constructor, then pass the struct to
+ * `win.run(mv app)`. The window then runs everything: it calls `start` once before showing
+ * itself, then every frame handles events, lays out again on resize, runs your event
+ * handlers and calls `frame`.
  *
- * - `start` — called once, after the app has been moved into its final
- *   storage but before the window is shown. Register the layout roots here
- *   (`win.set_content(ref grid)`, `scroll.set_content(ref grid)`) and do
- *   any wiring that needs stable addresses — including click handlers
- *   (`self.btn.on_click(func () { ... })`).
- * - `frame` — called every iteration of the run loop with a `FrameEvents`
- *   value: the full input record for this frame (click kind/coordinates,
- *   `mouse_button`/`mouse_click_count`/`mouse_modifiers` — every button,
- *   `scroll_dx`/`scroll_dy`, the keyboard record
- *   `key_code`/`key_modifiers`/`key_repeat`/`key_up_code`, the pointer
- *   position `mouse_x`/`mouse_y`, and frame time `dt`), and `resized`
- *   + the new size when the window's content rect changed. Per-frame value
- *   polling (slider → progress mirrors), coordinate-driven input that no
- *   event names, and app-owned pane relayouts live here — registered
- *   click, right-click, mouse-down, scroll, key, move, and resize handlers
- *   dispatch earlier, in `handle_events` (the `.on_click` /
- *   `.on_right_click` / `.on_mouse_down` / `.on_scroll` / `.on_key_down` /
- *   `.on_key_up` / `.on_mouse_move` / `.on_resize` desugars), and close
- *   requests consult `close_requested`.
- * - `handle_events` — the per-frame event pump: drains every registered
- *   control event (clicks, focus/blur, text input). Declared here as a
- *   default-empty method; the `.on_<event>(closure)` desugars
- *   (docs/HANDLERS.md) synthesize the override on conformers with
- *   registrations, so user code only writes the registration and never
- *   sees the machinery. New control events extend the pump's arms — the
- *   App contract is fixed.
- * - `run_handler` — the up-call protocol (Stage 3): a composite with an
- *   enrolled event calls back `owner.run_handler(id, ref win)` from its
- *   `tick` (the app forwards itself down once per tick). Default-empty;
- *   the desugar synthesizes the override dispatching ids to the app's
- *   `.on_<event>` handlers.
+ * ```
+ * mv struct Hello: App {
+ * 	mv Button btn
+ * 	mv Container grid
  *
- * - LIFETIME — on macOS the process OUTLIVES the last window: after the
- *   frame loop ends, run keeps pumping until Dock Quit or the app menu's
- *   Quit (⌘Q) ends the process, and a Dock click reopens the window and
- *   resumes frames. Apps that want exit-on-last-close call `win.quit()`
- *   from their `close_requested` override; self-terminating programs
- *   (tests, probes) call `win.quit()` where they used to call
- *   `win.close()`.
+ * 	pub func #init = (ref self, Window window) {
+ * 		const btn = Button(window, "Click me")
+ * 		var grid = VStack(8)
+ * 		grid.add_intrinsic(btn.handle, 1)
+ * 		self.btn = mv btn
+ * 		self.grid = mv grid
+ * 	}
  *
- * Handlers are METHODS on the app (the `ref self` receiver), so app state —
- * every control field — is reachable without lambda captures (capturing a
- * control MOVES it; a capture-free method reference moves nothing). The
- * `.on_click` desugar is that shape with registration ergonomics: the
- * closure you write IS hoisted into a hidden method, and the dispatch
- * borrow of `self` is taken by the run loop per frame.
+ * 	pub func start = (ref self, ref Window win {}) {
+ * 		win.set_content(ref self.grid)
+ * 		self.btn.on_click(func() {
+ * 			self.btn.set_title("Thanks")
+ * 		})
+ * 	}
+ * }
+ *
+ * pub func main = () {
+ * 	var win = Window("Hello", 320, 200)
+ * 	var app = Hello(win)
+ * 	win.run(mv app)
+ * }
+ * ```
+ *
+ * On macOS the app keeps running after its last window closes, until the user quits from
+ * the Dock or with ⌘Q; clicking the Dock icon reopens the window. To quit when the window
+ * closes, call `win.quit()` from `close_requested`.
  **/
+// The WinForms/Swift shape for a manual-loop toolkit: instead of pumping
+// `Window.process_events` and re-checking sizes in a `while` loop, the app
+// moves itself into `win.run(mv app)` and the WINDOW owns everything else — the
+// event pump, the autorelease pool, resize detection, and the relayout of the
+// hosted content (the root `Container` from `win.set_content` plus every
+// registered Scrollable document and pane).
+//
+// `handle_events` and `run_handler` are default-empty; the
+// `.on_<event>(closure)` desugars (docs/HANDLERS.md) synthesize the overrides
+// on conformers with registrations, so user code only writes the registration.
+// New control events extend the pump's arms — the App contract is fixed.
+// `run_handler` is the up-call protocol (Stage 3): a composite with an enrolled
+// event calls back `owner.run_handler(id, ref win)` from its `tick`.
+//
+// Handlers are METHODS on the app (the `ref self` receiver), so app state —
+// every control field — is reachable without lambda captures (capturing a
+// control MOVES it; a capture-free method reference moves nothing). The closure
+// you write IS hoisted into a hidden method, and the dispatch borrow of `self`
+// is taken by the run loop per frame.
 pub trait App {
 	/**
 	 * Called once before the window is shown. Register layout roots (`win.set_content`) and
@@ -111,13 +112,13 @@ pub trait App {
 }
 
 /**
- * One frame's input state, passed to App.frame
+ * One frame's input, passed to `App.frame`
  *
- * Pure scalars, so the by-value parameter copies safely (no destroy).
- * Click coordinates are the window's content coordinates, top-left origin
- * (the same values `Window.click_x`/`click_y` report) — translate through
- * `content_click` before hit-testing controls hosted on a Scrollable.
+ * Each field reports only the frame the input happened in. Coordinates are in points from
+ * the window content area's top left, as `Window.click_x` and `click_y` report them; for
+ * controls inside a `Scrollable`, convert them with `content_click` before hit-testing.
  **/
+// Pure scalars, so the by-value parameter copies safely (no destroy).
 pub mv struct FrameEvents {
 	/**
 	 * The mouse button pressed this frame: 0 none, 1 left, 2 right.

@@ -1,14 +1,10 @@
 /**
- * A labeled bordered box that gives forms a section frame for free
+ * A titled, bordered box for grouping related controls
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * NSBox in its primary style with a title. macOS-only — iOS has no boxed
- * group view (TODO stubs; see GUI_PLAN Tier 1 #17).
+ * Lay it out behind its controls, for example in a `ZStack`. macOS only.
  **/
+// NSBox in its primary style with a title. macOS-only — iOS has no boxed group
+// view (TODO stubs; see GUI_PLAN Tier 1 #17).
 pub mv struct GroupBox: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

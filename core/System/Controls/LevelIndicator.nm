@@ -1,15 +1,12 @@
 /**
- * A capacity/rating display (stars, discrete or continuous fill)
+ * A level display: a capacity bar or a star rating
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * macOS-only (NSLevelIndicator has no iOS counterpart; see GUI_PLAN
- * Tier 1 #16 — the iOS blocks are TODO stubs). Styles: 0 relevancy,
- * 1 discrete capacity, 2 continuous capacity, 3 rating (stars).
+ * Choose the look with `set_style`, the full value with `set_max`, and the level with
+ * `set_value`. macOS only.
  **/
+// macOS-only (NSLevelIndicator has no iOS counterpart; see GUI_PLAN Tier 1 #16
+// — the iOS blocks are TODO stubs). Styles: 0 relevancy, 1 discrete capacity, 2
+// continuous capacity, 3 rating (stars).
 pub mv struct LevelIndicator: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

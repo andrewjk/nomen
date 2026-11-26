@@ -1,27 +1,24 @@
 /**
- * A single-column scrolling list of text rows (NSTableView, cell-based).
+ * A scrolling list of text rows
  *
- * Named `ListView` (not `List`) to keep clear of the stdlib `List<T>` —
- * the Controls type would otherwise shadow it in name resolution.
- *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * fields are platform handles, so the value is movable and its `#destroy`
- * releases what they name. The constructor's `self` is the inline instance
- * (the `.` accessor); methods keep the pointer form.
- *
- * The data source bridge: NSTableView asks its dataSource for the row count
- * and each row's value, so the rows live in C globals (`g_list_rows`) that
- * the delegate IMPs read — the Nomen-side API (`add_row`/`set_row`/…)
- * mutates them and reloads. That is one List per process (the globals are
- * shared — the same trade `Container`'s resize delegate already makes).
- * Selection is POLLED (`selected_row`), like every value in the manual
- * loop; there is no selection-change callback yet (GUI_PLAN cross-cutting
- * follow-ups). The table is cell-based, so cells draw plain text with no
- * view reuse; a multi-column Table with view-based (reusable) cells is a
- * later tier-2 step. The table lives in an NSScrollView, so it scrolls like
- * any document view. iOS defers to UITableView (TODO stubs; see GUI_PLAN
- * Tier 2).
+ * Add rows with `add_row`, change them with `set_row` and `remove_row`, and read the
+ * selection with `selected_row` or respond to it with `on_select`. Only one `ListView` can
+ * exist at a time. macOS only.
  **/
+// Named `ListView` (not `List`) to keep clear of the stdlib `List<T>` — the
+// Controls type would otherwise shadow it in name resolution.
+//
+// The data source bridge: NSTableView asks its dataSource for the row count and
+// each row's value, so the rows live in C globals (`g_list_rows`) that the
+// delegate IMPs read — the Nomen-side API (`add_row`/`set_row`/…) mutates them
+// and reloads. That is one List per process (the globals are shared — the same
+// trade `Container`'s resize delegate already makes). Selection is POLLED
+// (`selected_row`), like every value in the manual loop; `on_select` is the
+// registered form. The table
+// is cell-based, so cells draw plain text with no view reuse; a multi-column
+// Table with view-based (reusable) cells is a later tier-2 step. The table
+// lives in an NSScrollView, so it scrolls like any document view. iOS defers to
+// UITableView (TODO stubs; see GUI_PLAN Tier 2).
 pub mv struct ListView: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

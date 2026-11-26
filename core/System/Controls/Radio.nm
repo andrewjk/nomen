@@ -1,17 +1,14 @@
 /**
- * A radio button (exclusive selection is managed at the Nomen level)
+ * A radio button
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * macOS gives each NSRadioButton its own on/off state but no cross-button
- * exclusivity, and iOS has no radio control at all — GROUP semantics (first
- * selected wins) are the caller's job: check the new selection and uncheck
- * the rest. The control itself is a CheckBox sibling (button type 4,
- * NSRadioButton). iOS defers to Segmented or a checkmark list.
+ * Radio buttons don't group themselves: when one is clicked, check it and uncheck the
+ * others in its group with `set_checked`.
  **/
+// macOS gives each NSRadioButton its own on/off state but no cross-button
+// exclusivity, and iOS has no radio control at all — GROUP semantics (first
+// selected wins) are the caller's job: check the new selection and uncheck the
+// rest. The control itself is a CheckBox sibling (button type 4,
+// NSRadioButton). iOS defers to Segmented or a checkmark list.
 pub mv struct Radio: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

@@ -378,18 +378,25 @@ pub func native_frame = (uint64 handle, out string) {
 }
 
 /**
- * A flexbox-style container that measures and arranges its child controls.
+ * A layout tree that sizes and positions controls in a window
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * SoA buffers mv with the value and a scope-exit destroy reclaims them.
- * *
- * Conforms to `Control`: `measure(BoxConstraints)` measures the whole subtree,
- * `set_frame` arranges it into a rectangle, and `intrinsic_size` reports the
- * unbounded-content size. The handle-based `add` API and the SoA engine are
- * unchanged — the trait methods are thin entry points over the existing math,
- * so a `Container` can also be driven polymorphically as a `Control` (passed to
- * a `Control`-taking function, stored in a `HandleBuffer<Control>`, etc.).
+ * Make one with `VStack`, `HStack`, `Grid` or `ZStack`, add controls by their `handle`
+ * (`add`, `add_intrinsic`, `add_len`), and nest stacks with `add_vstack`, `add_hstack`,
+ * `add_grid`, `add_zstack` and `add_block`, which return the new node's index to add into.
+ * Each control's size and its share of spare space are set as it is added.
+ *
+ * In an `App`, register the root with `win.set_content(ref grid)` and it is laid out for
+ * you whenever the window resizes. Otherwise call `layout(win)` yourself.
+ *
+ * The container also provides the window-level event hooks behind `on_mouse_down`,
+ * `on_key_down`, `on_resize` and friends, and hit-testing (`contains`, `hit_test`).
  **/
+// Conforms to `Control`: `measure(BoxConstraints)` measures the whole subtree,
+// `set_frame` arranges it into a rectangle, and `intrinsic_size` reports the
+// unbounded-content size. The handle-based `add` API and the SoA engine are
+// unchanged — the trait methods are thin entry points over the existing math,
+// so a `Container` can also be driven polymorphically as a `Control` (passed to
+// a `Control`-taking function, stored in a `HandleBuffer<Control>`, etc.).
 pub mv struct Container: Control {
 	/**
 	 * Each node's kind (internal).

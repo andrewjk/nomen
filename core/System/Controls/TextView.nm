@@ -1,16 +1,13 @@
 /**
- * A multiline editable text surface
+ * A scrolling, multi-line text editor
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Sized explicitly by the container (`add(handle, w, h, …)`): a native text
- * view has no useful intrinsic size (it scrolls its own document), so the
- * Control-trait measure reports what the platform offers and clamps to the
- * constraints like every other leaf.
+ * Give it an explicit size when adding it to a `Container`; it has no natural size of its
+ * own. Read it with `get_text`.
  **/
+// Sized explicitly by the container (`add(handle, w, h, …)`): a native text
+// view has no useful intrinsic size (it scrolls its own document), so the
+// Control-trait measure reports what the platform offers and clamps to the
+// constraints like every other leaf.
 pub mv struct TextView: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

@@ -1,17 +1,13 @@
 /**
- * A read-only text label control
+ * A text label
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is the AppKit handle, and the `#destroy` releases what it
- * names. The constructor's `self` is the inline instance (the `.` accessor);
- * methods keep the pointer form.
- *
- * The label carries NO Nomen-side text cache — sizing reads the native
- * control (`native_intrinsic`), and `set_text` is a bare receiver that only
- * mutates the native view. That keeps the struct write-once after
- * construction, which is what lets the `#handle` twin mirror it (see
- * GUI.md, "Click events" and the `#handle` note).
+ * Set its text with `set_text` and its weight with `set_bold`.
  **/
+// The label carries NO Nomen-side text cache — sizing reads the native control
+// (`native_intrinsic`), and `set_text` is a bare receiver that only mutates the
+// native view. That keeps the struct write-once after construction, which is
+// what lets the `#handle` twin mirror it (see GUI.md, "Click events" and the
+// `#handle` note).
 pub mv struct Text: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

@@ -1,22 +1,21 @@
 /**
- * A window toolbar with labeled push-button items (NSToolbar)
+ * A row of labeled buttons at the top of a window
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * NSToolbar is delegate-driven: the shared delegate answers the identifier
- * questions from the fixed item count and builds each item as a labeled
- * push button (NSButton view) targeted at the shared action recorder — so
- * `clicked_item` polls the last click edge-triggered, like Menu, and
- * `on_item_select` is the registered form. Attaching
- * a toolbar shrinks the window's contentView (AppKit owns the layout rect),
- * so create the Toolbar BEFORE the first grid layout. One Toolbar per
- * process (the shared delegate + tag storage — the same trade List and Menu
- * already make). macOS-only (NSToolbar has no iOS counterpart; see GUI_PLAN
- * Tier 2 — the iOS blocks are TODO stubs).
+ * The number of buttons is set when it is created; label them with `set_label`. Respond to
+ * clicks with `on_item_select` or poll `clicked_item`. Create it before the window's first
+ * layout, since adding a toolbar shrinks the content area. Only one `Toolbar` can exist at
+ * a time. macOS only.
  **/
+// NSToolbar is delegate-driven: the shared delegate answers the identifier
+// questions from the fixed item count and builds each item as a labeled push
+// button (NSButton view) targeted at the shared action recorder — so
+// `clicked_item` polls the last click edge-triggered, like Menu, and
+// `on_item_select` is the registered form. Attaching a toolbar shrinks the
+// window's contentView (AppKit owns the layout rect), so create the Toolbar
+// BEFORE the first grid layout. One Toolbar per process (the shared delegate +
+// tag storage — the same trade List and Menu already make). macOS-only
+// (NSToolbar has no iOS counterpart; see GUI_PLAN Tier 2 — the iOS blocks are
+// TODO stubs).
 pub mv struct Toolbar: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

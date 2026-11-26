@@ -1,13 +1,8 @@
 /**
- * A pair of up/down arrows that walk a numeric range
+ * Up and down arrows that step a number through a range
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Pair with a TextBox for the "number input" composition (gpui-kit's
- * number-input is exactly that pairing).
+ * Set the range with `set_min`, `set_max` and `set_increment`, and read the value with
+ * `value`. Next to a text field it makes a number input; `NumberInput` is that pairing.
  **/
 pub mv struct Stepper: Control {
 	/**

@@ -1,12 +1,8 @@
 /**
- * A horizontal value picker over a min/max range (poll per frame)
+ * A horizontal slider for picking a value in a range
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Continuous control: read `value` each frame in the manual event loop.
+ * Set the range with `set_min` and `set_max`, and read the value with `value`, typically
+ * each frame in `App.frame`.
  **/
 pub mv struct Slider: Control {
 	/**

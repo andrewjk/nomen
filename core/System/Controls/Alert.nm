@@ -1,17 +1,22 @@
 /**
- * A system alert dialog (NSAlert)
+ * A system alert dialog
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * Set a title, message and buttons, then call `run`, which shows the alert, waits for the
+ * user to pick a button and returns its index:
  *
- * Window-coordinated: `run` enters NSAlert's own modal loop (it blocks the
- * caller and pumps its own events, so it works with the manual loop), and
- * returns the clicked button's index (first button = 0). iOS defers —
- * UIAlertController needs a presenting view controller (TODO stubs; see
- * GUI_PLAN Tier 1 #19).
+ * ```
+ * const alert = Alert()
+ * alert.set_title("Delete the file?")
+ * alert.add_button("Delete")
+ * alert.add_button("Cancel")
+ * const choice = alert.run()
+ * ```
  **/
+// Window-coordinated: `run` enters NSAlert's own modal loop (it blocks the
+// caller and pumps its own events, so it works with the manual loop), and
+// returns the clicked button's index (first button = 0). iOS defers —
+// UIAlertController needs a presenting view controller (TODO stubs; see
+// GUI_PLAN Tier 1 #19).
 pub mv struct Alert: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

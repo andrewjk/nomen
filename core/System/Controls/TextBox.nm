@@ -1,10 +1,8 @@
 /**
- * An editable single-line text input control
+ * A single-line text field
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is an AppKit handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
+ * Read it with `get_text`. Respond to typing with `on_input`, to Return with `on_submit`,
+ * and to focus changes with `on_focus` and `on_blur`.
  **/
 pub mv struct TextBox: Control {
 	/**

@@ -1,12 +1,10 @@
 /**
- * A top-level native window that hosts controls and dispatches events
+ * A top-level window
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is an AppKit handle, so the value is movable and its
- * `#destroy` releases what the handle names. The methods take the receiver
- * bare (struct receivers travel by address — the raw bodies keep the
- * pointer form); the constructor's `self` is the inline instance (the `.`
- * accessor).
+ * Create it with a title and size, create controls in it, then hand it an `App` with
+ * `run(mv app)`, which shows the window and runs the app until it closes. Apps that run
+ * their own loop instead call `show` and then `process_events` until `is_visible` turns
+ * false.
  **/
 pub mv struct Window: Control {
 	/**

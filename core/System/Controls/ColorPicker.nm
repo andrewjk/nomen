@@ -17,16 +17,12 @@ pub struct Rgb {
 }
 
 /**
- * A system color well (click to open the platform color panel)
+ * A color well: a swatch that opens the system color panel when clicked
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * Components travel as 0-255 ints; the platform stores 0-1 doubles, so the
- * round trip is exact to ±1 (the getters round).
+ * Read the chosen color with `rgb` and set it with `set_rgb`, each component 0 to 255.
  **/
+// Components travel as 0-255 ints; the platform stores 0-1 doubles, so the
+// round trip is exact to ±1 (the getters round).
 pub mv struct ColorPicker: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

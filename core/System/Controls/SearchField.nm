@@ -1,14 +1,10 @@
 /**
- * A search input — a TextBox with the system's search affordances
+ * A search box: a text field with a magnifier icon and a clear button
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * NSSearchField gives the magnifier icon, placeholder, and Cancel button for
- * free; UISearchTextField is the iOS 13+ equivalent.
+ * Read it with `get_text`, and respond to Return with `on_submit`.
  **/
+// NSSearchField gives the magnifier icon, placeholder, and Cancel button for
+// free; UISearchTextField is the iOS 13+ equivalent.
 pub mv struct SearchField: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

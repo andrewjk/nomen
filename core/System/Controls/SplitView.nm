@@ -1,26 +1,24 @@
 /**
- * A resizable multi-pane container (NSSplitView)
+ * Side-by-side or stacked panes with draggable dividers between them
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * The pane count and divider orientation are fixed at construction. Each
- * pane hosts controls on its own view: `content_window(index)` hands back a
- * Window-shaped value whose `contentView` is the pane view itself (the
- * `-contentView`-answers-self trick — see Scrollable), so control
- * constructors and `Container.layout` target a pane unchanged. NSSplitView
- * owns the pane geometry: when the split view is framed (or the user drags
- * a divider) AppKit resizes the pane views synchronously, so re-run the
- * pane layouts after re-framing — registrable pane roots
- * (`Container.set_pane`) put that on the run loop. A shared delegate holds
- * every divider at its current position across re-frames (the AppKit
- * default re-divides panes equally), so a programmatic divider position set
- * with `set_position` (read with `position`) stays put. iOS defers to
- * UISplitViewController (a view-controller-level type — see GUI_PLAN
- * Tier 2; the iOS blocks are TODO stubs).
+ * The number of panes and the direction are set when it is created. Put controls in a pane
+ * with `content_window(index)` as their window and a grid of the pane's own, registered
+ * with `grid.set_pane(...)` so it is laid out again when the panes resize. Move a divider
+ * with `set_position`. macOS only.
  **/
+// The pane count and divider orientation are fixed at construction. Each pane
+// hosts controls on its own view: `content_window(index)` hands back a
+// Window-shaped value whose `contentView` is the pane view itself (the
+// `-contentView`-answers-self trick — see Scrollable), so control constructors
+// and `Container.layout` target a pane unchanged. NSSplitView owns the pane
+// geometry: when the split view is framed (or the user drags a divider) AppKit
+// resizes the pane views synchronously, so re-run the pane layouts after
+// re-framing — registrable pane roots (`Container.set_pane`) put that on the
+// run loop. A shared delegate holds every divider at its current position
+// across re-frames (the AppKit default re-divides panes equally), so a
+// programmatic divider position set with `set_position` (read with `position`)
+// stays put. iOS defers to UISplitViewController (a view-controller-level type
+// — see GUI_PLAN Tier 2; the iOS blocks are TODO stubs).
 pub mv struct SplitView: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

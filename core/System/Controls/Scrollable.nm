@@ -1,24 +1,22 @@
 /**
- * A scrolling viewport hosting arbitrary controls on a document view
+ * A scroll view that holds its own controls
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * fields are platform handles, so the value is movable and its `#destroy`
- * releases what they name. The constructor's `self` is the inline instance
- * (the `.` accessor); methods keep the pointer form.
- *
- * The scroll view is framed like any control (it sits in a Grid cell), but
- * its children live on a DOCUMENT VIEW: `content_window` hands back a
- * Window-shaped value whose `contentView` is the document view itself (the
- * NomenDocumentView NSView subclass answers `-contentView` with `self`), so
- * control constructors and `Container.layout` work unchanged. The document
- * view stays unflipped, so the engine's y-flip against `content_height()`
- * (the document height) is the existing math — see the Scrollable design
- * note in GUI.md. Per relayout pass: measure the content grid unbounded,
- * `set_content_size`, then `content_grid.layout(content)`. `content_click`
- * translates window-space clicks into document coordinates so content
- * children can be hit-tested while scrolled. iOS defers to UIScrollView
- * (TODO stubs; see GUI_PLAN Tier 2).
+ * Create controls with `content_window()` as their window and lay them out in a grid of
+ * their own. Register that grid with
+ * `grid.set_document(scroll.handle, scroll.doc_handle())` and `Window.run` keeps the
+ * content sized and laid out. Respond to scrolling with `on_scroll`.
  **/
+// The scroll view is framed like any control (it sits in a Grid cell), but its
+// children live on a DOCUMENT VIEW: `content_window` hands back a Window-shaped
+// value whose `contentView` is the document view itself (the NomenDocumentView
+// NSView subclass answers `-contentView` with `self`), so control constructors
+// and `Container.layout` work unchanged. The document view stays unflipped, so
+// the engine's y-flip against `content_height()` (the document height) is the
+// existing math — see the Scrollable design note in GUI.md. Per relayout pass:
+// measure the content grid unbounded, `set_content_size`, then
+// `content_grid.layout(content)`. `content_click` translates window-space
+// clicks into document coordinates so content children can be hit-tested while
+// scrolled. iOS defers to UIScrollView (TODO stubs; see GUI_PLAN Tier 2).
 pub mv struct Scrollable: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).

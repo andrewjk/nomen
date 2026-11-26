@@ -1,15 +1,12 @@
 /**
- * A dropdown choice control (NSPopUpButton)
+ * A pop-up menu button for picking one of several choices
  *
- * An OWNING STRUCT (STRUCT_PLAN_3 Phase R, tranche 4 — the shape menu): the
- * single field is a platform handle, so the value is movable and its
- * `#destroy` releases what the handle names. The constructor's `self` is
- * the inline instance (the `.` accessor); methods keep the pointer form.
- *
- * macOS-first: the items live in the native menu, so `selected_index` is
- * polled after each event batch. iOS needs a picker or action sheet and
- * defers (TODO stubs below; see GUI_PLAN Tier 1 #9).
+ * Add choices with `add_item`, and read the choice with `selected_index` or respond to it
+ * with `on_select`. macOS only.
  **/
+// macOS-first: the items live in the native menu, so `selected_index` is polled
+// after each event batch. iOS needs a picker or action sheet and defers (TODO
+// stubs below; see GUI_PLAN Tier 1 #9).
 pub mv struct Select: Control {
 	/**
 	 * The native platform handle for this control (internal; 0 until it is created).
