@@ -860,15 +860,6 @@ Array<Node> kids }` overflows the stack in `layout_type_alignment` /
   therefore also skips the free on the other path, which leaks; it never
   double-frees.
 
-## `view` parameters of mv structs fail to compile on C
-
-`func show = (view Holder h, …)` where `Holder` is an `mv struct` (even one
-holding just a `mv string` field) emits `nomen_view` for the parameter. Field
-reads through it then fail with clang errors: "member reference type
-'nomen_view' is not a pointer" and "no member named 's' in 'nomen_view'".
-`view` is treated as the string view type regardless of the parameter's
-struct type. Seen while testing `Array<T>` fields; it is unrelated to them.
-
 ## `view string` parameters can't hold a string array's view
 
 A `view string` parameter always means a view of a string's chars, so

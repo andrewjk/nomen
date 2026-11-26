@@ -463,8 +463,14 @@ export default function build_function_node(node: FunctionNode, status: BuildSta
 				status.variable_types.set(pname, param.type);
 			}
 		}
-		const param_struct = status.structs.find((s) => s.name === param.type.name);
-		const param_trait = status.traits.find((t) => t.name === param.type.name);
+		// A `view T` param is a by-value (ptr, len) nomen_view whatever its
+		// element type is — never a struct/trait pointer.
+		const param_struct = param.type.is_view
+			? undefined
+			: status.structs.find((s) => s.name === param.type.name);
+		const param_trait = param.type.is_view
+			? undefined
+			: status.traits.find((t) => t.name === param.type.name);
 		// D3 transfer: a `mv string` param OWNS its buffer — register it like a
 		// heap `var string` local so the scope-exit auto-free reclaims it
 		// (guarded on the `_mv_owns_` flag declared in the prologue above): a

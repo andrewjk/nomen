@@ -324,6 +324,28 @@ export default function check_access_node(node: AccessNode, status: CheckStatus)
 		}
 	}
 
+	// A `view T` is a borrowed SLICE of T elements (SPEC, "Views"), not a
+	// borrowed T: a T field read through it (`v.n`) is an element-less read.
+	if (
+		node.access.node_type === "access_field" &&
+		target_type.is_view &&
+		!target_type.is_array &&
+		target_type.name !== "string" &&
+		target_type.name !== "char"
+	) {
+		const field_name = (node.access as AccessFieldNode).name;
+		const elem_struct = status.structs.findLast((s) => s.name === target_type.name);
+		if (elem_struct?.fields.some((f) => f.name === field_name)) {
+			const base = expr_to_string(node.target) || "the view";
+			add_error(
+				status,
+				`'${base}' is a view of ${target_type.name} elements, not a ${target_type.name} --> read an element first ('${base}.at(i).${field_name}'), or take a plain '${target_type.name}' parameter`,
+				node.target.start,
+			);
+			return false;
+		}
+	}
+
 	switch (node.access.node_type) {
 		case "access_field":
 		case "access_func": {

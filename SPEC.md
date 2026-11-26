@@ -3352,6 +3352,11 @@ for `string`, `T` for `Array<T>` / `List<T>`). Use `.at(i)` / `.length` to read
 the slice in place, and `.to_string()` (string views only) to materialize an
 owned copy.
 
+A `view T` is always a slice of `T` elements, even when `T` is a struct: a
+`view Point` parameter takes `points.slice(0, 2)`, not a single `Point`, and
+its fields are read through an element (`ps.at(i).x`). To borrow one struct,
+take a plain `Point` parameter.
+
 A view binding must be declared with the `view` keyword so the borrow
 semantics are visible at the declaration site. `view` alone is an immutable
 (const) view; `var view` is a mutable view you can re-point at another slice.

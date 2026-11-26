@@ -938,12 +938,14 @@ function build_struct_functions(node: StructNode, status: BuildStatus, skip_init
 			}
 			// A heap-array param (a nested array's row `T`) is its buffer
 			// pointer passed by value, whatever its element type is.
-			const param_struct = param.type.is_array_heap
-				? undefined
-				: status.structs.find((s) => s.name === param.type.name);
-			const param_trait = param.type.is_array_heap
-				? undefined
-				: status.traits.find((t) => t.name === param.type.name);
+			const param_struct =
+				param.type.is_array_heap || param.type.is_view
+					? undefined
+					: status.structs.find((s) => s.name === param.type.name);
+			const param_trait =
+				param.type.is_array_heap || param.type.is_view
+					? undefined
+					: status.traits.find((t) => t.name === param.type.name);
 			// Only struct/trait/self/ref params and non-simple `var` params are
 			// emitted as pointers (see build_parameter_node). A `var int x` is
 			// by-value, so it must NOT be in function_ref_params. A method of

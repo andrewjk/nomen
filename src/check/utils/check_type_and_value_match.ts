@@ -50,6 +50,19 @@ export default function check_type_and_value_match(
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		} else if (effective_target.is_array !== value_type.is_array) {
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
+		} else if (
+			effective_target.is_view &&
+			!effective_target.is_array &&
+			effective_target.name !== "string" &&
+			effective_target.name !== "char" &&
+			!value_type.is_view &&
+			value_type.name !== "null" &&
+			status.structs.some((s) => s.name === value_type.name) &&
+			!is_type_param(effective_target.name, status)
+		) {
+			// A single struct into a `view T` (a slice of T elements): pass a
+			// slice (`xs.slice(a, b)`) or the array itself.
+			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		} else if (!nested_elem_chains_match(effective_target, value_type)) {
 			// Nested-array element chains must agree in full depth and element
 			// name (`int[][]` is not `string[][]`, and neither is
