@@ -868,3 +868,6 @@ would read its elements as chars. Local views know which they are
 (`Type.view_of_elements`, set by `slice` on an array), but a parameter
 annotation has no spelling for "a view of strings". Needs syntax, e.g. a
 distinct element-view annotation. Seen while adding `for ... of` over views.
+Passing an element view to a `view string` parameter is now a type mismatch
+(check_type_and_value_match), so the garbage read can't happen; what's left is
+the spelling that would let a parameter accept one.

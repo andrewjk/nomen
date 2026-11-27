@@ -49,4 +49,15 @@ const t = get(p)`);
 			"Type mismatch in param: P (expected view P)",
 		]);
 	});
+
+	test("a view of string elements is not a view string", () => {
+		const parsed = parse_with_imports(`func f = (view string v, out int) {
+	return v.length
+}
+const words = ["a", "bb", "ccc"]
+const n = f(words.slice(0, 2))`);
+		expect(parsed.errors.map((e) => e.message)).toEqual([
+			"Type mismatch in param: a view of string elements (expected a view of a string's chars)",
+		]);
+	});
 });

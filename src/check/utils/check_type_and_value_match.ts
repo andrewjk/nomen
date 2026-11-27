@@ -52,6 +52,23 @@ export default function check_type_and_value_match(
 			add_error_message(status, i, node_type, type_name(value_type), type_name(effective_target));
 		} else if (
 			effective_target.is_view &&
+			effective_target.name === "string" &&
+			!effective_target.view_of_elements &&
+			value_type.is_view &&
+			value_type.view_of_elements
+		) {
+			// A view of string ELEMENTS (`words.slice(0, 2)`) into a `view
+			// string` (a view of one string's chars): the elements would be
+			// read as chars. A parameter can't spell an element view yet.
+			add_error_message(
+				status,
+				i,
+				node_type,
+				`a view of ${value_type.name} elements`,
+				`a view of a string's chars`,
+			);
+		} else if (
+			effective_target.is_view &&
 			!effective_target.is_array &&
 			effective_target.name !== "string" &&
 			effective_target.name !== "char" &&
